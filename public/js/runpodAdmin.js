@@ -10,13 +10,21 @@
     const maxPriceInput = picker.querySelector('[data-gpu-max-price]');
     const availabilitySelect = picker.querySelector('[data-gpu-min-availability]');
     const dataCenterSelect = picker.querySelector('[data-gpu-datacenter]');
+    const networkVolumeSelect = picker.querySelector('[data-network-volume-select]');
+    const persistentDiskInput = picker.querySelector('[data-persistent-disk]');
+    const storageHelp = picker.querySelector('[data-storage-help]');
+    const modelInput = picker.querySelector('[data-ollama-model-input]');
+    const cachedModelList = picker.querySelector('[data-cached-model-list]');
     const estimate = picker.querySelector('[data-gpu-estimate]');
     const result = picker.querySelector('[data-gpu-filter-result]');
     const createForm = picker.querySelector('[data-runpod-create-form]');
     const createButton = picker.querySelector('[data-runpod-create-button]');
     const gpuOptions = Array.from(gpuSelect?.options || []);
     const dataCenterOptions = Array.from(dataCenterSelect?.options || []);
+    const communityOption = Array.from(cloudSelect?.options || [])
+      .find((option) => option.value === 'COMMUNITY');
     const rank = { NONE: 0, LOW: 1, MEDIUM: 2, HIGH: 3 };
+    let cachedModelVolumeId = null;
 
     function number(value, fallback = Number.NaN) {
       const parsed = Number(value);
@@ -44,14 +52,76 @@
       return gpuOptions.find((option) => option.value === gpuSelect?.value) || null;
     }
 
+    function currentNetworkVolume() {
+      const option = networkVolumeSelect?.selectedOptions?.[0];
+      return option?.value ? {
+        id: option.value,
+        dataCenter: option.dataset.datacenter || '',
+        type: option.dataset.volumeType || 'UNKNOWN',
+        size: number(option.dataset.size, 0),
+        models: (option.dataset.models || '').split('|').filter(Boolean),
+      } : null;
+    }
+
+    function updateCachedModels(volume) {
+      if (cachedModelList) {
+        cachedModelList.replaceChildren(...(volume?.models || []).map((model) => {
+          const option = document.createElement('option');
+          option.value = model;
+          return option;
+        }));
+      }
+      const nextVolumeId = volume?.id || '';
+      if (
+        nextVolumeId !== cachedModelVolumeId
+        && volume?.models?.length
+        && modelInput
+      ) {
+        modelInput.value = volume.models[0];
+      }
+      cachedModelVolumeId = nextVolumeId;
+    }
+
+    function applyStorageMode() {
+      const volume = currentNetworkVolume();
+      if (volume) {
+        updateCachedModels(volume);
+        if (cloudSelect) cloudSelect.value = 'SECURE';
+        if (communityOption) communityOption.disabled = true;
+        if (persistentDiskInput) {
+          persistentDiskInput.disabled = true;
+          persistentDiskInput.required = false;
+        }
+        if (storageHelp) {
+          storageHelp.textContent = `${volume.size} GB ${volume.type.replaceAll('_', ' ')} network volume selected. Secure Cloud and ${volume.dataCenter} are required; Ollama models will use /workspace/ollama/models.`;
+        }
+      } else {
+        updateCachedModels(null);
+        if (communityOption) communityOption.disabled = false;
+        if (persistentDiskInput) {
+          persistentDiskInput.disabled = false;
+          persistentDiskInput.required = true;
+        }
+        if (storageHelp) {
+          storageHelp.textContent = 'Large models need storage beyond their published download size. Allow at least 10 GB of headroom; qwen3.8:27b is about 18 GB, so use 30 GB or more. A selected network volume replaces the Pod-local persistent disk and fixes the cloud and data center.';
+        }
+      }
+      return volume;
+    }
+
     function updateDataCenters(option) {
       const allowed = option ? optionValues(option).dataCenters : new Set();
+      const volume = currentNetworkVolume();
       dataCenterOptions.forEach((dataCenter, index) => {
-        const visible = index === 0 || allowed.has(dataCenter.value);
+        const visible = volume
+          ? dataCenter.value === volume.dataCenter && allowed.has(dataCenter.value)
+          : index === 0 || allowed.has(dataCenter.value);
         dataCenter.hidden = !visible;
         dataCenter.disabled = !visible;
       });
-      if (dataCenterSelect?.selectedOptions[0]?.disabled) {
+      if (volume && dataCenterSelect) {
+        dataCenterSelect.value = volume.dataCenter;
+      } else if (dataCenterSelect?.selectedOptions[0]?.disabled) {
         dataCenterSelect.value = '';
       }
     }
@@ -87,6 +157,7 @@
     }
 
     function applyFilters() {
+      const volume = applyStorageMode();
       const minimumMemory = Math.max(0, number(minVramInput?.value, 0));
       const maximumPrice = Math.max(0, number(maxPriceInput?.value, Infinity));
       const minimumAvailability = rank[availabilitySelect?.value] || rank.LOW;
@@ -97,7 +168,8 @@
           && Number.isFinite(values.price)
           && values.price <= maximumPrice
           && (rank[values.availability] || 0) >= minimumAvailability
-          && values.maxCount >= 1;
+          && values.maxCount >= 1
+          && (!volume || values.dataCenters.has(volume.dataCenter));
         option.hidden = !visible;
         option.disabled = !visible;
         if (visible) visibleCount += 1;
@@ -118,6 +190,7 @@
     [gpuSelect, countInput, costLimitInput]
       .filter(Boolean)
       .forEach((element) => element.addEventListener('input', updateEstimate));
+    networkVolumeSelect?.addEventListener('input', applyFilters);
 
     createForm?.addEventListener('submit', () => {
       if (createButton) {
@@ -129,16 +202,141 @@
     applyFilters();
   }
 
+  function initializeModelDownloader() {
+    const form = document.querySelector('[data-runpod-model-download-form]');
+    if (!form) return;
+    const volumeSelect = form.querySelector('[data-download-volume-select]');
+    const gpuSelect = form.querySelector('[data-download-gpu-select]');
+    const costLimitInput = form.querySelector('[data-download-cost-limit]');
+    const location = form.querySelector('[data-download-location]');
+    const summary = form.querySelector('[data-download-gpu-summary]');
+    const submit = form.querySelector('[data-runpod-download-button]');
+    const gpuOptions = Array.from(gpuSelect?.options || []).filter((option) => option.value);
+    const stockRank = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
+
+    function update() {
+      const volume = volumeSelect?.selectedOptions?.[0];
+      const dataCenter = volume?.dataset.datacenter || '';
+      const limit = Number(costLimitInput?.value);
+      const candidates = gpuOptions.filter((option) => {
+        const price = Number(option.dataset.price);
+        const available = (option.dataset.datacenters || '').split('|').includes(dataCenter)
+          && ['LOW', 'MEDIUM', 'HIGH'].includes(option.dataset.availability || 'NONE')
+          && Number.isFinite(price)
+          && Number.isFinite(limit)
+          && price <= limit;
+        option.hidden = !available;
+        option.disabled = !available;
+        return available;
+      }).sort((left, right) => (
+        Number(left.dataset.price) - Number(right.dataset.price)
+        || (stockRank[left.dataset.availability] ?? 3)
+          - (stockRank[right.dataset.availability] ?? 3)
+      ));
+      if (gpuSelect?.value && gpuSelect.selectedOptions[0]?.disabled) gpuSelect.value = '';
+      if (location) {
+        location.textContent = dataCenter ? `Secure Cloud · ${dataCenter}` : 'Choose a volume';
+      }
+      if (summary) {
+        if (!candidates.length) {
+          summary.textContent = 'No compatible Secure Cloud GPU is currently below this cost limit.';
+        } else if (gpuSelect?.value) {
+          const selected = gpuSelect.selectedOptions[0];
+          summary.textContent = `${selected.textContent.trim()} will be requested. Fresh stock is checked again on submit.`;
+        } else {
+          const cheapest = candidates[0];
+          summary.textContent = `Automatic choice currently favors ${cheapest.textContent.trim()}. Fresh stock is checked again on submit.`;
+        }
+      }
+      if (submit) submit.disabled = !dataCenter || !candidates.length;
+    }
+
+    [volumeSelect, gpuSelect, costLimitInput]
+      .filter(Boolean)
+      .forEach((element) => element.addEventListener('input', update));
+    form.addEventListener('submit', () => {
+      if (submit) {
+        submit.disabled = true;
+        submit.textContent = 'Starting download…';
+      }
+    });
+    update();
+  }
+
+  function initializeNetworkVolumeCreator() {
+    const form = document.querySelector('[data-runpod-volume-create-form]');
+    if (!form) return;
+    const sizeInput = form.querySelector('[data-volume-size]');
+    const typeSelect = form.querySelector('[data-volume-type]');
+    const dataCenterSelect = form.querySelector('[data-volume-datacenter]');
+    const costLimitInput = form.querySelector('[data-volume-cost-limit]');
+    const estimate = form.querySelector('[data-volume-estimate]');
+    const submit = form.querySelector('[data-volume-create-button]');
+    const dataCenterOptions = Array.from(dataCenterSelect?.options || []);
+    const standardRate = Number(form.dataset.standardRate);
+    const highPerformanceRate = Number(form.dataset.highPerformanceRate);
+
+    function monthlyCost(size, type) {
+      if (type === 'STANDARD' && Number.isFinite(standardRate)) {
+        return Math.min(size, 1024) * standardRate + Math.max(0, size - 1024) * 0.05;
+      }
+      if (type === 'HIGH_PERFORMANCE' && Number.isFinite(highPerformanceRate)) {
+        return size * highPerformanceRate;
+      }
+      return Number.NaN;
+    }
+
+    function updateDataCenters() {
+      const type = typeSelect?.value || 'STANDARD';
+      dataCenterOptions.forEach((option, index) => {
+        const supported = index === 0 || (option.dataset.volumeTypes || '').split('|').includes(type);
+        option.hidden = !supported;
+        option.disabled = !supported || index === 0;
+      });
+      if (dataCenterSelect?.selectedOptions[0]?.disabled) dataCenterSelect.value = '';
+    }
+
+    function updateEstimate() {
+      updateDataCenters();
+      const size = Number(sizeInput?.value);
+      const limit = Number(costLimitInput?.value);
+      const cost = monthlyCost(size, typeSelect?.value || 'STANDARD');
+      if (estimate) {
+        estimate.textContent = Number.isFinite(cost)
+          ? `$${cost.toFixed(2)} / month estimated`
+          : 'Current storage rate is not configured';
+      }
+      if (submit) {
+        submit.disabled = !Number.isFinite(cost)
+          || !Number.isFinite(limit)
+          || cost > limit
+          || !dataCenterSelect?.value;
+      }
+    }
+
+    [sizeInput, typeSelect, dataCenterSelect, costLimitInput]
+      .filter(Boolean)
+      .forEach((element) => element.addEventListener('input', updateEstimate));
+    form.addEventListener('submit', () => {
+      if (submit) {
+        submit.disabled = true;
+        submit.textContent = 'Creating volume…';
+      }
+    });
+    updateEstimate();
+  }
+
   function initializeDeleteForms() {
     document.querySelectorAll('[data-runpod-delete-form]').forEach((form) => {
       form.addEventListener('submit', (event) => {
         const input = form.querySelector('input[name="confirmation"]');
-        const label = form.querySelector('.runpod-field span')?.textContent || '';
-        const expected = label.replace(/^Type the exact Pod name:\s*/u, '');
+        const expected = form.dataset.runpodConfirmName || '';
         if (!input || input.value !== expected) {
           event.preventDefault();
-          input?.setCustomValidity('Enter the exact Pod name shown above.');
+          input?.setCustomValidity('Enter the exact resource name shown above.');
           input?.reportValidity();
+        } else {
+          input.setCustomValidity('');
         }
       });
     });
@@ -198,6 +396,8 @@
 
   const picker = document.querySelector('[data-runpod-picker]');
   if (picker) initializeGpuPicker(picker);
+  initializeModelDownloader();
+  initializeNetworkVolumeCreator();
   initializeDeleteForms();
   initializeCountdowns();
 }());

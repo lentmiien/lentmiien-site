@@ -11,7 +11,11 @@ function response() {
 
 function manager() {
   return {
+    createManagedNetworkVolume: jest.fn().mockResolvedValue({}),
+    deleteManagedNetworkVolume: jest.fn().mockResolvedValue(true),
+    syncProviderNetworkVolumes: jest.fn().mockResolvedValue({}),
     saveOllamaTemplate: jest.fn().mockResolvedValue({}),
+    createModelDownload: jest.fn().mockResolvedValue({}),
     createManagedPod: jest.fn().mockResolvedValue({}),
     transitionManagedPod: jest.fn().mockResolvedValue({}),
     extendManagedPod: jest.fn().mockResolvedValue({}),
@@ -27,7 +31,11 @@ function billingService() {
 
 describe('Runpod Pod admin mutation controller', () => {
   test.each([
+    ['createNetworkVolume', 'createManagedNetworkVolume', {}, {}, NOTICE_KEYS.networkVolumeCreated, 'network-volumes'],
+    ['deleteNetworkVolume', 'deleteManagedNetworkVolume', { id: 'volume-id' }, { confirmation: 'volume-name' }, NOTICE_KEYS.networkVolumeDeleted, 'network-volumes'],
+    ['syncNetworkVolumes', 'syncProviderNetworkVolumes', {}, {}, NOTICE_KEYS.networkVolumesSynced, 'network-volumes'],
     ['saveOllamaTemplate', 'saveOllamaTemplate', {}, {}, NOTICE_KEYS.templateSynced, 'workload-templates'],
+    ['createModelDownload', 'createModelDownload', {}, {}, NOTICE_KEYS.modelDownloadCreated, 'model-downloader'],
     ['createPod', 'createManagedPod', {}, {}, NOTICE_KEYS.podCreated, 'pods'],
     ['startPod', 'transitionManagedPod', { id: 'local-id' }, { runMinutes: '240' }, NOTICE_KEYS.podStarted, 'pods'],
     ['stopPod', 'transitionManagedPod', { id: 'local-id' }, {}, NOTICE_KEYS.podStopped, 'pods'],
@@ -84,6 +92,13 @@ describe('Runpod Pod admin mutation controller', () => {
     const user = { name: 'admin' };
 
     await controller.createPod({ body: { gpuId: 'gpu' }, user }, response());
+    await controller.createModelDownload({
+      body: { networkVolumeId: 'volume-id', model: 'qwen3.8:27b' }, user,
+    }, response());
+    await controller.createNetworkVolume({ body: { sizeGb: '50' }, user }, response());
+    await controller.deleteNetworkVolume({
+      params: { id: 'volume-id' }, body: { confirmation: 'volume-name' }, user,
+    }, response());
     await controller.startPod({ params: { id: 'pod-id' }, body: { runMinutes: '240' }, user }, response());
     await controller.stopPod({ params: { id: 'pod-id' }, user }, response());
     await controller.extendPod({
@@ -92,6 +107,15 @@ describe('Runpod Pod admin mutation controller', () => {
     await controller.deletePod({ params: { id: 'pod-id' }, body: { confirmation: 'exact' }, user }, response());
 
     expect(service.createManagedPod).toHaveBeenCalledWith({ gpuId: 'gpu' }, user);
+    expect(service.createModelDownload).toHaveBeenCalledWith({
+      networkVolumeId: 'volume-id', model: 'qwen3.8:27b',
+    }, user);
+    expect(service.createManagedNetworkVolume).toHaveBeenCalledWith({ sizeGb: '50' }, user);
+    expect(service.deleteManagedNetworkVolume).toHaveBeenCalledWith(
+      'volume-id',
+      'volume-name',
+      user
+    );
     expect(service.transitionManagedPod).toHaveBeenNthCalledWith(
       1,
       'pod-id',

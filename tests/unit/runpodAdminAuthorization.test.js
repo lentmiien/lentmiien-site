@@ -149,6 +149,10 @@ describe('Runpod route wiring', () => {
   test('exposes read and CSRF-protected capability-scoped Pod mutations', () => {
     expect(routeSource).toContain("router.get('/', runpodReadLimiter, runpodAdminController.index);");
     expect(routeSource).toContain("'/templates/ollama'");
+    expect(routeSource).toContain("'/network-volumes'");
+    expect(routeSource).toContain("'/network-volumes/sync'");
+    expect(routeSource).toContain("'/network-volumes/:id/delete'");
+    expect(routeSource).toContain("'/model-downloads'");
     expect(routeSource).toContain("'/pods'");
     expect(routeSource).toContain("'/pods/:id/start'");
     expect(routeSource).toContain("'/pods/:id/stop'");
@@ -158,9 +162,12 @@ describe('Runpod route wiring', () => {
     expect(routeSource).toContain('csrf.requireToken');
     expect(routeSource).toContain('requireBoundedRunpodForm');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podCreate)');
+    expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.modelDownloadCreate)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podExtend)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podDelete)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.billingSync)');
+    expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.networkVolumeCreate)');
+    expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.networkVolumeDelete)');
     expect(routeSource).not.toMatch(/router\.(?:put|patch|delete)\s*\(/u);
     expect(routeSource).toContain('RUNPOD_READ_CAPABILITIES');
   });

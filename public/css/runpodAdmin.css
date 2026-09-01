@@ -333,6 +333,7 @@
 .runpod-picker__filters,
 .runpod-estimate,
 .runpod-pod-card,
+.runpod-volume-card,
 .runpod-endpoint,
 .runpod-delete,
 .runpod-unmanaged {
@@ -345,19 +346,23 @@
 .runpod-form,
 .runpod-picker__filters,
 .runpod-pod-card,
+.runpod-volume-card,
 .runpod-unmanaged {
   padding: 1rem;
 }
 
 .runpod-template-summary h3,
 .runpod-pod-card h3,
+.runpod-volume-card h3,
+.runpod-form h3,
 .runpod-unmanaged h3 {
   margin: 0;
   color: var(--text);
 }
 
 .runpod-template-summary code,
-.runpod-pod-card code {
+.runpod-pod-card code,
+.runpod-volume-card code {
   display: block;
   margin-top: 0.3rem;
   overflow-wrap: anywhere;
@@ -443,6 +448,89 @@
   font-weight: 750;
 }
 
+.runpod-advanced {
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-1);
+}
+
+.runpod-advanced > summary {
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.runpod-advanced[open] > summary {
+  margin-bottom: 0.8rem;
+}
+
+.runpod-advanced--standalone {
+  margin: 0;
+  background: var(--surface-2);
+}
+
+.runpod-advanced--standalone .runpod-form {
+  margin-top: 0.8rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.runpod-location-summary {
+  display: grid;
+  gap: 0.25rem;
+  margin: 1rem 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--info);
+  border-left-width: 4px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--info) 8%, var(--surface-1));
+}
+
+.runpod-location-summary span,
+.runpod-location-summary small {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.runpod-location-summary strong {
+  color: var(--text);
+}
+
+.runpod-subheading {
+  margin: 1.35rem 0 0.75rem;
+  color: var(--text);
+}
+
+.runpod-download-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.runpod-download-card {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--divider);
+  border-radius: 11px;
+  background: var(--surface-2);
+}
+
+.runpod-download-card h3 {
+  margin: 0;
+  color: var(--text);
+}
+
+.runpod-download-card code {
+  display: block;
+  margin-top: 0.3rem;
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font-size: 0.75rem;
+}
+
 .runpod-check {
   display: flex;
   align-items: flex-start;
@@ -488,6 +576,28 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.runpod-volume-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.runpod-volume-card {
+  min-width: 0;
+}
+
+.runpod-archive-details {
+  margin-top: 1rem;
+}
+
+.runpod-archive-details > summary {
+  margin-bottom: 0.75rem;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 750;
 }
 
 .runpod-pod-card {
@@ -1027,6 +1137,8 @@
   .runpod-form-grid,
   .runpod-form-grid--wide,
   .runpod-pod-grid,
+  .runpod-download-grid,
+  .runpod-volume-grid,
   .runpod-pod-card__metrics {
     grid-template-columns: 1fr;
   }

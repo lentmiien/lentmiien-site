@@ -409,6 +409,45 @@ describe('RunpodApiV2Service', () => {
     ]);
   });
 
+  test('lists, creates, reads, updates, and deletes network volumes through v2', async () => {
+    const volume = {
+      id: 'volume-1',
+      name: 'model-cache',
+      size: 50,
+      dataCenter: 'EU-RO-1',
+      type: 'STANDARD',
+    };
+    const fetchImpl = jest.fn(async (url, options) => {
+      if (url.pathname === '/v2/network-volumes' && options.method === 'GET') {
+        return jsonResponse({ networkVolumes: [volume] });
+      }
+      if (options.method === 'DELETE') return jsonResponse(null, { status: 204 });
+      return jsonResponse(volume, { status: options.method === 'POST' ? 201 : 200 });
+    });
+    const service = new RunpodApiV2Service({ apiKey: 'key', fetchImpl, cacheTtlMs: 0 });
+    const createBody = {
+      name: 'model-cache',
+      size: 50,
+      dataCenter: 'EU-RO-1',
+      type: 'STANDARD',
+    };
+
+    await expect(service.listNetworkVolumes()).resolves.toEqual([volume]);
+    await expect(service.createNetworkVolume(createBody)).resolves.toEqual(volume);
+    await expect(service.getNetworkVolume('volume-1')).resolves.toEqual(volume);
+    await expect(service.updateNetworkVolume('volume-1', { size: 60 })).resolves.toEqual(volume);
+    await expect(service.deleteNetworkVolume('volume-1')).resolves.toBe(true);
+
+    expect(fetchImpl.mock.calls.map(([url, options]) => [url.pathname, options.method])).toEqual([
+      ['/v2/network-volumes', 'GET'],
+      ['/v2/network-volumes', 'POST'],
+      ['/v2/network-volumes/volume-1', 'GET'],
+      ['/v2/network-volumes/volume-1', 'PATCH'],
+      ['/v2/network-volumes/volume-1', 'DELETE'],
+    ]);
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual(createBody);
+  });
+
   test('rejects resource path injection and oversized mutation bodies before network work', async () => {
     const fetchImpl = jest.fn();
     const service = new RunpodApiV2Service({
@@ -418,6 +457,7 @@ describe('RunpodApiV2Service', () => {
     });
 
     await expect(service.getPod('../billing')).rejects.toBeInstanceOf(TypeError);
+    await expect(service.getNetworkVolume('../pods')).rejects.toBeInstanceOf(TypeError);
     await expect(service.transitionPod('pod-1', 'destroy')).rejects.toBeInstanceOf(TypeError);
     await expect(service.createPod({ name: 'x'.repeat(200) })).rejects.toEqual(expect.objectContaining({
       code: 'RUNPOD_REQUEST_TOO_LARGE',

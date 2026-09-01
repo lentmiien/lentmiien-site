@@ -112,9 +112,15 @@ const routes = [
   "runpod.pod.create",
   "runpod.pod.start",
   "runpod.pod.stop",
+  "runpod.pod.extend",
   "runpod.pod.delete",
   "runpod.pod.setup",
   "runpod.pod.sync",
+  "runpod.model_download.create",
+  "runpod.network_volume.read",
+  "runpod.network_volume.create",
+  "runpod.network_volume.delete",
+  "runpod.network_volume.sync",
   "runpod.template.manage",
 ];
 

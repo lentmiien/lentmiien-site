@@ -29,6 +29,12 @@ const RunpodPodSchema = new mongoose.Schema({
     default: 'managed',
     index: true,
   },
+  podPurpose: {
+    type: String,
+    enum: ['ollama_service', 'model_download'],
+    default: 'ollama_service',
+    index: true,
+  },
   workloadTemplateId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'runpod_workload_template',
@@ -62,6 +68,14 @@ const RunpodPodSchema = new mongoose.Schema({
   setupModel: { type: String, default: '', trim: true, maxlength: 120 },
   setupStartedAt: { type: Date, default: null },
   setupCompletedAt: { type: Date, default: null },
+  autoDeleteAfterSetup: { type: Boolean, default: false },
+  cleanupStatus: {
+    type: String,
+    enum: ['not_required', 'pending', 'completed', 'failed'],
+    default: 'not_required',
+    index: true,
+  },
+  cleanupErrorCode: { type: String, default: null, trim: true, maxlength: 80 },
   publicUrl: { type: String, default: null, trim: true, maxlength: 500 },
   cloud: { type: String, enum: ['SECURE', 'COMMUNITY', 'UNKNOWN'], default: 'UNKNOWN' },
   dataCenterId: { type: String, default: null, trim: true, maxlength: 100 },
@@ -69,12 +83,27 @@ const RunpodPodSchema = new mongoose.Schema({
     id: { type: String, required: true, trim: true, maxlength: 240 },
     name: { type: String, default: '', trim: true, maxlength: 240 },
     memoryGb: { type: Number, default: null, min: 0 },
-    count: { type: Number, required: true, min: 1, max: 16 },
+    count: { type: Number, required: true, min: 1, max: 32 },
     catalogPricePerHour: { type: Number, default: null, min: 0 },
   },
   diskGb: { type: Number, default: null, min: 1, max: 1000 },
   persistentDiskGb: { type: Number, default: null, min: 10, max: 1000 },
   persistentPath: { type: String, default: '', trim: true, maxlength: 300 },
+  networkVolumeRecordId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'runpod_network_volume',
+    default: null,
+    index: true,
+  },
+  providerNetworkVolumeId: { type: String, default: null, trim: true, maxlength: 128 },
+  networkVolumeName: { type: String, default: '', trim: true, maxlength: 120 },
+  networkVolumeType: {
+    type: String,
+    enum: ['STANDARD', 'HIGH_PERFORMANCE', 'UNKNOWN', ''],
+    default: '',
+  },
+  networkVolumeSizeGb: { type: Number, default: null, min: 10, max: 4096 },
+  networkVolumeMountPath: { type: String, default: '', trim: true, maxlength: 300 },
   ports: [{ type: String, trim: true, maxlength: 40 }],
   estimatedCostPerHour: { type: Number, default: null, min: 0 },
   providerCostPerHour: { type: Number, default: null, min: 0 },
@@ -135,5 +164,7 @@ RunpodPodSchema.index(
 RunpodPodSchema.index({ lifecycleGroup: 1, updatedAt: -1 });
 RunpodPodSchema.index({ setupStatus: 1, updatedAt: -1 });
 RunpodPodSchema.index({ autoStopAt: 1, lifecycleGroup: 1 });
+RunpodPodSchema.index({ providerNetworkVolumeId: 1, lifecycleGroup: 1 });
+RunpodPodSchema.index({ podPurpose: 1, createdAt: -1 });
 
 module.exports = mongoose.model('runpod_pod', RunpodPodSchema);

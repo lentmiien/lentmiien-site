@@ -7,6 +7,7 @@ const DEFAULT_MAX_REQUEST_BYTES = 64 * 1024;
 const DEFAULT_MAX_ERROR_RESPONSE_BYTES = 64 * 1024;
 const MAX_BILLING_BUCKETS = 366;
 const MAX_PODS = 200;
+const MAX_NETWORK_VOLUMES = 200;
 const MAX_ACCOUNT_TEMPLATES = 500;
 const MAX_POD_BILLING_RECORDS = 5000;
 const BILLING_BUCKET_SIZES = Object.freeze(['hour', 'day', 'week', 'month', 'year']);
@@ -29,6 +30,7 @@ const ENDPOINTS = Object.freeze({
   billing: '/v2/billing',
   podBilling: '/v2/billing/pods',
   pods: '/v2/pods',
+  networkVolumes: '/v2/network-volumes',
   accountTemplates: '/v2/templates',
 });
 
@@ -55,9 +57,14 @@ function templatePath(id) {
   return `/v2/templates/${normalizeResourceId(id, 'Runpod template')}`;
 }
 
+function networkVolumePath(id) {
+  return `/v2/network-volumes/${normalizeResourceId(id, 'Runpod network volume')}`;
+}
+
 function allowedDynamicPath(pathname) {
   return /^\/v2\/pods\/[A-Za-z0-9_-]{1,128}(?:\/action)?$/u.test(pathname)
-    || /^\/v2\/templates\/[A-Za-z0-9_-]{1,128}$/u.test(pathname);
+    || /^\/v2\/templates\/[A-Za-z0-9_-]{1,128}$/u.test(pathname)
+    || /^\/v2\/network-volumes\/[A-Za-z0-9_-]{1,128}$/u.test(pathname);
 }
 
 class RunpodConfigurationError extends Error {
@@ -725,6 +732,51 @@ class RunpodApiV2Service {
     return true;
   }
 
+  async listNetworkVolumes() {
+    const body = await this.requestJson(ENDPOINTS.networkVolumes, {
+      operation: 'the network volume list',
+    });
+    return ensureCollection(
+      body,
+      'networkVolumes',
+      'the network volume list',
+      MAX_NETWORK_VOLUMES
+    );
+  }
+
+  async getNetworkVolume(id) {
+    const body = await this.requestJson(networkVolumePath(id), {
+      operation: 'the network volume',
+    });
+    return ensureResource(body, 'the network volume');
+  }
+
+  async createNetworkVolume(input) {
+    const body = await this.requestJson(ENDPOINTS.networkVolumes, {
+      method: 'POST',
+      body: input,
+      operation: 'network volume creation',
+    });
+    return ensureResource(body, 'network volume creation');
+  }
+
+  async updateNetworkVolume(id, input) {
+    const body = await this.requestJson(networkVolumePath(id), {
+      method: 'PATCH',
+      body: input,
+      operation: 'network volume update',
+    });
+    return ensureResource(body, 'network volume update');
+  }
+
+  async deleteNetworkVolume(id) {
+    await this.requestJson(networkVolumePath(id), {
+      method: 'DELETE',
+      operation: 'network volume deletion',
+    });
+    return true;
+  }
+
   async getAccountTemplates() {
     const body = await this.requestJson(ENDPOINTS.accountTemplates, {
       operation: 'account templates',
@@ -813,6 +865,7 @@ module.exports = {
   MAX_ACCOUNT_TEMPLATES,
   MAX_POD_BILLING_RECORDS,
   MAX_PODS,
+  MAX_NETWORK_VOLUMES,
   POD_ACTIONS,
   RESOURCE_ID_PATTERN,
   RUNPOD_API_ORIGIN,
@@ -826,6 +879,7 @@ module.exports = {
   normalizeCloudType,
   normalizePodAction,
   normalizeResourceId,
+  networkVolumePath,
   podPath,
   publicRunpodError,
   readResponseText,

@@ -1,5 +1,6 @@
 const logger = require('../utils/logger');
 const {
+  RunpodNetworkVolume,
   RunpodOperationEvent,
   RunpodPod,
   RunpodWorkloadTemplate,
@@ -11,10 +12,15 @@ const {
 
 const OLLAMA_TEMPLATE_SLUG = 'ollama';
 const OLLAMA_PROVIDER_TEMPLATE_NAME = 'lentmiien-ollama-gpu-v2';
+const OLLAMA_DOWNLOADER_TEMPLATE_SLUG = 'ollama-downloader';
+const OLLAMA_DOWNLOADER_PROVIDER_TEMPLATE_NAME = 'lentmiien-ollama-model-downloader-v2';
 const OLLAMA_IMAGE = 'ollama/ollama:latest';
 const OLLAMA_MODEL = 'qwen2.5:0.5b';
+const OLLAMA_DOWNLOADER_MODEL = 'qwen3.8:27b';
 const OLLAMA_PORT = 11434;
 const OLLAMA_PERSISTENT_PATH = '/root/.ollama';
+const OLLAMA_NETWORK_VOLUME_PATH = '/workspace';
+const OLLAMA_NETWORK_MODELS_PATH = '/workspace/ollama/models';
 const OLLAMA_PUBLIC_URL_SUFFIX = '.proxy.runpod.net';
 const ACTIVE_PROVIDER_STATUSES = new Set(['PROVISIONING', 'STARTING', 'RUNNING']);
 const PROVIDER_STATUSES = new Set([
@@ -29,19 +35,30 @@ const PROVIDER_ACTIONS = new Set(['start', 'stop', 'restart', 'terminate']);
 const AVAILABLE_STOCK = new Set(['LOW', 'MEDIUM', 'HIGH']);
 const MODEL_PATTERN = /^[a-z0-9][a-z0-9._/-]{0,79}(?::[a-z0-9][a-z0-9._-]{0,39})?$/;
 const OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
+const PROVIDER_RESOURCE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const POD_NAME_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,79}$/u;
 const IMAGE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/@:+-]{0,498}$/;
+const NETWORK_VOLUME_NAME_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,79}$/u;
+const NETWORK_VOLUME_TYPES = new Set(['STANDARD', 'HIGH_PERFORMANCE']);
 const PROXY_POD_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const MAX_LOCAL_PODS = 200;
 const MAX_PROVIDER_PODS = 200;
 const MAX_PROVIDER_TEMPLATES = 500;
+const MAX_LOCAL_NETWORK_VOLUMES = 200;
+const MAX_PROVIDER_NETWORK_VOLUMES = 200;
 const DEFAULT_MAX_ACTIVE_PODS = 2;
-const DEFAULT_MAX_GPU_COUNT = 4;
-const DEFAULT_MAX_HOURLY_COST_USD = 10;
+const DEFAULT_MAX_GPU_COUNT = 16;
+const DEFAULT_MAX_HOURLY_COST_USD = 100;
+const DEFAULT_MAX_NETWORK_VOLUME_GB = 2048;
+const DEFAULT_MAX_NETWORK_VOLUME_MONTHLY_COST_USD = 150;
+const DEFAULT_STANDARD_STORAGE_USD_PER_GB_MONTH = 0.07;
 const DEFAULT_AUTO_STOP_MINUTES = 60;
+const DEFAULT_MODEL_DOWNLOAD_AUTO_STOP_MINUTES = 240;
+const DEFAULT_MODEL_DOWNLOAD_MAX_HOURLY_COST_USD = 1;
 const DEFAULT_MAX_RUNTIME_MINUTES = 24 * 60;
 const DEFAULT_PROVISION_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_OLLAMA_PULL_TIMEOUT_MS = 30 * 60 * 1000;
+const DEFAULT_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const AUTO_STOP_CLAIM_LEASE_MS = 5 * 60 * 1000;
 const OLLAMA_RESPONSE_LIMIT_BYTES = 2 * 1024 * 1024;
@@ -219,6 +236,21 @@ function operationErrorForPersistence(action, error, now = new Date()) {
   };
 }
 
+function networkVolumeOperationErrorForPersistence(action, error, now = new Date()) {
+  const knownError = error instanceof RunpodManagementError || error instanceof RunpodApiError;
+  return {
+    action,
+    code: safeString(error?.code, 80) || 'RUNPOD_NETWORK_VOLUME_ACTION_FAILED',
+    providerCode: safeString(error?.providerCode, 120) || null,
+    providerStatus: providerStatusForError(error),
+    providerTitle: safeString(error?.providerTitle, 240) || null,
+    message: (knownError ? safeString(error.message, 500) : '')
+      || 'The network volume operation could not be completed.',
+    detail: safeString(error?.providerDetail, 1000) || null,
+    occurredAt: now,
+  };
+}
+
 function boundedNumber(value, fallback, min, max) {
   const number = finiteNumber(value, fallback);
   return Math.min(max, Math.max(min, number));
@@ -301,6 +333,103 @@ function normalizeImage(value) {
   return image;
 }
 
+function normalizeNetworkVolumeName(value) {
+  const name = safeString(value, 80);
+  if (!NETWORK_VOLUME_NAME_PATTERN.test(name)) {
+    throw new RunpodManagementError(
+      'Volume name must start with a letter or number and use at most 80 letters, numbers, spaces, dots, dashes, or underscores.',
+      { code: 'RUNPOD_INPUT_INVALID' }
+    );
+  }
+  return name;
+}
+
+function normalizeNetworkVolumeType(value) {
+  const type = safeString(value, 40).toUpperCase();
+  if (!NETWORK_VOLUME_TYPES.has(type)) {
+    throw new RunpodManagementError('Choose a supported network volume storage tier.', {
+      code: 'RUNPOD_INPUT_INVALID',
+    });
+  }
+  return type;
+}
+
+function normalizeProviderNetworkVolumeType(value) {
+  const type = safeString(value, 40).toUpperCase();
+  return NETWORK_VOLUME_TYPES.has(type) ? type : 'UNKNOWN';
+}
+
+function estimateStandardNetworkVolumeMonthlyCost(sizeGb) {
+  const size = Math.max(0, finiteNumber(sizeGb, 0));
+  const estimate = Math.min(size, 1024) * DEFAULT_STANDARD_STORAGE_USD_PER_GB_MONTH
+    + Math.max(0, size - 1024) * 0.05;
+  return Math.round(estimate * 1_000_000) / 1_000_000;
+}
+
+function providerPodNetworkVolume(providerPod = {}) {
+  const mount = Array.isArray(providerPod?.mounts?.network)
+    ? providerPod.mounts.network[0]
+    : null;
+  return {
+    id: safeString(mount?.volumeId, 128),
+    path: safeString(mount?.path, 300),
+  };
+}
+
+function networkVolumeToPlain(volume) {
+  if (!volume) return null;
+  return typeof volume.toObject === 'function' ? volume.toObject() : volume;
+}
+
+function providerNetworkVolumeFields(providerVolume = {}, now = new Date()) {
+  const sizeGb = boundedNumber(providerVolume.size, 10, 10, 4096);
+  const volumeType = normalizeProviderNetworkVolumeType(providerVolume.type);
+  return {
+    name: safeString(providerVolume.name, 120),
+    dataCenterId: safeString(providerVolume.dataCenter, 100),
+    volumeType,
+    sizeGb,
+    lifecycleGroup: 'active',
+    providerPresent: true,
+    estimatedMonthlyCostUsd: volumeType === 'STANDARD'
+      ? estimateStandardNetworkVolumeMonthlyCost(sizeGb)
+      : null,
+    lastProviderSyncAt: now,
+    archivedAt: null,
+  };
+}
+
+function mapNetworkVolumeForPage(localVolume, providerVolume, attachedPodCount = 0) {
+  const local = networkVolumeToPlain(localVolume) || {};
+  const provider = providerVolume || {};
+  const providerId = safeString(local.providerNetworkVolumeId || provider.id, 128);
+  const type = normalizeProviderNetworkVolumeType(provider.type || local.volumeType);
+  const sizeGb = finiteNumber(provider.size, finiteNumber(local.sizeGb));
+  return {
+    id: local._id?.toString?.() || '',
+    providerNetworkVolumeId: providerId,
+    name: safeString(provider.name || local.name, 120),
+    recordOrigin: safeString(local.recordOrigin, 30) || 'provider_import',
+    dataCenterId: safeString(provider.dataCenter || local.dataCenterId, 100),
+    volumeType: type,
+    sizeGb,
+    lifecycleGroup: local.archivedAt ? 'archived' : 'active',
+    providerPresent: Boolean(provider.id),
+    trackedLocally: Boolean(local._id || local.id),
+    estimatedMonthlyCostUsd: type === 'STANDARD' && Number.isFinite(sizeGb)
+      ? estimateStandardNetworkVolumeMonthlyCost(sizeGb)
+      : finiteNumber(local.estimatedMonthlyCostUsd),
+    cachedModels: safeArray(local.cachedModels, 100, 120)
+      .map((model) => safeString(model, 120).toLowerCase())
+      .filter((model) => MODEL_PATTERN.test(model)),
+    modelsUpdatedAt: local.modelsUpdatedAt || null,
+    attachedPodCount: Math.max(0, finiteNumber(attachedPodCount, 0)),
+    lastProviderSyncAt: local.lastProviderSyncAt || null,
+    lastOperationError: local.lastOperationError || null,
+    archivedAt: local.archivedAt || null,
+  };
+}
+
 function normalizeTemplateInput(input = {}) {
   return {
     slug: OLLAMA_TEMPLATE_SLUG,
@@ -331,6 +460,74 @@ function normalizeTemplateInput(input = {}) {
     healthPath: '/api/tags',
     active: true,
   };
+}
+
+function normalizeDownloaderTemplateInput(input = {}) {
+  return {
+    slug: OLLAMA_DOWNLOADER_TEMPLATE_SLUG,
+    name: 'Ollama Model Downloader',
+    description: 'Temporary Ollama Pod that downloads and verifies one model on a selected network volume, then deletes itself.',
+    providerTemplateName: normalizePodName(
+      input.providerTemplateName || OLLAMA_DOWNLOADER_PROVIDER_TEMPLATE_NAME
+    ),
+    image: normalizeImage(input.image),
+    args: '',
+    diskGb: strictInteger(input.diskGb || 20, {
+      label: 'Container disk', min: 5, max: 500,
+    }),
+    ports: [`${OLLAMA_PORT}/http`],
+    env: {
+      OLLAMA_HOST: `0.0.0.0:${OLLAMA_PORT}`,
+      OLLAMA_MODELS: `${OLLAMA_PERSISTENT_PATH}/models`,
+    },
+    persistentDiskGb: 10,
+    persistentPath: OLLAMA_PERSISTENT_PATH,
+    startSsh: false,
+    startJupyter: false,
+    setupKind: 'ollama_download',
+    defaultModel: normalizeModelName(input.defaultModel, OLLAMA_DOWNLOADER_MODEL),
+    servicePort: OLLAMA_PORT,
+    healthPath: '/api/tags',
+    active: true,
+  };
+}
+
+function chooseModelDownloadGpu(gpus = [], dataCenterId, maxHourlyCost, requestedGpuId = '') {
+  const requestedId = safeString(requestedGpuId, 240);
+  const stockRank = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  const candidates = gpus
+    .filter((gpu) => {
+      const id = safeString(gpu?.id, 240);
+      const price = finiteNumber(gpu?.price?.secure);
+      const availability = safeString(gpu?.availability, 20).toUpperCase();
+      const location = (Array.isArray(gpu?.dataCenters) ? gpu.dataCenters : []).find((entry) => (
+        safeString(entry?.id, 100) === dataCenterId
+        && AVAILABLE_STOCK.has(safeString(entry?.availability, 20).toUpperCase())
+      ));
+      return id
+        && (!requestedId || id === requestedId)
+        && Number.isFinite(price)
+        && price > 0
+        && price <= maxHourlyCost
+        && Number(gpu?.maxCount?.secure) >= 1
+        && AVAILABLE_STOCK.has(availability)
+        && location;
+    })
+    .map((gpu) => {
+      const location = gpu.dataCenters.find((entry) => safeString(entry?.id, 100) === dataCenterId);
+      return {
+        gpu,
+        price: finiteNumber(gpu.price.secure),
+        locationAvailability: safeString(location?.availability, 20).toUpperCase(),
+      };
+    })
+    .sort((left, right) => (
+      left.price - right.price
+      || (stockRank[left.locationAvailability] ?? 3) - (stockRank[right.locationAvailability] ?? 3)
+      || safeString(left.gpu.name || left.gpu.id, 240)
+        .localeCompare(safeString(right.gpu.name || right.gpu.id, 240))
+    ));
+  return candidates[0]?.gpu || null;
 }
 
 function providerTemplatePayload(template) {
@@ -551,7 +748,7 @@ function mapGpuForPicker(secureGpu = {}, communityGpu = {}) {
         name: safeString(entry?.name, 160),
         availability: safeString(entry?.availability, 20).toUpperCase(),
       }))
-      .filter((entry) => entry.id),
+      .filter((entry) => entry.id && AVAILABLE_STOCK.has(entry.availability)),
     communityDataCenters: (Array.isArray(communityGpu.dataCenters) ? communityGpu.dataCenters : [])
       .slice(0, 100)
       .map((entry) => ({
@@ -559,7 +756,7 @@ function mapGpuForPicker(secureGpu = {}, communityGpu = {}) {
         name: safeString(entry?.name, 160),
         availability: safeString(entry?.availability, 20).toUpperCase(),
       }))
-      .filter((entry) => entry.id),
+      .filter((entry) => entry.id && AVAILABLE_STOCK.has(entry.availability)),
   };
 }
 
@@ -604,6 +801,7 @@ function mapTemplateForPage(template, providerTemplateIds) {
     diskGb: finiteNumber(value.diskGb),
     persistentDiskGb: finiteNumber(value.persistentDiskGb),
     persistentPath: safeString(value.persistentPath, 300),
+    setupKind: safeString(value.setupKind, 40),
     defaultModel: safeString(value.defaultModel, 120),
     servicePort: finiteNumber(value.servicePort),
     active: value.active === true,
@@ -621,6 +819,7 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
   const actions = provider.id ? normalizeActions(provider.actions) : normalizeActions(local.validActions);
   const providerId = safeString(local.providerPodId || provider.id, 128);
   const usage = projectPodUsage(local, provider, now);
+  const providerNetworkMount = providerPodNetworkVolume(provider);
   let publicUrl = safeString(local.publicUrl, 500);
   if (!publicUrl && providerId && safeArray(local.ports, 20, 40).includes(`${OLLAMA_PORT}/http`)) {
     try {
@@ -634,6 +833,7 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
     providerPodId: providerId,
     name: safeString(local.name || provider.name, 120),
     recordOrigin: safeString(local.recordOrigin, 30) || 'managed',
+    podPurpose: safeString(local.podPurpose, 30) || 'ollama_service',
     providerStatus: status,
     lifecycleGroup: lifecycleGroupForStatus(status, archivedAt),
     validActions: actions,
@@ -644,9 +844,24 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
     setupStatus: safeString(local.setupStatus, 30) || 'not_applicable',
     setupErrorCode: safeString(local.setupErrorCode, 80),
     setupModel: safeString(local.setupModel, 120),
+    setupStartedAt: local.setupStartedAt || null,
+    setupCompletedAt: local.setupCompletedAt || null,
+    autoDeleteAfterSetup: local.autoDeleteAfterSetup === true,
+    cleanupStatus: safeString(local.cleanupStatus, 30) || 'not_required',
+    cleanupErrorCode: safeString(local.cleanupErrorCode, 80),
     publicUrl,
     cloud: safeString(local.cloud || provider.cloud, 20),
     dataCenterId: safeString(provider.dataCenterId || local.dataCenterId, 100),
+    providerNetworkVolumeId: providerNetworkMount.id
+      || safeString(local.providerNetworkVolumeId, 128),
+    networkVolumeName: safeString(local.networkVolumeName, 120),
+    networkVolumeType: normalizeProviderNetworkVolumeType(local.networkVolumeType),
+    networkVolumeSizeGb: finiteNumber(local.networkVolumeSizeGb),
+    networkVolumeMountPath: providerNetworkMount.path
+      || safeString(local.networkVolumeMountPath, 300),
+    diskGb: finiteNumber(local.diskGb),
+    persistentDiskGb: finiteNumber(local.persistentDiskGb),
+    persistentPath: safeString(local.persistentPath, 300),
     gpuId: safeString(provider.gpu?.id || local.gpu?.id, 240),
     gpuName: safeString(local.gpu?.name || provider.gpu?.id, 240),
     gpuMemoryGb: finiteNumber(local.gpu?.memoryGb),
@@ -690,6 +905,7 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
 
 function mapUnmanagedProviderPod(provider = {}) {
   const status = normalizeProviderStatus(provider.status);
+  const networkVolume = providerPodNetworkVolume(provider);
   return {
     providerPodId: safeString(provider.id, 128),
     name: safeString(provider.name, 120),
@@ -699,6 +915,8 @@ function mapUnmanagedProviderPod(provider = {}) {
     gpuCount: finiteNumber(provider.gpu?.count),
     cloud: safeString(provider.cloud, 20),
     dataCenterId: safeString(provider.dataCenterId, 100),
+    providerNetworkVolumeId: networkVolume.id,
+    networkVolumeMountPath: networkVolume.path,
     costPerHour: finiteNumber(provider.cost),
   };
 }
@@ -948,6 +1166,7 @@ class RunpodPodManager {
   constructor({
     runpodService = new RunpodApiV2Service(),
     podModel = RunpodPod,
+    networkVolumeModel = RunpodNetworkVolume,
     templateModel = RunpodWorkloadTemplate,
     eventModel = RunpodOperationEvent,
     fetchImpl = global.fetch,
@@ -959,6 +1178,18 @@ class RunpodPodManager {
     maxHourlyCostUsd = positiveNumber(
       process.env.RUNPOD_MAX_HOURLY_COST_USD,
       DEFAULT_MAX_HOURLY_COST_USD
+    ),
+    maxNetworkVolumeGb = positiveInteger(
+      process.env.RUNPOD_MAX_NETWORK_VOLUME_GB,
+      DEFAULT_MAX_NETWORK_VOLUME_GB
+    ),
+    maxNetworkVolumeMonthlyCostUsd = positiveNumber(
+      process.env.RUNPOD_MAX_NETWORK_VOLUME_MONTHLY_COST_USD,
+      DEFAULT_MAX_NETWORK_VOLUME_MONTHLY_COST_USD
+    ),
+    highPerformanceStorageUsdPerGbMonth = positiveNumber(
+      process.env.RUNPOD_HIGH_PERFORMANCE_STORAGE_USD_PER_GB_MONTH,
+      null
     ),
     defaultAutoStopMinutes = positiveInteger(
       process.env.RUNPOD_DEFAULT_AUTO_STOP_MINUTES,
@@ -976,6 +1207,10 @@ class RunpodPodManager {
       process.env.RUNPOD_OLLAMA_PULL_TIMEOUT_MS,
       DEFAULT_OLLAMA_PULL_TIMEOUT_MS
     ),
+    modelDownloadTimeoutMs = positiveInteger(
+      process.env.RUNPOD_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS,
+      DEFAULT_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS
+    ),
     pollIntervalMs = positiveInteger(
       process.env.RUNPOD_POLL_INTERVAL_MS,
       DEFAULT_POLL_INTERVAL_MS
@@ -983,6 +1218,7 @@ class RunpodPodManager {
   } = {}) {
     this.runpodService = runpodService;
     this.podModel = podModel;
+    this.networkVolumeModel = networkVolumeModel;
     this.templateModel = templateModel;
     this.eventModel = eventModel;
     this.fetch = fetchImpl;
@@ -990,8 +1226,11 @@ class RunpodPodManager {
     this.now = now;
     this.sleep = sleepImpl;
     this.maxActivePods = Math.min(maxActivePods, 20);
-    this.maxGpuCount = Math.min(maxGpuCount, 16);
-    this.maxHourlyCostUsd = Math.min(maxHourlyCostUsd, 100);
+    this.maxGpuCount = Math.min(maxGpuCount, 32);
+    this.maxHourlyCostUsd = Math.min(maxHourlyCostUsd, 500);
+    this.maxNetworkVolumeGb = Math.min(maxNetworkVolumeGb, 4096);
+    this.maxNetworkVolumeMonthlyCostUsd = Math.min(maxNetworkVolumeMonthlyCostUsd, 500);
+    this.highPerformanceStorageUsdPerGbMonth = highPerformanceStorageUsdPerGbMonth;
     this.maxRuntimeMinutes = Math.max(15, Math.min(maxRuntimeMinutes, 7 * 24 * 60));
     this.defaultAutoStopMinutes = Math.max(
       15,
@@ -999,10 +1238,12 @@ class RunpodPodManager {
     );
     this.provisionTimeoutMs = provisionTimeoutMs;
     this.ollamaPullTimeoutMs = ollamaPullTimeoutMs;
+    this.modelDownloadTimeoutMs = modelDownloadTimeoutMs;
     this.pollIntervalMs = pollIntervalMs;
     this.provisioning = new Map();
     this.creationQueue = Promise.resolve();
     this.templateQueue = Promise.resolve();
+    this.networkVolumeQueue = Promise.resolve();
   }
 
   limits() {
@@ -1010,7 +1251,19 @@ class RunpodPodManager {
       maxActivePods: this.maxActivePods,
       maxGpuCount: this.maxGpuCount,
       maxHourlyCostUsd: this.maxHourlyCostUsd,
+      maxNetworkVolumeGb: this.maxNetworkVolumeGb,
+      maxNetworkVolumeMonthlyCostUsd: this.maxNetworkVolumeMonthlyCostUsd,
+      standardStorageUsdPerGbMonth: DEFAULT_STANDARD_STORAGE_USD_PER_GB_MONTH,
+      highPerformanceStorageUsdPerGbMonth: this.highPerformanceStorageUsdPerGbMonth,
       defaultAutoStopMinutes: this.defaultAutoStopMinutes,
+      defaultModelDownloadAutoStopMinutes: Math.min(
+        DEFAULT_MODEL_DOWNLOAD_AUTO_STOP_MINUTES,
+        this.maxRuntimeMinutes
+      ),
+      defaultModelDownloadMaxHourlyCostUsd: Math.min(
+        DEFAULT_MODEL_DOWNLOAD_MAX_HOURLY_COST_USD,
+        this.maxHourlyCostUsd
+      ),
       maxRuntimeMinutes: this.maxRuntimeMinutes,
     };
   }
@@ -1070,21 +1323,56 @@ class RunpodPodManager {
     }
   }
 
+  async persistNetworkVolumeOperationError(providerNetworkVolumeId, action, error, actor) {
+    try {
+      await this.networkVolumeModel.updateOne(
+        { providerNetworkVolumeId, archivedAt: null },
+        {
+          $set: {
+            lastOperationError: networkVolumeOperationErrorForPersistence(
+              action,
+              error,
+              this.now()
+            ),
+            updatedBy: actor,
+          },
+        }
+      );
+    } catch (persistenceError) {
+      this.logger.warning('Unable to persist the latest Runpod network volume operation error', {
+        category: 'runpod_management',
+        metadata: {
+          action,
+          errorName: safeString(persistenceError?.name, 80) || 'Error',
+        },
+      });
+    }
+  }
+
   async getAdminState() {
     const operations = {
       templates: () => this.templateModel.find({ active: true }).sort({ name: 1 }).lean(),
       pods: () => this.podModel.find({}).sort({ createdAt: -1 }).limit(MAX_LOCAL_PODS).lean(),
+      networkVolumes: () => this.networkVolumeModel.find({})
+        .sort({ createdAt: -1 })
+        .limit(MAX_LOCAL_NETWORK_VOLUMES)
+        .lean(),
       providerPods: () => this.runpodService.listPods(),
+      providerNetworkVolumes: () => this.runpodService.listNetworkVolumes(),
       providerTemplates: () => this.runpodService.getAccountTemplates(),
       secureGpus: () => this.runpodService.getGpuTypes({ cloud: 'SECURE' }),
       communityGpus: () => this.runpodService.getGpuTypes({ cloud: 'COMMUNITY' }),
     };
     const entries = Object.entries(operations);
-    const settled = await Promise.allSettled(entries.map(([, operation]) => operation()));
+    const settled = await Promise.allSettled(
+      entries.map(([, operation]) => Promise.resolve().then(operation))
+    );
     const values = {
       templates: [],
       pods: [],
+      networkVolumes: [],
       providerPods: [],
+      providerNetworkVolumes: [],
       providerTemplates: [],
       secureGpus: [],
       communityGpus: [],
@@ -1103,6 +1391,7 @@ class RunpodPodManager {
     });
 
     const providerPods = values.providerPods.slice(0, MAX_PROVIDER_PODS);
+    const providerNetworkVolumes = values.providerNetworkVolumes.slice(0, MAX_PROVIDER_NETWORK_VOLUMES);
     const providerTemplates = values.providerTemplates.slice(0, MAX_PROVIDER_TEMPLATES);
     const providerPodsById = new Map(providerPods.map((pod) => [safeString(pod?.id, 128), pod]));
     const providerTemplateIds = new Set(
@@ -1111,6 +1400,30 @@ class RunpodPodManager {
     const localProviderPodIds = new Set(
       values.pods.map((pod) => safeString(pod?.providerPodId, 128)).filter(Boolean)
     );
+    const providerNetworkVolumesById = new Map(
+      providerNetworkVolumes.map((volume) => [safeString(volume?.id, 128), volume])
+    );
+    const localProviderNetworkVolumeIds = new Set(
+      values.networkVolumes
+        .map((volume) => safeString(volume?.providerNetworkVolumeId, 128))
+        .filter(Boolean)
+    );
+    const attachedPodCounts = new Map();
+    const providerPodIds = new Set(providerPods.map((pod) => safeString(pod?.id, 128)));
+    const podsForAttachmentCounts = [
+      ...providerPods,
+      ...values.pods.filter((pod) => (
+        !pod?.archivedAt
+        && pod?.lifecycleGroup !== 'archived'
+        && !providerPodIds.has(safeString(pod?.providerPodId, 128))
+      )),
+    ];
+    podsForAttachmentCounts.forEach((pod) => {
+      const providerMount = providerPodNetworkVolume(pod);
+      const volumeId = providerMount.id || safeString(pod?.providerNetworkVolumeId, 128);
+      if (!volumeId) return;
+      attachedPodCounts.set(volumeId, (attachedPodCounts.get(volumeId) || 0) + 1);
+    });
     const pageNow = this.now();
     const mappedPods = values.pods.map((pod) => (
       mapPodForPage(
@@ -1119,12 +1432,37 @@ class RunpodPodManager {
         pageNow
       )
     ));
+    const mappedNetworkVolumes = values.networkVolumes.map((volume) => {
+      const providerId = safeString(volume?.providerNetworkVolumeId, 128);
+      return mapNetworkVolumeForPage(
+        volume,
+        providerNetworkVolumesById.get(providerId),
+        attachedPodCounts.get(providerId) || 0
+      );
+    });
+    providerNetworkVolumes
+      .filter((volume) => !localProviderNetworkVolumeIds.has(safeString(volume?.id, 128)))
+      .forEach((volume) => {
+        mappedNetworkVolumes.push(mapNetworkVolumeForPage(
+          null,
+          volume,
+          attachedPodCounts.get(safeString(volume?.id, 128)) || 0
+        ));
+      });
 
     return {
       limits: this.limits(),
       templates: values.templates.map((template) => mapTemplateForPage(template, providerTemplateIds)),
-      managedPods: mappedPods.filter((pod) => pod.lifecycleGroup !== 'archived'),
-      archivedPods: mappedPods.filter((pod) => pod.lifecycleGroup === 'archived'),
+      managedPods: mappedPods.filter((pod) => (
+        pod.podPurpose !== 'model_download' && pod.lifecycleGroup !== 'archived'
+      )),
+      archivedPods: mappedPods.filter((pod) => (
+        pod.podPurpose !== 'model_download' && pod.lifecycleGroup === 'archived'
+      )),
+      modelDownloads: mappedPods.filter((pod) => pod.podPurpose === 'model_download'),
+      networkVolumes: mappedNetworkVolumes.filter((volume) => volume.lifecycleGroup === 'active'),
+      archivedNetworkVolumes: mappedNetworkVolumes
+        .filter((volume) => volume.lifecycleGroup === 'archived'),
       unmanagedProviderPods: providerPods
         .filter((pod) => !localProviderPodIds.has(safeString(pod?.id, 128)))
         .map(mapUnmanagedProviderPod),
@@ -1134,16 +1472,313 @@ class RunpodPodManager {
     };
   }
 
+  estimateNetworkVolumeMonthlyCost(sizeGb, volumeType) {
+    if (volumeType === 'STANDARD') {
+      return estimateStandardNetworkVolumeMonthlyCost(sizeGb);
+    }
+    if (volumeType === 'HIGH_PERFORMANCE' && this.highPerformanceStorageUsdPerGbMonth) {
+      return sizeGb * this.highPerformanceStorageUsdPerGbMonth;
+    }
+    return null;
+  }
+
+  async trackProviderNetworkVolume(providerVolume, actor, recordOrigin = 'provider_import') {
+    const providerNetworkVolumeId = safeString(providerVolume?.id, 128);
+    if (!PROVIDER_RESOURCE_ID_PATTERN.test(providerNetworkVolumeId)) {
+      throw new RunpodManagementError('Runpod did not return a valid network volume ID.', {
+        code: 'RUNPOD_INVALID_RESPONSE',
+        status: 502,
+      });
+    }
+    const fields = providerNetworkVolumeFields(providerVolume, this.now());
+    if (!fields.name || !fields.dataCenterId) {
+      throw new RunpodManagementError('Runpod returned incomplete network volume data.', {
+        code: 'RUNPOD_INVALID_RESPONSE',
+        status: 502,
+      });
+    }
+    return this.networkVolumeModel.findOneAndUpdate(
+      { providerNetworkVolumeId },
+      {
+        $set: {
+          ...fields,
+          lastOperationError: null,
+          updatedBy: actor,
+        },
+        $setOnInsert: {
+          recordOrigin,
+          createdBy: actor,
+        },
+      },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    );
+  }
+
+  createManagedNetworkVolume(input, principal) {
+    const operation = this.networkVolumeQueue.then(() => (
+      this._createManagedNetworkVolume(input, principal)
+    ));
+    this.networkVolumeQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  async _createManagedNetworkVolume(input = {}, principal) {
+    const actor = actorFromPrincipal(principal);
+    const name = normalizeNetworkVolumeName(input.name);
+    const sizeGb = strictInteger(input.sizeGb, {
+      label: 'Network volume size',
+      min: 10,
+      max: this.maxNetworkVolumeGb,
+    });
+    const volumeType = normalizeNetworkVolumeType(input.volumeType || 'STANDARD');
+    const dataCenterId = safeString(input.dataCenterId, 100);
+    if (!PROVIDER_RESOURCE_ID_PATTERN.test(dataCenterId)) {
+      throw new RunpodManagementError('Choose a valid network-volume data center.', {
+        code: 'RUNPOD_INPUT_INVALID',
+      });
+    }
+    if (input.storageBillingAcknowledged !== 'acknowledged') {
+      throw new RunpodManagementError('Acknowledge that network storage bills until deletion.', {
+        code: 'RUNPOD_NETWORK_VOLUME_BILLING_NOT_ACKNOWLEDGED',
+      });
+    }
+
+    const estimatedMonthlyCostUsd = this.estimateNetworkVolumeMonthlyCost(sizeGb, volumeType);
+    if (!Number.isFinite(estimatedMonthlyCostUsd)) {
+      throw new RunpodManagementError(
+        'High-performance storage creation is disabled until its current per-GB rate is configured.',
+        { code: 'RUNPOD_NETWORK_VOLUME_RATE_NOT_CONFIGURED', status: 409 }
+      );
+    }
+    const maxMonthlyCost = strictMoney(input.maxMonthlyCost, {
+      label: 'Maximum monthly storage cost',
+      max: this.maxNetworkVolumeMonthlyCostUsd,
+    });
+    if (
+      estimatedMonthlyCostUsd > maxMonthlyCost
+      || estimatedMonthlyCostUsd > this.maxNetworkVolumeMonthlyCostUsd
+    ) {
+      throw new RunpodManagementError(
+        'The estimated network-volume price exceeds the confirmed monthly limit.',
+        { code: 'RUNPOD_NETWORK_VOLUME_COST_LIMIT_EXCEEDED', status: 409 }
+      );
+    }
+
+    const dataCenters = await this.runpodService.getDataCenters({ forceRefresh: true });
+    const dataCenter = dataCenters.find((entry) => safeString(entry?.id, 100) === dataCenterId);
+    const supportedTypes = safeArray(dataCenter?.networkVolumeTypes, 10, 40)
+      .map((entry) => entry.toUpperCase());
+    if (!dataCenter || !supportedTypes.includes(volumeType)) {
+      throw new RunpodManagementError(
+        'The selected data center does not offer that network-volume tier.',
+        { code: 'RUNPOD_NETWORK_VOLUME_DATACENTER_UNAVAILABLE', status: 409 }
+      );
+    }
+
+    let providerVolume;
+    let localVolume;
+    try {
+      providerVolume = await this.runpodService.createNetworkVolume({
+        name,
+        size: sizeGb,
+        dataCenter: dataCenterId,
+        type: volumeType,
+      });
+      localVolume = await this.trackProviderNetworkVolume(providerVolume, actor, 'managed');
+      await this.recordEvent({
+        resourceType: 'network_volume',
+        networkVolumeRecordId: localVolume?._id || null,
+        action: 'create',
+        outcome: 'succeeded',
+        actor,
+      });
+      return networkVolumeToPlain(localVolume);
+    } catch (error) {
+      if (providerVolume?.id && !localVolume) {
+        try {
+          await this.runpodService.deleteNetworkVolume(providerVolume.id);
+        } catch (cleanupError) {
+          this.logger.error('Failed to delete an untracked Runpod network volume after creation failure', {
+            category: 'runpod_management',
+            metadata: {
+              action: 'network_volume_create_cleanup',
+              errorCode: safeString(cleanupError?.code, 80) || 'RUNPOD_CLEANUP_FAILED',
+              providerStatus: providerStatusForError(cleanupError),
+            },
+          });
+        }
+      }
+      await this.recordEvent({
+        resourceType: 'network_volume',
+        action: 'create',
+        outcome: 'failed',
+        providerStatus: providerStatusForError(error),
+        errorCode: safeString(error?.code, 80) || 'RUNPOD_NETWORK_VOLUME_CREATE_FAILED',
+        actor,
+      });
+      this.logOperationFailure('Runpod network volume creation failed', 'network_volume_create', error);
+      throw error;
+    }
+  }
+
+  async syncProviderNetworkVolumes(principal, { recordEvent = true } = {}) {
+    const actor = actorFromPrincipal(principal);
+    const providerVolumes = (await this.runpodService.listNetworkVolumes())
+      .slice(0, MAX_PROVIDER_NETWORK_VOLUMES);
+    const providerIds = new Set();
+    let imported = 0;
+    let updated = 0;
+    for (const providerVolume of providerVolumes) {
+      const providerId = safeString(providerVolume?.id, 128);
+      if (!PROVIDER_RESOURCE_ID_PATTERN.test(providerId)) continue;
+      providerIds.add(providerId);
+      const existing = await this.networkVolumeModel.findOne({
+        providerNetworkVolumeId: providerId,
+      }).lean();
+      await this.trackProviderNetworkVolume(
+        providerVolume,
+        actor,
+        existing?.recordOrigin || 'provider_import'
+      );
+      if (existing) updated += 1;
+      else imported += 1;
+    }
+
+    const missing = await this.networkVolumeModel.find({
+      archivedAt: null,
+      providerNetworkVolumeId: { $nin: Array.from(providerIds) },
+    }).limit(MAX_LOCAL_NETWORK_VOLUMES).lean();
+    const now = this.now();
+    for (const volume of missing) {
+      await this.networkVolumeModel.updateOne(
+        { _id: volume._id, archivedAt: null },
+        {
+          $set: {
+            lifecycleGroup: 'archived',
+            providerPresent: false,
+            archivedAt: now,
+            lastProviderSyncAt: now,
+            updatedBy: actor,
+          },
+        }
+      );
+    }
+
+    if (recordEvent) {
+      await this.recordEvent({
+        resourceType: 'network_volume',
+        action: 'sync',
+        outcome: 'succeeded',
+        actor,
+      });
+    }
+    return { imported, updated, archived: missing.length };
+  }
+
+  async deleteManagedNetworkVolume(networkVolumeRecordId, confirmation, principal) {
+    const actor = actorFromPrincipal(principal);
+    const recordId = safeString(networkVolumeRecordId, 30);
+    if (!OBJECT_ID_PATTERN.test(recordId)) {
+      throw new RunpodManagementError('Network volume not found.', {
+        code: 'RUNPOD_NETWORK_VOLUME_NOT_FOUND',
+        status: 404,
+      });
+    }
+
+    const localVolume = await this.networkVolumeModel.findOne({
+      _id: recordId,
+      archivedAt: null,
+    }).lean();
+    const providerId = safeString(localVolume?.providerNetworkVolumeId, 128);
+    if (!localVolume || !PROVIDER_RESOURCE_ID_PATTERN.test(providerId)) {
+      throw new RunpodManagementError('Network volume not found.', {
+        code: 'RUNPOD_NETWORK_VOLUME_NOT_FOUND',
+        status: 404,
+      });
+    }
+
+    const [providerVolumes, providerPods] = await Promise.all([
+      this.runpodService.listNetworkVolumes(),
+      this.runpodService.listPods(),
+    ]);
+    const providerVolume = providerVolumes.find((volume) => safeString(volume?.id, 128) === providerId);
+    const expectedName = safeString(providerVolume?.name || localVolume?.name, 120);
+    if (!expectedName || safeString(confirmation, 120) !== expectedName) {
+      throw new RunpodManagementError(
+        'Type the exact network volume name to confirm permanent deletion.',
+        { code: 'RUNPOD_NETWORK_VOLUME_DELETE_CONFIRMATION_REQUIRED' }
+      );
+    }
+    const attached = providerPods.some((pod) => providerPodNetworkVolume(pod).id === providerId);
+    if (attached) {
+      throw new RunpodManagementError(
+        'Delete every Pod attached to this network volume before deleting the volume.',
+        { code: 'RUNPOD_NETWORK_VOLUME_IN_USE', status: 409 }
+      );
+    }
+
+    const tracked = localVolume;
+    try {
+      if (providerVolume) await this.runpodService.deleteNetworkVolume(providerId);
+      const now = this.now();
+      await this.networkVolumeModel.updateOne(
+        { _id: tracked._id },
+        {
+          $set: {
+            lifecycleGroup: 'archived',
+            providerPresent: false,
+            archivedAt: now,
+            lastProviderSyncAt: now,
+            lastOperationError: null,
+            updatedBy: actor,
+          },
+        }
+      );
+      await this.recordEvent({
+        resourceType: 'network_volume',
+        networkVolumeRecordId: tracked._id,
+        action: 'delete',
+        outcome: 'succeeded',
+        actor,
+      });
+      return true;
+    } catch (error) {
+      await this.persistNetworkVolumeOperationError(providerId, 'delete', error, actor);
+      await this.recordEvent({
+        resourceType: 'network_volume',
+        networkVolumeRecordId: tracked?._id || null,
+        action: 'delete',
+        outcome: 'failed',
+        providerStatus: providerStatusForError(error),
+        errorCode: safeString(error?.code, 80) || 'RUNPOD_NETWORK_VOLUME_DELETE_FAILED',
+        actor,
+      });
+      this.logOperationFailure('Runpod network volume deletion failed', 'network_volume_delete', error);
+      throw error;
+    }
+  }
+
   saveOllamaTemplate(input, principal) {
-    const operation = this.templateQueue.then(() => this._saveOllamaTemplate(input, principal));
+    const operation = this.templateQueue.then(() => this._saveOllamaTemplate(
+      normalizeTemplateInput(input),
+      principal
+    ));
     this.templateQueue = operation.catch(() => {});
     return operation;
   }
 
-  async _saveOllamaTemplate(input, principal) {
-    const normalized = normalizeTemplateInput(input);
+  saveOllamaDownloaderTemplate(input, principal) {
+    const operation = this.templateQueue.then(() => this._saveOllamaTemplate(
+      normalizeDownloaderTemplateInput(input),
+      principal
+    ));
+    this.templateQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  async _saveOllamaTemplate(normalized, principal) {
     const actor = actorFromPrincipal(principal);
-    let localTemplate = await this.templateModel.findOne({ slug: OLLAMA_TEMPLATE_SLUG }).lean();
+    let localTemplate = await this.templateModel.findOne({ slug: normalized.slug }).lean();
     let providerTemplate;
     try {
       const providerTemplates = await this.runpodService.getAccountTemplates();
@@ -1165,7 +1800,7 @@ class RunpodPodManager {
       }
       const now = this.now();
       localTemplate = await this.templateModel.findOneAndUpdate(
-        { slug: OLLAMA_TEMPLATE_SLUG },
+        { slug: normalized.slug },
         {
           $set: {
             ...normalized,
@@ -1220,8 +1855,112 @@ class RunpodPodManager {
     return operation;
   }
 
-  async _createManagedPod(input = {}, principal) {
+  createModelDownload(input, principal) {
+    const operation = this.creationQueue.then(() => this._createModelDownload(input, principal));
+    this.creationQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  async _createModelDownload(input = {}, principal) {
+    const model = normalizeModelName(input.model, OLLAMA_DOWNLOADER_MODEL);
+    const providerNetworkVolumeId = safeString(input.networkVolumeId, 128);
+    if (!PROVIDER_RESOURCE_ID_PATTERN.test(providerNetworkVolumeId)) {
+      throw new RunpodManagementError('Choose a network volume for the model download.', {
+        code: 'RUNPOD_INPUT_INVALID',
+      });
+    }
+    if (input.publicAccessAcknowledged !== 'acknowledged') {
+      throw new RunpodManagementError('Acknowledge the temporary public Ollama proxy URL.', {
+        code: 'RUNPOD_PUBLIC_ACCESS_NOT_ACKNOWLEDGED',
+      });
+    }
+    const maxHourlyCost = strictMoney(
+      input.maxHourlyCost || Math.min(
+        DEFAULT_MODEL_DOWNLOAD_MAX_HOURLY_COST_USD,
+        this.maxHourlyCostUsd
+      ).toFixed(2),
+      { label: 'Maximum downloader hourly cost', max: this.maxHourlyCostUsd }
+    );
+    const autoStopMinutes = strictInteger(
+      input.autoStopMinutes || Math.min(
+        DEFAULT_MODEL_DOWNLOAD_AUTO_STOP_MINUTES,
+        this.maxRuntimeMinutes
+      ),
+      { label: 'Download time limit', min: 15, max: this.maxRuntimeMinutes }
+    );
+    const diskGb = strictInteger(input.diskGb || 20, {
+      label: 'Container disk', min: 5, max: 500,
+    });
+    const requestedGpuId = safeString(input.gpuId, 240);
+    const [providerNetworkVolumes, secureGpus] = await Promise.all([
+      this.runpodService.listNetworkVolumes(),
+      this.runpodService.getGpuTypes({ cloud: 'SECURE', forceRefresh: true }),
+    ]);
+    const volume = providerNetworkVolumes.find((entry) => (
+      safeString(entry?.id, 128) === providerNetworkVolumeId
+    ));
+    if (!volume) {
+      throw new RunpodManagementError('The selected network volume no longer exists.', {
+        code: 'RUNPOD_NETWORK_VOLUME_NOT_FOUND', status: 404,
+      });
+    }
+    const dataCenterId = safeString(volume.dataCenter, 100);
+    const selectedGpu = chooseModelDownloadGpu(
+      secureGpus,
+      dataCenterId,
+      maxHourlyCost,
+      requestedGpuId
+    );
+    if (!selectedGpu) {
+      throw new RunpodManagementError(
+        requestedGpuId
+          ? 'The requested downloader GPU is unavailable in the volume location or exceeds the cost limit.'
+          : 'No Secure Cloud GPU is currently available in the volume location below the downloader cost limit.',
+        { code: 'RUNPOD_DOWNLOAD_GPU_UNAVAILABLE', status: 409 }
+      );
+    }
+
+    const template = await this.saveOllamaDownloaderTemplate({
+      defaultModel: model,
+      diskGb,
+    }, principal);
+    const templateId = template?._id?.toString?.() || safeString(template?._id, 30);
+    const modelStem = model.replace(/[^a-z0-9]+/gu, '-').replace(/^-|-$/gu, '').slice(0, 44);
+    const name = normalizePodName(
+      `download-${modelStem || 'ollama-model'}-${this.now().getTime().toString(36)}`
+    );
+    return this._createManagedPod({
+      name,
+      templateId,
+      networkVolumeId: providerNetworkVolumeId,
+      cloud: 'SECURE',
+      gpuId: safeString(selectedGpu.id, 240),
+      gpuCount: '1',
+      dataCenterId,
+      model,
+      diskGb: String(diskGb),
+      autoStopMinutes: String(autoStopMinutes),
+      maxHourlyCost: String(maxHourlyCost),
+      publicAccessAcknowledged: 'acknowledged',
+    }, principal, {
+      podPurpose: 'model_download',
+      autoDeleteAfterSetup: true,
+    });
+  }
+
+  async _createManagedPod(input = {}, principal, options = {}) {
     const actor = actorFromPrincipal(principal);
+    const podPurpose = options.podPurpose === 'model_download'
+      ? 'model_download'
+      : 'ollama_service';
+    const autoDeleteAfterSetup = podPurpose === 'model_download'
+      && options.autoDeleteAfterSetup === true;
+    const providerNetworkVolumeId = safeString(input.networkVolumeId, 128);
+    if (providerNetworkVolumeId && !PROVIDER_RESOURCE_ID_PATTERN.test(providerNetworkVolumeId)) {
+      throw new RunpodManagementError('Choose a valid network volume.', {
+        code: 'RUNPOD_INPUT_INVALID',
+      });
+    }
     const templateId = safeString(input.templateId, 30);
     if (!OBJECT_ID_PATTERN.test(templateId)) {
       throw new RunpodManagementError('Choose a valid workload template.', {
@@ -1234,11 +1973,30 @@ class RunpodPodManager {
         code: 'RUNPOD_TEMPLATE_NOT_READY', status: 409,
       });
     }
+    const expectedSetupKind = podPurpose === 'model_download'
+      ? 'ollama_download'
+      : 'ollama_pull';
+    if (template.setupKind !== expectedSetupKind) {
+      throw new RunpodManagementError('The selected workload template does not match this operation.', {
+        code: 'RUNPOD_TEMPLATE_NOT_READY', status: 409,
+      });
+    }
+    if (podPurpose === 'model_download' && !providerNetworkVolumeId) {
+      throw new RunpodManagementError('Model downloads require a network volume.', {
+        code: 'RUNPOD_INPUT_INVALID',
+      });
+    }
 
     const cloud = safeString(input.cloud, 20).toUpperCase();
     if (!['SECURE', 'COMMUNITY'].includes(cloud)) {
       throw new RunpodManagementError('Choose Secure or Community Cloud.', {
         code: 'RUNPOD_INPUT_INVALID',
+      });
+    }
+    if (providerNetworkVolumeId && cloud !== 'SECURE') {
+      throw new RunpodManagementError('Runpod Pod network volumes require Secure Cloud.', {
+        code: 'RUNPOD_NETWORK_VOLUME_SECURE_CLOUD_REQUIRED',
+        status: 409,
       });
     }
     const gpuId = safeString(input.gpuId, 240);
@@ -1261,9 +2019,12 @@ class RunpodPodManager {
       });
     }
 
-    const [providerPods, gpuCatalog] = await Promise.all([
+    const [providerPods, gpuCatalog, providerNetworkVolumes] = await Promise.all([
       this.runpodService.listPods(),
       this.runpodService.getGpuTypes({ cloud, forceRefresh: true }),
+      providerNetworkVolumeId
+        ? this.runpodService.listNetworkVolumes()
+        : Promise.resolve([]),
     ]);
     const activePodCount = providerPods.filter((pod) => (
       ACTIVE_PROVIDER_STATUSES.has(normalizeProviderStatus(pod?.status))
@@ -1300,7 +2061,38 @@ class RunpodPodManager {
       });
     }
 
-    const dataCenterId = safeString(input.dataCenterId, 100);
+    const selectedNetworkVolume = providerNetworkVolumeId
+      ? providerNetworkVolumes.find((volume) => (
+        safeString(volume?.id, 128) === providerNetworkVolumeId
+      ))
+      : null;
+    if (providerNetworkVolumeId && !selectedNetworkVolume) {
+      throw new RunpodManagementError('The selected network volume no longer exists.', {
+        code: 'RUNPOD_NETWORK_VOLUME_NOT_FOUND',
+        status: 404,
+      });
+    }
+    if (providerNetworkVolumeId && providerPods.some((pod) => (
+      providerPodNetworkVolume(pod).id === providerNetworkVolumeId
+    ))) {
+      throw new RunpodManagementError(
+        'The selected network volume is already attached to another Pod. Delete that Pod before redeploying this writable Ollama volume.',
+        { code: 'RUNPOD_NETWORK_VOLUME_IN_USE', status: 409 }
+      );
+    }
+    const requestedDataCenterId = safeString(input.dataCenterId, 100);
+    const volumeDataCenterId = safeString(selectedNetworkVolume?.dataCenter, 100);
+    if (
+      selectedNetworkVolume
+      && requestedDataCenterId
+      && requestedDataCenterId !== volumeDataCenterId
+    ) {
+      throw new RunpodManagementError(
+        'The selected network volume and data center do not match.',
+        { code: 'RUNPOD_NETWORK_VOLUME_DATACENTER_MISMATCH', status: 409 }
+      );
+    }
+    const dataCenterId = volumeDataCenterId || requestedDataCenterId;
     const availableDataCenters = Array.isArray(gpu.dataCenters) ? gpu.dataCenters : [];
     if (dataCenterId && !availableDataCenters.some((entry) => (
       safeString(entry?.id, 100) === dataCenterId
@@ -1333,22 +2125,40 @@ class RunpodPodManager {
     const diskGb = strictInteger(input.diskGb || template.diskGb, {
       label: 'Container disk', min: 5, max: 500,
     });
-    const persistentDiskGb = strictInteger(input.persistentDiskGb || template.persistentDiskGb, {
-      label: 'Persistent disk', min: 10, max: 1000,
-    });
+    const persistentDiskGb = selectedNetworkVolume
+      ? null
+      : strictInteger(input.persistentDiskGb || template.persistentDiskGb, {
+        label: 'Persistent disk', min: 10, max: 1000,
+      });
     const setupModel = normalizeModelName(input.model || template.defaultModel);
+    const trackedNetworkVolume = selectedNetworkVolume
+      ? await this.trackProviderNetworkVolume(selectedNetworkVolume, actor, 'provider_import')
+      : null;
     const providerPayload = {
       name,
       templateId: template.providerTemplateId,
       cloud,
       gpu: { id: gpuId, count: gpuCount },
       disk: diskGb,
-      mounts: {
-        persistent: {
-          size: persistentDiskGb,
-          path: template.persistentPath,
+      mounts: selectedNetworkVolume
+        ? {
+          network: [{
+            volumeId: providerNetworkVolumeId,
+            path: OLLAMA_NETWORK_VOLUME_PATH,
+          }],
+        }
+        : {
+          persistent: {
+            size: persistentDiskGb,
+            path: template.persistentPath,
+          },
         },
-      },
+      ...(selectedNetworkVolume ? {
+        env: {
+          OLLAMA_HOST: `0.0.0.0:${OLLAMA_PORT}`,
+          OLLAMA_MODELS: OLLAMA_NETWORK_MODELS_PATH,
+        },
+      } : {}),
       globalNetworking,
       ...(dataCenterId ? { dataCenterIds: [dataCenterId] } : {}),
     };
@@ -1369,11 +2179,15 @@ class RunpodPodManager {
         providerPodId,
         name,
         recordOrigin: 'managed',
+        podPurpose,
         workloadTemplateId: template._id,
         providerTemplateId: template.providerTemplateId,
         ...providerPodFields(providerPod, now),
         setupStatus: 'pending',
         setupModel,
+        autoDeleteAfterSetup,
+        cleanupStatus: autoDeleteAfterSetup ? 'pending' : 'not_required',
+        cleanupErrorCode: null,
         publicUrl: publicOllamaUrl(providerPodId, template.servicePort),
         cloud,
         dataCenterId: safeString(providerPod.dataCenterId || dataCenterId, 100) || null,
@@ -1386,7 +2200,19 @@ class RunpodPodManager {
         },
         diskGb,
         persistentDiskGb,
-        persistentPath: template.persistentPath,
+        persistentPath: selectedNetworkVolume
+          ? OLLAMA_NETWORK_VOLUME_PATH
+          : template.persistentPath,
+        networkVolumeRecordId: trackedNetworkVolume?._id || null,
+        providerNetworkVolumeId: providerNetworkVolumeId || null,
+        networkVolumeName: safeString(selectedNetworkVolume?.name, 120),
+        networkVolumeType: selectedNetworkVolume
+          ? normalizeProviderNetworkVolumeType(selectedNetworkVolume.type)
+          : '',
+        networkVolumeSizeGb: selectedNetworkVolume
+          ? boundedNumber(selectedNetworkVolume.size, 10, 10, 4096)
+          : null,
+        networkVolumeMountPath: selectedNetworkVolume ? OLLAMA_NETWORK_VOLUME_PATH : '',
         ports: safeArray(template.ports, 20, 40),
         estimatedCostPerHour: estimatedCost,
         providerCostPerHour: providerCost,
@@ -1475,11 +2301,19 @@ class RunpodPodManager {
 
   async _provisionPod(podRecordId, actor) {
     const pod = await this.findManagedPod(podRecordId);
+    if (
+      pod.autoDeleteAfterSetup === true
+      && pod.setupStatus === 'ready'
+      && pod.cleanupStatus === 'pending'
+    ) {
+      await this.cleanupCompletedModelDownload(pod._id, actor);
+      return;
+    }
     const template = await this.templateModel.findOne({
       _id: pod.workloadTemplateId,
       active: true,
     }).lean();
-    if (!template || template.setupKind !== 'ollama_pull') {
+    if (!template || !['ollama_pull', 'ollama_download'].includes(template.setupKind)) {
       await this.podModel.updateOne(
         { _id: pod._id, archivedAt: null },
         { $set: { setupStatus: 'not_applicable', updatedBy: actor } }
@@ -1514,9 +2348,15 @@ class RunpodPodManager {
         { _id: pod._id, archivedAt: null },
         { $set: { setupStatus: 'downloading', publicUrl: url, updatedBy: actor } }
       );
-      await this.pullOllamaModel(url, pod.setupModel || template.defaultModel);
-      await this.verifyOllamaModel(url, pod.setupModel || template.defaultModel);
+      const setupModel = pod.setupModel || template.defaultModel;
+      await this.pullOllamaModel(url, setupModel, {
+        timeoutMs: pod.podPurpose === 'model_download'
+          ? this.modelDownloadTimeoutMs
+          : this.ollamaPullTimeoutMs,
+      });
+      await this.verifyOllamaModel(url, setupModel);
       const completedAt = this.now();
+      await this.recordCachedModel(pod, setupModel, completedAt);
       await this.podModel.updateOne(
         { _id: pod._id, archivedAt: null },
         {
@@ -1537,6 +2377,15 @@ class RunpodPodManager {
         outcome: 'succeeded',
         actor,
       });
+      if (pod.autoDeleteAfterSetup === true) {
+        await this.cleanupCompletedModelDownload(pod._id, actor).catch((error) => {
+          this.logOperationFailure(
+            'Runpod model downloader cleanup could not be recorded after setup',
+            'model_download_cleanup',
+            error
+          );
+        });
+      }
     } catch (error) {
       const errorCode = safeString(error?.code, 80) || 'RUNPOD_SETUP_FAILED';
       await this.podModel.updateOne(
@@ -1561,6 +2410,106 @@ class RunpodPodManager {
       });
       this.logOperationFailure('Runpod Ollama setup failed and the pod was stopped when possible', 'setup', error);
       throw error;
+    }
+  }
+
+  async recordCachedModel(pod, model, verifiedAt = this.now()) {
+    const providerNetworkVolumeId = safeString(pod?.providerNetworkVolumeId, 128);
+    if (!providerNetworkVolumeId) return false;
+    const normalizedModel = normalizeModelName(model);
+    try {
+      const result = await this.networkVolumeModel.updateOne(
+        { providerNetworkVolumeId, archivedAt: null },
+        {
+          $addToSet: { cachedModels: normalizedModel },
+          $set: { modelsUpdatedAt: verifiedAt },
+        }
+      );
+      return result?.matchedCount !== 0;
+    } catch (error) {
+      this.logger.warning('Unable to record the verified Ollama model on its Runpod volume', {
+        category: 'runpod_management',
+        metadata: {
+          action: 'model_inventory_update',
+          errorName: safeString(error?.name, 80) || 'Error',
+        },
+      });
+      return false;
+    }
+  }
+
+  async cleanupCompletedModelDownload(podRecordId, actor) {
+    const pod = await this.findManagedPod(podRecordId);
+    await this.podModel.updateOne(
+      { _id: pod._id, archivedAt: null },
+      {
+        $set: {
+          cleanupStatus: 'pending',
+          cleanupErrorCode: null,
+          updatedBy: actor,
+        },
+      }
+    );
+    try {
+      try {
+        await this.runpodService.deletePod(pod.providerPodId);
+      } catch (error) {
+        if (!(error instanceof RunpodApiError) || error.status !== 404) throw error;
+      }
+      const now = this.now();
+      await this.podModel.updateOne(
+        { _id: pod._id, archivedAt: null },
+        {
+          $set: {
+            ...usageFieldsForObservation(pod, 'TERMINATED', now, { archivedAt: now }),
+            providerStatus: 'TERMINATED',
+            lifecycleGroup: 'archived',
+            validActions: [],
+            providerCostPerHour: 0,
+            autoStopAt: null,
+            autoStopClaimedAt: null,
+            cleanupStatus: 'completed',
+            cleanupErrorCode: null,
+            lastOperationError: null,
+            archivedAt: now,
+            lastActionAt: now,
+            lastProviderSyncAt: now,
+            updatedBy: actor,
+          },
+        }
+      );
+      await this.recordEvent({
+        resourceType: 'pod',
+        podRecordId: pod._id,
+        action: 'delete',
+        outcome: 'succeeded',
+        actor,
+      });
+      return true;
+    } catch (error) {
+      const errorCode = safeString(error?.code, 80) || 'RUNPOD_DOWNLOAD_CLEANUP_FAILED';
+      await this.persistPodOperationError(pod._id, 'delete', error, actor, {
+        fields: {
+          cleanupStatus: 'failed',
+          cleanupErrorCode: errorCode,
+        },
+      });
+      await this.recordEvent({
+        resourceType: 'pod',
+        podRecordId: pod._id,
+        action: 'delete',
+        outcome: 'failed',
+        providerStatus: providerStatusForError(error),
+        errorCode,
+        actor,
+      });
+      this.logOperationFailure(
+        'Runpod model downloader cleanup failed after the model was verified',
+        'model_download_cleanup',
+        error
+      );
+      await this.stopProviderPodAfterSetupFailure(pod.providerPodId, pod._id, actor, pod);
+      return false;
     }
   }
 
@@ -1657,9 +2606,10 @@ class RunpodPodManager {
     });
   }
 
-  async pullOllamaModel(baseUrl, model) {
+  async pullOllamaModel(baseUrl, model, { timeoutMs = this.ollamaPullTimeoutMs } = {}) {
     const requested = normalizeModelName(model);
-    const deadline = Date.now() + this.ollamaPullTimeoutMs;
+    const boundedTimeoutMs = positiveInteger(timeoutMs, this.ollamaPullTimeoutMs);
+    const deadline = Date.now() + boundedTimeoutMs;
     let lastError;
     for (let attempt = 1; attempt <= OLLAMA_PULL_MAX_ATTEMPTS; attempt += 1) {
       const remainingMs = deadline - Date.now();
@@ -1993,6 +2943,10 @@ class RunpodPodManager {
           providerCostPerHour: 0,
           autoStopAt: null,
           autoStopClaimedAt: null,
+          ...(pod.autoDeleteAfterSetup === true ? {
+            cleanupStatus: 'completed',
+            cleanupErrorCode: null,
+          } : {}),
           lastOperationError: null,
           archivedAt: now,
           lastActionAt: now,
@@ -2040,6 +2994,12 @@ class RunpodPodManager {
       }
       const ports = safeArray(providerPod.ports, 20, 40);
       const isOllama = ports.includes(`${OLLAMA_PORT}/http`);
+      const networkMount = providerPodNetworkVolume(providerPod);
+      const trackedNetworkVolume = networkMount.id
+        ? await this.networkVolumeModel.findOne({
+          providerNetworkVolumeId: networkMount.id,
+        }).lean()
+        : null;
       const providerStatus = normalizeProviderStatus(providerPod.status);
       const usageState = usageStateForStatus(providerStatus);
       const usageStartedAt = usageState === 'running'
@@ -2060,12 +3020,24 @@ class RunpodPodManager {
         gpu: {
           id: safeString(providerPod.gpu?.id, 240) || 'Unknown GPU',
           name: safeString(providerPod.gpu?.id, 240),
-          count: boundedNumber(providerPod.gpu?.count, 1, 1, 16),
+          count: boundedNumber(providerPod.gpu?.count, 1, 1, 32),
           catalogPricePerHour: Math.max(finiteNumber(providerPod.cost, 0), 0),
         },
         diskGb: boundedNumber(providerPod.disk, 20, 1, 1000),
-        persistentDiskGb: boundedNumber(providerPod.mounts?.persistent?.size, 10, 10, 1000),
-        persistentPath: safeString(providerPod.mounts?.persistent?.path, 300) || '/workspace',
+        persistentDiskGb: networkMount.id
+          ? null
+          : boundedNumber(providerPod.mounts?.persistent?.size, 10, 10, 1000),
+        persistentPath: networkMount.path
+          || safeString(providerPod.mounts?.persistent?.path, 300)
+          || '/workspace',
+        networkVolumeRecordId: trackedNetworkVolume?._id || null,
+        providerNetworkVolumeId: networkMount.id || null,
+        networkVolumeName: safeString(trackedNetworkVolume?.name, 120),
+        networkVolumeType: normalizeProviderNetworkVolumeType(
+          trackedNetworkVolume?.volumeType
+        ),
+        networkVolumeSizeGb: finiteNumber(trackedNetworkVolume?.sizeGb),
+        networkVolumeMountPath: networkMount.path,
         ports,
         estimatedCostPerHour: Math.max(finiteNumber(providerPod.cost, 0), 0),
         lastRunningCostPerHour: Math.max(finiteNumber(providerPod.cost, 0), 0),
@@ -2231,7 +3203,14 @@ class RunpodPodManager {
   async resumePendingProvisioning() {
     const pending = await this.podModel.find({
       archivedAt: null,
-      setupStatus: { $in: ['pending', 'waiting', 'downloading'] },
+      $or: [
+        { setupStatus: { $in: ['pending', 'waiting', 'downloading'] } },
+        {
+          setupStatus: 'ready',
+          autoDeleteAfterSetup: true,
+          cleanupStatus: 'pending',
+        },
+      ],
     }).sort({ updatedAt: 1 }).limit(this.maxActivePods).lean();
     pending.forEach((pod) => {
       this.scheduleProvisioning(pod._id, actorFromPrincipal({ name: 'runpod-setup-recovery' }));
@@ -2246,18 +3225,29 @@ module.exports = {
   ACTIVE_PROVIDER_STATUSES,
   AVAILABLE_STOCK,
   DEFAULT_AUTO_STOP_MINUTES,
+  DEFAULT_MODEL_DOWNLOAD_AUTO_STOP_MINUTES,
+  DEFAULT_MODEL_DOWNLOAD_MAX_HOURLY_COST_USD,
   DEFAULT_MAX_ACTIVE_PODS,
   DEFAULT_MAX_GPU_COUNT,
   DEFAULT_MAX_HOURLY_COST_USD,
+  DEFAULT_MAX_NETWORK_VOLUME_GB,
+  DEFAULT_MAX_NETWORK_VOLUME_MONTHLY_COST_USD,
   DEFAULT_MAX_RUNTIME_MINUTES,
   DEFAULT_OLLAMA_PULL_TIMEOUT_MS,
+  DEFAULT_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_PROVISION_TIMEOUT_MS,
   DEFAULT_STORAGE_RATES,
+  DEFAULT_STANDARD_STORAGE_USD_PER_GB_MONTH,
   MILLISECONDS_PER_HOUR,
   MODEL_PATTERN,
   OLLAMA_IMAGE,
+  OLLAMA_DOWNLOADER_MODEL,
+  OLLAMA_DOWNLOADER_PROVIDER_TEMPLATE_NAME,
+  OLLAMA_DOWNLOADER_TEMPLATE_SLUG,
   OLLAMA_MODEL,
+  OLLAMA_NETWORK_MODELS_PATH,
+  OLLAMA_NETWORK_VOLUME_PATH,
   OLLAMA_PERSISTENT_PATH,
   OLLAMA_PORT,
   OLLAMA_PROVIDER_TEMPLATE_NAME,
@@ -2265,13 +3255,20 @@ module.exports = {
   RunpodManagementError,
   RunpodPodManager,
   actorFromPrincipal,
+  chooseModelDownloadGpu,
   lifecycleGroupForStatus,
   mapPodForPage,
+  mapNetworkVolumeForPage,
   mergeGpuCatalogs,
   normalizeModelName,
+  normalizeDownloaderTemplateInput,
+  normalizeNetworkVolumeName,
+  normalizeNetworkVolumeType,
   normalizePodName,
   normalizeTemplateInput,
   providerPodFields,
+  providerPodNetworkVolume,
+  estimateStandardNetworkVolumeMonthlyCost,
   providerTemplatePayload,
   projectPodUsage,
   publicOllamaUrl,

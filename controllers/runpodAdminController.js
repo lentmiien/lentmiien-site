@@ -29,6 +29,8 @@ const SECTION_LABELS = Object.freeze({
 const NOTICE_MESSAGES = Object.freeze({
   'template-synced': { type: 'success', message: 'The Ollama workload template is synced with Runpod v2.' },
   'template-failed': { type: 'error', message: 'The Ollama workload template could not be synced.' },
+  'model-download-created': { type: 'success', message: 'The model download Pod was created. It will verify the model, delete itself, and keep the network volume.' },
+  'model-download-failed': { type: 'error', message: 'The model download could not be started. Check volume location, GPU availability, and the confirmed cost limit.' },
   'pod-created': { type: 'success', message: 'The pod was created. Ollama setup is running in the background.' },
   'pod-create-failed': { type: 'error', message: 'The pod could not be created. Check current availability and try again.' },
   'pod-started': { type: 'success', message: 'The pod start request was accepted.' },
@@ -47,8 +49,15 @@ const NOTICE_MESSAGES = Object.freeze({
   'pods-sync-failed': { type: 'error', message: 'Provider pod state could not be synchronized.' },
   'billing-synced': { type: 'success', message: 'Monthly account and Pod billing history was synchronized.' },
   'billing-sync-failed': { type: 'error', message: 'Billing history could not be fully synchronized. Stored history remains available.' },
+  'network-volume-created': { type: 'success', message: 'The network volume was created and is ready for Secure Cloud Pods in its data center.' },
+  'network-volume-create-failed': { type: 'error', message: 'The network volume could not be created. Check the storage tier, data center, and confirmed monthly limit.' },
+  'network-volume-deleted': { type: 'success', message: 'The network volume was permanently deleted and archived locally.' },
+  'network-volume-delete-failed': { type: 'error', message: 'The network volume could not be deleted. Detach it from every Pod and confirm its exact name.' },
+  'network-volumes-synced': { type: 'success', message: 'Provider network volumes were synchronized with the local records.' },
+  'network-volumes-sync-failed': { type: 'error', message: 'Network volumes could not be synchronized. Stored records remain available.' },
   'insufficient-balance': { type: 'error', message: 'Runpod reported insufficient account balance for this operation.' },
   'cost-limit': { type: 'error', message: 'The current hourly price exceeds the confirmed or server-side cost limit.' },
+  'storage-cost-limit': { type: 'error', message: 'The estimated monthly storage price exceeds the confirmed or server-side cost limit.' },
 });
 
 const defaultRunpodService = new RunpodApiV2Service();
@@ -324,19 +333,35 @@ function buildPageModel(
     errorSections,
     notice: NOTICE_MESSAGES[filters.notice] || null,
     podManagement: {
-      limits: management.limits || {
+      limits: {
         maxActivePods: 2,
-        maxGpuCount: 4,
-        maxHourlyCostUsd: 10,
+        maxGpuCount: 16,
+        maxHourlyCostUsd: 100,
+        maxNetworkVolumeGb: 2048,
+        maxNetworkVolumeMonthlyCostUsd: 150,
+        standardStorageUsdPerGbMonth: 0.07,
+        highPerformanceStorageUsdPerGbMonth: null,
         defaultAutoStopMinutes: 60,
+        defaultModelDownloadAutoStopMinutes: 240,
+        defaultModelDownloadMaxHourlyCostUsd: 1,
         maxRuntimeMinutes: 1440,
+        ...(management.limits || {}),
       },
       templates: Array.isArray(management.templates) ? management.templates.slice(0, 100) : [],
+      modelDownloads: Array.isArray(management.modelDownloads)
+        ? management.modelDownloads.slice(0, 200).map(mapManagementPod)
+        : [],
       managedPods: Array.isArray(management.managedPods)
         ? management.managedPods.slice(0, 200).map(mapManagementPod)
         : [],
       archivedPods: Array.isArray(management.archivedPods)
         ? management.archivedPods.slice(0, 200).map(mapManagementPod)
+        : [],
+      networkVolumes: Array.isArray(management.networkVolumes)
+        ? management.networkVolumes.slice(0, 200)
+        : [],
+      archivedNetworkVolumes: Array.isArray(management.archivedNetworkVolumes)
+        ? management.archivedNetworkVolumes.slice(0, 200)
         : [],
       unmanagedProviderPods: Array.isArray(management.unmanagedProviderPods)
         ? management.unmanagedProviderPods.slice(0, 200)

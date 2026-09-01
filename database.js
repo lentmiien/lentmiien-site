@@ -188,6 +188,7 @@ const CodexRequestProfile = require('./models/codex_request_profile');
 const CodexLogReviewRun = require('./models/codex_log_review_run');
 const DatabaseAvailabilityIncident = require('./models/database_availability_incident');
 const RunpodPod = require('./models/runpod_pod');
+const RunpodNetworkVolume = require('./models/runpod_network_volume');
 const RunpodWorkloadTemplate = require('./models/runpod_workload_template');
 const RunpodOperationEvent = require('./models/runpod_operation_event');
 const RunpodBillingPeriod = require('./models/runpod_billing_period');
@@ -339,6 +340,7 @@ module.exports = {
   CodexLogReviewRun,
   DatabaseAvailabilityIncident,
   RunpodPod,
+  RunpodNetworkVolume,
   RunpodWorkloadTemplate,
   RunpodOperationEvent,
   RunpodBillingPeriod,

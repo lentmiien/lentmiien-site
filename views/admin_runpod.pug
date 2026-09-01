@@ -15,14 +15,19 @@ block content
   - const operationLabel = (value) => ({ start: 'Pod start', stop: 'Pod stop', extend: 'deadline extension', delete: 'Pod deletion', auto_stop: 'automatic stop' }[value] || 'Pod operation');
   - const isoTimestamp = (value) => { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date.toISOString() : ''; };
   - const refreshHref = `${adminPath}?bucketSize=${encodeURIComponent(filters.bucketSize)}&lastN=${encodeURIComponent(filters.lastN)}&refresh=1`;
-  - const management = podManagement || { limits: {}, templates: [], managedPods: [], archivedPods: [], unmanagedProviderPods: [], gpuOptions: [], errors: {} };
+  - const management = podManagement || { limits: {}, templates: [], managedPods: [], archivedPods: [], modelDownloads: [], networkVolumes: [], archivedNetworkVolumes: [], unmanagedProviderPods: [], gpuOptions: [], errors: {} };
   - const ollamaTemplate = management.templates.find((entry) => entry.slug === 'ollama') || null;
+  - const downloaderTemplate = management.templates.find((entry) => entry.slug === 'ollama-downloader') || null;
+  - const availableNetworkVolumes = management.networkVolumes.filter((volume) => volume.providerPresent && volume.attachedPodCount === 0);
+  - const defaultNetworkVolume = availableNetworkVolumes[0] || null;
+  - const defaultCachedModel = defaultNetworkVolume && defaultNetworkVolume.cachedModels && defaultNetworkVolume.cachedModels.length ? defaultNetworkVolume.cachedModels[0] : 'qwen3.8:27b';
+  - const networkVolumeDataCenters = dataCenters.filter((entry) => entry.networkVolumeTypes.includes('STANDARD') || entry.networkVolumeTypes.includes('HIGH_PERFORMANCE'));
   main.runpod-admin
     header.runpod-hero
       .runpod-hero__content
         p.runpod-eyebrow Infrastructure monitor
         h1 Runpod API v2
-        p.runpod-hero__subtitle Catalog and billing monitoring, reusable workload templates, and guarded Pod lifecycle controls.
+        p.runpod-hero__subtitle Catalog and billing monitoring, regional network storage, reusable workload templates, and guarded Pod lifecycle controls.
       .runpod-hero__actions
         span.runpod-chip REST API #{apiVersion} · public beta
         span.runpod-chip.runpod-chip--muted= apiBaseUrl
@@ -30,7 +35,7 @@ block content
 
     .runpod-scope-note(role='note')
       strong Step 2 is enabled for administrators.
-      |  Pod and template mutations use Runpod REST API v2, CSRF protection, explicit capability checks, a #{formatUsd(management.limits.maxHourlyCostUsd, 2)} server cost ceiling, at most #{formatInteger(management.limits.maxActivePods)} active Pods, and mandatory auto-stop.
+      |  Pod, template, and storage mutations use Runpod REST API v2, CSRF protection, explicit capability checks, a #{formatUsd(management.limits.maxHourlyCostUsd, 2)} server compute ceiling, a #{formatUsd(management.limits.maxNetworkVolumeMonthlyCostUsd, 2)} estimated monthly storage ceiling, at most #{formatInteger(management.limits.maxActivePods)} active Pods, and mandatory auto-stop.
 
     if pageError
       .runpod-alert.runpod-alert--error(role='alert')= pageError
@@ -50,8 +55,299 @@ block content
 
     if management.errors && Object.keys(management.errors).length
       .runpod-alert.runpod-alert--warning(role='alert')
-        strong Some Pod-management data could not be loaded.
+        strong Some compute or storage-management data could not be loaded.
         p Catalog and billing data may still be current. Refresh before making a cost-bearing decision.
+
+    section#network-volumes.runpod-panel(aria-labelledby='runpodNetworkVolumesHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Persistent regional storage
+          h2#runpodNetworkVolumesHeading Network volumes
+          p.runpod-panel__subtitle Store model weights independently from Pods so a replacement Pod in the same data center can reuse them without another download. Network volumes are Secure Cloud resources and continue billing until explicitly deleted.
+        form(method='post', action=`${adminPath}/network-volumes/sync`)
+          input(type='hidden', name='_csrf', value=csrfToken)
+          button.runpod-button.runpod-button--secondary(type='submit') Sync volumes
+
+      .runpod-two-column
+        form.runpod-form(
+          method='post',
+          action=`${adminPath}/network-volumes`,
+          data-runpod-volume-create-form,
+          data-standard-rate=management.limits.standardStorageUsdPerGbMonth,
+          data-high-performance-rate=management.limits.highPerformanceStorageUsdPerGbMonth
+        )
+          input(type='hidden', name='_csrf', value=csrfToken)
+          h3 Create network volume
+          .runpod-form-grid
+            label.runpod-field
+              span Name
+              input(type='text', name='name', maxlength='80', value='ollama-model-cache', pattern='[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}', required)
+            label.runpod-field
+              span Size (GB)
+              input(type='number', name='sizeGb', min='10', max=management.limits.maxNetworkVolumeGb, step='1', value='50', data-volume-size, required)
+            label.runpod-field
+              span Storage tier
+              select(name='volumeType', data-volume-type, required)
+                option(value='STANDARD', selected) Standard
+                option(value='HIGH_PERFORMANCE', disabled=!Number.isFinite(management.limits.highPerformanceStorageUsdPerGbMonth)) High performance#{Number.isFinite(management.limits.highPerformanceStorageUsdPerGbMonth) ? '' : ' · creation disabled until rate is configured'}
+            label.runpod-field
+              span Data center
+              select(name='dataCenterId', data-volume-datacenter, required)
+                option(value='' disabled selected) Choose a storage region
+                each dataCenter in networkVolumeDataCenters
+                  option(
+                    value=dataCenter.id,
+                    data-volume-types=dataCenter.networkVolumeTypes.join('|')
+                  )= `${dataCenter.name} · ${dataCenter.region.replaceAll('_', ' ')} · ${dataCenter.networkVolumeTypes.join(', ')}`
+            label.runpod-field
+              span Confirmed maximum / month
+              input(type='number', name='maxMonthlyCost', min='0.01', max=management.limits.maxNetworkVolumeMonthlyCostUsd, step='0.01', value='10.00', data-volume-cost-limit, required)
+            label.runpod-check.runpod-check--warning
+              input(type='checkbox', name='storageBillingAcknowledged', value='acknowledged', required)
+              span I understand that this volume bills while it exists, even when no Pod is running.
+          .runpod-estimate(role='status' aria-live='polite')
+            span Estimated storage rate
+            strong(data-volume-estimate) Choose a size and tier
+            small Standard storage uses the configured estimate; the provider ledger remains authoritative. Location and storage tier cannot be changed after creation.
+          button.runpod-button.runpod-button--primary(type='submit', data-volume-create-button) Create network volume
+
+        article.runpod-template-summary
+          h3 Storage handoff rules
+          dl
+            div
+              dt Pod cloud
+              dd Secure Cloud only
+            div
+              dt Pod location
+              dd Must match the volume data center
+            div
+              dt Ollama mount
+              dd /workspace with models under /workspace/ollama/models
+            div
+              dt Concurrency
+              dd One writable Ollama Pod per volume; delete the old Pod before attaching a replacement
+          p Stopping a Pod keeps its volume attached. To move the volume to different hardware, permanently delete the old Pod first; deleting a Pod does not delete an independent network volume.
+
+      if management.networkVolumes.length
+        .runpod-volume-grid
+          each volume in management.networkVolumes
+            article.runpod-volume-card
+              .runpod-pod-card__header
+                div
+                  h3= volume.name
+                  code= volume.providerNetworkVolumeId
+                span.runpod-status(class=volume.providerPresent ? 'runpod-status--ready' : 'runpod-status--warning')= volume.providerPresent ? 'READY' : 'PROVIDER MISSING'
+              .runpod-pod-card__metrics
+                div
+                  span Capacity
+                  strong #{formatInteger(volume.sizeGb)} GB
+                div
+                  span Tier
+                  strong= volume.volumeType.replaceAll('_', ' ')
+                div
+                  span Data center
+                  strong= volume.dataCenterId
+                div
+                  span Estimated storage
+                  strong= Number.isFinite(volume.estimatedMonthlyCostUsd) ? `${formatUsd(volume.estimatedMonthlyCostUsd)} / month` : 'See provider rate'
+                div
+                  span Attached Pods
+                  strong= formatInteger(volume.attachedPodCount)
+                div
+                  span Verified Ollama models
+                  strong= volume.cachedModels && volume.cachedModels.length ? volume.cachedModels.join(', ') : 'None recorded yet'
+                div
+                  span Local tracking
+                  strong= volume.trackedLocally ? 'Tracked' : 'Provider resource; sync to import'
+              if volume.lastOperationError
+                .runpod-provider-error.runpod-alert.runpod-alert--error(role='status')
+                  strong Last volume operation failed
+                  p= volume.lastOperationError.message || 'Runpod rejected the operation.'
+                  code= volume.lastOperationError.code || 'RUNPOD_NETWORK_VOLUME_ACTION_FAILED'
+                  if volume.lastOperationError.providerTitle
+                    p= volume.lastOperationError.providerTitle
+                  if volume.lastOperationError.detail && volume.lastOperationError.detail !== volume.lastOperationError.providerTitle
+                    p= volume.lastOperationError.detail
+              if volume.providerPresent && volume.trackedLocally && volume.id
+                details.runpod-delete
+                  summary Permanently delete volume
+                  form(
+                    method='post',
+                    action=`${adminPath}/network-volumes/${volume.id}/delete`,
+                    data-runpod-delete-form,
+                    data-runpod-confirm-name=volume.name
+                  )
+                    input(type='hidden', name='_csrf', value=csrfToken)
+                    label.runpod-field
+                      span Type the exact volume name: #{volume.name}
+                      input(type='text', name='confirmation', maxlength='120', autocomplete='off', required)
+                    button.runpod-button.runpod-button--danger(type='submit', disabled=volume.attachedPodCount > 0) Delete volume and all stored models
+                  if volume.attachedPodCount > 0
+                    p.runpod-form-help Delete the attached Pod before deleting this volume.
+              else if volume.providerPresent
+                p.runpod-form-help Synchronize volumes to import this provider resource before it can be deleted here.
+      else
+        .runpod-empty
+          strong No network volumes
+          p Create a regional model cache above, or synchronize if volumes already exist in the Runpod account.
+
+      if management.archivedNetworkVolumes.length
+        details.runpod-archive-details
+          summary #{formatInteger(management.archivedNetworkVolumes.length)} archived volume record#{management.archivedNetworkVolumes.length === 1 ? '' : 's'}
+          .runpod-table-wrap
+            table.runpod-table
+              caption Archived Runpod network volume records
+              thead
+                tr
+                  th(scope='col') Volume
+                  th(scope='col') Capacity / tier
+                  th(scope='col') Data center
+                  th(scope='col') Archived
+              tbody
+                each volume in management.archivedNetworkVolumes
+                  tr
+                    td.runpod-system
+                      strong= volume.name
+                      code= volume.providerNetworkVolumeId
+                    td #{formatInteger(volume.sizeGb)} GB · #{volume.volumeType.replaceAll('_', ' ')}
+                    td= volume.dataCenterId
+                    td= formatTimestamp(volume.archivedAt)
+
+    section#model-downloader.runpod-panel(aria-labelledby='runpodModelDownloaderHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Reusable model import
+          h2#runpodModelDownloaderHeading Download an Ollama model to a volume
+          p.runpod-panel__subtitle Choose a model tag and storage volume. The app matches the volume's data center, selects the cheapest compatible Secure Cloud GPU by default, verifies the model, and permanently deletes the temporary Pod.
+        if downloaderTemplate
+          span.runpod-status(class=downloaderTemplate.providerPresent ? 'runpod-status--ready' : 'runpod-status--warning')= downloaderTemplate.providerPresent ? 'TEMPLATE READY' : 'AUTO-REPAIR ON NEXT DOWNLOAD'
+
+      if availableNetworkVolumes.length && management.gpuOptions.length
+        form.runpod-form(
+          method='post',
+          action=`${adminPath}/model-downloads`,
+          data-runpod-model-download-form
+        )
+          input(type='hidden', name='_csrf', value=csrfToken)
+          .runpod-form-grid
+            label.runpod-field
+              span Network volume
+              select(name='networkVolumeId', data-download-volume-select, required)
+                each volume in availableNetworkVolumes
+                  option(
+                    value=volume.providerNetworkVolumeId,
+                    data-datacenter=volume.dataCenterId,
+                    data-models=(volume.cachedModels || []).join('|'),
+                    selected=defaultNetworkVolume && volume.providerNetworkVolumeId === defaultNetworkVolume.providerNetworkVolumeId
+                  )= `${volume.name} · ${formatInteger(volume.sizeGb)} GB · ${volume.dataCenterId}`
+            label.runpod-field
+              span Ollama model tag
+              input(type='text', name='model', maxlength='120', value='qwen3.8:27b', pattern='[a-z0-9][a-z0-9._/-]{0,79}(:[a-z0-9][a-z0-9._-]{0,39})?', required)
+          .runpod-location-summary(role='status' aria-live='polite')
+            span Compatible placement
+            strong(data-download-location)= defaultNetworkVolume ? `Secure Cloud · ${defaultNetworkVolume.dataCenterId}` : 'Choose a volume'
+            small The volume stays after the temporary downloader Pod is removed.
+          label.runpod-check.runpod-check--warning
+            input(type='checkbox', name='publicAccessAcknowledged', value='acknowledged', required)
+            span I understand that setup briefly uses an unauthenticated Runpod proxy URL. The Pod is deleted automatically after verification.
+          details.runpod-advanced
+            summary Advanced downloader settings
+            p.runpod-form-help Defaults are optimized for inexpensive transfer work. Override them only when placement or a very large download requires it.
+            .runpod-form-grid.runpod-form-grid--wide
+              label.runpod-field.runpod-field--span-2
+                span Downloader GPU
+                select(name='gpuId', data-download-gpu-select)
+                  option(value='') Automatic · cheapest compatible GPU
+                  each gpu in management.gpuOptions
+                    if Number.isFinite(gpu.securePrice)
+                      option(
+                        value=gpu.id,
+                        data-price=gpu.securePrice,
+                        data-availability=gpu.secureAvailability,
+                        data-datacenters=gpu.secureDataCenters.map((entry) => entry.id).join('|')
+                      )= `${gpu.name} · ${formatInteger(gpu.memoryGb)} GB · ${formatUsd(gpu.securePrice)}/hr · ${gpu.secureAvailability}`
+              label.runpod-field
+                span Maximum downloader cost / hour
+                input(type='number', name='maxHourlyCost', min='0.01', max=management.limits.maxHourlyCostUsd, step='0.01', value=management.limits.defaultModelDownloadMaxHourlyCostUsd, data-download-cost-limit, required)
+              label.runpod-field
+                span Download time limit (minutes)
+                input(type='number', name='autoStopMinutes', min='15', max=management.limits.maxRuntimeMinutes, step='1', value=management.limits.defaultModelDownloadAutoStopMinutes, required)
+              label.runpod-field
+                span Container disk (GB)
+                input(type='number', name='diskGb', min='5', max='500', step='1', value='20', required)
+            output.runpod-form-help(data-download-gpu-summary aria-live='polite') Automatic GPU selection will be finalized from fresh provider stock when submitted.
+          button.runpod-button.runpod-button--primary(type='submit', data-runpod-download-button) Download model to volume
+      else if !availableNetworkVolumes.length
+        .runpod-empty
+          strong No unattached network volume is ready
+          p Create or synchronize a volume, or delete the Pod currently attached to it. One writable Ollama Pod can use a volume at a time.
+      else
+        .runpod-empty
+          strong GPU placement is temporarily unavailable
+          p Refresh the Runpod catalog before starting a download.
+
+      if management.modelDownloads.length
+        h3.runpod-subheading Model download history
+        .runpod-download-grid
+          each download in management.modelDownloads
+            - const downloadSucceeded = download.setupStatus === 'ready';
+            - const downloadCleaned = download.cleanupStatus === 'completed';
+            article.runpod-download-card
+              .runpod-pod-card__header
+                div
+                  h3= download.setupModel || download.name
+                  code= download.providerPodId
+                if downloadSucceeded && downloadCleaned
+                  span.runpod-status.runpod-status--ready CACHED
+                else if download.setupStatus === 'failed' || download.cleanupStatus === 'failed'
+                  span.runpod-status.runpod-status--error ATTENTION
+                else
+                  span.runpod-status.runpod-status--running= download.setupStatus.toUpperCase()
+              .runpod-pod-card__metrics
+                div
+                  span Volume
+                  strong= download.networkVolumeName || download.providerNetworkVolumeId
+                div
+                  span Location
+                  strong= download.dataCenterId || 'Pending placement'
+                div
+                  span Temporary GPU
+                  strong= `${download.gpuName || download.gpuId} · ${formatUsd(download.lastRunningCostPerHour)}/hr`
+                div
+                  span Cleanup
+                  strong= download.cleanupStatus.replaceAll('_', ' ')
+                div
+                  span Running time
+                  strong= download.usage.trackingAvailable ? formatDuration(download.usage.runningMs) : 'Not recorded'
+                div
+                  span Observed Pod cost
+                  strong= download.usage.trackingAvailable ? formatUsd(download.usage.estimatedTotalUsd) : 'Pending'
+              if downloadSucceeded && downloadCleaned
+                p.runpod-form-help Verified #{formatTimestamp(download.setupCompletedAt)}. The model volume remains available for a serving Pod; the downloader Pod has been archived.
+              else if download.setupStatus === 'failed'
+                .runpod-alert.runpod-alert--error
+                  strong Download failed
+                  p= download.setupErrorCode || 'RUNPOD_SETUP_FAILED'
+              if download.lastOperationError
+                .runpod-provider-error.runpod-alert.runpod-alert--error(role='status')
+                  strong Temporary Pod cleanup needs attention
+                  p= download.lastOperationError.message || 'Runpod rejected the cleanup operation.'
+                  code= download.lastOperationError.code || download.cleanupErrorCode
+              if download.canStop || download.canDelete
+                .runpod-pod-card__actions
+                  if download.canStop
+                    form(method='post', action=`${adminPath}/pods/${download.id}/stop`)
+                      input(type='hidden', name='_csrf', value=csrfToken)
+                      button.runpod-button.runpod-button--secondary(type='submit') Stop temporary Pod
+                if download.canDelete
+                  details.runpod-delete
+                    summary Manually delete temporary Pod
+                    form(method='post', action=`${adminPath}/pods/${download.id}/delete`, data-runpod-delete-form, data-runpod-confirm-name=download.name)
+                      input(type='hidden', name='_csrf', value=csrfToken)
+                      label.runpod-field
+                        span Type the exact Pod name: #{download.name}
+                        input(type='text', name='confirmation', maxlength='120', autocomplete='off', required)
+                      button.runpod-button.runpod-button--danger(type='submit') Delete Pod; keep volume
 
     section#workload-templates.runpod-panel(aria-labelledby='runpodWorkloadTemplateHeading')
       .runpod-panel__header
@@ -80,30 +376,34 @@ block content
               div
                 dt Public service
                 dd Port #{formatInteger(ollamaTemplate.servicePort)} through Runpod HTTPS proxy
+            if downloaderTemplate
+              p.runpod-form-help Downloader template: #{downloaderTemplate.providerPresent ? 'synced and reusable' : 'will be repaired automatically on the next download'}.
           else
             h3 No local Ollama template yet
             p Save the defaults once to create a private provider template and its local setup recipe.
 
-        form.runpod-form(method='post', action=`${adminPath}/templates/ollama`)
-          input(type='hidden', name='_csrf', value=csrfToken)
-          .runpod-form-grid
-            label.runpod-field
-              span Provider template name
-              input(type='text', name='providerTemplateName', maxlength='80', value=ollamaTemplate ? ollamaTemplate.providerTemplateName : 'lentmiien-ollama-gpu-v2', required)
-            label.runpod-field
-              span Container image
-              input(type='text', name='image', maxlength='500', value=ollamaTemplate ? ollamaTemplate.image : 'ollama/ollama:latest', required)
-            label.runpod-field
-              span Default model
-              input(type='text', name='defaultModel', maxlength='120', value=ollamaTemplate ? ollamaTemplate.defaultModel : 'qwen2.5:0.5b', required)
-            label.runpod-field
-              span Container disk (GB)
-              input(type='number', name='diskGb', min='5', max='500', step='1', value=ollamaTemplate ? ollamaTemplate.diskGb : 20, required)
-            label.runpod-field
-              span Persistent model disk (GB)
-              input(type='number', name='persistentDiskGb', min='10', max='1000', step='1', value=ollamaTemplate ? ollamaTemplate.persistentDiskGb : 10, required)
-          p.runpod-form-help The default 0.5B Qwen model is about 398 MB. Models live on the persistent disk and survive stop/start cycles. Pin the image by digest for reproducible long-term use.
-          button.runpod-button.runpod-button--primary(type='submit')= ollamaTemplate ? 'Update and resync template' : 'Create Ollama template'
+        details.runpod-advanced.runpod-advanced--standalone(open=!ollamaTemplate)
+          summary Advanced template settings
+          form.runpod-form(method='post', action=`${adminPath}/templates/ollama`)
+            input(type='hidden', name='_csrf', value=csrfToken)
+            .runpod-form-grid
+              label.runpod-field
+                span Provider template name
+                input(type='text', name='providerTemplateName', maxlength='80', value=ollamaTemplate ? ollamaTemplate.providerTemplateName : 'lentmiien-ollama-gpu-v2', required)
+              label.runpod-field
+                span Container image
+                input(type='text', name='image', maxlength='500', value=ollamaTemplate ? ollamaTemplate.image : 'ollama/ollama:latest', required)
+              label.runpod-field
+                span Default model
+                input(type='text', name='defaultModel', maxlength='120', value=ollamaTemplate ? ollamaTemplate.defaultModel : 'qwen2.5:0.5b', required)
+              label.runpod-field
+                span Container disk (GB)
+                input(type='number', name='diskGb', min='5', max='500', step='1', value=ollamaTemplate ? ollamaTemplate.diskGb : 20, required)
+              label.runpod-field
+                span Persistent model disk (GB)
+                input(type='number', name='persistentDiskGb', min='10', max='1000', step='1', value=ollamaTemplate ? ollamaTemplate.persistentDiskGb : 10, required)
+            p.runpod-form-help Pod-local models survive stop/start but not Pod deletion. A network volume is preferred for reusable models. Pin the image by digest for reproducible long-term use.
+            button.runpod-button.runpod-button--primary(type='submit')= ollamaTemplate ? 'Update and resync template' : 'Create Ollama template'
 
     section#pod-creator.runpod-panel(aria-labelledby='runpodPodCreatorHeading')
       .runpod-panel__header
@@ -119,40 +419,30 @@ block content
 
       if ollamaTemplate && ollamaTemplate.providerPresent && management.gpuOptions.length
         .runpod-picker(data-runpod-picker)
-          .runpod-picker__filters(aria-label='GPU filters')
-            label.runpod-field
-              span Minimum VRAM (GB)
-              input(type='number', min='0', max='300', step='1', value='16', data-gpu-min-vram)
-            label.runpod-field
-              span Picker max price / GPU hour
-              input(type='number', min='0.01', max=management.limits.maxHourlyCostUsd, step='0.01', value='1.00', data-gpu-max-price)
-            label.runpod-field
-              span Minimum availability
-              select(data-gpu-min-availability)
-                option(value='LOW') Low or better
-                option(value='MEDIUM') Medium or better
-                option(value='HIGH') High only
-            output.runpod-picker__result(data-gpu-filter-result aria-live='polite')
-
           form.runpod-form(method='post', action=`${adminPath}/pods`, data-runpod-create-form)
             input(type='hidden', name='_csrf', value=csrfToken)
+            input(type='hidden', name='templateId', value=ollamaTemplate.id)
             .runpod-form-grid.runpod-form-grid--wide
               label.runpod-field
                 span Pod name
-                input(type='text', name='name', maxlength='80', value='ollama-test', pattern='[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}', required)
+                input(type='text', name='name', maxlength='80', value='ollama-qwen', pattern='[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}', required)
               label.runpod-field
-                span Workload template
-                select(name='templateId', required)
-                  each localTemplate in management.templates
-                    if localTemplate.active && localTemplate.providerPresent
-                      option(value=localTemplate.id, selected=localTemplate.slug === 'ollama')= `${localTemplate.name} · ${localTemplate.defaultModel}`
-              label.runpod-field
-                span Cloud
-                select(name='cloud', data-gpu-cloud, required)
-                  option(value='SECURE', selected) Secure Cloud
-                  option(value='COMMUNITY') Community Cloud
+                span Model volume
+                select(name='networkVolumeId', data-network-volume-select)
+                  option(value='') Pod-local persistent disk
+                  each volume in management.networkVolumes
+                    if volume.providerPresent
+                      option(
+                        value=volume.providerNetworkVolumeId,
+                        data-datacenter=volume.dataCenterId,
+                        data-volume-type=volume.volumeType,
+                        data-size=volume.sizeGb,
+                        data-models=(volume.cachedModels || []).join('|'),
+                        selected=defaultNetworkVolume && volume.providerNetworkVolumeId === defaultNetworkVolume.providerNetworkVolumeId,
+                        disabled=volume.attachedPodCount > 0
+                      )= `${volume.name} · ${formatInteger(volume.sizeGb)} GB · ${volume.dataCenterId}${volume.attachedPodCount > 0 ? ' · attached' : ''}`
               label.runpod-field.runpod-field--span-2
-                span GPU system
+                span GPU system (compatible choices only)
                 select(name='gpuId', data-gpu-select, required)
                   each gpu in management.gpuOptions
                     option(
@@ -168,36 +458,62 @@ block content
                       data-community-datacenters=gpu.communityDataCenters.map((entry) => entry.id).join('|')
                     )= `${gpu.name} · ${formatInteger(gpu.memoryGb)} GB VRAM · Secure ${formatUsd(gpu.securePrice)}/${gpu.secureAvailability} · Community ${formatUsd(gpu.communityPrice)}/${gpu.communityAvailability}`
               label.runpod-field
-                span GPU count
-                input(type='number', name='gpuCount', min='1', max=management.limits.maxGpuCount, step='1', value='1', data-gpu-count, required)
-              label.runpod-field
-                span Preferred data center
-                select(name='dataCenterId', data-gpu-datacenter)
-                  option(value='') Automatic placement
-                  each dataCenter in dataCenters
-                    option(value=dataCenter.id, data-global-network=dataCenter.globalNetwork ? '1' : '0')= `${dataCenter.name} · ${dataCenter.region.replaceAll('_', ' ')}`
-              label.runpod-field
                 span Ollama model
-                input(type='text', name='model', maxlength='120', value=ollamaTemplate.defaultModel, required)
-              label.runpod-field
-                span Container disk (GB)
-                input(type='number', name='diskGb', min='5', max='500', step='1', value=ollamaTemplate.diskGb, required)
-              label.runpod-field
-                span Persistent model disk (GB)
-                input(type='number', name='persistentDiskGb', min='10', max='1000', step='1', value=ollamaTemplate.persistentDiskGb, required)
+                input(type='text', name='model', maxlength='120', value=defaultCachedModel, list='runpodCachedModels', data-ollama-model-input, required)
+                datalist#runpodCachedModels(data-cached-model-list)
+                  if defaultNetworkVolume
+                    each model in defaultNetworkVolume.cachedModels || []
+                      option(value=model)
               label.runpod-field
                 span Auto-stop after (minutes)
                 input(type='number', name='autoStopMinutes', min='15', max=management.limits.maxRuntimeMinutes, step='1', value=management.limits.defaultAutoStopMinutes, required)
-              label.runpod-field
-                span Confirmed maximum total / hour
-                input(type='number', name='maxHourlyCost', min='0.01', max=management.limits.maxHourlyCostUsd, step='0.01', value='1.00', data-gpu-cost-limit, required)
-              label.runpod-check
-                input(type='checkbox', name='globalNetworking')
-                span Enable global networking (Secure Cloud + eligible explicit data center only)
               label.runpod-check.runpod-check--warning
                 input(type='checkbox', name='publicAccessAcknowledged', value='acknowledged', required)
                 span I understand that the Ollama proxy URL has no application-level authentication.
-            p.runpod-form-help Large models need storage beyond their published download size. Allow at least 10 GB of headroom; qwen3.8:27b is about 18 GB, so use 30 GB or more of persistent storage.
+            p.runpod-form-help(data-storage-help) Large models need storage beyond their published download size. Allow at least 10 GB of headroom; qwen3.8:27b is about 18 GB, so use 30 GB or more. A selected network volume replaces the Pod-local persistent disk and fixes the cloud and data center.
+            details.runpod-advanced
+              summary Advanced placement, pricing, and disk settings
+              .runpod-picker__filters(aria-label='GPU filters')
+                label.runpod-field
+                  span Minimum VRAM (GB)
+                  input(type='number', min='0', max='300', step='1', value='16', data-gpu-min-vram)
+                label.runpod-field
+                  span Picker max price / GPU hour
+                  input(type='number', min='0.01', max=management.limits.maxHourlyCostUsd, step='0.01', value='1.00', data-gpu-max-price)
+                label.runpod-field
+                  span Minimum availability
+                  select(data-gpu-min-availability)
+                    option(value='LOW') Low or better
+                    option(value='MEDIUM') Medium or better
+                    option(value='HIGH') High only
+                output.runpod-picker__result(data-gpu-filter-result aria-live='polite')
+              .runpod-form-grid.runpod-form-grid--wide
+                label.runpod-field
+                  span Cloud
+                  select(name='cloud', data-gpu-cloud, required)
+                    option(value='SECURE', selected) Secure Cloud
+                    option(value='COMMUNITY') Community Cloud
+                label.runpod-field
+                  span GPU count
+                  input(type='number', name='gpuCount', min='1', max=management.limits.maxGpuCount, step='1', value='1', data-gpu-count, required)
+                label.runpod-field
+                  span Preferred data center
+                  select(name='dataCenterId', data-gpu-datacenter)
+                    option(value='') Automatic placement
+                    each dataCenter in dataCenters
+                      option(value=dataCenter.id, data-global-network=dataCenter.globalNetwork ? '1' : '0')= `${dataCenter.name} · ${dataCenter.region.replaceAll('_', ' ')}`
+                label.runpod-field
+                  span Container disk (GB)
+                  input(type='number', name='diskGb', min='5', max='500', step='1', value=ollamaTemplate.diskGb, required)
+                label.runpod-field
+                  span Pod-local persistent disk (GB)
+                  input(type='number', name='persistentDiskGb', min='10', max='1000', step='1', value=ollamaTemplate.persistentDiskGb, data-persistent-disk, required)
+                label.runpod-field
+                  span Confirmed maximum total / hour
+                  input(type='number', name='maxHourlyCost', min='0.01', max=management.limits.maxHourlyCostUsd, step='0.01', value='1.00', data-gpu-cost-limit, required)
+                label.runpod-check
+                  input(type='checkbox', name='globalNetworking')
+                  span Enable global networking (Secure Cloud + eligible explicit data center only)
             .runpod-estimate(role='status' aria-live='polite')
               span Estimated GPU rate
               strong(data-gpu-estimate) Choose a GPU
@@ -241,6 +557,12 @@ block content
                 div
                   span Setup
                   strong= `${pod.setupStatus}${pod.setupModel ? ` · ${pod.setupModel}` : ''}`
+                div
+                  span Model storage
+                  if pod.providerNetworkVolumeId
+                    strong= `${pod.networkVolumeName || pod.providerNetworkVolumeId} · ${pod.networkVolumeMountPath || '/workspace'}`
+                  else
+                    strong= `${formatInteger(pod.persistentDiskGb)} GB Pod-local disk`
                 div
                   span Auto-stop
                   strong= pod.autoStopAt ? formatTimestamp(pod.autoStopAt) : 'Not running'
@@ -341,12 +663,12 @@ block content
               if pod.canDelete
                 details.runpod-delete
                   summary Permanently delete Pod
-                  form(method='post', action=`${adminPath}/pods/${pod.id}/delete`, data-runpod-delete-form)
+                  form(method='post', action=`${adminPath}/pods/${pod.id}/delete`, data-runpod-delete-form, data-runpod-confirm-name=pod.name)
                     input(type='hidden', name='_csrf', value=csrfToken)
                     label.runpod-field
                       span Type the exact Pod name: #{pod.name}
                       input(type='text', name='confirmation', maxlength='120', autocomplete='off', required)
-                    button.runpod-button.runpod-button--danger(type='submit') Delete Pod and disk
+                    button.runpod-button.runpod-button--danger(type='submit')= pod.providerNetworkVolumeId ? 'Delete Pod; keep network volume' : 'Delete Pod and disk'
       else
         .runpod-empty
           strong No managed Pods
@@ -388,6 +710,8 @@ block content
                   td.runpod-system
                     strong= pod.name
                     code= pod.providerPodId
+                    if pod.providerNetworkVolumeId
+                      span= `Volume: ${pod.networkVolumeName || pod.providerNetworkVolumeId}`
                   td= `${pod.gpuName || pod.gpuId} × ${formatInteger(pod.gpuCount)}`
                   td= pod.usage.trackingAvailable ? formatDuration(pod.usage.runningMs) : 'Not recorded'
                   td= pod.usage.trackingAvailable ? formatDuration(pod.usage.stoppedMs) : 'Not recorded'
@@ -426,6 +750,8 @@ block content
         span.runpod-stat__hint #{formatInteger(billing.recordCount)} billing buckets
 
     nav.runpod-section-nav(aria-label='Runpod dashboard sections')
+      a(href='#network-volumes') Network volumes
+      a(href='#model-downloader') Download model
       a(href='#workload-templates') Workload template
       a(href='#pod-creator') Create Pod
       a(href='#pods') Pods

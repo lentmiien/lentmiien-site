@@ -41,7 +41,7 @@ const RunpodWorkloadTemplateSchema = new mongoose.Schema({
   startJupyter: { type: Boolean, default: false },
   setupKind: {
     type: String,
-    enum: ['ollama_pull'],
+    enum: ['ollama_pull', 'ollama_download'],
     required: true,
   },
   defaultModel: { type: String, required: true, trim: true, maxlength: 120 },

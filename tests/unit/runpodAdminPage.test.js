@@ -47,7 +47,12 @@ describe('Runpod admin page', () => {
         maxCount: { secure: 8 },
       }],
       cpus: [{ id: 'cpu3c', name: 'Compute-Optimized', availability: 'HIGH' }],
-      dataCenters: [{ id: 'EU-SE-1', name: 'EU-SE-1', region: 'EUROPE' }],
+      dataCenters: [{
+        id: 'EU-SE-1',
+        name: 'EU-SE-1',
+        region: 'EUROPE',
+        networkVolumeTypes: ['STANDARD'],
+      }],
       templates: [{ id: 'runpod-torch', name: 'Runpod PyTorch', image: 'runpod/pytorch:v2' }],
       billing: {
         records: [{
@@ -70,6 +75,10 @@ describe('Runpod admin page', () => {
         maxActivePods: 2,
         maxGpuCount: 4,
         maxHourlyCostUsd: 10,
+        maxNetworkVolumeGb: 2048,
+        maxNetworkVolumeMonthlyCostUsd: 150,
+        standardStorageUsdPerGbMonth: 0.07,
+        highPerformanceStorageUsdPerGbMonth: null,
         defaultAutoStopMinutes: 60,
         maxRuntimeMinutes: 1440,
       },
@@ -100,6 +109,20 @@ describe('Runpod admin page', () => {
         secureDataCenters: [{ id: 'EU-SE-1' }],
         communityDataCenters: [],
       }],
+      networkVolumes: [{
+        id: '507f191e810c19729de860ab',
+        providerNetworkVolumeId: 'provider-volume-id',
+        name: 'qwen-cache',
+        providerPresent: true,
+        trackedLocally: true,
+        dataCenterId: 'EU-SE-1',
+        volumeType: 'STANDARD',
+        sizeGb: 50,
+        estimatedMonthlyCostUsd: 3.5,
+        attachedPodCount: 0,
+        cachedModels: ['qwen3.8:27b'],
+      }],
+      archivedNetworkVolumes: [],
       managedPods: [{
         id: 'local-pod-id',
         name: 'ollama-test',
@@ -161,6 +184,17 @@ describe('Runpod admin page', () => {
     expect(html).toContain('action="/admin/runpod"');
     expect(html).toContain('method="get"');
     expect(html).toContain('method="post" action="/admin/runpod/templates/ollama"');
+    expect(html).toContain('method="post" action="/admin/runpod/network-volumes"');
+    expect(html).toContain('method="post" action="/admin/runpod/model-downloads"');
+    expect(html).toContain('Download an Ollama model to a volume');
+    expect(html).toContain('Advanced downloader settings');
+    expect(html).toContain('Automatic · cheapest compatible GPU');
+    expect(html).toContain('Advanced placement, pricing, and disk settings');
+    expect(html).toContain('data-datacenter="EU-SE-1"');
+    expect(html).toContain('data-models="qwen3.8:27b"');
+    expect(html).toContain('action="/admin/runpod/network-volumes/507f191e810c19729de860ab/delete"');
+    expect(html).toContain('qwen-cache');
+    expect(html).toContain('name="networkVolumeId"');
     expect(html).toContain('action="/admin/runpod/pods"');
     expect(html).toContain('action="/admin/runpod/pods/local-pod-id/stop"');
     expect(html).toContain('action="/admin/runpod/pods/local-pod-id/extend"');
@@ -190,6 +224,19 @@ describe('Runpod admin page', () => {
       cpus: [{ id: payload, name: payload, availability: 'LOW' }],
       dataCenters: [{ id: payload, name: payload, region: payload }],
       templates: [{ id: payload, name: payload, image: payload }],
+    }, {
+      networkVolumes: [{
+        id: '507f191e810c19729de860ab',
+        providerNetworkVolumeId: 'provider-volume-id',
+        name: payload,
+        providerPresent: true,
+        trackedLocally: true,
+        dataCenterId: 'EU-RO-1',
+        volumeType: 'STANDARD',
+        sizeGb: 50,
+        attachedPodCount: 0,
+        lastOperationError: { code: 'RUNPOD_HTTP_ERROR', detail: payload },
+      }],
     });
 
     expect(html).not.toContain(payload);

@@ -103,6 +103,21 @@ const runpodCreateLimiter = rateLimit({
     }),
 });
 
+const runpodStorageCreateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 3,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  handler: (req, res) => res
+    .status(429)
+    .set('Cache-Control', PRIVATE_NO_STORE)
+    .render('accessDenied', {
+      title: 'Storage Creation Paused',
+      message: 'Up to three network-volume creation attempts are allowed per hour.',
+      user: req.user,
+    }),
+});
+
 function requireCapability(capability) {
   return createRequireCapabilities({
     capabilities: [capability],
@@ -116,11 +131,41 @@ router.use(csrf.issueToken);
 router.use(requireBoundedRunpodForm);
 router.get('/', runpodReadLimiter, runpodAdminController.index);
 router.post(
+  '/network-volumes',
+  runpodMutationLimiter,
+  runpodStorageCreateLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.networkVolumeCreate),
+  runpodPodAdminController.createNetworkVolume
+);
+router.post(
+  '/network-volumes/sync',
+  runpodMutationLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.networkVolumeSync),
+  runpodPodAdminController.syncNetworkVolumes
+);
+router.post(
+  '/network-volumes/:id/delete',
+  runpodMutationLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.networkVolumeDelete),
+  runpodPodAdminController.deleteNetworkVolume
+);
+router.post(
   '/templates/ollama',
   runpodMutationLimiter,
   csrf.requireToken,
   requireCapability(RUNPOD_CAPABILITIES.templateManage),
   runpodPodAdminController.saveOllamaTemplate
+);
+router.post(
+  '/model-downloads',
+  runpodMutationLimiter,
+  runpodCreateLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.modelDownloadCreate),
+  runpodPodAdminController.createModelDownload
 );
 router.post(
   '/pods',

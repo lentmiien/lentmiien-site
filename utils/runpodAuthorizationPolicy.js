@@ -10,6 +10,11 @@ const RUNPOD_CAPABILITIES = Object.freeze({
   podDelete: 'runpod.pod.delete',
   podSetup: 'runpod.pod.setup',
   podSync: 'runpod.pod.sync',
+  modelDownloadCreate: 'runpod.model_download.create',
+  networkVolumeRead: 'runpod.network_volume.read',
+  networkVolumeCreate: 'runpod.network_volume.create',
+  networkVolumeDelete: 'runpod.network_volume.delete',
+  networkVolumeSync: 'runpod.network_volume.sync',
   templateManage: 'runpod.template.manage',
 });
 
@@ -17,6 +22,7 @@ const RUNPOD_READ_CAPABILITIES = Object.freeze([
   RUNPOD_CAPABILITIES.catalogRead,
   RUNPOD_CAPABILITIES.billingRead,
   RUNPOD_CAPABILITIES.podRead,
+  RUNPOD_CAPABILITIES.networkVolumeRead,
 ]);
 const RUNPOD_ADMIN_CAPABILITIES = Object.freeze(Object.values(RUNPOD_CAPABILITIES));
 

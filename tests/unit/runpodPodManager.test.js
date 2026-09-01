@@ -1,9 +1,12 @@
 const {
   OLLAMA_MODEL,
+  OLLAMA_DOWNLOADER_MODEL,
   RunpodManagementError,
   RunpodPodManager,
+  chooseModelDownloadGpu,
   mergeGpuCatalogs,
   normalizeModelName,
+  normalizeDownloaderTemplateInput,
   normalizeTemplateInput,
   projectPodUsage,
   providerTemplatePayload,
@@ -15,6 +18,7 @@ const { RunpodApiError } = require('../../services/runpodApiV2Service');
 
 const TEMPLATE_ID = '507f1f77bcf86cd799439011';
 const POD_RECORD_ID = '507f191e810c19729de860ea';
+const VOLUME_RECORD_ID = '507f191e810c19729de860ab';
 const FIXED_NOW = new Date('2026-09-01T00:00:00.000Z');
 
 function queryResult(value) {
@@ -54,6 +58,19 @@ function ollamaTemplate(overrides = {}) {
   };
 }
 
+function downloaderTemplate(overrides = {}) {
+  return {
+    ...ollamaTemplate(),
+    slug: 'ollama-downloader',
+    name: 'Ollama Model Downloader',
+    providerTemplateId: 'provider-downloader-template-1',
+    providerTemplateName: 'lentmiien-ollama-model-downloader-v2',
+    setupKind: 'ollama_download',
+    defaultModel: OLLAMA_DOWNLOADER_MODEL,
+    ...overrides,
+  };
+}
+
 function gpu(overrides = {}) {
   return {
     id: 'NVIDIA GeForce RTX 4090',
@@ -71,6 +88,9 @@ function gpu(overrides = {}) {
 function createFixture({ template = ollamaTemplate(), localPod = null } = {}) {
   const runpodService = {
     listPods: jest.fn().mockResolvedValue([]),
+    listNetworkVolumes: jest.fn().mockResolvedValue([]),
+    createNetworkVolume: jest.fn(),
+    deleteNetworkVolume: jest.fn().mockResolvedValue(true),
     getPod: jest.fn(),
     createPod: jest.fn(),
     transitionPod: jest.fn(),
@@ -79,7 +99,11 @@ function createFixture({ template = ollamaTemplate(), localPod = null } = {}) {
     createTemplate: jest.fn(),
     updateTemplate: jest.fn(),
     getGpuTypes: jest.fn().mockResolvedValue([gpu()]),
-    getDataCenters: jest.fn().mockResolvedValue([{ id: 'EU-SE-1', globalNetwork: true }]),
+    getDataCenters: jest.fn().mockResolvedValue([{
+      id: 'EU-SE-1',
+      globalNetwork: true,
+      networkVolumeTypes: ['STANDARD'],
+    }]),
   };
   const podModel = {
     find: jest.fn().mockImplementation(() => queryResult([])),
@@ -94,11 +118,18 @@ function createFixture({ template = ollamaTemplate(), localPod = null } = {}) {
     findOneAndUpdate: jest.fn(),
     updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
   };
+  const networkVolumeModel = {
+    find: jest.fn().mockImplementation(() => queryResult([])),
+    findOne: jest.fn().mockImplementation(() => queryResult(null)),
+    findOneAndUpdate: jest.fn(),
+    updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+  };
   const eventModel = { create: jest.fn().mockResolvedValue({}) };
   const appLogger = { warning: jest.fn(), error: jest.fn() };
   const manager = new RunpodPodManager({
     runpodService,
     podModel,
+    networkVolumeModel,
     templateModel,
     eventModel,
     appLogger,
@@ -110,7 +141,15 @@ function createFixture({ template = ollamaTemplate(), localPod = null } = {}) {
     defaultAutoStopMinutes: 60,
     maxRuntimeMinutes: 1440,
   });
-  return { appLogger, eventModel, manager, podModel, runpodService, templateModel };
+  return {
+    appLogger,
+    eventModel,
+    manager,
+    networkVolumeModel,
+    podModel,
+    runpodService,
+    templateModel,
+  };
 }
 
 function validCreateInput(overrides = {}) {
@@ -209,6 +248,37 @@ describe('Runpod workload and picker helpers', () => {
       startSsh: false,
       startJupyter: false,
     }));
+  });
+
+  test('builds a reusable downloader recipe and selects the cheapest compatible Secure GPU', () => {
+    const normalized = normalizeDownloaderTemplateInput({
+      defaultModel: 'qwen3.8:27b',
+      diskGb: '25',
+    });
+    const selected = chooseModelDownloadGpu([
+      gpu({
+        id: 'expensive',
+        price: { secure: 0.8 },
+        dataCenters: [{ id: 'EU-RO-1', availability: 'HIGH' }],
+      }),
+      gpu({
+        id: 'cheap',
+        price: { secure: 0.3 },
+        availability: 'LOW',
+        dataCenters: [{ id: 'EU-RO-1', availability: 'LOW' }],
+      }),
+    ], 'EU-RO-1', 1);
+
+    expect(normalized).toEqual(expect.objectContaining({
+      slug: 'ollama-downloader',
+      setupKind: 'ollama_download',
+      defaultModel: 'qwen3.8:27b',
+      diskGb: 25,
+    }));
+    expect(selected.id).toBe('cheap');
+    expect(chooseModelDownloadGpu([
+      gpu({ id: 'wrong-region' }),
+    ], 'EU-RO-1', 1)).toBeNull();
   });
 
   test('merges Secure and Community catalog choices by stable GPU ID', () => {
@@ -335,6 +405,416 @@ describe('RunpodPodManager', () => {
     }));
   });
 
+  test('does not count archived local Pods as network-volume attachments', async () => {
+    const fixture = createFixture();
+    fixture.networkVolumeModel.find.mockReturnValue(queryResult([{
+      _id: VOLUME_RECORD_ID,
+      providerNetworkVolumeId: 'volume-123',
+      name: 'model-cache',
+      dataCenterId: 'EU-SE-1',
+      volumeType: 'STANDARD',
+      sizeGb: 50,
+      lifecycleGroup: 'active',
+      providerPresent: true,
+    }]));
+    fixture.podModel.find.mockReturnValue(queryResult([{
+      _id: POD_RECORD_ID,
+      providerPodId: 'deleted-pod',
+      name: 'deleted-pod',
+      providerStatus: 'TERMINATED',
+      lifecycleGroup: 'archived',
+      archivedAt: FIXED_NOW,
+      providerNetworkVolumeId: 'volume-123',
+      gpu: { id: 'unknown', count: 1 },
+    }]));
+    fixture.runpodService.listNetworkVolumes.mockResolvedValue([{
+      id: 'volume-123',
+      name: 'model-cache',
+      dataCenter: 'EU-SE-1',
+      type: 'STANDARD',
+      size: 50,
+    }]);
+
+    const state = await fixture.manager.getAdminState();
+
+    expect(state.networkVolumes).toEqual([
+      expect.objectContaining({
+        providerNetworkVolumeId: 'volume-123',
+        attachedPodCount: 0,
+      }),
+    ]);
+  });
+
+  test('creates and tracks a bounded Standard network volume after explicit billing confirmation', async () => {
+    const fixture = createFixture();
+    const providerVolume = {
+      id: 'volume-123',
+      name: 'ollama-model-cache',
+      size: 50,
+      dataCenter: 'EU-SE-1',
+      type: 'STANDARD',
+    };
+    const trackedVolume = {
+      _id: '507f191e810c19729de860ab',
+      ...providerVolume,
+      providerNetworkVolumeId: providerVolume.id,
+      toObject: jest.fn(() => ({
+        providerNetworkVolumeId: providerVolume.id,
+        name: providerVolume.name,
+      })),
+    };
+    fixture.runpodService.createNetworkVolume.mockResolvedValue(providerVolume);
+    fixture.networkVolumeModel.findOneAndUpdate.mockResolvedValue(trackedVolume);
+
+    await expect(fixture.manager.createManagedNetworkVolume({
+      name: 'ollama-model-cache',
+      sizeGb: '50',
+      volumeType: 'STANDARD',
+      dataCenterId: 'EU-SE-1',
+      maxMonthlyCost: '4.00',
+      storageBillingAcknowledged: 'acknowledged',
+    }, { name: 'admin' })).resolves.toEqual(expect.objectContaining({
+      providerNetworkVolumeId: 'volume-123',
+    }));
+
+    expect(fixture.runpodService.createNetworkVolume).toHaveBeenCalledWith({
+      name: 'ollama-model-cache',
+      size: 50,
+      dataCenter: 'EU-SE-1',
+      type: 'STANDARD',
+    });
+    expect(fixture.networkVolumeModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { providerNetworkVolumeId: 'volume-123' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          dataCenterId: 'EU-SE-1',
+          sizeGb: 50,
+          estimatedMonthlyCostUsd: 3.5,
+        }),
+      }),
+      expect.objectContaining({ upsert: true, new: true, runValidators: true })
+    );
+  });
+
+  test('requires storage billing acknowledgement and a confirmed monthly ceiling', async () => {
+    const fixture = createFixture();
+
+    await expect(fixture.manager.createManagedNetworkVolume({
+      name: 'unconfirmed-volume',
+      sizeGb: '50',
+      volumeType: 'STANDARD',
+      dataCenterId: 'EU-SE-1',
+      maxMonthlyCost: '4.00',
+    })).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_NETWORK_VOLUME_BILLING_NOT_ACKNOWLEDGED',
+    }));
+    await expect(fixture.manager.createManagedNetworkVolume({
+      name: 'too-expensive-volume',
+      sizeGb: '50',
+      volumeType: 'STANDARD',
+      dataCenterId: 'EU-SE-1',
+      maxMonthlyCost: '1.00',
+      storageBillingAcknowledged: 'acknowledged',
+    })).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_NETWORK_VOLUME_COST_LIMIT_EXCEEDED',
+    }));
+    expect(fixture.runpodService.createNetworkVolume).not.toHaveBeenCalled();
+  });
+
+  test('resolves volume deletion from a local record and archives only after provider deletion', async () => {
+    const fixture = createFixture();
+    const localVolume = {
+      _id: VOLUME_RECORD_ID,
+      providerNetworkVolumeId: 'volume-123',
+      name: 'ollama-model-cache',
+      archivedAt: null,
+    };
+    fixture.networkVolumeModel.findOne.mockReturnValue(queryResult(localVolume));
+    fixture.runpodService.listNetworkVolumes.mockResolvedValue([{
+      id: 'volume-123',
+      name: 'ollama-model-cache',
+      size: 50,
+      dataCenter: 'EU-SE-1',
+      type: 'STANDARD',
+    }]);
+
+    await expect(fixture.manager.deleteManagedNetworkVolume(
+      VOLUME_RECORD_ID,
+      'ollama-model-cache',
+      { name: 'admin' }
+    )).resolves.toBe(true);
+
+    expect(fixture.networkVolumeModel.findOne).toHaveBeenCalledWith({
+      _id: VOLUME_RECORD_ID,
+      archivedAt: null,
+    });
+    expect(fixture.runpodService.deleteNetworkVolume).toHaveBeenCalledWith('volume-123');
+    expect(fixture.networkVolumeModel.updateOne).toHaveBeenCalledWith(
+      { _id: VOLUME_RECORD_ID },
+      { $set: expect.objectContaining({
+        lifecycleGroup: 'archived',
+        providerPresent: false,
+        archivedAt: FIXED_NOW,
+      }) }
+    );
+  });
+
+  test('hides volume existence behind a generic local-record 404 and blocks attached deletion', async () => {
+    const fixture = createFixture();
+
+    await expect(fixture.manager.deleteManagedNetworkVolume(
+      'provider-volume-id',
+      'anything'
+    )).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_NETWORK_VOLUME_NOT_FOUND',
+      status: 404,
+    }));
+    expect(fixture.runpodService.listNetworkVolumes).not.toHaveBeenCalled();
+
+    fixture.networkVolumeModel.findOne.mockReturnValue(queryResult({
+      _id: VOLUME_RECORD_ID,
+      providerNetworkVolumeId: 'volume-123',
+      name: 'ollama-model-cache',
+      archivedAt: null,
+    }));
+    fixture.runpodService.listNetworkVolumes.mockResolvedValue([{
+      id: 'volume-123', name: 'ollama-model-cache',
+    }]);
+    fixture.runpodService.listPods.mockResolvedValue([{
+      id: 'pod-1',
+      mounts: { network: [{ volumeId: 'volume-123', path: '/workspace' }] },
+    }]);
+
+    await expect(fixture.manager.deleteManagedNetworkVolume(
+      VOLUME_RECORD_ID,
+      'ollama-model-cache'
+    )).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_NETWORK_VOLUME_IN_USE',
+    }));
+    expect(fixture.runpodService.deleteNetworkVolume).not.toHaveBeenCalled();
+  });
+
+  test('creates a reusable auto-cleaned model download in the volume data center', async () => {
+    const fixture = createFixture();
+    const providerVolume = {
+      id: 'volume-123',
+      name: 'qwen-cache',
+      size: 50,
+      dataCenter: 'EU-SE-1',
+      type: 'STANDARD',
+    };
+    const localDownloaderTemplate = downloaderTemplate({
+      _id: TEMPLATE_ID,
+      toObject: () => downloaderTemplate({ _id: TEMPLATE_ID }),
+    });
+    fixture.runpodService.listNetworkVolumes.mockResolvedValue([providerVolume]);
+    fixture.runpodService.createTemplate.mockResolvedValue({ id: 'provider-downloader-template-1' });
+    fixture.runpodService.createPod.mockResolvedValue({
+      id: 'download-pod-1',
+      status: 'PROVISIONING',
+      actions: ['stop', 'terminate'],
+      cost: 0.55,
+      dataCenterId: 'EU-SE-1',
+    });
+    fixture.templateModel.findOne
+      .mockReturnValueOnce(queryResult(null))
+      .mockReturnValueOnce(queryResult(downloaderTemplate({ _id: TEMPLATE_ID })));
+    fixture.templateModel.findOneAndUpdate.mockResolvedValue(localDownloaderTemplate);
+    fixture.networkVolumeModel.findOneAndUpdate.mockResolvedValue({
+      _id: VOLUME_RECORD_ID,
+      providerNetworkVolumeId: 'volume-123',
+      name: 'qwen-cache',
+    });
+    fixture.podModel.create.mockResolvedValue({
+      _id: POD_RECORD_ID,
+      providerPodId: 'download-pod-1',
+      toObject: () => ({ _id: POD_RECORD_ID, providerPodId: 'download-pod-1' }),
+    });
+    fixture.manager.scheduleProvisioning = jest.fn();
+
+    await expect(fixture.manager.createModelDownload({
+      networkVolumeId: 'volume-123',
+      model: 'qwen3.8:27b',
+      maxHourlyCost: '1.00',
+      autoStopMinutes: '240',
+      diskGb: '20',
+      publicAccessAcknowledged: 'acknowledged',
+    }, { name: 'admin' })).resolves.toEqual(expect.objectContaining({
+      providerPodId: 'download-pod-1',
+    }));
+
+    expect(fixture.runpodService.createTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'lentmiien-ollama-model-downloader-v2',
+      image: 'ollama/ollama:latest',
+    }));
+    expect(fixture.runpodService.createPod).toHaveBeenCalledWith(expect.objectContaining({
+      templateId: 'provider-downloader-template-1',
+      cloud: 'SECURE',
+      gpu: { id: 'NVIDIA GeForce RTX 4090', count: 1 },
+      dataCenterIds: ['EU-SE-1'],
+      mounts: { network: [{ volumeId: 'volume-123', path: '/workspace' }] },
+    }));
+    expect(fixture.podModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      podPurpose: 'model_download',
+      setupModel: 'qwen3.8:27b',
+      providerNetworkVolumeId: 'volume-123',
+      autoDeleteAfterSetup: true,
+      cleanupStatus: 'pending',
+      autoStopAt: new Date('2026-09-01T04:00:00.000Z'),
+    }));
+  });
+
+  test('rejects an unacknowledged model download before provider or template mutation', async () => {
+    const fixture = createFixture();
+
+    await expect(fixture.manager.createModelDownload({
+      networkVolumeId: 'volume-123',
+      model: 'qwen3.8:27b',
+    })).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_PUBLIC_ACCESS_NOT_ACKNOWLEDGED',
+    }));
+
+    expect(fixture.runpodService.listNetworkVolumes).not.toHaveBeenCalled();
+    expect(fixture.runpodService.createTemplate).not.toHaveBeenCalled();
+    expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
+  });
+
+  test('verifies a downloaded model, records it on the volume, and archives the temporary Pod', async () => {
+    const localPod = {
+      _id: POD_RECORD_ID,
+      providerPodId: 'download-pod-1',
+      name: 'download-qwen',
+      workloadTemplateId: TEMPLATE_ID,
+      providerStatus: 'RUNNING',
+      setupStatus: 'pending',
+      setupModel: 'qwen3.8:27b',
+      podPurpose: 'model_download',
+      autoDeleteAfterSetup: true,
+      cleanupStatus: 'pending',
+      providerNetworkVolumeId: 'volume-123',
+      usageTrackingMode: 'observed',
+      usageState: 'running',
+      usageStateEnteredAt: FIXED_NOW,
+      runningMs: 0,
+      stoppedMs: 0,
+    };
+    const fixture = createFixture({
+      template: downloaderTemplate(),
+      localPod,
+    });
+    fixture.manager.waitForRunningPod = jest.fn().mockResolvedValue({
+      id: 'download-pod-1', status: 'RUNNING', actions: ['stop', 'terminate'],
+    });
+    fixture.manager.waitForOllama = jest.fn().mockResolvedValue(true);
+    fixture.manager.pullOllamaModel = jest.fn().mockResolvedValue(true);
+    fixture.manager.verifyOllamaModel = jest.fn().mockResolvedValue(true);
+
+    await expect(fixture.manager._provisionPod(POD_RECORD_ID, { name: 'admin' }))
+      .resolves.toBeUndefined();
+
+    expect(fixture.manager.pullOllamaModel).toHaveBeenCalledWith(
+      'https://download-pod-1-11434.proxy.runpod.net',
+      'qwen3.8:27b',
+      { timeoutMs: fixture.manager.modelDownloadTimeoutMs }
+    );
+    expect(fixture.networkVolumeModel.updateOne).toHaveBeenCalledWith(
+      { providerNetworkVolumeId: 'volume-123', archivedAt: null },
+      {
+        $addToSet: { cachedModels: 'qwen3.8:27b' },
+        $set: { modelsUpdatedAt: FIXED_NOW },
+      }
+    );
+    expect(fixture.runpodService.deletePod).toHaveBeenCalledWith('download-pod-1');
+    expect(fixture.podModel.updateOne).toHaveBeenCalledWith(
+      { _id: POD_RECORD_ID, archivedAt: null },
+      { $set: expect.objectContaining({
+        setupStatus: 'ready',
+        setupCompletedAt: FIXED_NOW,
+      }) }
+    );
+    expect(fixture.podModel.updateOne).toHaveBeenCalledWith(
+      { _id: POD_RECORD_ID, archivedAt: null },
+      { $set: expect.objectContaining({
+        providerStatus: 'TERMINATED',
+        lifecycleGroup: 'archived',
+        cleanupStatus: 'completed',
+        archivedAt: FIXED_NOW,
+      }) }
+    );
+  });
+
+  test('keeps a verified download successful and stops the temporary Pod when cleanup fails', async () => {
+    const localPod = {
+      _id: POD_RECORD_ID,
+      providerPodId: 'download-pod-1',
+      name: 'download-qwen',
+      workloadTemplateId: TEMPLATE_ID,
+      providerStatus: 'RUNNING',
+      setupStatus: 'pending',
+      setupModel: 'qwen3.8:27b',
+      podPurpose: 'model_download',
+      autoDeleteAfterSetup: true,
+      cleanupStatus: 'pending',
+      providerNetworkVolumeId: 'volume-123',
+      usageTrackingMode: 'observed',
+      usageState: 'running',
+      usageStateEnteredAt: FIXED_NOW,
+      runningMs: 0,
+      stoppedMs: 0,
+    };
+    const fixture = createFixture({
+      template: downloaderTemplate(),
+      localPod,
+    });
+    fixture.manager.waitForRunningPod = jest.fn().mockResolvedValue({
+      id: 'download-pod-1', status: 'RUNNING', actions: ['stop', 'terminate'],
+    });
+    fixture.manager.waitForOllama = jest.fn().mockResolvedValue(true);
+    fixture.manager.pullOllamaModel = jest.fn().mockResolvedValue(true);
+    fixture.manager.verifyOllamaModel = jest.fn().mockResolvedValue(true);
+    fixture.runpodService.deletePod.mockRejectedValue(new RunpodApiError(
+      'Runpod could not delete the downloader Pod.',
+      { code: 'RUNPOD_HTTP_ERROR', status: 503 }
+    ));
+    fixture.runpodService.getPod.mockResolvedValue({
+      id: 'download-pod-1', status: 'RUNNING', actions: ['stop', 'terminate'],
+    });
+    fixture.runpodService.transitionPod.mockResolvedValue({
+      id: 'download-pod-1', status: 'EXITED', actions: ['start', 'terminate'],
+    });
+
+    await expect(fixture.manager._provisionPod(POD_RECORD_ID, { name: 'admin' }))
+      .resolves.toBeUndefined();
+
+    expect(fixture.podModel.updateOne).toHaveBeenCalledWith(
+      { _id: POD_RECORD_ID, archivedAt: null },
+      { $set: expect.objectContaining({
+        setupStatus: 'ready',
+        setupErrorCode: null,
+      }) }
+    );
+    expect(fixture.podModel.updateOne).toHaveBeenCalledWith(
+      { _id: POD_RECORD_ID, archivedAt: null },
+      { $set: expect.objectContaining({
+        cleanupStatus: 'failed',
+        cleanupErrorCode: 'RUNPOD_HTTP_ERROR',
+        lastOperationError: expect.objectContaining({
+          action: 'delete',
+          code: 'RUNPOD_HTTP_ERROR',
+          providerStatus: 503,
+        }),
+      }) }
+    );
+    expect(fixture.runpodService.transitionPod).toHaveBeenCalledWith(
+      'download-pod-1',
+      'stop'
+    );
+    expect(fixture.podModel.updateOne).not.toHaveBeenCalledWith(
+      { _id: POD_RECORD_ID, archivedAt: null },
+      { $set: expect.objectContaining({ setupStatus: 'failed' }) }
+    );
+  });
+
   test('requires explicit public-endpoint acknowledgement before provider work', async () => {
     const fixture = createFixture();
 
@@ -403,6 +883,84 @@ describe('RunpodPodManager', () => {
       name: 'admin',
     }));
     expect(pod.providerPodId).toBe('pod-123');
+  });
+
+  test('attaches an available regional volume and moves Ollama model storage under its mount', async () => {
+    const fixture = createFixture();
+    const providerVolume = {
+      id: 'volume-123',
+      name: 'ollama-model-cache',
+      size: 50,
+      dataCenter: 'EU-SE-1',
+      type: 'STANDARD',
+    };
+    const trackedVolume = {
+      _id: '507f191e810c19729de860ab',
+      providerNetworkVolumeId: providerVolume.id,
+      name: providerVolume.name,
+    };
+    fixture.runpodService.listNetworkVolumes.mockResolvedValue([providerVolume]);
+    fixture.networkVolumeModel.findOneAndUpdate.mockResolvedValue(trackedVolume);
+    fixture.runpodService.createPod.mockResolvedValue({
+      id: 'pod-volume',
+      status: 'PROVISIONING',
+      actions: ['stop', 'terminate'],
+      cost: 0.55,
+      dataCenterId: 'EU-SE-1',
+      mounts: { network: [{ volumeId: 'volume-123', path: '/workspace' }] },
+    });
+    fixture.podModel.create.mockResolvedValue({
+      _id: POD_RECORD_ID,
+      providerPodId: 'pod-volume',
+      toObject: () => ({ _id: POD_RECORD_ID, providerPodId: 'pod-volume' }),
+    });
+    fixture.manager.scheduleProvisioning = jest.fn();
+
+    await fixture.manager.createManagedPod(validCreateInput({
+      networkVolumeId: 'volume-123',
+      dataCenterId: 'EU-SE-1',
+      persistentDiskGb: '',
+    }), { name: 'admin' });
+
+    expect(fixture.runpodService.createPod).toHaveBeenCalledWith(expect.objectContaining({
+      cloud: 'SECURE',
+      dataCenterIds: ['EU-SE-1'],
+      mounts: { network: [{ volumeId: 'volume-123', path: '/workspace' }] },
+      env: {
+        OLLAMA_HOST: '0.0.0.0:11434',
+        OLLAMA_MODELS: '/workspace/ollama/models',
+      },
+    }));
+    expect(fixture.podModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      providerNetworkVolumeId: 'volume-123',
+      networkVolumeName: 'ollama-model-cache',
+      networkVolumeMountPath: '/workspace',
+      persistentDiskGb: null,
+    }));
+  });
+
+  test('does not attach one writable volume to two provider Pods', async () => {
+    const fixture = createFixture();
+    fixture.runpodService.listPods.mockResolvedValue([{
+      id: 'old-pod',
+      status: 'EXITED',
+      mounts: { network: [{ volumeId: 'volume-123', path: '/workspace' }] },
+    }]);
+    fixture.runpodService.listNetworkVolumes.mockResolvedValue([{
+      id: 'volume-123',
+      name: 'ollama-model-cache',
+      size: 50,
+      dataCenter: 'EU-SE-1',
+      type: 'STANDARD',
+    }]);
+
+    await expect(fixture.manager.createManagedPod(validCreateInput({
+      networkVolumeId: 'volume-123',
+      dataCenterId: 'EU-SE-1',
+    }))).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_NETWORK_VOLUME_IN_USE',
+    }));
+    expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
   });
 
   test('immediately cleans up a Pod when Runpod returns a rate above the confirmed limit', async () => {
