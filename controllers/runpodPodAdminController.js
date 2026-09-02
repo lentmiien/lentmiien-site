@@ -12,6 +12,8 @@ const NOTICE_KEYS = Object.freeze({
   cloudflareAccessNotEnforced: 'cloudflare-access-not-enforced',
   modelDownloadCreated: 'model-download-created',
   modelDownloadFailed: 'model-download-failed',
+  modelArtifactPreparationCreated: 'model-artifact-preparation-created',
+  modelArtifactPreparationFailed: 'model-artifact-preparation-failed',
   podCreated: 'pod-created',
   podCreateFailed: 'pod-create-failed',
   podStarted: 'pod-started',
@@ -83,6 +85,11 @@ function logRejectedOperation(appLogger, action, error) {
     'RUNPOD_GPU_UNAVAILABLE',
     'RUNPOD_GPU_COUNT_UNAVAILABLE',
     'RUNPOD_DOWNLOAD_GPU_UNAVAILABLE',
+    'RUNPOD_ARTIFACT_GPU_UNAVAILABLE',
+    'RUNPOD_ARTIFACT_VOLUME_TOO_SMALL',
+    'RUNPOD_ARTIFACT_BILLING_NOT_ACKNOWLEDGED',
+    'RUNPOD_ARTIFACT_ALREADY_PREPARING',
+    'RUNPOD_ARTIFACT_ALREADY_READY',
     'RUNPOD_DATACENTER_UNAVAILABLE',
     'RUNPOD_DATACENTER_NETWORKING_UNAVAILABLE',
     'RUNPOD_ACTIVE_POD_LIMIT',
@@ -217,6 +224,24 @@ function createRunpodPodAdminController({
           res,
           failureNotice(error, NOTICE_KEYS.modelDownloadFailed),
           'model-downloader'
+        );
+      }
+    },
+
+    async prepareModelArtifact(req, res) {
+      try {
+        await manager.prepareModelArtifact(req.body || {}, req.user);
+        return redirectWithNotice(
+          res,
+          NOTICE_KEYS.modelArtifactPreparationCreated,
+          'model-artifacts'
+        );
+      } catch (error) {
+        logRejectedOperation(appLogger, 'model_artifact_prepare', error);
+        return redirectWithNotice(
+          res,
+          failureNotice(error, NOTICE_KEYS.modelArtifactPreparationFailed),
+          'model-artifacts'
         );
       }
     },

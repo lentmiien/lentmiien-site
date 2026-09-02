@@ -31,7 +31,7 @@ const RunpodPodSchema = new mongoose.Schema({
   },
   podPurpose: {
     type: String,
-    enum: ['ollama_service', 'model_download'],
+    enum: ['ollama_service', 'model_download', 'model_artifact_prepare'],
     default: 'ollama_service',
     index: true,
   },
@@ -78,7 +78,7 @@ const RunpodPodSchema = new mongoose.Schema({
   cleanupErrorCode: { type: String, default: null, trim: true, maxlength: 80 },
   accessMode: {
     type: String,
-    enum: ['runpod_proxy', 'cloudflare_access'],
+    enum: ['runpod_proxy', 'cloudflare_access', 'private_none'],
     default: 'runpod_proxy',
     index: true,
   },

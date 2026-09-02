@@ -8,6 +8,7 @@ const {
   chooseModelDownloadGpu,
   mergeGpuCatalogs,
   normalizeModelName,
+  normalizeModelArtifactPreparerTemplateInput,
   normalizeDownloaderTemplateInput,
   normalizeCloudflareTemplateInput,
   normalizeTemplateInput,
@@ -117,6 +118,7 @@ function createFixture({ template = ollamaTemplate(), localPod = null, managerOp
     createNetworkVolume: jest.fn(),
     deleteNetworkVolume: jest.fn().mockResolvedValue(true),
     getPod: jest.fn(),
+    getPodLogSnapshot: jest.fn().mockResolvedValue({ events: [] }),
     createPod: jest.fn(),
     transitionPod: jest.fn(),
     deletePod: jest.fn().mockResolvedValue(true),
@@ -149,12 +151,19 @@ function createFixture({ template = ollamaTemplate(), localPod = null, managerOp
     findOneAndUpdate: jest.fn(),
     updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
   };
+  const modelArtifactModel = {
+    find: jest.fn().mockImplementation(() => queryResult([])),
+    findOne: jest.fn().mockImplementation(() => queryResult(null)),
+    findOneAndUpdate: jest.fn(),
+    updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+  };
   const eventModel = { create: jest.fn().mockResolvedValue({}) };
   const appLogger = { warning: jest.fn(), error: jest.fn() };
   const manager = new RunpodPodManager({
     runpodService,
     podModel,
     networkVolumeModel,
+    modelArtifactModel,
     templateModel,
     eventModel,
     appLogger,
@@ -171,6 +180,7 @@ function createFixture({ template = ollamaTemplate(), localPod = null, managerOp
     appLogger,
     eventModel,
     manager,
+    modelArtifactModel,
     networkVolumeModel,
     podModel,
     runpodService,
@@ -305,6 +315,24 @@ describe('Runpod workload and picker helpers', () => {
     expect(chooseModelDownloadGpu([
       gpu({ id: 'wrong-region' }),
     ], 'EU-RO-1', 1)).toBeNull();
+  });
+
+  test('builds a private, no-port, pinned GGUF artifact-preparer recipe', () => {
+    const normalized = normalizeModelArtifactPreparerTemplateInput();
+    const start = JSON.parse(normalized.args);
+
+    expect(normalized).toEqual(expect.objectContaining({
+      slug: 'glm53-artifact-preparer',
+      setupKind: 'hf_gguf_prepare',
+      accessMode: 'private_none',
+      defaultModel: 'glm-5-3-flash-ud-iq4-xs',
+      ports: [],
+    }));
+    expect(start.entrypoint).toEqual(['/bin/bash', '-lc']);
+    expect(start.cmd[0]).toContain('timeout --signal=TERM');
+    expect(normalized.args).not.toMatch(/RUNPOD_API_KEY|HF_TOKEN|CLOUDFLARE/u);
+    expect(() => normalizeModelArtifactPreparerTemplateInput('unknown'))
+      .toThrow(RunpodManagementError);
   });
 
   test('merges Secure and Community catalog choices by stable GPU ID', () => {
@@ -746,6 +774,120 @@ describe('RunpodPodManager', () => {
     expect(fixture.runpodService.listNetworkVolumes).not.toHaveBeenCalled();
     expect(fixture.runpodService.createTemplate).not.toHaveBeenCalled();
     expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
+  });
+
+  test('creates one no-port, auto-cleaned preparation Pod for the approved pinned artifact', async () => {
+    const fixture = createFixture();
+    const artifactId = '507f191e810c19729de860ad';
+    const providerVolume = {
+      id: 'glm-volume-1',
+      name: 'glm-5-3-flash-ud-iq4-xs',
+      size: 250,
+      dataCenter: 'EU-SE-1',
+      type: 'STANDARD',
+    };
+    const localArtifact = {
+      _id: artifactId,
+      slug: 'glm-5-3-flash-ud-iq4-xs',
+      name: 'GLM-5.3-Flash · UD-IQ4_XS',
+      providerNetworkVolumeId: providerVolume.id,
+      sourceRepository: 'unsloth/GLM-5.3-Flash-GGUF',
+      sourceRevision: '2975ab414d30340466d8c51533c6e91f0cca64c1',
+      runtimeRepository: 'unslothai/llama.cpp',
+      runtimeRevision: '949f7efb097eb20ef36fecdb1afaebff9a4ae7ed',
+      preparationStatus: 'preparing',
+      preparationStage: 'provisioning',
+    };
+    fixture.runpodService.listNetworkVolumes.mockResolvedValue([providerVolume]);
+    fixture.runpodService.createPod.mockResolvedValue({
+      id: 'preparer-pod-1',
+      status: 'PROVISIONING',
+      actions: ['stop', 'terminate'],
+      cost: 0.5,
+      dataCenterId: 'EU-SE-1',
+    });
+    fixture.manager.saveModelArtifactPreparerTemplate = jest.fn().mockResolvedValue({
+      _id: TEMPLATE_ID,
+      providerTemplateId: 'provider-artifact-template-1',
+    });
+    fixture.manager.trackProviderNetworkVolume = jest.fn().mockResolvedValue({
+      _id: VOLUME_RECORD_ID,
+      providerNetworkVolumeId: providerVolume.id,
+    });
+    fixture.modelArtifactModel.findOneAndUpdate
+      .mockResolvedValueOnce(localArtifact)
+      .mockResolvedValueOnce({
+        ...localArtifact,
+        preparationPodRecordId: POD_RECORD_ID,
+        providerPreparationPodId: 'preparer-pod-1',
+      });
+    fixture.podModel.create.mockResolvedValue({
+      _id: POD_RECORD_ID,
+      providerPodId: 'preparer-pod-1',
+    });
+    fixture.manager.scheduleModelArtifactPreparation = jest.fn();
+
+    await expect(fixture.manager.prepareModelArtifact({
+      presetSlug: 'glm-5-3-flash-ud-iq4-xs',
+      networkVolumeId: providerVolume.id,
+      maxHourlyCost: '0.99',
+      preparationBillingAcknowledged: 'acknowledged',
+    }, { name: 'admin' })).resolves.toEqual(expect.objectContaining({
+      preparationStatus: 'preparing',
+      providerPreparationPodId: 'preparer-pod-1',
+    }));
+
+    expect(fixture.runpodService.createPod).toHaveBeenCalledWith({
+      name: expect.stringMatching(/^prepare-glm53-iq4-/u),
+      templateId: 'provider-artifact-template-1',
+      cloud: 'SECURE',
+      gpu: { id: 'NVIDIA GeForce RTX 4090', count: 1 },
+      disk: 40,
+      mounts: { network: [{ volumeId: providerVolume.id, path: '/workspace' }] },
+      dataCenterIds: ['EU-SE-1'],
+      globalNetworking: false,
+    });
+    expect(fixture.podModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      podPurpose: 'model_artifact_prepare',
+      accessMode: 'private_none',
+      ports: [],
+      autoDeleteAfterSetup: true,
+      cleanupStatus: 'pending',
+      providerNetworkVolumeId: providerVolume.id,
+    }));
+    expect(fixture.manager.scheduleModelArtifactPreparation).toHaveBeenCalledWith(
+      POD_RECORD_ID,
+      artifactId,
+      expect.objectContaining({ name: 'admin' })
+    );
+  });
+
+  test('rejects unknown, unacknowledged, or undersized artifact preparation before compute', async () => {
+    const fixture = createFixture();
+
+    await expect(fixture.manager.prepareModelArtifact({
+      presetSlug: '../arbitrary',
+    })).rejects.toEqual(expect.objectContaining({ code: 'RUNPOD_INPUT_INVALID' }));
+    await expect(fixture.manager.prepareModelArtifact({
+      presetSlug: 'glm-5-3-flash-ud-iq4-xs',
+      networkVolumeId: 'volume-1',
+    })).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_ARTIFACT_BILLING_NOT_ACKNOWLEDGED',
+    }));
+    fixture.runpodService.listNetworkVolumes.mockResolvedValue([{
+      id: 'volume-1', name: 'small', size: 249, dataCenter: 'EU-SE-1', type: 'STANDARD',
+    }]);
+    await expect(fixture.manager.prepareModelArtifact({
+      presetSlug: 'glm-5-3-flash-ud-iq4-xs',
+      networkVolumeId: 'volume-1',
+      maxHourlyCost: '0.99',
+      preparationBillingAcknowledged: 'acknowledged',
+    })).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_ARTIFACT_VOLUME_TOO_SMALL',
+    }));
+
+    expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
+    expect(fixture.modelArtifactModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   test('verifies a downloaded model, records it on the volume, and archives the temporary Pod', async () => {

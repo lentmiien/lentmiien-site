@@ -27,7 +27,7 @@ const RunpodWorkloadTemplateSchema = new mongoose.Schema({
   providerSyncErrorCode: { type: String, default: null, trim: true, maxlength: 80 },
   providerSyncedAt: { type: Date, default: null },
   image: { type: String, required: true, trim: true, maxlength: 500 },
-  args: { type: String, default: '', maxlength: 4000 },
+  args: { type: String, default: '', maxlength: 16000 },
   diskGb: { type: Number, required: true, min: 5, max: 500 },
   ports: [{ type: String, trim: true, maxlength: 40 }],
   env: {
@@ -41,7 +41,7 @@ const RunpodWorkloadTemplateSchema = new mongoose.Schema({
   startJupyter: { type: Boolean, default: false },
   setupKind: {
     type: String,
-    enum: ['ollama_pull', 'ollama_download'],
+    enum: ['ollama_pull', 'ollama_download', 'hf_gguf_prepare'],
     required: true,
   },
   defaultModel: { type: String, required: true, trim: true, maxlength: 120 },

@@ -11,19 +11,25 @@ block content
   - const formatInteger = (value) => Number.isFinite(value) ? value.toLocaleString('en-US') : '—';
   - const formatTimestamp = (value) => { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '—'; };
   - const formatDuration = (value) => { if (!Number.isFinite(value)) return 'Not recorded'; const seconds = Math.max(0, Math.floor(value / 1000)); const days = Math.floor(seconds / 86400); const hours = Math.floor((seconds % 86400) / 3600); const minutes = Math.floor((seconds % 3600) / 60); return days ? `${days}d ${hours}h ${minutes}m` : hours ? `${hours}h ${minutes}m` : `${minutes}m`; };
+  - const formatBytes = (value) => Number.isFinite(value) ? `${(value / 1000 / 1000 / 1000).toFixed(1)} GB` : '—';
   - const formatMinutes = (value) => value % 1440 === 0 ? `${value / 1440} day${value === 1440 ? '' : 's'}` : value % 60 === 0 ? `${value / 60} hour${value === 60 ? '' : 's'}` : `${value} minutes`;
   - const operationLabel = (value) => ({ start: 'Pod start', stop: 'Pod stop', extend: 'deadline extension', delete: 'Pod deletion', auto_stop: 'automatic stop' }[value] || 'Pod operation');
+  - const artifactErrorMessage = (value) => ({ HF_DOWNLOAD_TIMEOUT: 'The Hugging Face transfer stalled. Retry will reuse completed shards and make a fresh bounded attempt for the affected shard.', HF_DOWNLOAD_AUTHORIZATION_FAILED: 'Hugging Face rejected the download. Check whether the pinned repository or revision now requires authentication.', HF_DOWNLOAD_RATE_LIMITED: 'Hugging Face rate-limited the download. Wait before retrying; completed shards will be reused.', HF_XET_DOWNLOAD_ERROR: 'The Hugging Face Xet writer failed on the network volume. The preparer now removes incompatible partial reconstruction data, uses sequential HTTP downloads, and reuses completed shards.', HF_DOWNLOAD_NETWORK_ERROR: 'The preparation Pod lost its connection to Hugging Face. Retry when provider networking is stable.', RUNPOD_ARTIFACT_VOLUME_FULL: 'The selected volume does not have enough free capacity for the remaining shards plus 10 GB of headroom.', DEPENDENCY_INSTALL_FAILED: 'The preparation Pod could not install its pinned build dependencies.', RUNTIME_BUILD_FAILED: 'The pinned llama.cpp runtime could not be built or validated.', ARTIFACT_VERIFICATION_FAILED: 'A downloaded shard failed its exact size or SHA-256 verification.', ARTIFACT_FINALIZATION_FAILED: 'The files verified, but the final ready marker could not be written.', RUNPOD_ARTIFACT_PREPARATION_TIMEOUT: 'The four-hour preparation deadline expired before verification completed.' }[value] || 'The preparation Pod failed before the artifact could be verified.');
   - const isoTimestamp = (value) => { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date.toISOString() : ''; };
   - const refreshHref = `${adminPath}?bucketSize=${encodeURIComponent(filters.bucketSize)}&lastN=${encodeURIComponent(filters.lastN)}&refresh=1`;
-  - const management = podManagement || { limits: {}, gateway: {}, templates: [], managedPods: [], archivedPods: [], modelDownloads: [], networkVolumes: [], archivedNetworkVolumes: [], unmanagedProviderPods: [], gpuOptions: [], errors: {} };
+  - const management = podManagement || { limits: {}, gateway: {}, templates: [], managedPods: [], archivedPods: [], modelDownloads: [], modelArtifactPreparations: [], modelArtifacts: [], modelArtifactPresets: [], networkVolumes: [], archivedNetworkVolumes: [], unmanagedProviderPods: [], gpuOptions: [], errors: {} };
   - const ollamaTemplate = management.templates.find((entry) => entry.slug === 'ollama') || null;
   - const cloudflareTemplate = management.templates.find((entry) => entry.slug === 'ollama-cloudflare') || null;
   - const downloaderTemplate = management.templates.find((entry) => entry.slug === 'ollama-downloader') || null;
+  - const artifactPreparerTemplate = management.templates.find((entry) => entry.slug === 'glm53-artifact-preparer') || null;
+  - const largeModelPreset = management.modelArtifactPresets[0] || null;
   - const servingTemplates = management.templates.filter((entry) => ['ollama', 'ollama-cloudflare'].includes(entry.slug) && entry.providerPresent).sort((left, right) => (left.accessMode === 'cloudflare_access' ? -1 : 1) - (right.accessMode === 'cloudflare_access' ? -1 : 1));
   - const defaultServingTemplate = servingTemplates[0] || cloudflareTemplate || ollamaTemplate || null;
   - const availableNetworkVolumes = management.networkVolumes.filter((volume) => volume.providerPresent && volume.attachedPodCount === 0);
   - const defaultNetworkVolume = availableNetworkVolumes[0] || null;
   - const defaultCachedModel = defaultNetworkVolume && defaultNetworkVolume.cachedModels && defaultNetworkVolume.cachedModels.length ? defaultNetworkVolume.cachedModels[0] : 'qwen3.8:27b';
+  - const artifactVolumes = largeModelPreset ? availableNetworkVolumes.filter((volume) => Number(volume.sizeGb) >= Number(largeModelPreset.recommendedVolumeGb)) : [];
+  - const defaultArtifactVolume = artifactVolumes.find((volume) => volume.name === 'glm-5-3-flash-ud-iq4-xs') || artifactVolumes[0] || null;
   - const networkVolumeDataCenters = dataCenters.filter((entry) => entry.networkVolumeTypes.includes('STANDARD') || entry.networkVolumeTypes.includes('HIGH_PERFORMANCE'));
   main.runpod-admin
     header.runpod-hero
@@ -215,6 +221,132 @@ block content
                     td #{formatInteger(volume.sizeGb)} GB · #{volume.volumeType.replaceAll('_', ' ')}
                     td= volume.dataCenterId
                     td= formatTimestamp(volume.archivedAt)
+
+    section#model-artifacts.runpod-panel(aria-labelledby='runpodModelArtifactsHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Very large model preparation
+          h2#runpodModelArtifactsHeading Prepare GLM-5.3-Flash on persistent storage
+          p.runpod-panel__subtitle Download the approved UD-IQ4_XS GGUF shards from one pinned Hugging Face revision, build the matching pinned llama.cpp runtime, verify every SHA-256 checksum, and remove the temporary no-port Pod.
+        if artifactPreparerTemplate
+          span.runpod-status(class=artifactPreparerTemplate.providerPresent ? 'runpod-status--ready' : 'runpod-status--warning')= artifactPreparerTemplate.providerPresent ? 'PREPARER READY' : 'AUTO-REPAIR ON START'
+
+      if largeModelPreset
+        .runpod-location-summary(role='note')
+          span Approved artifact
+          strong= largeModelPreset.name
+          small #{formatBytes(largeModelPreset.totalBytes)} exact model data · #{formatInteger(largeModelPreset.recommendedVramGb)} GB recommended aggregate VRAM · #{formatInteger(largeModelPreset.defaultContextTokens)} token first-run context
+        .runpod-two-column
+          article.runpod-template-summary
+            h3 Immutable source contract
+            dl
+              div
+                dt Repository
+                dd= largeModelPreset.sourceRepository
+              div
+                dt Revision
+                dd
+                  code= largeModelPreset.sourceRevision
+              div
+                dt Quantization
+                dd= largeModelPreset.variant
+              div
+                dt Runtime
+                dd #{largeModelPreset.runtimeRepository} @ #{largeModelPreset.runtimeRevision.slice(0, 12)}
+              div
+                dt Public ports
+                dd None
+            p.runpod-form-help The browser cannot supply a repository, URL, command, checksum, or runtime revision. Adding another model requires a reviewed server-side preset.
+
+          if artifactVolumes.length && management.gpuOptions.length
+            form.runpod-form(
+              method='post',
+              action=`${adminPath}/model-artifacts/prepare`,
+              data-runpod-artifact-preparer-form
+            )
+              input(type='hidden', name='_csrf', value=csrfToken)
+              input(type='hidden', name='presetSlug', value=largeModelPreset.slug)
+              h3 Prepare on a volume
+              .runpod-form-grid
+                label.runpod-field.runpod-field--span-2
+                  span Dedicated network volume
+                  select(name='networkVolumeId', data-artifact-volume-select, required)
+                    each volume in artifactVolumes
+                      - const storedArtifact = management.modelArtifacts.find((artifact) => artifact.providerNetworkVolumeId === volume.providerNetworkVolumeId && artifact.slug === largeModelPreset.slug);
+                      option(
+                        value=volume.providerNetworkVolumeId,
+                        data-datacenter=volume.dataCenterId,
+                        data-artifact-status=storedArtifact ? storedArtifact.preparationStatus : 'not_prepared',
+                        selected=defaultArtifactVolume && volume.providerNetworkVolumeId === defaultArtifactVolume.providerNetworkVolumeId
+                      )= `${volume.name} · ${formatInteger(volume.sizeGb)} GB · ${volume.dataCenterId}${storedArtifact ? ` · ${storedArtifact.preparationStatus}` : ''}`
+              .runpod-location-summary(role='status' aria-live='polite')
+                span Compatible placement
+                strong(data-artifact-location)= defaultArtifactVolume ? `Secure Cloud · ${defaultArtifactVolume.dataCenterId}` : 'Choose a volume'
+                small The volume remains billable after preparation; only the temporary Pod is automatically deleted.
+              label.runpod-check.runpod-check--warning
+                input(type='checkbox', name='preparationBillingAcknowledged', value='acknowledged', required)
+                span I approve one temporary Secure Cloud GPU below the confirmed hourly ceiling. An independent four-hour in-container deadline is enforced.
+              details.runpod-advanced
+                summary Advanced preparation settings
+                p.runpod-form-help Automatic selection favors the cheapest currently available GPU in the volume's data center. The GPU does not need to hold the model; it performs the download and CUDA runtime build.
+                .runpod-form-grid.runpod-form-grid--wide
+                  label.runpod-field.runpod-field--span-2
+                    span Preparation GPU
+                    select(name='gpuId', data-artifact-gpu-select)
+                      option(value='') Automatic · cheapest compatible GPU
+                      each gpu in management.gpuOptions
+                        if Number.isFinite(gpu.securePrice) && gpu.securePrice <= 1
+                          option(
+                            value=gpu.id,
+                            data-price=gpu.securePrice,
+                            data-availability=gpu.secureAvailability,
+                            data-datacenters=gpu.secureDataCenters.map((entry) => entry.id).join('|')
+                          )= `${gpu.name} · ${formatUsd(gpu.securePrice)}/hr · ${gpu.secureAvailability}`
+                  label.runpod-field
+                    span Maximum preparation cost / hour
+                    input(type='number', name='maxHourlyCost', min='0.01', max='1.00', step='0.01', value=management.limits.defaultModelArtifactMaxHourlyCostUsd || '0.99', data-artifact-cost-limit, required)
+                output.runpod-form-help(data-artifact-gpu-summary aria-live='polite') Placement will be finalized from fresh provider stock on submit.
+              button.runpod-button.runpod-button--primary(type='submit', data-runpod-artifact-button) Prepare verified artifact
+          else
+            .runpod-empty
+              strong No compatible unattached volume is ready
+              p This preset needs an unattached #{formatInteger(largeModelPreset.recommendedVolumeGb)} GB or larger volume and current Secure Cloud GPU stock in the same data center.
+
+      if management.modelArtifacts.length || management.modelArtifactPreparations.length
+        h3.runpod-subheading Artifact preparation history
+        .runpod-download-grid
+          each artifact in management.modelArtifacts
+            article.runpod-download-card
+              .runpod-pod-card__header
+                div
+                  h3= artifact.name
+                  code= artifact.providerNetworkVolumeId
+                if artifact.preparationStatus === 'ready'
+                  span.runpod-status.runpod-status--ready VERIFIED
+                else if artifact.preparationStatus === 'failed'
+                  span.runpod-status.runpod-status--error FAILED
+                else
+                  span.runpod-status.runpod-status--running= artifact.preparationStage.replaceAll('_', ' ').toUpperCase()
+              .runpod-pod-card__metrics
+                div
+                  span Location
+                  strong= artifact.dataCenterId
+                div
+                  span Exact model bytes
+                  strong= formatBytes(artifact.totalBytes)
+                div
+                  span Runtime revision
+                  strong= artifact.runtimeRevision.slice(0, 12)
+                div
+                  span Last observed
+                  strong= formatTimestamp(artifact.preparationLastObservedAt)
+              if artifact.preparationStatus === 'ready'
+                p.runpod-form-help Ready and checksum-verified #{formatTimestamp(artifact.verifiedAt)}. A serving Pod can mount this volume without downloading the model again.
+              else if artifact.preparationStatus === 'failed'
+                .runpod-alert.runpod-alert--error(role='status')
+                  strong Preparation failed
+                  p= artifactErrorMessage(artifact.preparationErrorCode)
+                  code= artifact.preparationErrorCode || 'RUNPOD_ARTIFACT_PREPARATION_FAILED'
 
     section#model-downloader.runpod-panel(aria-labelledby='runpodModelDownloaderHeading')
       .runpod-panel__header
@@ -813,6 +945,7 @@ block content
 
     nav.runpod-section-nav(aria-label='Runpod dashboard sections')
       a(href='#network-volumes') Network volumes
+      a(href='#model-artifacts') Large artifacts
       a(href='#model-downloader') Download model
       a(href='#workload-templates') Workload template
       a(href='#pod-creator') Create Pod

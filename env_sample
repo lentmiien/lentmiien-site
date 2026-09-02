@@ -105,7 +105,11 @@ RUNPOD_MAX_RUNTIME_MINUTES=1440
 RUNPOD_PROVISION_TIMEOUT_MS=600000
 RUNPOD_OLLAMA_PULL_TIMEOUT_MS=1800000
 RUNPOD_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS=21600000
+# Bounded background monitor for pinned GGUF artifact preparation (4h10m default).
+RUNPOD_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS=15000000
 RUNPOD_POLL_INTERVAL_MS=5000
+# Optional convenience default for the standalone GLM preparation script.
+RUNPOD_GLM53_VOLUME_ID=
 # Stable Ollama gateway. Keep the tunnel token local; the bootstrap script copies it once
 # into an encrypted Runpod Secret, and provider templates store only the Secret reference.
 RUNPOD_CLOUDFLARE_GATEWAY_URL=https://llm.lentmiien.com

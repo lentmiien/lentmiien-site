@@ -35,6 +35,8 @@ const NOTICE_MESSAGES = Object.freeze({
   'cloudflare-access-not-enforced': { type: 'error', message: 'Cloudflare Access did not block an anonymous gateway request. Protect the entire LLM hostname before creating a Pod.' },
   'model-download-created': { type: 'success', message: 'The model download Pod was created. It will verify the model, delete itself, and keep the network volume.' },
   'model-download-failed': { type: 'error', message: 'The model download could not be started. Check volume location, GPU availability, and the confirmed cost limit.' },
+  'model-artifact-preparation-created': { type: 'success', message: 'The pinned GLM artifact preparation Pod was created. It exposes no ports, verifies every shard, and deletes itself after completion.' },
+  'model-artifact-preparation-failed': { type: 'error', message: 'The GLM artifact preparation could not be started. Check the dedicated volume, EU-RO-1 GPU availability, and the confirmed cost ceiling.' },
   'pod-created': { type: 'success', message: 'The pod was created. Ollama setup is running in the background.' },
   'pod-create-failed': { type: 'error', message: 'The pod could not be created. Check current availability and try again.' },
   'pod-started': { type: 'success', message: 'The pod start request was accepted.' },
@@ -348,6 +350,7 @@ function buildPageModel(
         defaultAutoStopMinutes: 60,
         defaultModelDownloadAutoStopMinutes: 240,
         defaultModelDownloadMaxHourlyCostUsd: 1,
+        defaultModelArtifactMaxHourlyCostUsd: 0.99,
         maxRuntimeMinutes: 1440,
         ...(management.limits || {}),
       },
@@ -367,6 +370,15 @@ function buildPageModel(
       templates: Array.isArray(management.templates) ? management.templates.slice(0, 100) : [],
       modelDownloads: Array.isArray(management.modelDownloads)
         ? management.modelDownloads.slice(0, 200).map(mapManagementPod)
+        : [],
+      modelArtifactPreparations: Array.isArray(management.modelArtifactPreparations)
+        ? management.modelArtifactPreparations.slice(0, 200).map(mapManagementPod)
+        : [],
+      modelArtifacts: Array.isArray(management.modelArtifacts)
+        ? management.modelArtifacts.slice(0, 200)
+        : [],
+      modelArtifactPresets: Array.isArray(management.modelArtifactPresets)
+        ? management.modelArtifactPresets.slice(0, 20)
         : [],
       managedPods: Array.isArray(management.managedPods)
         ? management.managedPods.slice(0, 200).map(mapManagementPod)

@@ -8,7 +8,7 @@ const ActorSchema = new mongoose.Schema({
 const RunpodOperationEventSchema = new mongoose.Schema({
   resourceType: {
     type: String,
-    enum: ['pod', 'template', 'billing', 'network_volume'],
+    enum: ['pod', 'template', 'billing', 'network_volume', 'model_artifact'],
     required: true,
     index: true,
   },
@@ -30,9 +30,15 @@ const RunpodOperationEventSchema = new mongoose.Schema({
     default: null,
     index: true,
   },
+  modelArtifactRecordId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'runpod_model_artifact',
+    default: null,
+    index: true,
+  },
   action: {
     type: String,
-    enum: ['create', 'sync', 'setup', 'start', 'stop', 'extend', 'delete', 'auto_stop', 'template_sync', 'billing_sync'],
+    enum: ['create', 'sync', 'setup', 'start', 'stop', 'extend', 'delete', 'auto_stop', 'template_sync', 'billing_sync', 'artifact_prepare'],
     required: true,
     index: true,
   },
@@ -54,5 +60,6 @@ RunpodOperationEventSchema.index({ resourceType: 1, createdAt: -1 });
 RunpodOperationEventSchema.index({ podRecordId: 1, createdAt: -1 });
 RunpodOperationEventSchema.index({ templateRecordId: 1, createdAt: -1 });
 RunpodOperationEventSchema.index({ networkVolumeRecordId: 1, createdAt: -1 });
+RunpodOperationEventSchema.index({ modelArtifactRecordId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('runpod_operation_event', RunpodOperationEventSchema);

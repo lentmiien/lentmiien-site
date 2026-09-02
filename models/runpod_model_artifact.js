@@ -119,7 +119,33 @@ const RunpodModelArtifactSchema = new mongoose.Schema({
     default: 'planned',
     index: true,
   },
+  preparationStage: {
+    type: String,
+    enum: [
+      'planned',
+      'provisioning',
+      'installing',
+      'building_runtime',
+      'downloading_model',
+      'verifying_model',
+      'finalizing',
+      'ready',
+      'failed',
+      'archived',
+    ],
+    default: 'planned',
+    index: true,
+  },
+  preparationPodRecordId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'runpod_pod',
+    default: null,
+    index: true,
+  },
+  providerPreparationPodId: { type: String, default: null, trim: true, maxlength: 128 },
   preparationErrorCode: { type: String, default: null, trim: true, maxlength: 80 },
+  preparationStartedAt: { type: Date, default: null },
+  preparationLastObservedAt: { type: Date, default: null },
   preparedAt: { type: Date, default: null },
   verifiedAt: { type: Date, default: null },
   archivedAt: { type: Date, default: null },
@@ -139,5 +165,6 @@ RunpodModelArtifactSchema.index(
   { unique: true, name: 'runpod_model_artifact_source_volume_1' }
 );
 RunpodModelArtifactSchema.index({ preparationStatus: 1, updatedAt: -1 });
+RunpodModelArtifactSchema.index({ preparationStage: 1, updatedAt: -1 });
 
 module.exports = mongoose.model('runpod_model_artifact', RunpodModelArtifactSchema);

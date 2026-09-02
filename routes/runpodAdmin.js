@@ -175,6 +175,14 @@ router.post(
   runpodPodAdminController.createModelDownload
 );
 router.post(
+  '/model-artifacts/prepare',
+  runpodMutationLimiter,
+  runpodCreateLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.modelArtifactPrepare),
+  runpodPodAdminController.prepareModelArtifact
+);
+router.post(
   '/pods',
   runpodMutationLimiter,
   runpodCreateLimiter,

@@ -17,6 +17,7 @@ function manager() {
     saveOllamaTemplate: jest.fn().mockResolvedValue({}),
     saveOllamaCloudflareTemplate: jest.fn().mockResolvedValue({}),
     createModelDownload: jest.fn().mockResolvedValue({}),
+    prepareModelArtifact: jest.fn().mockResolvedValue({}),
     createManagedPod: jest.fn().mockResolvedValue({}),
     transitionManagedPod: jest.fn().mockResolvedValue({}),
     extendManagedPod: jest.fn().mockResolvedValue({}),
@@ -38,6 +39,7 @@ describe('Runpod Pod admin mutation controller', () => {
     ['saveOllamaTemplate', 'saveOllamaTemplate', {}, {}, NOTICE_KEYS.templateSynced, 'workload-templates'],
     ['saveOllamaCloudflareTemplate', 'saveOllamaCloudflareTemplate', {}, {}, NOTICE_KEYS.gatewayTemplateSynced, 'workload-templates'],
     ['createModelDownload', 'createModelDownload', {}, {}, NOTICE_KEYS.modelDownloadCreated, 'model-downloader'],
+    ['prepareModelArtifact', 'prepareModelArtifact', {}, {}, NOTICE_KEYS.modelArtifactPreparationCreated, 'model-artifacts'],
     ['createPod', 'createManagedPod', {}, {}, NOTICE_KEYS.podCreated, 'pods'],
     ['startPod', 'transitionManagedPod', { id: 'local-id' }, { runMinutes: '240' }, NOTICE_KEYS.podStarted, 'pods'],
     ['stopPod', 'transitionManagedPod', { id: 'local-id' }, {}, NOTICE_KEYS.podStopped, 'pods'],
@@ -97,6 +99,9 @@ describe('Runpod Pod admin mutation controller', () => {
     await controller.createModelDownload({
       body: { networkVolumeId: 'volume-id', model: 'qwen3.8:27b' }, user,
     }, response());
+    await controller.prepareModelArtifact({
+      body: { presetSlug: 'glm-5-3-flash-ud-iq4-xs', networkVolumeId: 'volume-id' }, user,
+    }, response());
     await controller.createNetworkVolume({ body: { sizeGb: '50' }, user }, response());
     await controller.deleteNetworkVolume({
       params: { id: 'volume-id' }, body: { confirmation: 'volume-name' }, user,
@@ -111,6 +116,9 @@ describe('Runpod Pod admin mutation controller', () => {
     expect(service.createManagedPod).toHaveBeenCalledWith({ gpuId: 'gpu' }, user);
     expect(service.createModelDownload).toHaveBeenCalledWith({
       networkVolumeId: 'volume-id', model: 'qwen3.8:27b',
+    }, user);
+    expect(service.prepareModelArtifact).toHaveBeenCalledWith({
+      presetSlug: 'glm-5-3-flash-ud-iq4-xs', networkVolumeId: 'volume-id',
     }, user);
     expect(service.createManagedNetworkVolume).toHaveBeenCalledWith({ sizeGb: '50' }, user);
     expect(service.deleteManagedNetworkVolume).toHaveBeenCalledWith(

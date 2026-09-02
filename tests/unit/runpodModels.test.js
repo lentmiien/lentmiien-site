@@ -27,6 +27,9 @@ describe('Runpod persistence models', () => {
     expect(RunpodModelArtifact.schema.path('preparationStatus').options.enum).toEqual([
       'planned', 'preparing', 'ready', 'failed', 'archived',
     ]);
+    expect(RunpodModelArtifact.schema.path('preparationStage').options.enum).toContain('downloading_model');
+    expect(RunpodModelArtifact.schema.path('preparationPodRecordId')).toBeDefined();
+    expect(RunpodModelArtifact.schema.path('providerPreparationPodId')).toBeDefined();
     expect(RunpodModelArtifact.schema.path('apiKey')).toBeUndefined();
     expect(RunpodModelArtifact.schema.path('downloadUrl')).toBeUndefined();
   });
@@ -93,7 +96,7 @@ describe('Runpod persistence models', () => {
 
   test('stores reusable setup metadata without API credentials', () => {
     expect(RunpodWorkloadTemplate.schema.path('setupKind').options.enum).toEqual([
-      'ollama_pull', 'ollama_download',
+      'ollama_pull', 'ollama_download', 'hf_gguf_prepare',
     ]);
     expect(RunpodWorkloadTemplate.schema.path('providerTemplateId')).toBeDefined();
     expect(RunpodWorkloadTemplate.schema.path('persistentPath')).toBeDefined();
@@ -111,7 +114,7 @@ describe('Runpod persistence models', () => {
     expect(RunpodPod.schema.path('maxHourlyCostAcknowledged')).toBeDefined();
     expect(RunpodPod.schema.path('setupStatus').options.enum).toContain('ready');
     expect(RunpodPod.schema.path('podPurpose').options.enum).toEqual([
-      'ollama_service', 'model_download',
+      'ollama_service', 'model_download', 'model_artifact_prepare',
     ]);
     expect(RunpodPod.schema.path('cleanupStatus').options.enum).toEqual([
       'not_required', 'pending', 'completed', 'failed',
@@ -129,6 +132,7 @@ describe('Runpod persistence models', () => {
     expect(RunpodOperationEvent.schema.path('action').options.enum).toEqual(expect.arrayContaining([
       'create', 'setup', 'start', 'stop', 'extend', 'delete', 'auto_stop', 'template_sync',
       'billing_sync',
+      'artifact_prepare',
     ]));
     expect(RunpodOperationEvent.schema.path('outcome').options.enum).toEqual([
       'requested', 'succeeded', 'failed',

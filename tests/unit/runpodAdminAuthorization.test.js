@@ -154,6 +154,7 @@ describe('Runpod route wiring', () => {
     expect(routeSource).toContain("'/network-volumes/sync'");
     expect(routeSource).toContain("'/network-volumes/:id/delete'");
     expect(routeSource).toContain("'/model-downloads'");
+    expect(routeSource).toContain("'/model-artifacts/prepare'");
     expect(routeSource).toContain("'/pods'");
     expect(routeSource).toContain("'/pods/:id/start'");
     expect(routeSource).toContain("'/pods/:id/stop'");
@@ -164,6 +165,7 @@ describe('Runpod route wiring', () => {
     expect(routeSource).toContain('requireBoundedRunpodForm');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podCreate)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.modelDownloadCreate)');
+    expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.modelArtifactPrepare)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podExtend)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podDelete)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.billingSync)');

@@ -1,10 +1,17 @@
 const logger = require('../utils/logger');
 const {
+  RunpodModelArtifact,
   RunpodNetworkVolume,
   RunpodOperationEvent,
   RunpodPod,
   RunpodWorkloadTemplate,
 } = require('../database');
+const {
+  GLM53_FLASH_UD_IQ4_XS_SLUG,
+  artifactPreparerTemplate,
+  getModelArtifactPreset,
+  modelArtifactPreparationSignal,
+} = require('./runpodModelArtifactCatalog');
 const {
   RunpodApiError,
   RunpodApiV2Service,
@@ -16,6 +23,7 @@ const OLLAMA_CLOUDFLARE_TEMPLATE_SLUG = 'ollama-cloudflare';
 const OLLAMA_CLOUDFLARE_PROVIDER_TEMPLATE_NAME = 'lentmiien-ollama-cloudflare-v2';
 const OLLAMA_DOWNLOADER_TEMPLATE_SLUG = 'ollama-downloader';
 const OLLAMA_DOWNLOADER_PROVIDER_TEMPLATE_NAME = 'lentmiien-ollama-model-downloader-v2';
+const MODEL_ARTIFACT_PREPARER_TEMPLATE_SLUG = 'glm53-artifact-preparer';
 const OLLAMA_IMAGE = 'ollama/ollama:latest';
 const OLLAMA_MODEL = 'qwen2.5:0.5b';
 const OLLAMA_DOWNLOADER_MODEL = 'qwen3.8:27b';
@@ -71,6 +79,7 @@ const DEFAULT_MAX_RUNTIME_MINUTES = 24 * 60;
 const DEFAULT_PROVISION_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_OLLAMA_PULL_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+const DEFAULT_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS = (4 * 60 + 10) * 60 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const AUTO_STOP_CLAIM_LEASE_MS = 5 * 60 * 1000;
 const OLLAMA_RESPONSE_LIMIT_BYTES = 2 * 1024 * 1024;
@@ -616,6 +625,77 @@ function normalizeDownloaderTemplateInput(input = {}) {
   };
 }
 
+function normalizeModelArtifactPreparerTemplateInput(
+  slug = GLM53_FLASH_UD_IQ4_XS_SLUG
+) {
+  const preset = getModelArtifactPreset(slug);
+  if (!preset) {
+    throw new RunpodManagementError('Choose a supported model-artifact preset.', {
+      code: 'RUNPOD_INPUT_INVALID',
+    });
+  }
+  const providerTemplate = artifactPreparerTemplate(preset.slug);
+  return {
+    slug: MODEL_ARTIFACT_PREPARER_TEMPLATE_SLUG,
+    name: providerTemplate.name,
+    description: 'Private, temporary Hugging Face GGUF and pinned llama.cpp artifact preparer with no exposed ports.',
+    providerTemplateName: providerTemplate.providerTemplateName,
+    image: providerTemplate.image,
+    args: providerTemplate.args,
+    diskGb: providerTemplate.diskGb,
+    ports: [],
+    env: providerTemplate.env,
+    persistentDiskGb: providerTemplate.persistentDiskGb,
+    persistentPath: providerTemplate.persistentPath,
+    startSsh: false,
+    startJupyter: false,
+    setupKind: 'hf_gguf_prepare',
+    defaultModel: preset.slug,
+    servicePort: 1,
+    healthPath: '/',
+    accessMode: 'private_none',
+    gatewayUrl: null,
+    active: true,
+  };
+}
+
+function modelArtifactToPlain(artifact) {
+  if (!artifact) return null;
+  return typeof artifact.toObject === 'function' ? artifact.toObject() : artifact;
+}
+
+function mapModelArtifactForPage(artifact = {}) {
+  const source = modelArtifactToPlain(artifact) || {};
+  return {
+    id: source._id?.toString?.() || safeString(source.id, 30),
+    slug: safeString(source.slug, 120),
+    name: safeString(source.name, 160),
+    sourceRepository: safeString(source.sourceRepository, 240),
+    sourceRevision: safeString(source.sourceRevision, 40),
+    variant: safeString(source.variant, 100),
+    runtimeKind: safeString(source.runtimeKind, 40),
+    runtimeRepository: safeString(source.runtimeRepository, 240),
+    runtimeRevision: safeString(source.runtimeRevision, 40),
+    providerNetworkVolumeId: safeString(source.providerNetworkVolumeId, 128),
+    dataCenterId: safeString(source.dataCenterId, 100),
+    relativeModelPath: safeString(source.relativeModelPath, 500),
+    relativeRuntimePath: safeString(source.relativeRuntimePath, 500),
+    totalBytes: finiteNumber(source.totalBytes),
+    recommendedVolumeGb: finiteNumber(source.recommendedVolumeGb),
+    recommendedVramGb: finiteNumber(source.recommendedVramGb),
+    defaultContextTokens: finiteNumber(source.defaultContextTokens),
+    preparationStatus: safeString(source.preparationStatus, 30) || 'planned',
+    preparationStage: safeString(source.preparationStage, 40) || 'planned',
+    preparationErrorCode: safeString(source.preparationErrorCode, 80) || null,
+    providerPreparationPodId: safeString(source.providerPreparationPodId, 128) || null,
+    preparationStartedAt: source.preparationStartedAt || null,
+    preparationLastObservedAt: source.preparationLastObservedAt || null,
+    preparedAt: source.preparedAt || null,
+    verifiedAt: source.verifiedAt || null,
+    archivedAt: source.archivedAt || null,
+  };
+}
+
 function chooseModelDownloadGpu(gpus = [], dataCenterId, maxHourlyCost, requestedGpuId = '') {
   const requestedId = safeString(requestedGpuId, 240);
   const stockRank = { HIGH: 0, MEDIUM: 1, LOW: 2 };
@@ -936,7 +1016,9 @@ function mergeGpuCatalogs(secureGpus = [], communityGpus = []) {
 
 function mapTemplateForPage(template, providerTemplateIds) {
   const value = templateToPlain(template) || {};
-  const accessMode = normalizeOllamaAccessMode(value.accessMode);
+  const accessMode = value.accessMode === 'private_none'
+    ? 'private_none'
+    : normalizeOllamaAccessMode(value.accessMode);
   return {
     id: value._id?.toString?.() || safeString(value.id, 80),
     slug: safeString(value.slug, 80),
@@ -973,7 +1055,9 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
   const providerId = safeString(local.providerPodId || provider.id, 128);
   const usage = projectPodUsage(local, provider, now);
   const providerNetworkMount = providerPodNetworkVolume(provider);
-  const accessMode = normalizeOllamaAccessMode(local.accessMode);
+  const accessMode = local.accessMode === 'private_none'
+    ? 'private_none'
+    : normalizeOllamaAccessMode(local.accessMode);
   let publicUrl = safeString(local.publicUrl, 500);
   if (
     accessMode === 'runpod_proxy'
@@ -1343,6 +1427,7 @@ class RunpodPodManager {
     runpodService = new RunpodApiV2Service(),
     podModel = RunpodPod,
     networkVolumeModel = RunpodNetworkVolume,
+    modelArtifactModel = RunpodModelArtifact,
     templateModel = RunpodWorkloadTemplate,
     eventModel = RunpodOperationEvent,
     fetchImpl = global.fetch,
@@ -1387,6 +1472,10 @@ class RunpodPodManager {
       process.env.RUNPOD_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS,
       DEFAULT_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS
     ),
+    modelArtifactPreparationTimeoutMs = positiveInteger(
+      process.env.RUNPOD_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS,
+      DEFAULT_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS
+    ),
     pollIntervalMs = positiveInteger(
       process.env.RUNPOD_POLL_INTERVAL_MS,
       DEFAULT_POLL_INTERVAL_MS
@@ -1404,6 +1493,7 @@ class RunpodPodManager {
     this.runpodService = runpodService;
     this.podModel = podModel;
     this.networkVolumeModel = networkVolumeModel;
+    this.modelArtifactModel = modelArtifactModel;
     this.templateModel = templateModel;
     this.eventModel = eventModel;
     this.fetch = fetchImpl;
@@ -1424,6 +1514,10 @@ class RunpodPodManager {
     this.provisionTimeoutMs = provisionTimeoutMs;
     this.ollamaPullTimeoutMs = ollamaPullTimeoutMs;
     this.modelDownloadTimeoutMs = modelDownloadTimeoutMs;
+    this.modelArtifactPreparationTimeoutMs = Math.min(
+      modelArtifactPreparationTimeoutMs,
+      24 * 60 * 60 * 1000
+    );
     this.pollIntervalMs = pollIntervalMs;
     this.cloudflareGatewayUrl = validatedCloudflareGatewayUrl(cloudflareGatewayUrl).toString();
     this.cloudflareTunnelSecretName = normalizeRunpodSecretName(cloudflareTunnelSecretName);
@@ -1454,6 +1548,10 @@ class RunpodPodManager {
       ),
       defaultModelDownloadMaxHourlyCostUsd: Math.min(
         DEFAULT_MODEL_DOWNLOAD_MAX_HOURLY_COST_USD,
+        this.maxHourlyCostUsd
+      ),
+      defaultModelArtifactMaxHourlyCostUsd: Math.min(
+        getModelArtifactPreset(GLM53_FLASH_UD_IQ4_XS_SLUG).preparationMaxHourlyCostUsd,
         this.maxHourlyCostUsd
       ),
       maxRuntimeMinutes: this.maxRuntimeMinutes,
@@ -1635,6 +1733,10 @@ class RunpodPodManager {
         .sort({ createdAt: -1 })
         .limit(MAX_LOCAL_NETWORK_VOLUMES)
         .lean(),
+      modelArtifacts: () => this.modelArtifactModel.find({})
+        .sort({ createdAt: -1 })
+        .limit(MAX_LOCAL_NETWORK_VOLUMES)
+        .lean(),
       providerPods: () => this.runpodService.listPods(),
       providerNetworkVolumes: () => this.runpodService.listNetworkVolumes(),
       providerTemplates: () => this.runpodService.getAccountTemplates(),
@@ -1649,6 +1751,7 @@ class RunpodPodManager {
       templates: [],
       pods: [],
       networkVolumes: [],
+      modelArtifacts: [],
       providerPods: [],
       providerNetworkVolumes: [],
       providerTemplates: [],
@@ -1733,12 +1836,23 @@ class RunpodPodManager {
       gateway: this.gatewayConfiguration(),
       templates: values.templates.map((template) => mapTemplateForPage(template, providerTemplateIds)),
       managedPods: mappedPods.filter((pod) => (
-        pod.podPurpose !== 'model_download' && pod.lifecycleGroup !== 'archived'
+        !['model_download', 'model_artifact_prepare'].includes(pod.podPurpose)
+        && pod.lifecycleGroup !== 'archived'
       )),
       archivedPods: mappedPods.filter((pod) => (
-        pod.podPurpose !== 'model_download' && pod.lifecycleGroup === 'archived'
+        !['model_download', 'model_artifact_prepare'].includes(pod.podPurpose)
+        && pod.lifecycleGroup === 'archived'
       )),
       modelDownloads: mappedPods.filter((pod) => pod.podPurpose === 'model_download'),
+      modelArtifactPreparations: mappedPods.filter((pod) => (
+        pod.podPurpose === 'model_artifact_prepare'
+      )),
+      modelArtifacts: values.modelArtifacts.map(mapModelArtifactForPage),
+      modelArtifactPresets: [mapModelArtifactForPage({
+        ...getModelArtifactPreset(GLM53_FLASH_UD_IQ4_XS_SLUG),
+        preparationStatus: 'planned',
+        preparationStage: 'planned',
+      })],
       networkVolumes: mappedNetworkVolumes.filter((volume) => volume.lifecycleGroup === 'active'),
       archivedNetworkVolumes: mappedNetworkVolumes
         .filter((volume) => volume.lifecycleGroup === 'archived'),
@@ -2074,6 +2188,15 @@ class RunpodPodManager {
     return operation;
   }
 
+  saveModelArtifactPreparerTemplate(presetSlug, principal) {
+    const operation = this.templateQueue.then(() => this._saveOllamaTemplate(
+      normalizeModelArtifactPreparerTemplateInput(presetSlug),
+      principal
+    ));
+    this.templateQueue = operation.catch(() => {});
+    return operation;
+  }
+
   async _saveOllamaTemplate(normalized, principal) {
     const actor = actorFromPrincipal(principal);
     let localTemplate = await this.templateModel.findOne({ slug: normalized.slug }).lean();
@@ -2157,6 +2280,306 @@ class RunpodPodManager {
     const operation = this.creationQueue.then(() => this._createModelDownload(input, principal));
     this.creationQueue = operation.catch(() => {});
     return operation;
+  }
+
+  prepareModelArtifact(input, principal) {
+    const operation = this.creationQueue.then(() => (
+      this._prepareModelArtifact(input, principal)
+    ));
+    this.creationQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  async _prepareModelArtifact(input = {}, principal) {
+    const actor = actorFromPrincipal(principal);
+    const presetSlug = safeString(input.presetSlug, 120).toLowerCase();
+    const preset = getModelArtifactPreset(presetSlug);
+    if (!preset) {
+      throw new RunpodManagementError('Choose a supported model-artifact preset.', {
+        code: 'RUNPOD_INPUT_INVALID',
+      });
+    }
+    const providerNetworkVolumeId = safeString(input.networkVolumeId, 128);
+    if (!PROVIDER_RESOURCE_ID_PATTERN.test(providerNetworkVolumeId)) {
+      throw new RunpodManagementError('Choose a network volume for the model artifact.', {
+        code: 'RUNPOD_INPUT_INVALID',
+      });
+    }
+    if (input.preparationBillingAcknowledged !== 'acknowledged') {
+      throw new RunpodManagementError('Acknowledge the temporary preparation compute cost.', {
+        code: 'RUNPOD_ARTIFACT_BILLING_NOT_ACKNOWLEDGED',
+      });
+    }
+    const hardCostLimit = Math.min(preset.preparationMaxHourlyCostUsd, this.maxHourlyCostUsd);
+    const maxHourlyCost = strictMoney(
+      input.maxHourlyCost || hardCostLimit.toFixed(2),
+      { label: 'Maximum artifact-preparation hourly cost', max: hardCostLimit }
+    );
+    const requestedGpuId = safeString(input.gpuId, 240);
+    const [providerPods, providerVolumes, secureGpus] = await Promise.all([
+      this.runpodService.listPods(),
+      this.runpodService.listNetworkVolumes(),
+      this.runpodService.getGpuTypes({ cloud: 'SECURE', forceRefresh: true }),
+    ]);
+    if (providerPods.filter((pod) => (
+      ACTIVE_PROVIDER_STATUSES.has(normalizeProviderStatus(pod?.status))
+    )).length >= this.maxActivePods) {
+      throw new RunpodManagementError(
+        `The configured limit of ${this.maxActivePods} active Runpod pods has been reached.`,
+        { code: 'RUNPOD_ACTIVE_POD_LIMIT', status: 409 }
+      );
+    }
+    const volume = providerVolumes.find((entry) => (
+      safeString(entry?.id, 128) === providerNetworkVolumeId
+    ));
+    if (!volume) {
+      throw new RunpodManagementError('The selected network volume no longer exists.', {
+        code: 'RUNPOD_NETWORK_VOLUME_NOT_FOUND', status: 404,
+      });
+    }
+    if (finiteNumber(volume.size, 0) < preset.recommendedVolumeGb) {
+      throw new RunpodManagementError(
+        `This preset requires a network volume of at least ${preset.recommendedVolumeGb} GB.`,
+        { code: 'RUNPOD_ARTIFACT_VOLUME_TOO_SMALL', status: 409 }
+      );
+    }
+    if (providerPods.some((pod) => providerPodNetworkVolume(pod).id === providerNetworkVolumeId)) {
+      throw new RunpodManagementError('The selected model-artifact volume is already attached to a Pod.', {
+        code: 'RUNPOD_NETWORK_VOLUME_IN_USE', status: 409,
+      });
+    }
+    const dataCenterId = safeString(volume.dataCenter, 100);
+    const gpu = chooseModelDownloadGpu(
+      secureGpus,
+      dataCenterId,
+      maxHourlyCost,
+      requestedGpuId
+    );
+    if (!gpu) {
+      throw new RunpodManagementError(
+        'No compatible Secure Cloud preparation GPU is currently available in the volume location below the confirmed cost limit.',
+        { code: 'RUNPOD_ARTIFACT_GPU_UNAVAILABLE', status: 409 }
+      );
+    }
+    const existingArtifact = await this.modelArtifactModel.findOne({
+      slug: preset.slug,
+      providerNetworkVolumeId,
+      archivedAt: null,
+    }).lean();
+    if (existingArtifact?.preparationStatus === 'preparing') {
+      throw new RunpodManagementError('This model artifact is already being prepared.', {
+        code: 'RUNPOD_ARTIFACT_ALREADY_PREPARING', status: 409,
+      });
+    }
+    if (existingArtifact?.preparationStatus === 'ready') {
+      throw new RunpodManagementError('This model artifact is already verified on the selected volume.', {
+        code: 'RUNPOD_ARTIFACT_ALREADY_READY', status: 409,
+      });
+    }
+
+    const template = await this.saveModelArtifactPreparerTemplate(preset.slug, principal);
+    const trackedVolume = await this.trackProviderNetworkVolume(volume, actor, 'provider_import');
+    const startedAt = this.now();
+    let artifact = await this.modelArtifactModel.findOneAndUpdate(
+      { slug: preset.slug, providerNetworkVolumeId },
+      {
+        $set: {
+          slug: preset.slug,
+          name: preset.name,
+          sourceKind: preset.sourceKind,
+          sourceRepository: preset.sourceRepository,
+          sourceRevision: preset.sourceRevision,
+          sourceLastModifiedAt: preset.sourceLastModifiedAt,
+          variant: preset.variant,
+          runtimeKind: preset.runtimeKind,
+          runtimeRepository: preset.runtimeRepository,
+          runtimeRevision: preset.runtimeRevision,
+          relativeModelPath: preset.relativeModelPath,
+          relativeRuntimePath: preset.relativeRuntimePath,
+          manifest: preset.manifest.map((entry) => ({ ...entry })),
+          totalBytes: preset.totalBytes,
+          recommendedVolumeGb: preset.recommendedVolumeGb,
+          recommendedVramGb: preset.recommendedVramGb,
+          defaultContextTokens: preset.defaultContextTokens,
+          networkVolumeRecordId: trackedVolume._id,
+          providerNetworkVolumeId,
+          dataCenterId,
+          preparationStatus: 'preparing',
+          preparationStage: 'provisioning',
+          preparationPodRecordId: null,
+          providerPreparationPodId: null,
+          preparationErrorCode: null,
+          preparationStartedAt: startedAt,
+          preparationLastObservedAt: startedAt,
+          preparedAt: null,
+          verifiedAt: null,
+          archivedAt: null,
+          updatedBy: actor,
+        },
+        $setOnInsert: { createdBy: actor },
+      },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    );
+
+    const price = finiteNumber(gpu?.price?.secure);
+    const name = normalizePodName(`prepare-glm53-iq4-${startedAt.getTime().toString(36)}`);
+    const autoStopMinutes = Math.min(
+      Math.floor(preset.preparationTimeoutSeconds / 60),
+      this.maxRuntimeMinutes
+    );
+    let providerPod;
+    let localPod;
+    try {
+      providerPod = await this.runpodService.createPod({
+        name,
+        templateId: template.providerTemplateId,
+        cloud: 'SECURE',
+        gpu: { id: safeString(gpu.id, 240), count: 1 },
+        disk: preset.preparationDiskGb,
+        mounts: {
+          network: [{ volumeId: providerNetworkVolumeId, path: OLLAMA_NETWORK_VOLUME_PATH }],
+        },
+        dataCenterIds: [dataCenterId],
+        globalNetworking: false,
+      });
+      const providerCost = finiteNumber(providerPod.cost, price);
+      if (providerCost > maxHourlyCost || providerCost > hardCostLimit) {
+        throw new RunpodManagementError(
+          'Runpod returned an artifact-preparation Pod above the confirmed hourly limit.',
+          { code: 'RUNPOD_COST_LIMIT_EXCEEDED', status: 409 }
+        );
+      }
+      const providerPodId = safeString(providerPod.id, 128);
+      localPod = await this.podModel.create({
+        providerPodId,
+        name,
+        recordOrigin: 'managed',
+        podPurpose: 'model_artifact_prepare',
+        workloadTemplateId: template._id,
+        providerTemplateId: template.providerTemplateId,
+        ...providerPodFields(providerPod, startedAt),
+        setupStatus: 'waiting',
+        setupModel: preset.slug,
+        setupStartedAt: startedAt,
+        autoDeleteAfterSetup: true,
+        cleanupStatus: 'pending',
+        accessMode: 'private_none',
+        publicUrl: null,
+        cloud: 'SECURE',
+        dataCenterId: safeString(providerPod.dataCenterId || dataCenterId, 100),
+        gpu: {
+          id: safeString(gpu.id, 240),
+          name: safeString(gpu.name || gpu.id, 240),
+          memoryGb: finiteNumber(gpu.memory),
+          count: 1,
+          catalogPricePerHour: price,
+        },
+        diskGb: preset.preparationDiskGb,
+        persistentDiskGb: null,
+        persistentPath: OLLAMA_NETWORK_VOLUME_PATH,
+        networkVolumeRecordId: trackedVolume._id,
+        providerNetworkVolumeId,
+        networkVolumeName: safeString(volume.name, 120),
+        networkVolumeType: normalizeProviderNetworkVolumeType(volume.type),
+        networkVolumeSizeGb: finiteNumber(volume.size),
+        networkVolumeMountPath: OLLAMA_NETWORK_VOLUME_PATH,
+        ports: [],
+        estimatedCostPerHour: price,
+        providerCostPerHour: providerCost,
+        lastRunningCostPerHour: price,
+        storageRates: { ...DEFAULT_STORAGE_RATES },
+        usageTrackingMode: 'observed',
+        usageState: usageStateForStatus(providerPod.status),
+        usageTrackedSinceAt: startedAt,
+        usageStateEnteredAt: startedAt,
+        usageLastObservedAt: startedAt,
+        runningMs: 0,
+        stoppedMs: 0,
+        maxHourlyCostAcknowledged: maxHourlyCost,
+        autoStopMinutes,
+        autoStopAt: new Date(startedAt.getTime() + autoStopMinutes * 60 * 1000),
+        lastActionAt: startedAt,
+        createdBy: actor,
+        updatedBy: actor,
+      });
+      artifact = await this.modelArtifactModel.findOneAndUpdate(
+        { _id: artifact._id },
+        {
+          $set: {
+            preparationPodRecordId: localPod._id,
+            providerPreparationPodId: providerPodId,
+            updatedBy: actor,
+          },
+        },
+        { new: true, runValidators: true }
+      );
+      await this.recordEvent({
+        resourceType: 'model_artifact',
+        modelArtifactRecordId: artifact._id,
+        networkVolumeRecordId: trackedVolume._id,
+        podRecordId: localPod._id,
+        action: 'artifact_prepare',
+        outcome: 'requested',
+        actor,
+      });
+      this.scheduleModelArtifactPreparation(localPod._id, artifact._id, actor);
+      return mapModelArtifactForPage(artifact);
+    } catch (error) {
+      if (providerPod?.id) {
+        await this.runpodService.deletePod(providerPod.id).catch((cleanupError) => {
+          this.logger.error('Failed to delete a Runpod artifact-preparation Pod after creation failure', {
+            category: 'runpod_management',
+            metadata: {
+              action: 'artifact_prepare_create_cleanup',
+              errorCode: safeString(cleanupError?.code, 80) || 'RUNPOD_CLEANUP_FAILED',
+              providerStatus: providerStatusForError(cleanupError),
+            },
+          });
+        });
+      }
+      const failedAt = this.now();
+      await this.modelArtifactModel.updateOne(
+        { _id: artifact?._id },
+        {
+          $set: {
+            preparationStatus: 'failed',
+            preparationStage: 'failed',
+            preparationErrorCode: safeString(error?.code, 80) || 'RUNPOD_ARTIFACT_PREPARATION_FAILED',
+            preparationLastObservedAt: failedAt,
+            updatedBy: actor,
+          },
+        }
+      ).catch(() => {});
+      if (localPod?._id) {
+        await this.podModel.updateOne(
+          { _id: localPod._id },
+          {
+            $set: {
+              providerStatus: 'TERMINATED',
+              lifecycleGroup: 'archived',
+              setupStatus: 'failed',
+              setupErrorCode: safeString(error?.code, 80) || 'RUNPOD_ARTIFACT_PREPARATION_FAILED',
+              cleanupStatus: 'completed',
+              archivedAt: failedAt,
+              updatedBy: actor,
+            },
+          }
+        ).catch(() => {});
+      }
+      await this.recordEvent({
+        resourceType: 'model_artifact',
+        modelArtifactRecordId: artifact?._id || null,
+        networkVolumeRecordId: trackedVolume?._id || null,
+        podRecordId: localPod?._id || null,
+        action: 'artifact_prepare',
+        outcome: 'failed',
+        providerStatus: providerStatusForError(error),
+        errorCode: safeString(error?.code, 80) || 'RUNPOD_ARTIFACT_PREPARATION_FAILED',
+        actor,
+      });
+      this.logOperationFailure('Runpod model-artifact preparation could not be started', 'artifact_prepare', error);
+      throw error;
+    }
   }
 
   async _createModelDownload(input = {}, principal) {
@@ -2620,6 +3043,176 @@ class RunpodPodManager {
       .finally(() => this.provisioning.delete(id));
     this.provisioning.set(id, task);
     return task;
+  }
+
+  scheduleModelArtifactPreparation(
+    podRecordId,
+    modelArtifactRecordId,
+    actor = actorFromPrincipal()
+  ) {
+    const podId = podRecordId?.toString?.() || safeString(podRecordId, 30);
+    const artifactId = modelArtifactRecordId?.toString?.()
+      || safeString(modelArtifactRecordId, 30);
+    if (!OBJECT_ID_PATTERN.test(podId) || !OBJECT_ID_PATTERN.test(artifactId)) return null;
+    const key = `artifact:${artifactId}`;
+    if (this.provisioning.has(key)) return this.provisioning.get(key);
+    const task = this._monitorModelArtifactPreparation(podId, artifactId, actor)
+      .catch(() => null)
+      .finally(() => this.provisioning.delete(key));
+    this.provisioning.set(key, task);
+    return task;
+  }
+
+  async _monitorModelArtifactPreparation(podRecordId, modelArtifactRecordId, actor) {
+    const pod = await this.findManagedPod(podRecordId);
+    const artifact = await this.modelArtifactModel.findOne({
+      _id: modelArtifactRecordId,
+      archivedAt: null,
+    }).lean();
+    const preset = getModelArtifactPreset(artifact?.slug);
+    if (!artifact || !preset || pod.podPurpose !== 'model_artifact_prepare') {
+      throw new RunpodManagementError('The model-artifact preparation record is invalid.', {
+        code: 'RUNPOD_ARTIFACT_RECORD_INVALID', status: 409,
+      });
+    }
+    const deadline = Date.now() + this.modelArtifactPreparationTimeoutMs;
+    let currentPod = pod;
+    try {
+      while (Date.now() < deadline) {
+        const [providerPod, logs] = await Promise.all([
+          this.runpodService.getPod(pod.providerPodId),
+          this.runpodService.getPodLogSnapshot(pod.providerPodId, {
+            source: 'container',
+            tail: 1000,
+            maxWaitMs: 2_000,
+          }),
+        ]);
+        const observedAt = this.now();
+        const signal = modelArtifactPreparationSignal(logs.events);
+        currentPod = { ...currentPod, ...providerPodFields(providerPod, observedAt) };
+        await Promise.all([
+          this.podModel.updateOne(
+            { _id: pod._id, archivedAt: null },
+            {
+              $set: {
+                ...reconciledProviderPodFields(currentPod, providerPod, observedAt),
+                setupStatus: signal.status === 'ready' ? 'ready' : 'downloading',
+                setupErrorCode: null,
+                ...(signal.status === 'ready' ? { setupCompletedAt: observedAt } : {}),
+                updatedBy: actor,
+              },
+            }
+          ),
+          this.modelArtifactModel.updateOne(
+            { _id: artifact._id, archivedAt: null },
+            {
+              $set: {
+                preparationStatus: signal.status === 'ready' ? 'ready' : 'preparing',
+                preparationStage: signal.stage,
+                preparationErrorCode: null,
+                preparationLastObservedAt: observedAt,
+                ...(signal.status === 'ready' ? {
+                  preparedAt: observedAt,
+                  verifiedAt: observedAt,
+                } : {}),
+                updatedBy: actor,
+              },
+            }
+          ),
+        ]);
+        if (signal.status === 'failed') {
+          throw new RunpodManagementError('The model-artifact preparation command failed.', {
+            code: signal.errorCode || 'RUNPOD_ARTIFACT_PREPARATION_FAILED', status: 502,
+          });
+        }
+        if (signal.status === 'ready') {
+          await this.networkVolumeModel.updateOne(
+            { providerNetworkVolumeId: artifact.providerNetworkVolumeId, archivedAt: null },
+            {
+              $addToSet: { cachedModels: preset.slug },
+              $set: { modelsUpdatedAt: observedAt, updatedBy: actor },
+            }
+          ).catch((error) => {
+            this.logger.warning('Unable to record the verified Runpod model artifact on its volume', {
+              category: 'runpod_management',
+              metadata: {
+                action: 'artifact_inventory_update',
+                errorName: safeString(error?.name, 80) || 'Error',
+              },
+            });
+          });
+          await this.recordEvent({
+            resourceType: 'model_artifact',
+            modelArtifactRecordId: artifact._id,
+            networkVolumeRecordId: artifact.networkVolumeRecordId,
+            podRecordId: pod._id,
+            action: 'artifact_prepare',
+            outcome: 'succeeded',
+            actor,
+          });
+          await this.cleanupCompletedModelDownload(pod._id, actor);
+          return true;
+        }
+        const status = normalizeProviderStatus(providerPod.status);
+        if (['ERROR', 'EXITED', 'TERMINATED'].includes(status)) {
+          throw new RunpodManagementError(
+            'The model-artifact preparation Pod stopped before verification completed.',
+            { code: 'RUNPOD_ARTIFACT_POD_TERMINAL_STATE', status: 502 }
+          );
+        }
+        await this.sleep(this.pollIntervalMs);
+      }
+      throw new RunpodManagementError('Model-artifact preparation exceeded its time limit.', {
+        code: 'RUNPOD_ARTIFACT_PREPARATION_TIMEOUT', status: 504,
+      });
+    } catch (error) {
+      const failedAt = this.now();
+      const errorCode = safeString(error?.code, 80) || 'RUNPOD_ARTIFACT_PREPARATION_FAILED';
+      await Promise.all([
+        this.modelArtifactModel.updateOne(
+          { _id: artifact._id, archivedAt: null },
+          {
+            $set: {
+              preparationStatus: 'failed',
+              preparationStage: 'failed',
+              preparationErrorCode: errorCode,
+              preparationLastObservedAt: failedAt,
+              updatedBy: actor,
+            },
+          }
+        ).catch(() => {}),
+        this.podModel.updateOne(
+          { _id: pod._id, archivedAt: null },
+          {
+            $set: {
+              setupStatus: 'failed',
+              setupErrorCode: errorCode,
+              updatedBy: actor,
+            },
+          }
+        ).catch(() => {}),
+      ]);
+      await this.recordEvent({
+        resourceType: 'model_artifact',
+        modelArtifactRecordId: artifact._id,
+        networkVolumeRecordId: artifact.networkVolumeRecordId,
+        podRecordId: pod._id,
+        action: 'artifact_prepare',
+        outcome: 'failed',
+        providerStatus: providerStatusForError(error),
+        errorCode,
+        actor,
+      });
+      await this.cleanupCompletedModelDownload(pod._id, actor).catch((cleanupError) => {
+        this.logOperationFailure(
+          'Runpod model-artifact preparation Pod cleanup failed',
+          'artifact_prepare_cleanup',
+          cleanupError
+        );
+      });
+      this.logOperationFailure('Runpod model-artifact preparation failed', 'artifact_prepare', error);
+      throw error;
+    }
   }
 
   async retryProvisioning(podRecordId, principal) {
@@ -3597,7 +4190,27 @@ class RunpodPodManager {
       ],
     }).sort({ updatedAt: 1 }).limit(this.maxActivePods).lean();
     pending.forEach((pod) => {
-      this.scheduleProvisioning(pod._id, actorFromPrincipal({ name: 'runpod-setup-recovery' }));
+      const actor = actorFromPrincipal({ name: 'runpod-setup-recovery' });
+      if (pod.podPurpose === 'model_artifact_prepare') {
+        this.modelArtifactModel.findOne({ preparationPodRecordId: pod._id, archivedAt: null })
+          .lean()
+          .then((artifact) => {
+            if (artifact?._id) {
+              this.scheduleModelArtifactPreparation(pod._id, artifact._id, actor);
+            }
+          })
+          .catch((error) => {
+            this.logger.warning('Unable to resume a Runpod model-artifact preparation monitor', {
+              category: 'runpod_management',
+              metadata: {
+                action: 'artifact_prepare_recovery',
+                errorName: safeString(error?.name, 80) || 'Error',
+              },
+            });
+          });
+      } else {
+        this.scheduleProvisioning(pod._id, actor);
+      }
     });
     return pending.length;
   }
@@ -3621,6 +4234,7 @@ module.exports = {
   DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME,
   DEFAULT_OLLAMA_PULL_TIMEOUT_MS,
   DEFAULT_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS,
+  DEFAULT_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_PROVISION_TIMEOUT_MS,
   DEFAULT_STORAGE_RATES,
@@ -3641,6 +4255,7 @@ module.exports = {
   OLLAMA_PORT,
   OLLAMA_PROVIDER_TEMPLATE_NAME,
   OLLAMA_TEMPLATE_SLUG,
+  MODEL_ARTIFACT_PREPARER_TEMPLATE_SLUG,
   RunpodManagementError,
   RunpodPodManager,
   actorFromPrincipal,
@@ -3652,6 +4267,7 @@ module.exports = {
   mergeGpuCatalogs,
   normalizeModelName,
   normalizeDownloaderTemplateInput,
+  normalizeModelArtifactPreparerTemplateInput,
   normalizeCloudflareTemplateInput,
   normalizeNetworkVolumeName,
   normalizeNetworkVolumeType,
@@ -3663,6 +4279,7 @@ module.exports = {
   providerPodUsesCloudflareTunnel,
   estimateStandardNetworkVolumeMonthlyCost,
   providerTemplatePayload,
+  mapModelArtifactForPage,
   projectPodUsage,
   publicOllamaUrl,
   readLimitedText,

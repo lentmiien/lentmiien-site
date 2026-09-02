@@ -349,6 +349,23 @@ Implementation sequence:
    Delete compute after a failed test; never delete the large model volume as
    implicit Pod cleanup.
 
+Steps 1 and 2 now have an implementation path in the admin page. The
+`runpod_model_artifacts` collection stores the immutable source/runtime contract
+and preparation lifecycle, while the `glm53-artifact-preparer` workload profile
+creates a private no-port Pod. The browser selects only a reviewed preset,
+co-located volume, optional GPU, and hourly ceiling; repository URLs, revisions,
+commands, and hashes are not request parameters. The preparer uses a pinned
+Hugging Face CLI, checks remaining volume capacity with 10 GB of headroom,
+downloads only the five approved shard paths one at a time and reuses finished
+shards between attempts. It removes incompatible incomplete Xet reconstruction
+files before using sequential HTTP transfers, because Xet's background writer
+can fail and consume the network-volume quota. Each shard gets four attempts with a 15-minute
+stalled-transfer timeout. The workflow then validates exact sizes and SHA-256
+hashes, builds (or safely reuses) the pinned CUDA llama.cpp server, atomically
+writes `READY.json`, and waits for verified cleanup. An independent four-hour
+`timeout` inside the container stops GPU work even if the application monitor
+disappears.
+
 The upstream-supported performance alternative is native FP8 with vLLM 0.29+.
 Its [official GLM-5.3-Flash recipe](https://recipes.vllm.ai/zai-org/GLM-5.3-Flash)
 reports roughly 306 GiB of weights before runtime/KV overhead and recommends an
@@ -618,6 +635,25 @@ cleanup message as an immediate provider-console action.
 pull/retry deadline and defaults to six hours. Keep the selected auto-stop window
 at least as long as the expected transfer because the stop deadline remains the
 authoritative cost guard.
+
+The large-model preparer is also available as a dry-run-first standalone script,
+without starting Express or its schedulers. It enforces a hard `$1/hour` ceiling,
+uses at most one preparation Pod, streams only fixed stage/error markers into its
+console summary, deletes the Pod on success or failure, and retains the selected
+network volume:
+
+```bash
+npm run prepare:runpod-glm53-artifact-v2 -- --volume-id=<volume-id>
+npm run prepare:runpod-glm53-artifact-v2 -- \
+  --execute \
+  --volume-id=<volume-id> \
+  --max-hourly-cost=0.99
+```
+
+`RUNPOD_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS` defaults to four hours and ten
+minutes for the application-side monitor. The provider template separately
+enforces a four-hour container deadline. `RUNPOD_GLM53_VOLUME_ID` is an optional
+standalone-script convenience and is not a credential.
 
 The billing backfill also defaults to a no-op. With `--execute`, it connects
 directly to MongoDB without starting the application, requests only v2 account

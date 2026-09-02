@@ -10,6 +10,9 @@ const MAX_PODS = 200;
 const MAX_NETWORK_VOLUMES = 200;
 const MAX_ACCOUNT_TEMPLATES = 500;
 const MAX_POD_BILLING_RECORDS = 5000;
+const MAX_POD_LOG_EVENTS = 5000;
+const DEFAULT_MAX_POD_LOG_BYTES = 1024 * 1024;
+const POD_LOG_SOURCES = Object.freeze(['container', 'system']);
 const BILLING_BUCKET_SIZES = Object.freeze(['hour', 'day', 'week', 'month', 'year']);
 const CLOUD_TYPES = Object.freeze(['SECURE', 'COMMUNITY']);
 const POD_ACTIONS = Object.freeze(['start', 'stop', 'restart', 'terminate']);
@@ -47,7 +50,7 @@ function normalizeResourceId(value, label = 'Runpod resource') {
 
 function podPath(id, suffix = '') {
   const podId = normalizeResourceId(id, 'Runpod pod');
-  if (suffix && suffix !== '/action') {
+  if (suffix && !['/action', '/logs'].includes(suffix)) {
     throw new TypeError('Runpod pod path suffix is invalid.');
   }
   return `/v2/pods/${podId}${suffix}`;
@@ -62,7 +65,7 @@ function networkVolumePath(id) {
 }
 
 function allowedDynamicPath(pathname) {
-  return /^\/v2\/pods\/[A-Za-z0-9_-]{1,128}(?:\/action)?$/u.test(pathname)
+  return /^\/v2\/pods\/[A-Za-z0-9_-]{1,128}(?:\/(?:action|logs))?$/u.test(pathname)
     || /^\/v2\/templates\/[A-Za-z0-9_-]{1,128}$/u.test(pathname)
     || /^\/v2\/network-volumes\/[A-Za-z0-9_-]{1,128}$/u.test(pathname);
 }
@@ -233,6 +236,60 @@ function sanitizeProviderErrorText(value, maxLength, secrets = []) {
     .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/giu, 'Bearer [redacted]')
     .replace(/\b(api[_ -]?key|authorization|token|secret)\s*[:=]\s*[^,;\s]+/giu, '$1=[redacted]')
     .slice(0, maxLength);
+}
+
+function normalizePodLogOptions(options = {}) {
+  const source = typeof options.source === 'string' ? options.source.trim().toLowerCase() : 'container';
+  if (!POD_LOG_SOURCES.includes(source)) {
+    throw new TypeError('Runpod Pod log source must be container or system.');
+  }
+  const tail = Number(options.tail ?? 200);
+  if (!Number.isSafeInteger(tail) || tail < 0 || tail > MAX_POD_LOG_EVENTS) {
+    throw new TypeError(`Runpod Pod log tail must be between 0 and ${MAX_POD_LOG_EVENTS}.`);
+  }
+  const maxWaitMs = Number(options.maxWaitMs ?? 2_000);
+  if (!Number.isSafeInteger(maxWaitMs) || maxWaitMs < 250 || maxWaitMs > 30_000) {
+    throw new TypeError('Runpod Pod log wait must be between 250 and 30000 milliseconds.');
+  }
+  let since = '';
+  if (options.since !== undefined && options.since !== null && options.since !== '') {
+    const parsed = new Date(options.since);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new TypeError('Runpod Pod log since value must be a timestamp.');
+    }
+    since = parsed.toISOString();
+  }
+  return { source, tail, maxWaitMs, since };
+}
+
+function parsePodLogSse(value, { maxEvents = MAX_POD_LOG_EVENTS, secrets = [] } = {}) {
+  const events = [];
+  const frames = String(value || '').replaceAll('\r\n', '\n').split('\n\n');
+  for (const frame of frames) {
+    if (events.length >= maxEvents) break;
+    const data = frame.split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n');
+    if (!data) continue;
+    let payload;
+    try {
+      payload = JSON.parse(data);
+    } catch (_) {
+      continue;
+    }
+    const source = typeof payload?.source === 'string' ? payload.source.toLowerCase() : '';
+    if (!POD_LOG_SOURCES.includes(source) || typeof payload?.line !== 'string') continue;
+    const timestamp = typeof payload?.ts === 'string' && !Number.isNaN(Date.parse(payload.ts))
+      ? payload.ts
+      : null;
+    events.push({
+      source,
+      line: sanitizeProviderErrorText(payload.line, 16 * 1024, secrets),
+      timestamp,
+    });
+  }
+  return events;
 }
 
 function firstProviderErrorObject(body) {
@@ -704,6 +761,129 @@ class RunpodApiV2Service {
     return ensureResource(body, 'the pod');
   }
 
+  async getPodLogSnapshot(id, options = {}) {
+    this.ensureConfigured();
+    const normalized = normalizePodLogOptions(options);
+    const maxBytes = positiveInteger(options.maxBytes, DEFAULT_MAX_POD_LOG_BYTES);
+    if (maxBytes > DEFAULT_MAX_RESPONSE_BYTES) {
+      throw new TypeError(`Runpod Pod log snapshots cannot exceed ${DEFAULT_MAX_RESPONSE_BYTES} bytes.`);
+    }
+    const url = this.buildUrl(podPath(id, '/logs'), {
+      source: normalized.source,
+      tail: normalized.since ? undefined : normalized.tail,
+      since: normalized.since || undefined,
+    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), normalized.maxWaitMs);
+    let response;
+    let text = '';
+    let totalBytes = 0;
+    let timedOut = false;
+    let truncated = false;
+    try {
+      response = await this.fetch(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'text/event-stream',
+          Authorization: `Bearer ${this.apiKey}`,
+          'User-Agent': 'lentmiien-site-runpod-v2/2.0',
+        },
+        redirect: 'error',
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const providerError = await readProviderErrorDetails(
+          response,
+          Math.min(maxBytes, DEFAULT_MAX_ERROR_RESPONSE_BYTES),
+          'Pod logs',
+          [this.apiKey]
+        );
+        throw new RunpodApiError(`Runpod could not load Pod logs (HTTP ${response.status}).`, {
+          code: 'RUNPOD_HTTP_ERROR',
+          operation: 'Pod logs',
+          status: response.status,
+          ...providerError,
+        });
+      }
+      const contentType = response.headers?.get?.('content-type') || '';
+      if (contentType && !contentType.toLowerCase().includes('text/event-stream')) {
+        await cancelResponseBody(response);
+        throw new RunpodApiError('Runpod returned an invalid response for Pod logs.', {
+          code: 'RUNPOD_INVALID_RESPONSE',
+          operation: 'Pod logs',
+          status: response.status,
+        });
+      }
+      if (!response.body || typeof response.body.getReader !== 'function') {
+        text = await response.text();
+        totalBytes = Buffer.byteLength(text, 'utf8');
+        if (totalBytes > maxBytes) {
+          text = Buffer.from(text, 'utf8').subarray(0, maxBytes).toString('utf8');
+          truncated = true;
+        }
+      } else {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        try {
+          while (true) {
+            let result;
+            try {
+              result = await reader.read();
+            } catch (error) {
+              if (error?.name === 'AbortError') {
+                timedOut = true;
+                break;
+              }
+              throw error;
+            }
+            if (result.done) break;
+            totalBytes += result.value.byteLength;
+            if (totalBytes > maxBytes) {
+              const allowed = Math.max(0, result.value.byteLength - (totalBytes - maxBytes));
+              if (allowed) text += decoder.decode(result.value.subarray(0, allowed), { stream: true });
+              truncated = true;
+              break;
+            }
+            text += decoder.decode(result.value, { stream: true });
+          }
+          text += decoder.decode();
+        } finally {
+          await reader.cancel().catch(() => {});
+        }
+      }
+    } catch (error) {
+      if (error instanceof RunpodApiError || error instanceof RunpodConfigurationError) throw error;
+      if (error?.name === 'AbortError') {
+        if (response) {
+          timedOut = true;
+        } else {
+          throw new RunpodApiError('Runpod timed out while loading Pod logs.', {
+            code: 'RUNPOD_TIMEOUT',
+            operation: 'Pod logs',
+          });
+        }
+      } else {
+        throw new RunpodApiError('Runpod could not load Pod logs.', {
+          code: 'RUNPOD_NETWORK_ERROR',
+          operation: 'Pod logs',
+        });
+      }
+    } finally {
+      clearTimeout(timeout);
+      await cancelResponseBody(response);
+    }
+    const events = parsePodLogSse(text, {
+      maxEvents: MAX_POD_LOG_EVENTS,
+      secrets: [this.apiKey],
+    });
+    return {
+      events,
+      timedOut,
+      truncated: truncated || events.length >= MAX_POD_LOG_EVENTS,
+      bytesRead: Math.min(totalBytes, maxBytes),
+    };
+  }
+
   async createPod(input) {
     const body = await this.requestJson(ENDPOINTS.pods, {
       method: 'POST',
@@ -864,9 +1044,11 @@ module.exports = {
   MAX_BILLING_BUCKETS,
   MAX_ACCOUNT_TEMPLATES,
   MAX_POD_BILLING_RECORDS,
+  MAX_POD_LOG_EVENTS,
   MAX_PODS,
   MAX_NETWORK_VOLUMES,
   POD_ACTIONS,
+  POD_LOG_SOURCES,
   RESOURCE_ID_PATTERN,
   RUNPOD_API_ORIGIN,
   RUNPOD_API_VERSION,
@@ -876,11 +1058,13 @@ module.exports = {
   cancelResponseBody,
   extractProviderErrorDetails,
   normalizeBillingOptions,
+  normalizePodLogOptions,
   normalizeCloudType,
   normalizePodAction,
   normalizeResourceId,
   networkVolumePath,
   podPath,
+  parsePodLogSse,
   publicRunpodError,
   readResponseText,
   templatePath,

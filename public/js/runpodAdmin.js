@@ -289,6 +289,75 @@
     update();
   }
 
+  function initializeModelArtifactPreparer() {
+    const form = document.querySelector('[data-runpod-artifact-preparer-form]');
+    if (!form) return;
+    const volumeSelect = form.querySelector('[data-artifact-volume-select]');
+    const gpuSelect = form.querySelector('[data-artifact-gpu-select]');
+    const costLimitInput = form.querySelector('[data-artifact-cost-limit]');
+    const location = form.querySelector('[data-artifact-location]');
+    const summary = form.querySelector('[data-artifact-gpu-summary]');
+    const submit = form.querySelector('[data-runpod-artifact-button]');
+    const gpuOptions = Array.from(gpuSelect?.options || []).filter((option) => option.value);
+    const stockRank = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
+
+    function update() {
+      const volume = volumeSelect?.selectedOptions?.[0];
+      const dataCenter = volume?.dataset.datacenter || '';
+      const artifactStatus = volume?.dataset.artifactStatus || 'not_prepared';
+      const limit = Number(costLimitInput?.value);
+      const candidates = gpuOptions.filter((option) => {
+        const price = Number(option.dataset.price);
+        const available = (option.dataset.datacenters || '').split('|').includes(dataCenter)
+          && ['LOW', 'MEDIUM', 'HIGH'].includes(option.dataset.availability || 'NONE')
+          && Number.isFinite(price)
+          && Number.isFinite(limit)
+          && price <= limit
+          && price <= 1;
+        option.hidden = !available;
+        option.disabled = !available;
+        return available;
+      }).sort((left, right) => (
+        Number(left.dataset.price) - Number(right.dataset.price)
+        || (stockRank[left.dataset.availability] ?? 3)
+          - (stockRank[right.dataset.availability] ?? 3)
+      ));
+      if (gpuSelect?.value && gpuSelect.selectedOptions[0]?.disabled) gpuSelect.value = '';
+      if (location) {
+        location.textContent = dataCenter ? `Secure Cloud · ${dataCenter}` : 'Choose a volume';
+      }
+      if (summary) {
+        if (artifactStatus === 'ready') {
+          summary.textContent = 'This exact artifact is already verified on the selected volume.';
+        } else if (artifactStatus === 'preparing') {
+          summary.textContent = 'This exact artifact is already being prepared on the selected volume.';
+        } else if (!candidates.length) {
+          summary.textContent = 'No compatible Secure Cloud preparation GPU is currently below this cost limit.';
+        } else if (gpuSelect?.value) {
+          summary.textContent = `${gpuSelect.selectedOptions[0].textContent.trim()} will be requested. Fresh stock is checked again on submit.`;
+        } else {
+          summary.textContent = `Automatic choice currently favors ${candidates[0].textContent.trim()}. Fresh stock is checked again on submit.`;
+        }
+      }
+      if (submit) {
+        submit.disabled = !dataCenter
+          || !candidates.length
+          || ['ready', 'preparing'].includes(artifactStatus);
+      }
+    }
+
+    [volumeSelect, gpuSelect, costLimitInput]
+      .filter(Boolean)
+      .forEach((element) => element.addEventListener('input', update));
+    form.addEventListener('submit', () => {
+      if (submit) {
+        submit.disabled = true;
+        submit.textContent = 'Starting preparation…';
+      }
+    });
+    update();
+  }
+
   function initializeNetworkVolumeCreator() {
     const form = document.querySelector('[data-runpod-volume-create-form]');
     if (!form) return;
@@ -423,6 +492,7 @@
   const picker = document.querySelector('[data-runpod-picker]');
   if (picker) initializeGpuPicker(picker);
   initializeModelDownloader();
+  initializeModelArtifactPreparer();
   initializeNetworkVolumeCreator();
   initializeDeleteForms();
   initializeCountdowns();

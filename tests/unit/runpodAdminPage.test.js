@@ -80,6 +80,7 @@ describe('Runpod admin page', () => {
         standardStorageUsdPerGbMonth: 0.07,
         highPerformanceStorageUsdPerGbMonth: null,
         defaultAutoStopMinutes: 60,
+        defaultModelArtifactMaxHourlyCostUsd: 0.99,
         maxRuntimeMinutes: 1440,
       },
       templates: [{
@@ -95,7 +96,46 @@ describe('Runpod admin page', () => {
         diskGb: 20,
         persistentDiskGb: 10,
         servicePort: 11434,
+      }, {
+        id: 'artifact-template-id',
+        slug: 'glm53-artifact-preparer',
+        name: 'GLM-5.3 Artifact Preparer',
+        providerTemplateName: 'lentmiien-glm53-artifact-preparer-v2',
+        providerTemplateId: 'provider-artifact-template-id',
+        providerPresent: true,
+        active: true,
+        image: 'runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404',
+        defaultModel: 'glm-5-3-flash-ud-iq4-xs',
+        diskGb: 40,
+        persistentDiskGb: 10,
+        servicePort: 1,
       }],
+      modelArtifactPresets: [{
+        slug: 'glm-5-3-flash-ud-iq4-xs',
+        name: 'GLM-5.3-Flash · UD-IQ4_XS',
+        sourceRepository: 'unsloth/GLM-5.3-Flash-GGUF',
+        sourceRevision: '2975ab414d30340466d8c51533c6e91f0cca64c1',
+        variant: 'UD-IQ4_XS',
+        runtimeRepository: 'unslothai/llama.cpp',
+        runtimeRevision: '949f7efb097eb20ef36fecdb1afaebff9a4ae7ed',
+        totalBytes: 156822111075,
+        recommendedVolumeGb: 250,
+        recommendedVramGb: 192,
+        defaultContextTokens: 16384,
+      }],
+      modelArtifacts: [{
+        slug: 'glm-5-3-flash-ud-iq4-xs',
+        name: 'GLM-5.3-Flash · UD-IQ4_XS',
+        providerNetworkVolumeId: 'provider-glm-volume-id',
+        dataCenterId: 'EU-SE-1',
+        totalBytes: 156822111075,
+        runtimeRevision: '949f7efb097eb20ef36fecdb1afaebff9a4ae7ed',
+        preparationStatus: 'failed',
+        preparationStage: 'failed',
+        preparationErrorCode: 'HF_DOWNLOAD_TIMEOUT',
+        preparationLastObservedAt: '2026-09-01T00:45:00.000Z',
+      }],
+      modelArtifactPreparations: [],
       gpuOptions: [{
         id: 'NVIDIA GeForce RTX 4090',
         name: 'RTX 4090',
@@ -121,6 +161,18 @@ describe('Runpod admin page', () => {
         estimatedMonthlyCostUsd: 3.5,
         attachedPodCount: 0,
         cachedModels: ['qwen3.8:27b'],
+      }, {
+        id: '507f191e810c19729de860ac',
+        providerNetworkVolumeId: 'provider-glm-volume-id',
+        name: 'glm-5-3-flash-ud-iq4-xs',
+        providerPresent: true,
+        trackedLocally: true,
+        dataCenterId: 'EU-SE-1',
+        volumeType: 'STANDARD',
+        sizeGb: 250,
+        estimatedMonthlyCostUsd: 17.5,
+        attachedPodCount: 0,
+        cachedModels: [],
       }],
       archivedNetworkVolumes: [],
       managedPods: [{
@@ -186,6 +238,16 @@ describe('Runpod admin page', () => {
     expect(html).toContain('method="post" action="/admin/runpod/templates/ollama"');
     expect(html).toContain('method="post" action="/admin/runpod/network-volumes"');
     expect(html).toContain('method="post" action="/admin/runpod/model-downloads"');
+    expect(html).toContain('method="post" action="/admin/runpod/model-artifacts/prepare"');
+    expect(html).toContain('Prepare GLM-5.3-Flash on persistent storage');
+    expect(html).toContain('Immutable source contract');
+    expect(html).toContain('UD-IQ4_XS');
+    expect(html).toContain('data-runpod-artifact-preparer-form');
+    expect(html).toContain('name="presetSlug" value="glm-5-3-flash-ud-iq4-xs"');
+    expect(html).toContain('provider-glm-volume-id');
+    expect(html).toContain('HF_DOWNLOAD_TIMEOUT');
+    expect(html).toContain('reuse completed shards and make a fresh bounded attempt');
+    expect(html).not.toMatch(/name="(?:repository|downloadUrl|command|sha256|runtimeRevision)"/u);
     expect(html).toContain('Download an Ollama model to a volume');
     expect(html).toContain('Advanced downloader settings');
     expect(html).toContain('Automatic · cheapest compatible GPU');

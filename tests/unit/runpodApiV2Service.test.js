@@ -5,6 +5,7 @@ const {
   RunpodApiV2Service,
   RunpodConfigurationError,
   normalizeBillingOptions,
+  parsePodLogSse,
 } = require('../../services/runpodApiV2Service');
 
 function jsonResponse(body, { status = 200, headers = {} } = {}) {
@@ -386,6 +387,61 @@ describe('RunpodApiV2Service', () => {
     ]);
     expect(JSON.parse(calls[1].options.body)).toEqual(createBody);
     expect(JSON.parse(calls[3].options.body)).toEqual({ action: 'stop' });
+  });
+
+  test('reads a bounded v2 Pod-log SSE snapshot and redacts configured credentials', async () => {
+    const secret = 'runpod-log-secret';
+    const encoder = new TextEncoder();
+    let readCount = 0;
+    const response = {
+      ok: true,
+      status: 200,
+      headers: { get: (name) => name.toLowerCase() === 'content-type' ? 'text/event-stream' : null },
+      body: {
+        getReader: () => ({
+          read: jest.fn(async () => {
+            readCount += 1;
+            if (readCount === 1) {
+              return {
+                done: false,
+                value: encoder.encode(`id: one\ndata: {"source":"container","line":"RUNPOD_ARTIFACT_STAGE stage=downloading_model token=${secret}","ts":"2026-09-02T00:00:00Z"}\n\n`),
+              };
+            }
+            return { done: true, value: undefined };
+          }),
+          cancel: jest.fn().mockResolvedValue(),
+        }),
+        cancel: jest.fn().mockResolvedValue(),
+      },
+    };
+    const fetchImpl = jest.fn().mockResolvedValue(response);
+    const service = new RunpodApiV2Service({ apiToken: 'unused', apiKey: secret, fetchImpl });
+
+    const snapshot = await service.getPodLogSnapshot('pod-1', {
+      source: 'container', tail: 500, maxWaitMs: 500,
+    });
+
+    expect(snapshot.events).toEqual([{
+      source: 'container',
+      line: 'RUNPOD_ARTIFACT_STAGE stage=downloading_model token=[redacted]',
+      timestamp: '2026-09-02T00:00:00Z',
+    }]);
+    const [url, options] = fetchImpl.mock.calls[0];
+    expect(url.pathname).toBe('/v2/pods/pod-1/logs');
+    expect(url.searchParams.get('source')).toBe('container');
+    expect(url.searchParams.get('tail')).toBe('500');
+    expect(options.headers.Accept).toBe('text/event-stream');
+    expect(JSON.stringify(snapshot)).not.toContain(secret);
+  });
+
+  test('ignores malformed or unsupported Pod-log SSE events', () => {
+    expect(parsePodLogSse([
+      'data: not-json',
+      'data: {"source":"both","line":"ignored"}',
+      'data: {"source":"system","line":"kept","ts":"invalid"}',
+    ].join('\n\n'))).toEqual([{
+      source: 'system', line: 'kept', timestamp: null,
+    }]);
   });
 
   test('creates and updates private account templates through v2', async () => {
