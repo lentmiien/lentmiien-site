@@ -413,8 +413,8 @@ Pod:
    policy whose Include rule uses the **Service Token** selector and selects the
    dedicated token. API clients send
    `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers.
-3. The current private profile overrides the container entrypoint with a bounded
-   wrapper that runs both `ollama serve` and `cloudflared tunnel run`. The
+3. The current private Ollama profile overrides the container entrypoint with a
+   bounded wrapper that runs both `ollama serve` and `cloudflared tunnel run`. The
    remotely managed route rewrites the origin Host header to `localhost:8080` as
    required by Ollama. The wrapper downloads
    a pinned/checksummed `cloudflared` binary on first container boot. Replace this
@@ -452,10 +452,9 @@ Connections → Manage Ollama API Connections**, set the URL to
 `https://llm.lentmiien.com` and set the connection's **Headers** JSON to the two
 Cloudflare service-token headers. The same configuration can be supplied through
 `OLLAMA_API_CONFIGS`; do not bake the header values into an image or commit them.
-Cloudflare Access is the authentication layer for this Ollama phase.
-`RUNPOD_LLM_API_KEY` is intentionally not passed to Ollama because Ollama does
-not enforce it; reserve that key for the later native llama.cpp/vLLM/SGLang
-gateway.
+Cloudflare Access is the authentication layer for the Ollama profile because
+Ollama does not enforce `RUNPOD_LLM_API_KEY`. The GLM llama.cpp profile adds that
+key as a second layer and serves the OpenAI-compatible API under `/v1`.
 
 Twingate remains viable if private-network semantics are more important than a
 normal HTTPS URL: run a Connector where it can reach Ollama, define a narrow
@@ -483,7 +482,7 @@ Security zone: logged-in, administrator only
 Interactive principals: validated admin sessions
 Machine principals: internal `runpod-state-observer`, `runpod-auto-stop`, and `runpod-billing-scheduler` labels; Cloudflare Access service-token client for outbound gateway checks; no inbound application machine route (`RUNPOD_API_KEY` is an outbound provider credential)
 Data classification: public catalogs; sensitive account billing/resource metadata; secret provider, tunnel, Access-token, and future LLM-gateway credentials
-Capabilities: runpod.catalog.read, runpod.billing.read, runpod.billing.sync, runpod.pod.read, runpod.pod.create, runpod.pod.start, runpod.pod.stop, runpod.pod.extend, runpod.pod.delete, runpod.pod.setup, runpod.pod.sync, runpod.model_download.create, runpod.network_volume.read, runpod.network_volume.create, runpod.network_volume.delete, runpod.network_volume.sync, runpod.template.manage
+Capabilities: runpod.catalog.read, runpod.billing.read, runpod.billing.sync, runpod.pod.read, runpod.pod.create, runpod.pod.start, runpod.pod.stop, runpod.pod.extend, runpod.pod.delete, runpod.pod.setup, runpod.pod.sync, runpod.model_download.create, runpod.model_artifact.prepare, runpod.llama_cpp.create, runpod.network_volume.read, runpod.network_volume.create, runpod.network_volume.delete, runpod.network_volume.sync, runpod.template.manage
 Object scope: account-wide admin feature; Pod and volume browser actions use local MongoDB IDs and resolve provider IDs server-side; model downloads accept a provider volume ID but verify it against the authenticated account's v2 volume list and derive cloud/location server-side; volume deletion also verifies the resolved provider ID against that list
 Admin override: no implicit bypass; admin receives the explicit capability bundle and each mutation checks its semantic capability
 Browser mutations and CSRF control: POST only; shared session token, timing-safe comparison, and Origin validation, with a same-origin Fetch Metadata fallback for opaque browser origins; Pod and volume deletion also require the exact resource name
@@ -517,9 +516,12 @@ The stable gateway also uses:
 - `RUNPOD_CLOUDFLARE_TUNNEL_SECRET_NAME` (non-secret provider reference name)
 - `RUNPOD_CLOUDFLARE_ACCESS_CLIENT_ID` and
   `RUNPOD_CLOUDFLARE_ACCESS_CLIENT_SECRET` (server-side Access checks)
-- `RUNPOD_LLM_API_KEY` (reserved; not enforced by Ollama)
+- `RUNPOD_LLM_API_KEY` (native bearer key enforced by the GLM llama.cpp profile;
+  Ollama continues to rely on Cloudflare Access)
 - `RUNPOD_LLM_API_SECRET_NAME` (non-secret provider reference name; defaults to
   `lentmiien_llm_api_key`)
+- `RUNPOD_LLAMA_CPP_STARTUP_TIMEOUT_MS` (application-side model-load deadline;
+  defaults to 45 minutes)
 
 Create the encrypted account Secret once, or check it without changing anything:
 
@@ -654,6 +656,36 @@ npm run prepare:runpod-glm53-artifact-v2 -- \
 minutes for the application-side monitor. The provider template separately
 enforces a four-hour container deadline. `RUNPOD_GLM53_VOLUME_ID` is an optional
 standalone-script convenience and is not a credential.
+
+The admin action upserts the approved artifact/volume relationship as `planned`
+before checking transient GPU stock. It does not label the artifact `ready` from
+that database write alone: a temporary private Pod must inspect the mounted
+volume, verify the five pinned shard sizes and hashes plus the pinned runtime,
+and write/validate the readiness marker. Retrying reuses completed files, so an
+already prepared volume is verified rather than downloaded again.
+
+The 2-GPU GLM serving check is dry-run-first and never starts Express or the
+application schedulers. With `--execute`, it requires the retained 250 GB volume,
+chooses exactly two 90+ GB RTX PRO 6000 GPUs in the volume's data center under a
+hard `$4.25/hour` total ceiling, syncs the private llama.cpp/Cloudflare template,
+waits for `/health`, verifies `/v1/models`, performs one real
+`/v1/chat/completions` request, and deletes the Pod in a `finally` path. The model
+volume and provider template remain:
+
+```bash
+npm run test:runpod-glm53-llama-cpp-v2 -- --volume-id=<volume-id>
+npm run test:runpod-glm53-llama-cpp-v2 -- \
+  --execute \
+  --volume-id=<volume-id> \
+  --max-hourly-cost=4.25
+```
+
+The network volume is mounted at `/workspace` and contains both the 157 GB GGUF
+and pinned runtime. It replaces the Pod-local persistent mount, so the serving
+profile deliberately allocates no model-sized Pod disk. Its 40 GB container disk
+is for the image, package metadata, the verified `cloudflared` binary, and
+temporary runtime files. Increasing either disk to the model size would duplicate
+storage without improving model fit; GPU VRAM and context settings determine fit.
 
 The billing backfill also defaults to a no-op. With `--execute`, it connects
 directly to MongoDB without starting the application, requests only v2 account

@@ -14,6 +14,14 @@ const NOTICE_KEYS = Object.freeze({
   modelDownloadFailed: 'model-download-failed',
   modelArtifactPreparationCreated: 'model-artifact-preparation-created',
   modelArtifactPreparationFailed: 'model-artifact-preparation-failed',
+  modelArtifactGpuUnavailable: 'model-artifact-gpu-unavailable',
+  modelArtifactVolumeInUse: 'model-artifact-volume-in-use',
+  modelArtifactAlreadyReady: 'model-artifact-already-ready',
+  modelArtifactPodCreated: 'model-artifact-pod-created',
+  modelArtifactPodFailed: 'model-artifact-pod-failed',
+  modelArtifactPodGpuUnavailable: 'model-artifact-pod-gpu-unavailable',
+  modelArtifactNotReady: 'model-artifact-not-ready',
+  llmGatewayNotConfigured: 'llm-gateway-not-configured',
   podCreated: 'pod-created',
   podCreateFailed: 'pod-create-failed',
   podStarted: 'pod-started',
@@ -60,7 +68,33 @@ function failureNotice(error, fallback) {
   if (error?.code === 'RUNPOD_CLOUDFLARE_ACCESS_NOT_ENFORCED') {
     return NOTICE_KEYS.cloudflareAccessNotEnforced;
   }
+  if (error?.code === 'RUNPOD_ARTIFACT_GPU_UNAVAILABLE') {
+    return NOTICE_KEYS.modelArtifactGpuUnavailable;
+  }
+  if (error?.code === 'RUNPOD_ARTIFACT_ALREADY_READY') {
+    return NOTICE_KEYS.modelArtifactAlreadyReady;
+  }
+  if (error?.code === 'RUNPOD_MODEL_ARTIFACT_NOT_READY') {
+    return NOTICE_KEYS.modelArtifactNotReady;
+  }
+  if (error?.code === 'RUNPOD_LLM_GATEWAY_NOT_CONFIGURED') {
+    return NOTICE_KEYS.llmGatewayNotConfigured;
+  }
   return fallback;
+}
+
+function modelArtifactPreparationFailureNotice(error) {
+  if (error?.code === 'RUNPOD_NETWORK_VOLUME_IN_USE') {
+    return NOTICE_KEYS.modelArtifactVolumeInUse;
+  }
+  return failureNotice(error, NOTICE_KEYS.modelArtifactPreparationFailed);
+}
+
+function modelArtifactPodFailureNotice(error) {
+  if (['RUNPOD_LLM_GPU_UNAVAILABLE', 'RUNPOD_GPU_UNAVAILABLE'].includes(error?.code)) {
+    return NOTICE_KEYS.modelArtifactPodGpuUnavailable;
+  }
+  return failureNotice(error, NOTICE_KEYS.modelArtifactPodFailed);
 }
 
 function startFailureNotice(error) {
@@ -90,6 +124,11 @@ function logRejectedOperation(appLogger, action, error) {
     'RUNPOD_ARTIFACT_BILLING_NOT_ACKNOWLEDGED',
     'RUNPOD_ARTIFACT_ALREADY_PREPARING',
     'RUNPOD_ARTIFACT_ALREADY_READY',
+    'RUNPOD_LLM_BILLING_NOT_ACKNOWLEDGED',
+    'RUNPOD_LLM_GATEWAY_NOT_CONFIGURED',
+    'RUNPOD_LLM_GPU_UNAVAILABLE',
+    'RUNPOD_LLM_VRAM_INSUFFICIENT',
+    'RUNPOD_MODEL_ARTIFACT_NOT_READY',
     'RUNPOD_DATACENTER_UNAVAILABLE',
     'RUNPOD_DATACENTER_NETWORKING_UNAVAILABLE',
     'RUNPOD_ACTIVE_POD_LIMIT',
@@ -240,8 +279,26 @@ function createRunpodPodAdminController({
         logRejectedOperation(appLogger, 'model_artifact_prepare', error);
         return redirectWithNotice(
           res,
-          failureNotice(error, NOTICE_KEYS.modelArtifactPreparationFailed),
+          modelArtifactPreparationFailureNotice(error),
           'model-artifacts'
+        );
+      }
+    },
+
+    async createModelArtifactPod(req, res) {
+      try {
+        await manager.createModelArtifactPod(req.body || {}, req.user);
+        return redirectWithNotice(
+          res,
+          NOTICE_KEYS.modelArtifactPodCreated,
+          'pods'
+        );
+      } catch (error) {
+        logRejectedOperation(appLogger, 'llama_cpp_create', error);
+        return redirectWithNotice(
+          res,
+          modelArtifactPodFailureNotice(error),
+          'model-library'
         );
       }
     },
@@ -325,6 +382,8 @@ module.exports = {
   NOTICE_KEYS,
   createRunpodPodAdminController,
   failureNotice,
+  modelArtifactPodFailureNotice,
+  modelArtifactPreparationFailureNotice,
   redirectWithNotice,
   startFailureNotice,
 };

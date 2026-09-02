@@ -31,13 +31,19 @@ const RunpodPodSchema = new mongoose.Schema({
   },
   podPurpose: {
     type: String,
-    enum: ['ollama_service', 'model_download', 'model_artifact_prepare'],
+    enum: ['ollama_service', 'llama_cpp_service', 'model_download', 'model_artifact_prepare'],
     default: 'ollama_service',
     index: true,
   },
   workloadTemplateId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'runpod_workload_template',
+    default: null,
+    index: true,
+  },
+  modelArtifactRecordId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'runpod_model_artifact',
     default: null,
     index: true,
   },
@@ -66,6 +72,7 @@ const RunpodPodSchema = new mongoose.Schema({
   },
   setupErrorCode: { type: String, default: null, trim: true, maxlength: 80 },
   setupModel: { type: String, default: '', trim: true, maxlength: 120 },
+  contextTokens: { type: Number, default: null, min: 2048, max: 131072 },
   setupStartedAt: { type: Date, default: null },
   setupCompletedAt: { type: Date, default: null },
   autoDeleteAfterSetup: { type: Boolean, default: false },

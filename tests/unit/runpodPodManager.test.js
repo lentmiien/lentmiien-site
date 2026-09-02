@@ -6,9 +6,11 @@ const {
   RunpodPodManager,
   cloudflareGatewayStartArgs,
   chooseModelDownloadGpu,
+  classifyCreateFailure,
   mergeGpuCatalogs,
   normalizeModelName,
   normalizeModelArtifactPreparerTemplateInput,
+  normalizeModelArtifactServerTemplateInput,
   normalizeDownloaderTemplateInput,
   normalizeCloudflareTemplateInput,
   normalizeTemplateInput,
@@ -206,6 +208,23 @@ function validCreateInput(overrides = {}) {
 }
 
 describe('Runpod workload and picker helpers', () => {
+  test('turns provider capacity rejection into a specific large-model error', () => {
+    const providerError = new RunpodApiError('Runpod create failed.', {
+      status: 400,
+      providerTitle: 'Bad Request',
+      providerDetail: 'There are no longer any instances available with the requested specifications.',
+    });
+
+    expect(classifyCreateFailure(providerError, 'llama_cpp_service')).toEqual(
+      expect.objectContaining({
+        code: 'RUNPOD_LLM_GPU_UNAVAILABLE',
+        status: 409,
+        providerStatus: 400,
+        providerTitle: 'Bad Request',
+      })
+    );
+  });
+
   test('accrues running and stopped observations without double counting checkpoints', () => {
     const running = {
       providerStatus: 'RUNNING',
@@ -776,6 +795,81 @@ describe('RunpodPodManager', () => {
     expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
   });
 
+  test('normalizes the pinned GLM serving template without embedding credential values', () => {
+    const template = normalizeModelArtifactServerTemplateInput(undefined, {
+      contextTokens: 16384,
+      gpuCount: 2,
+      gatewayUrl: 'https://llm.lentmiien.com',
+      tunnelSecretName: 'lentmiien_cloudflare_tunnel_token',
+      llmApiSecretName: 'lentmiien_llm_api_key',
+    });
+
+    expect(template).toEqual(expect.objectContaining({
+      slug: 'glm53-llama-cpp-cloudflare',
+      setupKind: 'llama_cpp_serve',
+      accessMode: 'cloudflare_access',
+      gatewayUrl: 'https://llm.lentmiien.com/',
+      ports: [],
+      diskGb: 40,
+    }));
+    expect(template.env).toEqual(expect.objectContaining({
+      TUNNEL_TOKEN: '{{ RUNPOD_SECRET_lentmiien_cloudflare_tunnel_token }}',
+      LLAMA_API_KEY: '{{ RUNPOD_SECRET_lentmiien_llm_api_key }}',
+    }));
+    expect(JSON.stringify(template)).not.toContain('actual-secret-value');
+  });
+
+  test('turns a ready artifact into a guarded llama.cpp Pod request', async () => {
+    const fixture = createFixture();
+    const artifactId = '507f191e810c19729de860ad';
+    fixture.modelArtifactModel.findOne.mockImplementation(() => queryResult({
+      _id: artifactId,
+      slug: 'glm-5-3-flash-ud-iq4-xs',
+      preparationStatus: 'ready',
+      providerNetworkVolumeId: 'provider-glm-volume-id',
+      dataCenterId: 'EU-SE-1',
+    }));
+    fixture.manager.saveModelArtifactServerTemplate = jest.fn().mockResolvedValue({
+      _id: TEMPLATE_ID,
+      providerTemplateId: 'provider-llama-template-id',
+    });
+    fixture.manager._createManagedPod = jest.fn().mockResolvedValue({ id: POD_RECORD_ID });
+
+    await expect(fixture.manager.createModelArtifactPod({
+      artifactId,
+      gpuId: 'NVIDIA RTX PRO 6000 Blackwell Server Edition',
+      gpuCount: '2',
+      contextTokens: '16384',
+      autoStopMinutes: '60',
+      maxHourlyCost: '4.25',
+      billingAcknowledged: 'acknowledged',
+    }, { name: 'admin' })).resolves.toEqual({ id: POD_RECORD_ID });
+
+    expect(fixture.manager.saveModelArtifactServerTemplate).toHaveBeenCalledWith(
+      'glm-5-3-flash-ud-iq4-xs',
+      { name: 'admin' },
+      { contextTokens: 16384, gpuCount: 2 }
+    );
+    expect(fixture.manager._createManagedPod).toHaveBeenCalledWith(
+      expect.objectContaining({
+        templateId: TEMPLATE_ID,
+        networkVolumeId: 'provider-glm-volume-id',
+        dataCenterId: 'EU-SE-1',
+        cloud: 'SECURE',
+        gpuCount: '2',
+        model: 'glm-5-3-flash-ud-iq4-xs',
+        diskGb: '40',
+      }),
+      { name: 'admin' },
+      expect.objectContaining({
+        podPurpose: 'llama_cpp_service',
+        modelArtifactRecordId: artifactId,
+        contextTokens: 16384,
+        requiredVramGb: 192,
+      })
+    );
+  });
+
   test('creates one no-port, auto-cleaned preparation Pod for the approved pinned artifact', async () => {
     const fixture = createFixture();
     const artifactId = '507f191e810c19729de860ad';
@@ -815,6 +909,7 @@ describe('RunpodPodManager', () => {
       providerNetworkVolumeId: providerVolume.id,
     });
     fixture.modelArtifactModel.findOneAndUpdate
+      .mockResolvedValueOnce(localArtifact)
       .mockResolvedValueOnce(localArtifact)
       .mockResolvedValueOnce({
         ...localArtifact,
@@ -888,6 +983,46 @@ describe('RunpodPodManager', () => {
 
     expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
     expect(fixture.modelArtifactModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('records a planned artifact before reporting transient preparation GPU unavailability', async () => {
+    const fixture = createFixture();
+    const providerVolume = {
+      id: 'provider-glm-volume-id',
+      name: 'glm-5-3-flash-ud-iq4-xs',
+      size: 250,
+      dataCenter: 'EU-SE-1',
+      type: 'STANDARD',
+    };
+    fixture.runpodService.listNetworkVolumes.mockResolvedValue([providerVolume]);
+    fixture.manager.trackProviderNetworkVolume = jest.fn().mockResolvedValue({
+      _id: VOLUME_RECORD_ID,
+    });
+    fixture.modelArtifactModel.findOneAndUpdate.mockResolvedValue({
+      _id: '507f191e810c19729de860ad',
+      preparationStatus: 'planned',
+    });
+
+    await expect(fixture.manager.prepareModelArtifact({
+      presetSlug: 'glm-5-3-flash-ud-iq4-xs',
+      networkVolumeId: providerVolume.id,
+      maxHourlyCost: '0.10',
+      preparationBillingAcknowledged: 'acknowledged',
+    }, { name: 'admin' })).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_ARTIFACT_GPU_UNAVAILABLE',
+    }));
+
+    expect(fixture.modelArtifactModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { slug: 'glm-5-3-flash-ud-iq4-xs', providerNetworkVolumeId: providerVolume.id },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          preparationStatus: 'planned',
+          preparationStage: 'planned',
+        }),
+      }),
+      expect.objectContaining({ upsert: true, runValidators: true })
+    );
+    expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
   });
 
   test('verifies a downloaded model, records it on the volume, and archives the temporary Pod', async () => {
@@ -1730,6 +1865,70 @@ describe('RunpodPodManager', () => {
       { accessMode: 'cloudflare_access' }
     )).rejects.toEqual(expect.objectContaining({ code: 'OLLAMA_URL_INVALID' }));
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('verifies llama.cpp through both Cloudflare Access and the native bearer key', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
+      data: [{ id: 'glm-5.3-flash' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const fixture = createFixture({
+      managerOptions: {
+        fetchImpl,
+        cloudflareGatewayUrl: 'https://llm.lentmiien.com',
+        cloudflareAccessClientId: 'access-id',
+        cloudflareAccessClientSecret: 'access-secret',
+        cloudflareTunnelTokenConfigured: true,
+        llmApiKey: 'native-api-key',
+      },
+    });
+
+    await expect(fixture.manager.verifyLlamaCppModel(
+      'https://llm.lentmiien.com/',
+      'glm-5.3-flash'
+    )).resolves.toBe(true);
+
+    const [url, options] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe('https://llm.lentmiien.com/v1/models');
+    expect(options.headers).toEqual(expect.objectContaining({
+      Authorization: 'Bearer native-api-key',
+      'CF-Access-Client-Id': 'access-id',
+      'CF-Access-Client-Secret': 'access-secret',
+    }));
+    await expect(fixture.manager.llamaCppRequest(
+      'https://attacker.test/',
+      '/v1/models'
+    )).rejects.toEqual(expect.objectContaining({ code: 'OLLAMA_URL_INVALID' }));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('surfaces a bounded llama.cpp startup marker without waiting for the gateway timeout', async () => {
+    const fetchImpl = jest.fn();
+    const fixture = createFixture({
+      managerOptions: {
+        fetchImpl,
+        cloudflareGatewayUrl: 'https://llm.lentmiien.com',
+        cloudflareAccessClientId: 'access-id',
+        cloudflareAccessClientSecret: 'access-secret',
+        cloudflareTunnelTokenConfigured: true,
+        llmApiKey: 'native-api-key',
+      },
+    });
+    fixture.runpodService.getPod.mockResolvedValue({ status: 'RUNNING' });
+    fixture.runpodService.getPodLogSnapshot.mockResolvedValue({
+      events: [{ line: 'RUNPOD_LLM_FAILED code=LLAMA_CPP_EXITED stage=loading_model' }],
+    });
+
+    await expect(fixture.manager.waitForLlamaCpp(
+      'https://llm.lentmiien.com/',
+      { providerPodId: 'provider-pod-id' }
+    )).rejects.toEqual(expect.objectContaining({
+      code: 'LLAMA_CPP_EXITED',
+      status: 502,
+    }));
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   test('fails gateway readiness immediately when Ollama rejects the origin Host header', async () => {

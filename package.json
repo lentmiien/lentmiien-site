@@ -15,6 +15,7 @@
     "test:runpod-model-downloader-v2": "node scripts/test-runpod-model-downloader-v2.js",
     "test:runpod-cloudflare-gateway-v2": "node scripts/test-runpod-cloudflare-gateway-v2.js",
     "prepare:runpod-glm53-artifact-v2": "node scripts/prepare-runpod-glm53-artifact-v2.js",
+    "test:runpod-glm53-llama-cpp-v2": "node scripts/test-runpod-glm53-llama-cpp-v2.js",
     "bootstrap:runpod-cloudflare-secret": "node scripts/bootstrap-runpod-cloudflare-secret.js",
     "bootstrap:runpod-llm-api-secret": "node scripts/bootstrap-runpod-llm-api-secret.js",
     "sync:runpod-billing-v2": "node scripts/sync-runpod-billing-history-v2.js",

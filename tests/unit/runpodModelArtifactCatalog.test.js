@@ -2,9 +2,11 @@ const {
   GLM53_FLASH_UD_IQ4_XS,
   GLM53_FLASH_UD_IQ4_XS_SLUG,
   artifactPreparerProviderPayload,
+  artifactServerProviderPayload,
   assertPresetIntegrity,
   buildArtifactPreparerArgs,
   buildArtifactPreparerShell,
+  buildArtifactServerShell,
   getModelArtifactPreset,
   modelArtifactPreparationSignal,
 } = require('../../services/runpodModelArtifactCatalog');
@@ -106,6 +108,43 @@ describe('Runpod model artifact catalog', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+
+  test('builds a private two-GPU llama.cpp server with layered gateway authentication', () => {
+    const payload = artifactServerProviderPayload();
+    const args = JSON.parse(payload.args);
+    const encoded = args.cmd[0].match(/printf '%s' '([A-Za-z0-9+/=]+)' \| base64/u)?.[1];
+    const shell = Buffer.from(encoded, 'base64').toString('utf8');
+
+    expect(payload).toEqual(expect.objectContaining({
+      name: 'lentmiien-glm53-llama-cpp-cloudflare-v2',
+      ports: [],
+      public: false,
+      serverless: false,
+      disk: 40,
+      env: {
+        TUNNEL_TOKEN: '{{ RUNPOD_SECRET_lentmiien_cloudflare_tunnel_token }}',
+        LLAMA_API_KEY: '{{ RUNPOD_SECRET_lentmiien_llm_api_key }}',
+        NVIDIA_TF32_OVERRIDE: '0',
+      },
+    }));
+    expect(shell).toBe(buildArtifactServerShell());
+    expect(shell).toContain('--tensor-split \'1,1\'');
+    expect(shell).toContain('--n-gpu-layers 999');
+    expect(shell).toContain('--flash-attn off');
+    expect(shell).toContain('--ctx-size 16384');
+    expect(shell).toContain('test -n "${LLAMA_API_KEY:-}"');
+    expect(shell).not.toContain('--api-key "$LLAMA_API_KEY"');
+    expect(shell).toContain("cloudflared_url='https://github.com/cloudflare/cloudflared/releases/download/2026.8.3/cloudflared-linux-amd64'");
+    expect(shell).toContain("cloudflared_sha256='f29324fe934d1e100617484c78deef803c4dc2cd351d645bbde42e96b4fccc5e'");
+    expect(shell).not.toContain('$CLOUDFLARED_AMD64_URL');
+    expect(shell).not.toContain('$CLOUDFLARED_AMD64_SHA256');
+    expect(shell).toContain('seq 1 270');
+    expect(shell).toContain('RUNPOD_LLM_READY');
+    expect(shell).toContain('/workspace/artifacts/glm-5.3-flash-ud-iq4-xs/READY.json');
+    expect(shell).not.toContain('RUNPOD_API_KEY');
+    expect(spawnSync('/bin/bash', ['-n'], { input: shell, encoding: 'utf8' }))
+      .toEqual(expect.objectContaining({ status: 0, stderr: '' }));
   });
 
   test('recognizes the Xet background-writer failure returned for network-volume writes', () => {

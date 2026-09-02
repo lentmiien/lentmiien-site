@@ -183,6 +183,14 @@ router.post(
   runpodPodAdminController.prepareModelArtifact
 );
 router.post(
+  '/model-artifacts/pods',
+  runpodMutationLimiter,
+  runpodCreateLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.llamaCppCreate),
+  runpodPodAdminController.createModelArtifactPod
+);
+router.post(
   '/pods',
   runpodMutationLimiter,
   runpodCreateLimiter,

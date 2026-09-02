@@ -34,6 +34,80 @@ function renderPage(dashboard = {}, management = {}, storedHistory = {}) {
 }
 
 describe('Runpod admin page', () => {
+  test('offers a focused two-model library and guarded GLM quick launch when verified', () => {
+    const html = renderPage({}, {
+      limits: {
+        maxActivePods: 2,
+        maxGpuCount: 16,
+        maxHourlyCostUsd: 100,
+        defaultAutoStopMinutes: 60,
+        maxRuntimeMinutes: 1440,
+      },
+      gateway: {
+        readyForLargeModel: true,
+        gatewayUrl: 'https://llm.lentmiien.com/',
+      },
+      templates: [],
+      modelArtifactPresets: [{
+        slug: 'glm-5-3-flash-ud-iq4-xs',
+        name: 'GLM-5.3-Flash · UD-IQ4_XS',
+        totalBytes: 156822111075,
+        recommendedVolumeGb: 250,
+        recommendedVramGb: 192,
+        defaultContextTokens: 16384,
+        sourceRevision: '2975ab414d30340466d8c51533c6e91f0cca64c1',
+        runtimeRevision: '949f7efb097eb20ef36fecdb1afaebff9a4ae7ed',
+      }],
+      modelArtifacts: [{
+        id: '507f191e810c19729de860ad',
+        slug: 'glm-5-3-flash-ud-iq4-xs',
+        name: 'GLM-5.3-Flash · UD-IQ4_XS',
+        providerNetworkVolumeId: 'glm-volume-id',
+        dataCenterId: 'EU-RO-1',
+        preparationStatus: 'ready',
+        preparationStage: 'ready',
+        runtimeRevision: '949f7efb097eb20ef36fecdb1afaebff9a4ae7ed',
+      }],
+      gpuOptions: [{
+        id: 'NVIDIA RTX PRO 6000 Blackwell Server Edition',
+        name: 'RTX PRO 6000',
+        memoryGb: 96,
+        securePrice: 2.09,
+        secureAvailability: 'HIGH',
+        secureMaxCount: 8,
+        secureDataCenters: [{ id: 'EU-RO-1', availability: 'LOW' }],
+        communityDataCenters: [],
+      }],
+      networkVolumes: [{
+        id: '507f191e810c19729de860ab',
+        providerNetworkVolumeId: 'glm-volume-id',
+        name: 'glm-5-3-flash-ud-iq4-xs',
+        providerPresent: true,
+        trackedLocally: true,
+        dataCenterId: 'EU-RO-1',
+        volumeType: 'STANDARD',
+        sizeGb: 250,
+        attachedPodCount: 0,
+        cachedModels: [],
+      }],
+      archivedNetworkVolumes: [],
+      managedPods: [],
+      archivedPods: [],
+      modelArtifactPreparations: [],
+      modelDownloads: [],
+      unmanagedProviderPods: [],
+      errors: {},
+    });
+
+    expect(html).toContain('id="model-library"');
+    expect(html).toContain('Qwen3.8 · 27B');
+    expect(html).toContain('method="post" action="/admin/runpod/model-artifacts/pods"');
+    expect(html).toContain('name="artifactId" value="507f191e810c19729de860ad"');
+    expect(html).toContain('2× RTX PRO 6000');
+    expect(html).toContain('No Pod-local persistent disk is allocated');
+    expect(html).toContain('name="billingAcknowledged"');
+  });
+
   test('renders v2 catalog, billing, template, picker, and lifecycle controls', () => {
     const html = renderPage({
       gpus: [{
@@ -239,7 +313,9 @@ describe('Runpod admin page', () => {
     expect(html).toContain('method="post" action="/admin/runpod/network-volumes"');
     expect(html).toContain('method="post" action="/admin/runpod/model-downloads"');
     expect(html).toContain('method="post" action="/admin/runpod/model-artifacts/prepare"');
-    expect(html).toContain('Prepare GLM-5.3-Flash on persistent storage');
+    expect(html).toContain('Verify and record GLM-5.3-Flash storage');
+    expect(html).toContain('Prepared models');
+    expect(html).toContain('Verify/resume and record');
     expect(html).toContain('Immutable source contract');
     expect(html).toContain('UD-IQ4_XS');
     expect(html).toContain('data-runpod-artifact-preparer-form');

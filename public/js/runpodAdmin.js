@@ -341,7 +341,6 @@
       }
       if (submit) {
         submit.disabled = !dataCenter
-          || !candidates.length
           || ['ready', 'preparing'].includes(artifactStatus);
       }
     }
@@ -352,7 +351,7 @@
     form.addEventListener('submit', () => {
       if (submit) {
         submit.disabled = true;
-        submit.textContent = 'Starting preparation…';
+        submit.textContent = 'Starting verification…';
       }
     });
     update();

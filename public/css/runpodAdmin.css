@@ -270,6 +270,82 @@
   scroll-margin-top: 1rem;
 }
 
+.runpod-panel--featured {
+  border-color: var(--accent);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 48%),
+    var(--surface-1);
+}
+
+.runpod-model-library {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.runpod-model-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-width: 0;
+  padding: 1.1rem;
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.runpod-model-card h3,
+.runpod-model-card p {
+  margin: 0;
+}
+
+.runpod-model-card > p {
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.runpod-model-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.runpod-model-facts div {
+  min-width: 0;
+  padding: 0.6rem;
+  border-radius: 8px;
+  background: var(--surface-3);
+}
+
+.runpod-model-facts dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.runpod-model-facts dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.runpod-model-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: auto;
+}
+
+.runpod-quick-launch {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: auto;
+}
+
 .runpod-panel__header {
   display: flex;
   align-items: flex-start;
@@ -1138,6 +1214,8 @@
   .runpod-form-grid--wide,
   .runpod-pod-grid,
   .runpod-download-grid,
+  .runpod-model-library,
+  .runpod-model-facts,
   .runpod-volume-grid,
   .runpod-pod-card__metrics {
     grid-template-columns: 1fr;

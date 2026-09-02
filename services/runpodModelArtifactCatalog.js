@@ -4,6 +4,12 @@ const ARTIFACT_PATH_PATTERN = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]+
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 
 const GLM53_FLASH_UD_IQ4_XS_SLUG = 'glm-5-3-flash-ud-iq4-xs';
+const GLM53_FLASH_LLAMA_CPP_PROVIDER_TEMPLATE_NAME = 'lentmiien-glm53-llama-cpp-cloudflare-v2';
+const GLM53_FLASH_LLAMA_CPP_ORIGIN_PORT = 8080;
+const GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS = 'glm-5.3-flash';
+const CLOUDFLARED_VERSION = '2026.8.3';
+const CLOUDFLARED_AMD64_SHA256 = 'f29324fe934d1e100617484c78deef803c4dc2cd351d645bbde42e96b4fccc5e';
+const CLOUDFLARED_AMD64_URL = `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64`;
 const GLM53_FLASH_UD_IQ4_XS = Object.freeze({
   slug: GLM53_FLASH_UD_IQ4_XS_SLUG,
   name: 'GLM-5.3-Flash · UD-IQ4_XS',
@@ -117,6 +123,27 @@ function modelArtifactPreparationSignal(logEvents = []) {
   const stages = lines.filter((line) => line.includes('RUNPOD_ARTIFACT_STAGE'));
   const stage = stages.at(-1)?.match(/\bstage=([a-z_]{1,40})\b/u)?.[1] || 'provisioning';
   return { status: 'preparing', stage, errorCode: null };
+}
+
+function modelArtifactServingSignal(logEvents = []) {
+  const lines = (Array.isArray(logEvents) ? logEvents : [])
+    .slice(0, 5000)
+    .map((event) => String(event?.line || '').slice(0, 16 * 1024));
+  const failed = lines.find((line) => line.includes('RUNPOD_LLM_FAILED'));
+  if (failed) {
+    return {
+      status: 'failed',
+      stage: failed.match(/\bstage=([a-z_]{1,40})\b/u)?.[1] || 'unknown',
+      errorCode: failed.match(/\bcode=([A-Z0-9_]{1,80})\b/u)?.[1]
+        || 'RUNPOD_LLAMA_CPP_SETUP_FAILED',
+    };
+  }
+  if (lines.some((line) => line.includes('RUNPOD_LLM_READY'))) {
+    return { status: 'ready', stage: 'serving', errorCode: null };
+  }
+  const stages = lines.filter((line) => line.includes('RUNPOD_LLM_STAGE'));
+  const stage = stages.at(-1)?.match(/\bstage=([a-z_]{1,40})\b/u)?.[1] || 'provisioning';
+  return { status: 'starting', stage, errorCode: null };
 }
 
 function assertPresetIntegrity(preset) {
@@ -438,19 +465,222 @@ function artifactPreparerProviderPayload(slug = GLM53_FLASH_UD_IQ4_XS_SLUG) {
   };
 }
 
+function buildArtifactServerShell(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, {
+  contextTokens,
+  gpuCount = 2,
+  originPort = GLM53_FLASH_LLAMA_CPP_ORIGIN_PORT,
+} = {}) {
+  const preset = assertPresetIntegrity(getModelArtifactPreset(slug));
+  const requestedContext = Number(contextTokens ?? preset.defaultContextTokens);
+  const requestedGpuCount = Number(gpuCount);
+  const requestedPort = Number(originPort);
+  if (!Number.isSafeInteger(requestedContext) || requestedContext < 2048 || requestedContext > 131072) {
+    throw new TypeError('Artifact server context must be between 2048 and 131072 tokens.');
+  }
+  if (!Number.isSafeInteger(requestedGpuCount) || requestedGpuCount < 1 || requestedGpuCount > 32) {
+    throw new TypeError('Artifact server GPU count must be between 1 and 32.');
+  }
+  if (!Number.isSafeInteger(requestedPort) || requestedPort < 1024 || requestedPort > 65535) {
+    throw new TypeError('Artifact server port must be between 1024 and 65535.');
+  }
+  const root = `/workspace/${preset.relativeRootPath}`;
+  const modelPath = `/workspace/${preset.relativeModelPath}/${preset.manifest[0].path}`;
+  const runtimePath = `/workspace/${preset.relativeRuntimePath}/llama-server`;
+  const readyPath = `/workspace/${preset.relativeReadyPath}`;
+  const tensorSplit = Array.from({ length: requestedGpuCount }, () => '1').join(',');
+
+  return `#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+artifact_root=${shellQuote(root)}
+ready_path=${shellQuote(readyPath)}
+server=${shellQuote(runtimePath)}
+model=${shellQuote(modelPath)}
+cloudflared=/usr/local/bin/cloudflared
+cloudflared_url=${shellQuote(CLOUDFLARED_AMD64_URL)}
+cloudflared_sha256=${shellQuote(CLOUDFLARED_AMD64_SHA256)}
+current_stage=validating_artifact
+
+fail() {
+  printf 'RUNPOD_LLM_FAILED code=%s stage=%s\\n' "$1" "$2"
+  exit 1
+}
+
+report_unexpected_failure() {
+  exit_code=$?
+  trap - ERR
+  printf 'RUNPOD_LLM_FAILED code=SERVICE_COMMAND_FAILED stage=%s exit=%s\\n' \
+    "$current_stage" "$exit_code"
+  exit "$exit_code"
+}
+trap report_unexpected_failure ERR
+
+test -s "$ready_path" || fail ARTIFACT_READY_MARKER_MISSING validating_artifact
+test -x "$server" || fail LLAMA_CPP_RUNTIME_MISSING validating_artifact
+test -s "$model" || fail MODEL_ENTRY_POINT_MISSING validating_artifact
+python3 - "$ready_path" <<'PY' || fail ARTIFACT_READY_MARKER_INVALID validating_artifact
+import json
+import sys
+
+with open(sys.argv[1], 'r', encoding='utf-8') as handle:
+    marker = json.load(handle)
+assert marker.get('slug') == ${shellQuote(preset.slug)}
+assert marker.get('source', {}).get('revision') == ${shellQuote(preset.sourceRevision)}
+assert marker.get('runtime', {}).get('revision') == ${shellQuote(preset.runtimeRevision)}
+PY
+
+if [ ! -x "$cloudflared" ]; then
+  current_stage=installing_gateway
+  printf 'RUNPOD_LLM_STAGE stage=installing_gateway\\n'
+  apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ca-certificates curl >/dev/null
+  curl -fsSLo "$cloudflared" "$cloudflared_url"
+  chmod 0555 "$cloudflared"
+  rm -rf /var/lib/apt/lists/*
+fi
+printf '%s  %s\\n' "$cloudflared_sha256" "$cloudflared" | sha256sum -c - >/dev/null \
+  || fail CLOUDFLARED_CHECKSUM_INVALID installing_gateway
+
+test -n "\${TUNNEL_TOKEN:-}" || fail CLOUDFLARE_TUNNEL_TOKEN_MISSING starting
+test -n "\${LLAMA_API_KEY:-}" || fail LLAMA_API_KEY_MISSING starting
+export NVIDIA_TF32_OVERRIDE=0
+
+current_stage=loading_model
+printf 'RUNPOD_LLM_STAGE stage=loading_model model_bytes=${preset.totalBytes} gpu_count=${requestedGpuCount} context=${requestedContext}\\n'
+"$server" \
+  --model "$model" \
+  --alias ${shellQuote(GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS)} \
+  --host 127.0.0.1 \
+  --port ${requestedPort} \
+  --n-gpu-layers 999 \
+  --split-mode layer \
+  --tensor-split ${shellQuote(tensorSplit)} \
+  --ctx-size ${requestedContext} \
+  --parallel 1 \
+  --flash-attn off \
+  --jinja &
+server_pid=$!
+"$cloudflared" tunnel --no-autoupdate run &
+tunnel_pid=$!
+trap 'kill "$server_pid" "$tunnel_pid" 2>/dev/null || true' EXIT INT TERM
+
+for attempt in $(seq 1 270); do
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    wait "$server_pid" || true
+    fail LLAMA_CPP_EXITED loading_model
+  fi
+  if ! kill -0 "$tunnel_pid" 2>/dev/null; then
+    wait "$tunnel_pid" || true
+    fail CLOUDFLARED_EXITED starting_gateway
+  fi
+  if curl -fsS -H "Authorization: Bearer $LLAMA_API_KEY" \
+    "http://127.0.0.1:${requestedPort}/health" >/dev/null 2>&1; then
+    current_stage=serving
+    printf 'RUNPOD_LLM_READY slug=${preset.slug} model_alias=${GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS}\\n'
+    break
+  fi
+  sleep 10
+done
+curl -fsS -H "Authorization: Bearer $LLAMA_API_KEY" \
+  "http://127.0.0.1:${requestedPort}/health" >/dev/null \
+  || fail LLAMA_CPP_STARTUP_TIMEOUT loading_model
+
+wait -n "$server_pid" "$tunnel_pid"
+fail SERVICE_PROCESS_EXITED serving
+`;
+}
+
+function buildArtifactServerArgs(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, options = {}) {
+  const encodedScript = Buffer.from(buildArtifactServerShell(slug, options), 'utf8').toString('base64');
+  const command = [
+    'set -Eeuo pipefail',
+    `printf '%s' ${shellQuote(encodedScript)} | base64 -d > /tmp/runpod-artifact-server.sh`,
+    'chmod 0700 /tmp/runpod-artifact-server.sh',
+    'exec /bin/bash /tmp/runpod-artifact-server.sh',
+  ].join('; ');
+  return JSON.stringify({
+    entrypoint: ['/bin/bash', '-lc'],
+    cmd: [command],
+  });
+}
+
+function artifactServerTemplate(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, {
+  contextTokens,
+  gpuCount = 2,
+  cloudflareTunnelSecretName = 'lentmiien_cloudflare_tunnel_token',
+  llmApiSecretName = 'lentmiien_llm_api_key',
+} = {}) {
+  const preset = assertPresetIntegrity(getModelArtifactPreset(slug));
+  const secretPattern = /^[a-z][a-z0-9_]{0,79}$/u;
+  if (!secretPattern.test(cloudflareTunnelSecretName) || !secretPattern.test(llmApiSecretName)) {
+    throw new TypeError('Artifact server Secret names are invalid.');
+  }
+  return {
+    name: 'GLM-5.3 Flash · llama.cpp · Cloudflare Access',
+    providerTemplateName: GLM53_FLASH_LLAMA_CPP_PROVIDER_TEMPLATE_NAME,
+    image: preset.runtimeImage,
+    args: buildArtifactServerArgs(slug, { contextTokens, gpuCount }),
+    diskGb: 40,
+    ports: [],
+    env: {
+      TUNNEL_TOKEN: `{{ RUNPOD_SECRET_${cloudflareTunnelSecretName} }}`,
+      LLAMA_API_KEY: `{{ RUNPOD_SECRET_${llmApiSecretName} }}`,
+      NVIDIA_TF32_OVERRIDE: '0',
+    },
+    persistentDiskGb: 10,
+    persistentPath: '/workspace',
+    servicePort: GLM53_FLASH_LLAMA_CPP_ORIGIN_PORT,
+    healthPath: '/health',
+    accessMode: 'cloudflare_access',
+    defaultModel: preset.slug,
+  };
+}
+
+function artifactServerProviderPayload(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, options = {}) {
+  const template = artifactServerTemplate(slug, options);
+  return {
+    name: template.providerTemplateName,
+    image: template.image,
+    args: template.args,
+    category: 'NVIDIA',
+    disk: template.diskGb,
+    ports: template.ports,
+    env: template.env,
+    mounts: {
+      persistent: {
+        size: template.persistentDiskGb,
+        path: template.persistentPath,
+      },
+    },
+    serverless: false,
+    public: false,
+    startSsh: false,
+    startJupyter: false,
+  };
+}
+
 module.exports = {
   ARTIFACT_PATH_PATTERN,
   GLM53_FLASH_UD_IQ4_XS,
   GLM53_FLASH_UD_IQ4_XS_SLUG,
+  GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS,
+  GLM53_FLASH_LLAMA_CPP_ORIGIN_PORT,
+  GLM53_FLASH_LLAMA_CPP_PROVIDER_TEMPLATE_NAME,
   MODEL_ARTIFACT_PRESETS,
   SHA256_PATTERN,
   artifactPreparerProviderPayload,
   artifactPreparerTemplate,
+  artifactServerProviderPayload,
+  artifactServerTemplate,
   assertPresetIntegrity,
   buildArtifactPreparerArgs,
   buildArtifactPreparerShell,
+  buildArtifactServerArgs,
+  buildArtifactServerShell,
   getModelArtifactPreset,
   modelArtifactDiagnosticCode,
   modelArtifactPreparationSignal,
+  modelArtifactServingSignal,
   shellQuote,
 };

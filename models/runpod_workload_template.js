@@ -41,7 +41,7 @@ const RunpodWorkloadTemplateSchema = new mongoose.Schema({
   startJupyter: { type: Boolean, default: false },
   setupKind: {
     type: String,
-    enum: ['ollama_pull', 'ollama_download', 'hf_gguf_prepare'],
+    enum: ['ollama_pull', 'ollama_download', 'hf_gguf_prepare', 'llama_cpp_serve'],
     required: true,
   },
   defaultModel: { type: String, required: true, trim: true, maxlength: 120 },
@@ -49,7 +49,7 @@ const RunpodWorkloadTemplateSchema = new mongoose.Schema({
   healthPath: { type: String, required: true, trim: true, maxlength: 200 },
   accessMode: {
     type: String,
-    enum: ['runpod_proxy', 'cloudflare_access'],
+    enum: ['runpod_proxy', 'cloudflare_access', 'private_none'],
     default: 'runpod_proxy',
     index: true,
   },

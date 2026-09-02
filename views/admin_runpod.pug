@@ -22,14 +22,23 @@ block content
   - const cloudflareTemplate = management.templates.find((entry) => entry.slug === 'ollama-cloudflare') || null;
   - const downloaderTemplate = management.templates.find((entry) => entry.slug === 'ollama-downloader') || null;
   - const artifactPreparerTemplate = management.templates.find((entry) => entry.slug === 'glm53-artifact-preparer') || null;
+  - const llamaCppTemplate = management.templates.find((entry) => entry.slug === 'glm53-llama-cpp-cloudflare') || null;
   - const largeModelPreset = management.modelArtifactPresets[0] || null;
   - const servingTemplates = management.templates.filter((entry) => ['ollama', 'ollama-cloudflare'].includes(entry.slug) && entry.providerPresent).sort((left, right) => (left.accessMode === 'cloudflare_access' ? -1 : 1) - (right.accessMode === 'cloudflare_access' ? -1 : 1));
   - const defaultServingTemplate = servingTemplates[0] || cloudflareTemplate || ollamaTemplate || null;
   - const availableNetworkVolumes = management.networkVolumes.filter((volume) => volume.providerPresent && volume.attachedPodCount === 0);
-  - const defaultNetworkVolume = availableNetworkVolumes[0] || null;
+  - const qwenModelTag = 'qwen3.8:27b';
+  - const qwenVolume = management.networkVolumes.find((volume) => (volume.cachedModels || []).includes(qwenModelTag)) || management.networkVolumes.find((volume) => volume.name === 'ollama-qwen3-8-27b-cache') || null;
+  - const defaultNetworkVolume = availableNetworkVolumes.find((volume) => qwenVolume && volume.providerNetworkVolumeId === qwenVolume.providerNetworkVolumeId) || availableNetworkVolumes[0] || null;
   - const defaultCachedModel = defaultNetworkVolume && defaultNetworkVolume.cachedModels && defaultNetworkVolume.cachedModels.length ? defaultNetworkVolume.cachedModels[0] : 'qwen3.8:27b';
-  - const artifactVolumes = largeModelPreset ? availableNetworkVolumes.filter((volume) => Number(volume.sizeGb) >= Number(largeModelPreset.recommendedVolumeGb)) : [];
+  - const allArtifactVolumes = largeModelPreset ? management.networkVolumes.filter((volume) => volume.providerPresent && Number(volume.sizeGb) >= Number(largeModelPreset.recommendedVolumeGb)) : [];
+  - const artifactVolumes = allArtifactVolumes.filter((volume) => volume.attachedPodCount === 0);
   - const defaultArtifactVolume = artifactVolumes.find((volume) => volume.name === 'glm-5-3-flash-ud-iq4-xs') || artifactVolumes[0] || null;
+  - const largeModelArtifact = largeModelPreset ? management.modelArtifacts.find((artifact) => artifact.slug === largeModelPreset.slug && artifact.preparationStatus === 'ready') || management.modelArtifacts.find((artifact) => artifact.slug === largeModelPreset.slug) || null : null;
+  - const largeModelVolume = largeModelArtifact ? management.networkVolumes.find((volume) => volume.providerNetworkVolumeId === largeModelArtifact.providerNetworkVolumeId) || null : allArtifactVolumes.find((volume) => volume.name === 'glm-5-3-flash-ud-iq4-xs') || allArtifactVolumes[0] || null;
+  - const largeModelGpuOptions = largeModelPreset ? management.gpuOptions.filter((gpu) => ['LOW', 'MEDIUM', 'HIGH'].includes(gpu.secureAvailability) && Number.isFinite(gpu.securePrice) && Number(gpu.secureMaxCount) >= 2 && Number(gpu.memoryGb) * 2 >= Number(largeModelPreset.recommendedVramGb)).sort((left, right) => ((left.name === 'RTX PRO 6000' ? 0 : left.name.includes('RTX PRO 6000') ? 1 : 2) - (right.name === 'RTX PRO 6000' ? 0 : right.name.includes('RTX PRO 6000') ? 1 : 2)) || left.securePrice - right.securePrice) : [];
+  - const qwenPods = management.managedPods.filter((pod) => pod.setupModel === qwenModelTag);
+  - const glmPods = largeModelPreset ? management.managedPods.filter((pod) => pod.setupModel === largeModelPreset.slug) : [];
   - const networkVolumeDataCenters = dataCenters.filter((entry) => entry.networkVolumeTypes.includes('STANDARD') || entry.networkVolumeTypes.includes('HIGH_PERFORMANCE'));
   main.runpod-admin
     header.runpod-hero
@@ -66,6 +75,123 @@ block content
       .runpod-alert.runpod-alert--warning(role='alert')
         strong Some compute or storage-management data could not be loaded.
         p Catalog and billing data may still be current. Refresh before making a cost-bearing decision.
+
+    section#model-library.runpod-panel.runpod-panel--featured(aria-labelledby='runpodModelLibraryHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Model library
+          h2#runpodModelLibraryHeading Prepared models
+          p.runpod-panel__subtitle Launch and monitor the two reusable models here. Detailed storage, template, billing, and catalog controls remain below.
+        span.runpod-panel__meta #{formatInteger(2)} managed models
+
+      .runpod-model-library
+        article.runpod-model-card
+          .runpod-pod-card__header
+            div
+              p.runpod-eyebrow Ollama
+              h3 Qwen3.8 · 27B
+            span.runpod-status(class=qwenVolume && (qwenVolume.cachedModels || []).includes(qwenModelTag) ? 'runpod-status--ready' : 'runpod-status--warning')= qwenVolume && (qwenVolume.cachedModels || []).includes(qwenModelTag) ? 'CACHED' : 'VERIFY CACHE'
+          p A practical single-GPU model served by Ollama through the stable Cloudflare hostname.
+          dl.runpod-model-facts
+            div
+              dt Storage
+              dd= qwenVolume ? `${qwenVolume.name} · ${formatInteger(qwenVolume.sizeGb)} GB` : 'Qwen volume not found'
+            div
+              dt Location
+              dd= qwenVolume ? qwenVolume.dataCenterId : '—'
+            div
+              dt Managed Pods
+              dd= formatInteger(qwenPods.length)
+            div
+              dt API style
+              dd Ollama · /api/*
+          .runpod-model-actions
+            a.runpod-button.runpod-button--primary(href='#pod-creator') Create Qwen Pod
+            a.runpod-button.runpod-button--secondary(href='#pods') Manage Pods
+
+        article.runpod-model-card
+          .runpod-pod-card__header
+            div
+              p.runpod-eyebrow llama.cpp
+              h3 GLM-5.3-Flash · UD-IQ4_XS
+            if largeModelArtifact && largeModelArtifact.preparationStatus === 'ready'
+              span.runpod-status.runpod-status--ready VERIFIED
+            else if largeModelArtifact && largeModelArtifact.preparationStatus === 'failed'
+              span.runpod-status.runpod-status--error VERIFY FAILED
+            else if largeModelArtifact && largeModelArtifact.preparationStatus === 'preparing'
+              span.runpod-status.runpod-status--running VERIFYING
+            else if largeModelArtifact
+              span.runpod-status.runpod-status--warning RECORDED · VERIFY PENDING
+            else
+              span.runpod-status.runpod-status--warning NOT RECORDED
+          p The 157 GB GGUF and pinned runtime live on regional network storage; a serving Pod loads them without downloading another copy.
+          dl.runpod-model-facts
+            div
+              dt Storage
+              dd= largeModelVolume ? `${largeModelVolume.name} · ${formatInteger(largeModelVolume.sizeGb)} GB` : 'GLM volume not found'
+            div
+              dt Location
+              dd= largeModelArtifact ? largeModelArtifact.dataCenterId : largeModelVolume ? largeModelVolume.dataCenterId : '—'
+            div
+              dt Target VRAM
+              dd= largeModelPreset ? `${formatInteger(largeModelPreset.recommendedVramGb)} GB aggregate` : '—'
+            div
+              dt Managed Pods
+              dd= formatInteger(glmPods.length)
+            div
+              dt API style
+              dd OpenAI-compatible · /v1/*
+
+          if largeModelArtifact && largeModelArtifact.preparationStatus === 'ready'
+            if management.gateway.readyForLargeModel && largeModelGpuOptions.length && largeModelVolume && largeModelVolume.attachedPodCount === 0
+              form.runpod-quick-launch(method='post', action=`${adminPath}/model-artifacts/pods`)
+                input(type='hidden', name='_csrf', value=csrfToken)
+                input(type='hidden', name='artifactId', value=largeModelArtifact.id)
+                .runpod-form-grid
+                  label.runpod-field.runpod-field--span-2
+                    span GPU system
+                    select(name='gpuId', required)
+                      each gpu in largeModelGpuOptions
+                        - const placement = (gpu.secureDataCenters || []).find((entry) => entry.id === largeModelArtifact.dataCenterId);
+                        option(value=gpu.id, selected=gpu.name === 'RTX PRO 6000')= `2× ${gpu.name} · ${formatInteger(gpu.memoryGb * 2)} GB · ${formatUsd(gpu.securePrice * 2, 2)}/hr · ${placement ? `${placement.availability} ${largeModelArtifact.dataCenterId}` : 'placement checked on submit'}`
+                p.runpod-form-help The model and runtime load directly from the network volume at /workspace. The default 40 GB container disk is sufficient. No Pod-local persistent disk is allocated.
+                label.runpod-check.runpod-check--warning
+                  input(type='checkbox', name='billingAcknowledged', value='acknowledged', required)
+                  span I approve the selected multi-GPU rate and automatic stop.
+                details.runpod-advanced
+                  summary Runtime and cost controls
+                  .runpod-form-grid
+                    label.runpod-field
+                      span Pod name
+                      input(type='text', name='name', maxlength='80', value='glm53-flash', pattern='[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}', required)
+                    label.runpod-field
+                      span GPU count
+                      input(type='number', name='gpuCount', min='2', max=management.limits.maxGpuCount, step='1', value='2', required)
+                    label.runpod-field
+                      span Context tokens
+                      input(type='number', name='contextTokens', min='2048', max='131072', step='1024', value=largeModelPreset.defaultContextTokens, required)
+                    label.runpod-field
+                      span Auto-stop after (minutes)
+                      input(type='number', name='autoStopMinutes', min='15', max=management.limits.maxRuntimeMinutes, step='1', value=management.limits.defaultAutoStopMinutes, required)
+                    label.runpod-field
+                      span Container disk (GB)
+                      input(type='number', name='diskGb', min='20', max='500', step='1', value='40', required)
+                    label.runpod-field
+                      span Confirmed maximum total / hour
+                      input(type='number', name='maxHourlyCost', min='0.01', max=management.limits.maxHourlyCostUsd, step='0.01', value='4.25', required)
+                button.runpod-button.runpod-button--primary(type='submit') Start GLM Pod
+            else if largeModelVolume && largeModelVolume.attachedPodCount > 0
+              .runpod-alert.runpod-alert--warning
+                strong Volume already attached.
+                |  Manage or delete the existing Pod before redeploying this volume.
+            else
+              .runpod-alert.runpod-alert--warning
+                strong Launch prerequisites are not currently complete.
+                |  Refresh GPU stock and confirm all three gateway credentials are configured.
+          else
+            .runpod-model-actions
+              a.runpod-button.runpod-button--primary(href='#model-artifacts')= largeModelArtifact ? 'Finish verification and enable launch' : 'Verify, record, and enable launch'
+              a.runpod-button.runpod-button--secondary(href='#network-volumes') Inspect storage
 
     section#network-volumes.runpod-panel(aria-labelledby='runpodNetworkVolumesHeading')
       .runpod-panel__header
@@ -226,8 +352,8 @@ block content
       .runpod-panel__header
         div
           p.runpod-eyebrow Very large model preparation
-          h2#runpodModelArtifactsHeading Prepare GLM-5.3-Flash on persistent storage
-          p.runpod-panel__subtitle Download the approved UD-IQ4_XS GGUF shards from one pinned Hugging Face revision, build the matching pinned llama.cpp runtime, verify every SHA-256 checksum, and remove the temporary no-port Pod.
+          h2#runpodModelArtifactsHeading Verify and record GLM-5.3-Flash storage
+          p.runpod-panel__subtitle Mount the volume on a temporary no-port Pod, reuse any completed download, verify every SHA-256 checksum and the pinned llama.cpp runtime, then record readiness in this database and delete the verifier Pod.
         if artifactPreparerTemplate
           span.runpod-status(class=artifactPreparerTemplate.providerPresent ? 'runpod-status--ready' : 'runpod-status--warning')= artifactPreparerTemplate.providerPresent ? 'PREPARER READY' : 'AUTO-REPAIR ON START'
 
@@ -258,7 +384,7 @@ block content
                 dd None
             p.runpod-form-help The browser cannot supply a repository, URL, command, checksum, or runtime revision. Adding another model requires a reviewed server-side preset.
 
-          if artifactVolumes.length && management.gpuOptions.length
+          if artifactVolumes.length
             form.runpod-form(
               method='post',
               action=`${adminPath}/model-artifacts/prepare`,
@@ -266,7 +392,7 @@ block content
             )
               input(type='hidden', name='_csrf', value=csrfToken)
               input(type='hidden', name='presetSlug', value=largeModelPreset.slug)
-              h3 Prepare on a volume
+              h3 Verify or resume on a volume
               .runpod-form-grid
                 label.runpod-field.runpod-field--span-2
                   span Dedicated network volume
@@ -306,11 +432,12 @@ block content
                     span Maximum preparation cost / hour
                     input(type='number', name='maxHourlyCost', min='0.01', max='1.00', step='0.01', value=management.limits.defaultModelArtifactMaxHourlyCostUsd || '0.99', data-artifact-cost-limit, required)
                 output.runpod-form-help(data-artifact-gpu-summary aria-live='polite') Placement will be finalized from fresh provider stock on submit.
-              button.runpod-button.runpod-button--primary(type='submit', data-runpod-artifact-button) Prepare verified artifact
+              p.runpod-form-help Submitting records the approved artifact and volume immediately as “planned.” Launch remains disabled until a temporary Pod has checksum-verified the files and changed the record to “ready.”
+              button.runpod-button.runpod-button--primary(type='submit', data-runpod-artifact-button) Verify/resume and record
           else
             .runpod-empty
               strong No compatible unattached volume is ready
-              p This preset needs an unattached #{formatInteger(largeModelPreset.recommendedVolumeGb)} GB or larger volume and current Secure Cloud GPU stock in the same data center.
+              p This preset needs an unattached #{formatInteger(largeModelPreset.recommendedVolumeGb)} GB or larger volume. GPU stock is checked only when verification is submitted.
 
       if management.modelArtifacts.length || management.modelArtifactPreparations.length
         h3.runpod-subheading Artifact preparation history
@@ -488,8 +615,8 @@ block content
       .runpod-panel__header
         div
           p.runpod-eyebrow Reusable setup
-          h2#runpodWorkloadTemplateHeading Ollama workload profiles
-          p.runpod-panel__subtitle Private Runpod v2 templates provide either a stable Cloudflare Access gateway or the original per-Pod public proxy. Model downloads keep their short-lived direct proxy workflow.
+          h2#runpodWorkloadTemplateHeading Runtime profiles (advanced)
+          p.runpod-panel__subtitle Private Runpod v2 templates provide the stable Cloudflare Access gateway for Ollama and llama.cpp. The original per-Pod public proxy remains available only for diagnostics.
         if cloudflareTemplate
           span.runpod-status(class=cloudflareTemplate.providerPresent ? 'runpod-status--ready' : 'runpod-status--warning')= cloudflareTemplate.providerPresent ? 'GATEWAY SYNCED' : 'GATEWAY RESYNC NEEDED'
 
@@ -575,6 +702,8 @@ block content
             button.runpod-button.runpod-button--secondary(type='submit')= ollamaTemplate ? 'Update public-proxy profile' : 'Create public-proxy profile'
       if downloaderTemplate
         p.runpod-form-help Downloader template: #{downloaderTemplate.providerPresent ? 'synced and reusable' : 'will be repaired automatically on the next download'}.
+      if llamaCppTemplate
+        p.runpod-form-help GLM llama.cpp template: #{llamaCppTemplate.providerPresent ? 'synced and reusable' : 'will be repaired automatically on the next GLM launch'} · no public Runpod ports.
 
     section#pod-creator.runpod-panel(aria-labelledby='runpodPodCreatorHeading')
       .runpod-panel__header
@@ -729,6 +858,7 @@ block content
       if management.managedPods.length
         .runpod-pod-grid
           each pod in management.managedPods
+            - const isLlamaCppPod = pod.podPurpose === 'llama_cpp_service';
             article.runpod-pod-card
               .runpod-pod-card__header
                 div
@@ -744,7 +874,7 @@ block content
                   strong= `${formatUsd(pod.costPerHour)} / hr`
                 div
                   span Setup
-                  strong= `${pod.setupStatus}${pod.setupModel ? ` · ${pod.setupModel}` : ''}`
+                  strong= `${pod.setupStatus}${pod.setupModel ? ` · ${pod.setupModel}` : ''}${isLlamaCppPod && Number.isFinite(pod.contextTokens) ? ` · ${formatInteger(pod.contextTokens)} ctx` : ''}`
                 div
                   span Access
                   strong= pod.accessMode === 'cloudflare_access' ? 'Cloudflare Access tunnel' : 'Runpod public proxy'
@@ -779,15 +909,17 @@ block content
                 p.runpod-form-help Provider ledger: #{formatUsd(pod.billing.computeUsd)} compute + #{formatUsd(pod.billing.storageUsd)} disk. Billing can lag current usage; last synced #{formatTimestamp(pod.billing.syncedAt)}.
               if pod.setupStatus === 'ready' && pod.providerStatus === 'RUNNING' && pod.publicUrl
                 .runpod-endpoint
-                  span= pod.accessMode === 'cloudflare_access' ? 'Stable authenticated Ollama URL' : 'Public Ollama URL'
+                  span= isLlamaCppPod ? 'Stable authenticated llama.cpp URL' : pod.accessMode === 'cloudflare_access' ? 'Stable authenticated Ollama URL' : 'Public Ollama URL'
                   a(href=pod.publicUrl, target='_blank', rel='noopener noreferrer')= pod.publicUrl
-                  if pod.accessMode === 'cloudflare_access'
+                  if isLlamaCppPod
+                    small Browser access uses Cloudflare Access. API clients use the OpenAI-compatible /v1 endpoint with both Access headers and the native LLM bearer key.
+                  else if pod.accessMode === 'cloudflare_access'
                     small Browser requests use your Cloudflare Access login. API clients and Open WebUI must send the Access service-token headers.
                   else
                     small The root page should say “Ollama is running.” API requests are unauthenticated.
               else if pod.setupStatus === 'failed'
                 .runpod-alert.runpod-alert--error
-                  strong Setup failed and an automatic stop was attempted.
+                  strong= `${isLlamaCppPod ? 'llama.cpp model loading' : 'Ollama setup'} failed and an automatic stop was attempted.`
                   if pod.setupErrorCode
                     small= ` ${pod.setupErrorCode}`
               if pod.lastOperationError
@@ -944,6 +1076,7 @@ block content
         span.runpod-stat__hint #{formatInteger(billing.recordCount)} billing buckets
 
     nav.runpod-section-nav(aria-label='Runpod dashboard sections')
+      a(href='#model-library') Prepared models
       a(href='#network-volumes') Network volumes
       a(href='#model-artifacts') Large artifacts
       a(href='#model-downloader') Download model

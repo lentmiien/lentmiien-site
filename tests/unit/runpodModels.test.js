@@ -96,12 +96,35 @@ describe('Runpod persistence models', () => {
 
   test('stores reusable setup metadata without API credentials', () => {
     expect(RunpodWorkloadTemplate.schema.path('setupKind').options.enum).toEqual([
-      'ollama_pull', 'ollama_download', 'hf_gguf_prepare',
+      'ollama_pull', 'ollama_download', 'hf_gguf_prepare', 'llama_cpp_serve',
     ]);
     expect(RunpodWorkloadTemplate.schema.path('providerTemplateId')).toBeDefined();
     expect(RunpodWorkloadTemplate.schema.path('persistentPath')).toBeDefined();
     expect(RunpodWorkloadTemplate.schema.path('defaultModel')).toBeDefined();
+    expect(RunpodWorkloadTemplate.schema.path('accessMode').options.enum)
+      .toContain('private_none');
     expect(RunpodWorkloadTemplate.schema.path('apiKey')).toBeUndefined();
+  });
+
+  test('accepts the private artifact verifier profile used by provider synchronization', async () => {
+    const template = new RunpodWorkloadTemplate({
+      slug: 'glm53-artifact-preparer',
+      name: 'GLM artifact verifier',
+      providerTemplateName: 'lentmiien-glm53-artifact-preparer-v2',
+      image: 'runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404',
+      diskGb: 40,
+      persistentDiskGb: 10,
+      persistentPath: '/workspace',
+      ports: [],
+      env: {},
+      setupKind: 'hf_gguf_prepare',
+      defaultModel: 'glm-5-3-flash-ud-iq4-xs',
+      servicePort: 1,
+      healthPath: '/',
+      accessMode: 'private_none',
+    });
+
+    await expect(template.validate()).resolves.toBeUndefined();
   });
 
   test('models running, stopped, and archived state with bounded cost controls', () => {
@@ -114,8 +137,10 @@ describe('Runpod persistence models', () => {
     expect(RunpodPod.schema.path('maxHourlyCostAcknowledged')).toBeDefined();
     expect(RunpodPod.schema.path('setupStatus').options.enum).toContain('ready');
     expect(RunpodPod.schema.path('podPurpose').options.enum).toEqual([
-      'ollama_service', 'model_download', 'model_artifact_prepare',
+      'ollama_service', 'llama_cpp_service', 'model_download', 'model_artifact_prepare',
     ]);
+    expect(RunpodPod.schema.path('modelArtifactRecordId')).toBeDefined();
+    expect(RunpodPod.schema.path('contextTokens')).toBeDefined();
     expect(RunpodPod.schema.path('cleanupStatus').options.enum).toEqual([
       'not_required', 'pending', 'completed', 'failed',
     ]);

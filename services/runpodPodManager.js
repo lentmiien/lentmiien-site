@@ -7,10 +7,13 @@ const {
   RunpodWorkloadTemplate,
 } = require('../database');
 const {
+  GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS,
   GLM53_FLASH_UD_IQ4_XS_SLUG,
   artifactPreparerTemplate,
+  artifactServerTemplate,
   getModelArtifactPreset,
   modelArtifactPreparationSignal,
+  modelArtifactServingSignal,
 } = require('./runpodModelArtifactCatalog');
 const {
   RunpodApiError,
@@ -24,6 +27,7 @@ const OLLAMA_CLOUDFLARE_PROVIDER_TEMPLATE_NAME = 'lentmiien-ollama-cloudflare-v2
 const OLLAMA_DOWNLOADER_TEMPLATE_SLUG = 'ollama-downloader';
 const OLLAMA_DOWNLOADER_PROVIDER_TEMPLATE_NAME = 'lentmiien-ollama-model-downloader-v2';
 const MODEL_ARTIFACT_PREPARER_TEMPLATE_SLUG = 'glm53-artifact-preparer';
+const MODEL_ARTIFACT_SERVER_TEMPLATE_SLUG = 'glm53-llama-cpp-cloudflare';
 const OLLAMA_IMAGE = 'ollama/ollama:latest';
 const OLLAMA_MODEL = 'qwen2.5:0.5b';
 const OLLAMA_DOWNLOADER_MODEL = 'qwen3.8:27b';
@@ -80,6 +84,7 @@ const DEFAULT_PROVISION_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_OLLAMA_PULL_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS = (4 * 60 + 10) * 60 * 1000;
+const DEFAULT_LLAMA_CPP_STARTUP_TIMEOUT_MS = 45 * 60 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const AUTO_STOP_CLAIM_LEASE_MS = 5 * 60 * 1000;
 const OLLAMA_RESPONSE_LIMIT_BYTES = 2 * 1024 * 1024;
@@ -240,6 +245,31 @@ function classifyStartFailure(error) {
     status: providerStatus || 502,
     ...providerFields,
   });
+}
+
+function classifyCreateFailure(error, podPurpose = 'ollama_service') {
+  if (!(error instanceof RunpodApiError)) return error;
+  const detail = [error.providerTitle, error.providerDetail, error.message]
+    .map((value) => safeString(value, 1000))
+    .join(' ');
+  if (/no longer any instances available|no instances available|insufficient capacity/iu.test(detail)) {
+    return new RunpodManagementError(
+      podPurpose === 'llama_cpp_service'
+        ? 'Runpod has no matching multi-GPU machine in the model volume location right now.'
+        : 'Runpod has no matching GPU machine for this Pod right now.',
+      {
+        code: podPurpose === 'llama_cpp_service'
+          ? 'RUNPOD_LLM_GPU_UNAVAILABLE'
+          : 'RUNPOD_GPU_UNAVAILABLE',
+        status: 409,
+        providerStatus: error.status,
+        providerCode: error.providerCode,
+        providerTitle: error.providerTitle,
+        providerDetail: error.providerDetail,
+      }
+    );
+  }
+  return error;
 }
 
 function operationErrorForPersistence(action, error, now = new Date()) {
@@ -655,6 +685,55 @@ function normalizeModelArtifactPreparerTemplateInput(
     healthPath: '/',
     accessMode: 'private_none',
     gatewayUrl: null,
+    active: true,
+  };
+}
+
+function normalizeModelArtifactServerTemplateInput(
+  slug = GLM53_FLASH_UD_IQ4_XS_SLUG,
+  {
+    contextTokens,
+    gpuCount = 2,
+    gatewayUrl = DEFAULT_CLOUDFLARE_GATEWAY_URL,
+    tunnelSecretName = DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME,
+    llmApiSecretName = DEFAULT_LLM_API_SECRET_NAME,
+  } = {}
+) {
+  const preset = getModelArtifactPreset(slug);
+  if (!preset) {
+    throw new RunpodManagementError('Choose a supported model-artifact preset.', {
+      code: 'RUNPOD_INPUT_INVALID',
+    });
+  }
+  const normalizedGatewayUrl = validatedCloudflareGatewayUrl(gatewayUrl).toString();
+  const normalizedTunnelSecretName = normalizeRunpodSecretName(tunnelSecretName);
+  const normalizedLlmApiSecretName = normalizeRunpodSecretName(llmApiSecretName);
+  const template = artifactServerTemplate(preset.slug, {
+    contextTokens,
+    gpuCount,
+    cloudflareTunnelSecretName: normalizedTunnelSecretName,
+    llmApiSecretName: normalizedLlmApiSecretName,
+  });
+  return {
+    slug: MODEL_ARTIFACT_SERVER_TEMPLATE_SLUG,
+    name: template.name,
+    description: 'Pinned llama.cpp serving for the verified GLM artifact, with an outbound-only Cloudflare Tunnel and two-layer authentication.',
+    providerTemplateName: template.providerTemplateName,
+    image: template.image,
+    args: template.args,
+    diskGb: template.diskGb,
+    ports: [],
+    env: template.env,
+    persistentDiskGb: template.persistentDiskGb,
+    persistentPath: template.persistentPath,
+    startSsh: false,
+    startJupyter: false,
+    setupKind: 'llama_cpp_serve',
+    defaultModel: preset.slug,
+    servicePort: template.servicePort,
+    healthPath: template.healthPath,
+    accessMode: 'cloudflare_access',
+    gatewayUrl: normalizedGatewayUrl,
     active: true,
   };
 }
@@ -1077,6 +1156,8 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
     name: safeString(local.name || provider.name, 120),
     recordOrigin: safeString(local.recordOrigin, 30) || 'managed',
     podPurpose: safeString(local.podPurpose, 30) || 'ollama_service',
+    modelArtifactRecordId: local.modelArtifactRecordId?.toString?.()
+      || safeString(local.modelArtifactRecordId, 30),
     providerStatus: status,
     lifecycleGroup: lifecycleGroupForStatus(status, archivedAt),
     validActions: actions,
@@ -1087,6 +1168,7 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
     setupStatus: safeString(local.setupStatus, 30) || 'not_applicable',
     setupErrorCode: safeString(local.setupErrorCode, 80),
     setupModel: safeString(local.setupModel, 120),
+    contextTokens: finiteNumber(local.contextTokens),
     setupStartedAt: local.setupStartedAt || null,
     setupCompletedAt: local.setupCompletedAt || null,
     autoDeleteAfterSetup: local.autoDeleteAfterSetup === true,
@@ -1476,6 +1558,10 @@ class RunpodPodManager {
       process.env.RUNPOD_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS,
       DEFAULT_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS
     ),
+    llamaCppStartupTimeoutMs = positiveInteger(
+      process.env.RUNPOD_LLAMA_CPP_STARTUP_TIMEOUT_MS,
+      DEFAULT_LLAMA_CPP_STARTUP_TIMEOUT_MS
+    ),
     pollIntervalMs = positiveInteger(
       process.env.RUNPOD_POLL_INTERVAL_MS,
       DEFAULT_POLL_INTERVAL_MS
@@ -1487,7 +1573,7 @@ class RunpodPodManager {
     cloudflareAccessClientId = process.env.RUNPOD_CLOUDFLARE_ACCESS_CLIENT_ID || '',
     cloudflareAccessClientSecret = process.env.RUNPOD_CLOUDFLARE_ACCESS_CLIENT_SECRET || '',
     cloudflareTunnelTokenConfigured = Boolean(process.env.RUNPOD_CLOUDFLARE_TUNNEL_TOKEN),
-    llmApiKeyConfigured = Boolean(process.env.RUNPOD_LLM_API_KEY),
+    llmApiKey = process.env.RUNPOD_LLM_API_KEY || '',
     llmApiSecretName = process.env.RUNPOD_LLM_API_SECRET_NAME || DEFAULT_LLM_API_SECRET_NAME,
   } = {}) {
     this.runpodService = runpodService;
@@ -1518,13 +1604,18 @@ class RunpodPodManager {
       modelArtifactPreparationTimeoutMs,
       24 * 60 * 60 * 1000
     );
+    this.llamaCppStartupTimeoutMs = Math.min(
+      llamaCppStartupTimeoutMs,
+      2 * 60 * 60 * 1000
+    );
     this.pollIntervalMs = pollIntervalMs;
     this.cloudflareGatewayUrl = validatedCloudflareGatewayUrl(cloudflareGatewayUrl).toString();
     this.cloudflareTunnelSecretName = normalizeRunpodSecretName(cloudflareTunnelSecretName);
     this.cloudflareAccessClientId = String(cloudflareAccessClientId || '').trim().slice(0, 500);
     this.cloudflareAccessClientSecret = String(cloudflareAccessClientSecret || '').trim().slice(0, 1000);
     this.cloudflareTunnelTokenConfigured = cloudflareTunnelTokenConfigured === true;
-    this.llmApiKeyConfigured = llmApiKeyConfigured === true;
+    this.llmApiKey = String(llmApiKey || '').trim().slice(0, 2000);
+    this.llmApiKeyConfigured = Boolean(this.llmApiKey);
     this.llmApiSecretName = normalizeRunpodSecretName(llmApiSecretName);
     this.provisioning = new Map();
     this.creationQueue = Promise.resolve();
@@ -1575,6 +1666,9 @@ class RunpodPodManager {
       llmApiKeyConfigured: this.llmApiKeyConfigured,
       llmApiSecretName: this.llmApiSecretName,
       readyForTemplate: serviceTokenConfigured && this.cloudflareTunnelTokenConfigured,
+      readyForLargeModel: serviceTokenConfigured
+        && this.cloudflareTunnelTokenConfigured
+        && this.llmApiKeyConfigured,
     };
   }
 
@@ -2197,6 +2291,27 @@ class RunpodPodManager {
     return operation;
   }
 
+  saveModelArtifactServerTemplate(presetSlug, principal, options = {}) {
+    const gateway = this.gatewayConfiguration();
+    if (!gateway.readyForLargeModel) {
+      throw new RunpodManagementError(
+        'Configure the Cloudflare tunnel, Access service token, and native LLM API key before syncing the large-model template.',
+        { code: 'RUNPOD_LLM_GATEWAY_NOT_CONFIGURED', status: 503 }
+      );
+    }
+    const operation = this.templateQueue.then(() => this._saveOllamaTemplate(
+      normalizeModelArtifactServerTemplateInput(presetSlug, {
+        ...options,
+        gatewayUrl: this.cloudflareGatewayUrl,
+        tunnelSecretName: this.cloudflareTunnelSecretName,
+        llmApiSecretName: this.llmApiSecretName,
+      }),
+      principal
+    ));
+    this.templateQueue = operation.catch(() => {});
+    return operation;
+  }
+
   async _saveOllamaTemplate(normalized, principal) {
     const actor = actorFromPrincipal(principal);
     let localTemplate = await this.templateModel.findOne({ slug: normalized.slug }).lean();
@@ -2290,6 +2405,69 @@ class RunpodPodManager {
     return operation;
   }
 
+  createModelArtifactPod(input, principal) {
+    const operation = this.creationQueue.then(() => (
+      this._createModelArtifactPod(input, principal)
+    ));
+    this.creationQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  async _createModelArtifactPod(input = {}, principal) {
+    const artifactId = safeString(input.artifactId, 30);
+    if (!OBJECT_ID_PATTERN.test(artifactId)) {
+      throw new RunpodManagementError('Choose a verified model artifact.', {
+        code: 'RUNPOD_INPUT_INVALID',
+      });
+    }
+    if (input.billingAcknowledged !== 'acknowledged') {
+      throw new RunpodManagementError('Acknowledge the large-model GPU cost before creating the Pod.', {
+        code: 'RUNPOD_LLM_BILLING_NOT_ACKNOWLEDGED',
+      });
+    }
+    const artifact = await this.modelArtifactModel.findOne({
+      _id: artifactId,
+      preparationStatus: 'ready',
+      archivedAt: null,
+    }).lean();
+    const preset = artifact ? getModelArtifactPreset(artifact.slug) : null;
+    if (!artifact || !preset) {
+      throw new RunpodManagementError(
+        'Verify and record the approved GLM artifact before creating a serving Pod.',
+        { code: 'RUNPOD_MODEL_ARTIFACT_NOT_READY', status: 409 }
+      );
+    }
+    const gpuCount = strictInteger(input.gpuCount || 2, {
+      label: 'GPU count', min: 1, max: this.maxGpuCount,
+    });
+    const contextTokens = strictInteger(input.contextTokens || preset.defaultContextTokens, {
+      label: 'Context size', min: 2048, max: 131072,
+    });
+    const template = await this.saveModelArtifactServerTemplate(preset.slug, principal, {
+      contextTokens,
+      gpuCount,
+    });
+    const templateId = template?._id?.toString?.() || safeString(template?._id, 30);
+    const name = safeString(input.name, 80) || `glm53-${gpuCount}gpu-${this.now().getTime().toString(36)}`;
+    return this._createManagedPod({
+      ...input,
+      name,
+      templateId,
+      networkVolumeId: artifact.providerNetworkVolumeId,
+      dataCenterId: artifact.dataCenterId,
+      cloud: 'SECURE',
+      gpuCount: String(gpuCount),
+      model: preset.slug,
+      diskGb: String(input.diskGb || 40),
+      autoStopMinutes: String(input.autoStopMinutes || this.defaultAutoStopMinutes),
+    }, principal, {
+      podPurpose: 'llama_cpp_service',
+      modelArtifactRecordId: artifact._id,
+      contextTokens,
+      requiredVramGb: preset.recommendedVramGb,
+    });
+  }
+
   async _prepareModelArtifact(input = {}, principal) {
     const actor = actorFromPrincipal(principal);
     const presetSlug = safeString(input.presetSlug, 120).toLowerCase();
@@ -2316,19 +2494,10 @@ class RunpodPodManager {
       { label: 'Maximum artifact-preparation hourly cost', max: hardCostLimit }
     );
     const requestedGpuId = safeString(input.gpuId, 240);
-    const [providerPods, providerVolumes, secureGpus] = await Promise.all([
+    const [providerPods, providerVolumes] = await Promise.all([
       this.runpodService.listPods(),
       this.runpodService.listNetworkVolumes(),
-      this.runpodService.getGpuTypes({ cloud: 'SECURE', forceRefresh: true }),
     ]);
-    if (providerPods.filter((pod) => (
-      ACTIVE_PROVIDER_STATUSES.has(normalizeProviderStatus(pod?.status))
-    )).length >= this.maxActivePods) {
-      throw new RunpodManagementError(
-        `The configured limit of ${this.maxActivePods} active Runpod pods has been reached.`,
-        { code: 'RUNPOD_ACTIVE_POD_LIMIT', status: 409 }
-      );
-    }
     const volume = providerVolumes.find((entry) => (
       safeString(entry?.id, 128) === providerNetworkVolumeId
     ));
@@ -2349,18 +2518,6 @@ class RunpodPodManager {
       });
     }
     const dataCenterId = safeString(volume.dataCenter, 100);
-    const gpu = chooseModelDownloadGpu(
-      secureGpus,
-      dataCenterId,
-      maxHourlyCost,
-      requestedGpuId
-    );
-    if (!gpu) {
-      throw new RunpodManagementError(
-        'No compatible Secure Cloud preparation GPU is currently available in the volume location below the confirmed cost limit.',
-        { code: 'RUNPOD_ARTIFACT_GPU_UNAVAILABLE', status: 409 }
-      );
-    }
     const existingArtifact = await this.modelArtifactModel.findOne({
       slug: preset.slug,
       providerNetworkVolumeId,
@@ -2376,11 +2533,72 @@ class RunpodPodManager {
         code: 'RUNPOD_ARTIFACT_ALREADY_READY', status: 409,
       });
     }
-
-    const template = await this.saveModelArtifactPreparerTemplate(preset.slug, principal);
     const trackedVolume = await this.trackProviderNetworkVolume(volume, actor, 'provider_import');
-    const startedAt = this.now();
     let artifact = await this.modelArtifactModel.findOneAndUpdate(
+      { slug: preset.slug, providerNetworkVolumeId },
+      {
+        $set: {
+          slug: preset.slug,
+          name: preset.name,
+          sourceKind: preset.sourceKind,
+          sourceRepository: preset.sourceRepository,
+          sourceRevision: preset.sourceRevision,
+          sourceLastModifiedAt: preset.sourceLastModifiedAt,
+          variant: preset.variant,
+          runtimeKind: preset.runtimeKind,
+          runtimeRepository: preset.runtimeRepository,
+          runtimeRevision: preset.runtimeRevision,
+          relativeModelPath: preset.relativeModelPath,
+          relativeRuntimePath: preset.relativeRuntimePath,
+          manifest: preset.manifest.map((entry) => ({ ...entry })),
+          totalBytes: preset.totalBytes,
+          recommendedVolumeGb: preset.recommendedVolumeGb,
+          recommendedVramGb: preset.recommendedVramGb,
+          defaultContextTokens: preset.defaultContextTokens,
+          networkVolumeRecordId: trackedVolume._id,
+          providerNetworkVolumeId,
+          dataCenterId,
+          preparationStatus: 'planned',
+          preparationStage: 'planned',
+          preparationErrorCode: null,
+          preparationPodRecordId: null,
+          providerPreparationPodId: null,
+          archivedAt: null,
+          updatedBy: actor,
+        },
+        $setOnInsert: {
+          createdBy: actor,
+        },
+      },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    );
+    if (providerPods.filter((pod) => (
+      ACTIVE_PROVIDER_STATUSES.has(normalizeProviderStatus(pod?.status))
+    )).length >= this.maxActivePods) {
+      throw new RunpodManagementError(
+        `The configured limit of ${this.maxActivePods} active Runpod pods has been reached.`,
+        { code: 'RUNPOD_ACTIVE_POD_LIMIT', status: 409 }
+      );
+    }
+    const secureGpus = await this.runpodService.getGpuTypes({
+      cloud: 'SECURE',
+      forceRefresh: true,
+    });
+    const gpu = chooseModelDownloadGpu(
+      secureGpus,
+      dataCenterId,
+      maxHourlyCost,
+      requestedGpuId
+    );
+    if (!gpu) {
+      throw new RunpodManagementError(
+        'No compatible Secure Cloud preparation GPU is currently available in the volume location below the confirmed cost limit.',
+        { code: 'RUNPOD_ARTIFACT_GPU_UNAVAILABLE', status: 409 }
+      );
+    }
+    const template = await this.saveModelArtifactPreparerTemplate(preset.slug, principal);
+    const startedAt = this.now();
+    artifact = await this.modelArtifactModel.findOneAndUpdate(
       { slug: preset.slug, providerNetworkVolumeId },
       {
         $set: {
@@ -2671,8 +2889,8 @@ class RunpodPodManager {
 
   async _createManagedPod(input = {}, principal, options = {}) {
     const actor = actorFromPrincipal(principal);
-    const podPurpose = options.podPurpose === 'model_download'
-      ? 'model_download'
+    const podPurpose = ['model_download', 'llama_cpp_service'].includes(options.podPurpose)
+      ? options.podPurpose
       : 'ollama_service';
     const autoDeleteAfterSetup = podPurpose === 'model_download'
       && options.autoDeleteAfterSetup === true;
@@ -2696,14 +2914,16 @@ class RunpodPodManager {
     }
     const expectedSetupKind = podPurpose === 'model_download'
       ? 'ollama_download'
-      : 'ollama_pull';
+      : podPurpose === 'llama_cpp_service'
+        ? 'llama_cpp_serve'
+        : 'ollama_pull';
     if (template.setupKind !== expectedSetupKind) {
       throw new RunpodManagementError('The selected workload template does not match this operation.', {
         code: 'RUNPOD_TEMPLATE_NOT_READY', status: 409,
       });
     }
-    if (podPurpose === 'model_download' && !providerNetworkVolumeId) {
-      throw new RunpodManagementError('Model downloads require a network volume.', {
+    if (['model_download', 'llama_cpp_service'].includes(podPurpose) && !providerNetworkVolumeId) {
+      throw new RunpodManagementError('This workload requires a network volume.', {
         code: 'RUNPOD_INPUT_INVALID',
       });
     }
@@ -2715,6 +2935,15 @@ class RunpodPodManager {
       throw new RunpodManagementError(
         'Cloudflare Access service-token credentials are not configured on this server.',
         { code: 'RUNPOD_CLOUDFLARE_NOT_CONFIGURED', status: 503 }
+      );
+    }
+    if (
+      podPurpose === 'llama_cpp_service'
+      && !this.gatewayConfiguration().readyForLargeModel
+    ) {
+      throw new RunpodManagementError(
+        'The Cloudflare gateway and native LLM API key must be configured before creating a large-model Pod.',
+        { code: 'RUNPOD_LLM_GATEWAY_NOT_CONFIGURED', status: 503 }
       );
     }
 
@@ -2806,6 +3035,14 @@ class RunpodPodManager {
         code: 'RUNPOD_GPU_COUNT_UNAVAILABLE', status: 409,
       });
     }
+    const requiredVramGb = finiteNumber(options.requiredVramGb);
+    const aggregateVramGb = finiteNumber(gpu?.memory, 0) * gpuCount;
+    if (Number.isFinite(requiredVramGb) && aggregateVramGb < requiredVramGb) {
+      throw new RunpodManagementError(
+        `This model requires at least ${requiredVramGb} GB aggregate VRAM for the approved first-run profile.`,
+        { code: 'RUNPOD_LLM_VRAM_INSUFFICIENT', status: 409 }
+      );
+    }
     const estimatedCost = price * gpuCount;
     if (estimatedCost > maxHourlyCost || estimatedCost > this.maxHourlyCostUsd) {
       throw new RunpodManagementError('The current catalog price exceeds the confirmed hourly limit.', {
@@ -2849,7 +3086,7 @@ class RunpodPodManager {
     if (dataCenterId && !availableDataCenters.some((entry) => (
       safeString(entry?.id, 100) === dataCenterId
       && AVAILABLE_STOCK.has(safeString(entry?.availability, 20).toUpperCase())
-    ))) {
+    )) && podPurpose !== 'llama_cpp_service') {
       throw new RunpodManagementError('The selected GPU is not available in that data center.', {
         code: 'RUNPOD_DATACENTER_UNAVAILABLE', status: 409,
       });
@@ -2909,10 +3146,12 @@ class RunpodPodManager {
       ...(selectedNetworkVolume ? {
         env: {
           ...runtimeEnv,
-          OLLAMA_HOST: accessMode === 'cloudflare_access'
-            ? `127.0.0.1:${OLLAMA_CLOUDFLARE_ORIGIN_PORT}`
-            : `0.0.0.0:${OLLAMA_PORT}`,
-          OLLAMA_MODELS: OLLAMA_NETWORK_MODELS_PATH,
+          ...(podPurpose === 'llama_cpp_service' ? {} : {
+            OLLAMA_HOST: accessMode === 'cloudflare_access'
+              ? `127.0.0.1:${OLLAMA_CLOUDFLARE_ORIGIN_PORT}`
+              : `0.0.0.0:${OLLAMA_PORT}`,
+            OLLAMA_MODELS: OLLAMA_NETWORK_MODELS_PATH,
+          }),
         },
       } : {}),
       globalNetworking,
@@ -2942,10 +3181,12 @@ class RunpodPodManager {
         recordOrigin: 'managed',
         podPurpose,
         workloadTemplateId: template._id,
+        modelArtifactRecordId: options.modelArtifactRecordId || null,
         providerTemplateId: template.providerTemplateId,
         ...providerPodFields(providerPod, now),
         setupStatus: 'pending',
         setupModel,
+        contextTokens: finiteNumber(options.contextTokens),
         autoDeleteAfterSetup,
         cleanupStatus: autoDeleteAfterSetup ? 'pending' : 'not_required',
         cleanupErrorCode: null,
@@ -3004,6 +3245,7 @@ class RunpodPodManager {
       this.scheduleProvisioning(pod._id, actor);
       return podToPlain(pod);
     } catch (error) {
+      const operationError = classifyCreateFailure(error, podPurpose);
       if (providerPod?.id) {
         const persisted = await this.podModel.findOne({ providerPodId: providerPod.id }).lean().catch(() => null);
         if (!persisted) {
@@ -3025,12 +3267,12 @@ class RunpodPodManager {
         resourceType: 'pod',
         action: 'create',
         outcome: 'failed',
-        providerStatus: providerStatusForError(error),
-        errorCode: safeString(error?.code, 80) || 'RUNPOD_POD_CREATE_FAILED',
+        providerStatus: providerStatusForError(operationError),
+        errorCode: safeString(operationError?.code, 80) || 'RUNPOD_POD_CREATE_FAILED',
         actor,
       });
-      this.logOperationFailure('Runpod pod creation failed', 'create', error);
-      throw error;
+      this.logOperationFailure('Runpod pod creation failed', 'create', operationError);
+      throw operationError;
     }
   }
 
@@ -3245,12 +3487,15 @@ class RunpodPodManager {
       _id: pod.workloadTemplateId,
       active: true,
     }).lean();
-    if (!template || !['ollama_pull', 'ollama_download'].includes(template.setupKind)) {
+    if (!template || !['ollama_pull', 'ollama_download', 'llama_cpp_serve'].includes(template.setupKind)) {
       await this.podModel.updateOne(
         { _id: pod._id, archivedAt: null },
         { $set: { setupStatus: 'not_applicable', updatedBy: actor } }
       );
       return;
+    }
+    if (template.setupKind === 'llama_cpp_serve') {
+      return this._provisionLlamaCppPod(pod, template, actor);
     }
     const startTime = this.now();
     await this.podModel.updateOne(
@@ -3346,6 +3591,226 @@ class RunpodPodManager {
       this.logOperationFailure('Runpod Ollama setup failed and the pod was stopped when possible', 'setup', error);
       throw error;
     }
+  }
+
+  async _provisionLlamaCppPod(pod, template, actor) {
+    const startTime = this.now();
+    await this.podModel.updateOne(
+      { _id: pod._id, archivedAt: null },
+      {
+        $set: {
+          setupStatus: 'waiting',
+          setupErrorCode: null,
+          setupStartedAt: startTime,
+          updatedBy: actor,
+        },
+      }
+    );
+    await this.recordEvent({
+      resourceType: 'pod',
+      podRecordId: pod._id,
+      action: 'setup',
+      outcome: 'requested',
+      actor,
+    });
+    try {
+      const providerPod = await this.waitForRunningPod(pod.providerPodId);
+      const url = validatedCloudflareGatewayUrl(
+        template.gatewayUrl || this.cloudflareGatewayUrl
+      ).toString();
+      await this.waitForLlamaCpp(url, { providerPodId: pod.providerPodId });
+      await this.verifyLlamaCppModel(url, GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS);
+      const completedAt = this.now();
+      await this.podModel.updateOne(
+        { _id: pod._id, archivedAt: null },
+        {
+          $set: {
+            ...reconciledProviderPodFields(pod, providerPod, completedAt),
+            setupStatus: 'ready',
+            setupErrorCode: null,
+            setupCompletedAt: completedAt,
+            publicUrl: url,
+            updatedBy: actor,
+          },
+        }
+      );
+      await this.recordEvent({
+        resourceType: 'pod',
+        podRecordId: pod._id,
+        action: 'setup',
+        outcome: 'succeeded',
+        actor,
+      });
+      return true;
+    } catch (error) {
+      const errorCode = safeString(error?.code, 80) || 'RUNPOD_LLAMA_CPP_SETUP_FAILED';
+      await this.podModel.updateOne(
+        { _id: pod._id, archivedAt: null },
+        {
+          $set: {
+            setupStatus: 'failed',
+            setupErrorCode: errorCode,
+            updatedBy: actor,
+          },
+        }
+      ).catch(() => {});
+      await this.stopProviderPodAfterSetupFailure(pod.providerPodId, pod._id, actor, pod);
+      await this.recordEvent({
+        resourceType: 'pod',
+        podRecordId: pod._id,
+        action: 'setup',
+        outcome: 'failed',
+        providerStatus: providerStatusForError(error),
+        errorCode,
+        actor,
+      });
+      this.logOperationFailure(
+        'Runpod llama.cpp setup failed and the Pod was stopped when possible',
+        'llama_cpp_setup',
+        error
+      );
+      throw error;
+    }
+  }
+
+  async llamaCppRequest(baseUrl, pathname, { timeoutMs = 30_000 } = {}) {
+    if (typeof this.fetch !== 'function') {
+      throw new RunpodManagementError('llama.cpp connectivity is not configured.', {
+        code: 'LLAMA_CPP_FETCH_UNAVAILABLE', status: 503,
+      });
+    }
+    if (!this.gatewayConfiguration().serviceTokenConfigured || !this.llmApiKey) {
+      throw new RunpodManagementError(
+        'Cloudflare Access or native LLM API credentials are unavailable to this server.',
+        { code: 'RUNPOD_LLM_GATEWAY_NOT_CONFIGURED', status: 503 }
+      );
+    }
+    const allowedPaths = new Set(['/health', '/v1/models']);
+    if (!allowedPaths.has(pathname)) {
+      throw new RunpodManagementError('The llama.cpp API path is not allowed.', {
+        code: 'LLAMA_CPP_PATH_NOT_ALLOWED', status: 500,
+      });
+    }
+    const base = validatedOllamaBaseUrl(baseUrl, {
+      accessMode: 'cloudflare_access',
+      cloudflareGatewayUrl: this.cloudflareGatewayUrl,
+    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), positiveInteger(timeoutMs, 30_000));
+    try {
+      const response = await this.fetch(new URL(pathname, base), {
+        headers: {
+          Accept: 'application/json, text/plain',
+          Authorization: `Bearer ${this.llmApiKey}`,
+          'CF-Access-Client-Id': this.cloudflareAccessClientId,
+          'CF-Access-Client-Secret': this.cloudflareAccessClientSecret,
+        },
+        redirect: 'error',
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        await response.body?.cancel?.().catch?.(() => {});
+        throw new RunpodManagementError(
+          response.status === 401 || response.status === 403
+            ? 'The llama.cpp gateway rejected its configured API credentials.'
+            : `The llama.cpp gateway returned HTTP ${response.status}.`,
+          {
+            code: response.status === 401 || response.status === 403
+              ? 'LLAMA_CPP_AUTH_FAILED'
+              : 'LLAMA_CPP_HTTP_ERROR',
+            status: response.status,
+          }
+        );
+      }
+      return await readLimitedText(response, OLLAMA_RESPONSE_LIMIT_BYTES);
+    } catch (error) {
+      if (error instanceof RunpodManagementError) throw error;
+      if (error?.name === 'AbortError') {
+        throw new RunpodManagementError('The llama.cpp health request timed out.', {
+          code: 'LLAMA_CPP_TIMEOUT', status: 504,
+        });
+      }
+      throw new RunpodManagementError('The llama.cpp gateway could not be reached.', {
+        code: 'LLAMA_CPP_NETWORK_ERROR', status: 502,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async waitForLlamaCpp(baseUrl, { providerPodId = '' } = {}) {
+    const deadline = Date.now() + this.llamaCppStartupTimeoutMs;
+    let lastError;
+    while (Date.now() < deadline) {
+      if (providerPodId) {
+        try {
+          const [providerPod, logs] = await Promise.all([
+            this.runpodService.getPod(providerPodId),
+            this.runpodService.getPodLogSnapshot(providerPodId, {
+              source: 'container',
+              tail: 500,
+              maxWaitMs: 2_000,
+            }).catch(() => ({ events: [] })),
+          ]);
+          const signal = modelArtifactServingSignal(logs.events);
+          if (signal.status === 'failed') {
+            throw new RunpodManagementError(
+              `The llama.cpp serving command failed during ${signal.stage}.`,
+              { code: signal.errorCode, status: 502 }
+            );
+          }
+          if (['ERROR', 'EXITED', 'TERMINATED'].includes(normalizeProviderStatus(providerPod.status))) {
+            throw new RunpodManagementError(
+              'The llama.cpp Pod stopped before the model became reachable.',
+              { code: 'RUNPOD_LLAMA_CPP_POD_TERMINAL_STATE', status: 502 }
+            );
+          }
+        } catch (error) {
+          if (error instanceof RunpodManagementError) throw error;
+          lastError = error;
+        }
+      }
+      try {
+        await this.llamaCppRequest(baseUrl, '/health');
+        return true;
+      } catch (error) {
+        lastError = error;
+        if (['LLAMA_CPP_AUTH_FAILED', 'RUNPOD_LLM_GATEWAY_NOT_CONFIGURED'].includes(error?.code)) {
+          throw error;
+        }
+        await this.sleep(this.pollIntervalMs);
+      }
+    }
+    throw new RunpodManagementError(
+      'The 157 GB GLM model did not become reachable before the 45-minute startup deadline.',
+      {
+        code: lastError?.code === 'LLAMA_CPP_TIMEOUT'
+          ? 'LLAMA_CPP_TIMEOUT'
+          : 'LLAMA_CPP_STARTUP_TIMEOUT',
+        status: 504,
+      }
+    );
+  }
+
+  async verifyLlamaCppModel(baseUrl, expectedAlias = GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS) {
+    const text = await this.llamaCppRequest(baseUrl, '/v1/models');
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch (_) {
+      throw new RunpodManagementError('llama.cpp returned invalid model data.', {
+        code: 'LLAMA_CPP_INVALID_RESPONSE', status: 502,
+      });
+    }
+    const aliases = Array.isArray(payload?.data)
+      ? payload.data.map((entry) => safeString(entry?.id, 120))
+      : [];
+    if (!aliases.includes(expectedAlias)) {
+      throw new RunpodManagementError('The expected GLM model alias is missing from llama.cpp.', {
+        code: 'LLAMA_CPP_MODEL_MISSING', status: 502,
+      });
+    }
+    return true;
   }
 
   async recordCachedModel(pod, model, verifiedAt = this.now()) {
@@ -3455,7 +3920,7 @@ class RunpodPodManager {
       const status = normalizeProviderStatus(pod.status);
       if (status === 'RUNNING') return pod;
       if (status === 'ERROR' || status === 'TERMINATED' || status === 'EXITED') {
-        throw new RunpodManagementError('The pod stopped before Ollama became ready.', {
+        throw new RunpodManagementError('The Pod stopped before its workload became ready.', {
           code: 'RUNPOD_PROVISIONING_FAILED', status: 502,
         });
       }
@@ -3750,7 +4215,10 @@ class RunpodPodManager {
         outcome: 'succeeded',
         actor,
       });
-      if (action === 'start' && pod.setupStatus !== 'ready') {
+      if (
+        action === 'start'
+        && (pod.setupStatus !== 'ready' || pod.podPurpose === 'llama_cpp_service')
+      ) {
         this.scheduleProvisioning(pod._id, actor);
       }
       return providerPod;
@@ -4235,6 +4703,7 @@ module.exports = {
   DEFAULT_OLLAMA_PULL_TIMEOUT_MS,
   DEFAULT_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS,
   DEFAULT_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS,
+  DEFAULT_LLAMA_CPP_STARTUP_TIMEOUT_MS,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_PROVISION_TIMEOUT_MS,
   DEFAULT_STORAGE_RATES,
@@ -4256,10 +4725,12 @@ module.exports = {
   OLLAMA_PROVIDER_TEMPLATE_NAME,
   OLLAMA_TEMPLATE_SLUG,
   MODEL_ARTIFACT_PREPARER_TEMPLATE_SLUG,
+  MODEL_ARTIFACT_SERVER_TEMPLATE_SLUG,
   RunpodManagementError,
   RunpodPodManager,
   actorFromPrincipal,
   chooseModelDownloadGpu,
+  classifyCreateFailure,
   cloudflareGatewayStartArgs,
   lifecycleGroupForStatus,
   mapPodForPage,
@@ -4268,6 +4739,7 @@ module.exports = {
   normalizeModelName,
   normalizeDownloaderTemplateInput,
   normalizeModelArtifactPreparerTemplateInput,
+  normalizeModelArtifactServerTemplateInput,
   normalizeCloudflareTemplateInput,
   normalizeNetworkVolumeName,
   normalizeNetworkVolumeType,

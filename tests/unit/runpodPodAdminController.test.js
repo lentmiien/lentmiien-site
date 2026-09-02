@@ -2,6 +2,8 @@ const {
   NOTICE_KEYS,
   createRunpodPodAdminController,
   failureNotice,
+  modelArtifactPodFailureNotice,
+  modelArtifactPreparationFailureNotice,
   startFailureNotice,
 } = require('../../controllers/runpodPodAdminController');
 
@@ -18,6 +20,7 @@ function manager() {
     saveOllamaCloudflareTemplate: jest.fn().mockResolvedValue({}),
     createModelDownload: jest.fn().mockResolvedValue({}),
     prepareModelArtifact: jest.fn().mockResolvedValue({}),
+    createModelArtifactPod: jest.fn().mockResolvedValue({}),
     createManagedPod: jest.fn().mockResolvedValue({}),
     transitionManagedPod: jest.fn().mockResolvedValue({}),
     extendManagedPod: jest.fn().mockResolvedValue({}),
@@ -40,6 +43,7 @@ describe('Runpod Pod admin mutation controller', () => {
     ['saveOllamaCloudflareTemplate', 'saveOllamaCloudflareTemplate', {}, {}, NOTICE_KEYS.gatewayTemplateSynced, 'workload-templates'],
     ['createModelDownload', 'createModelDownload', {}, {}, NOTICE_KEYS.modelDownloadCreated, 'model-downloader'],
     ['prepareModelArtifact', 'prepareModelArtifact', {}, {}, NOTICE_KEYS.modelArtifactPreparationCreated, 'model-artifacts'],
+    ['createModelArtifactPod', 'createModelArtifactPod', {}, {}, NOTICE_KEYS.modelArtifactPodCreated, 'pods'],
     ['createPod', 'createManagedPod', {}, {}, NOTICE_KEYS.podCreated, 'pods'],
     ['startPod', 'transitionManagedPod', { id: 'local-id' }, { runMinutes: '240' }, NOTICE_KEYS.podStarted, 'pods'],
     ['stopPod', 'transitionManagedPod', { id: 'local-id' }, {}, NOTICE_KEYS.podStopped, 'pods'],
@@ -102,6 +106,9 @@ describe('Runpod Pod admin mutation controller', () => {
     await controller.prepareModelArtifact({
       body: { presetSlug: 'glm-5-3-flash-ud-iq4-xs', networkVolumeId: 'volume-id' }, user,
     }, response());
+    await controller.createModelArtifactPod({
+      body: { artifactId: 'artifact-id', gpuId: 'gpu' }, user,
+    }, response());
     await controller.createNetworkVolume({ body: { sizeGb: '50' }, user }, response());
     await controller.deleteNetworkVolume({
       params: { id: 'volume-id' }, body: { confirmation: 'volume-name' }, user,
@@ -119,6 +126,9 @@ describe('Runpod Pod admin mutation controller', () => {
     }, user);
     expect(service.prepareModelArtifact).toHaveBeenCalledWith({
       presetSlug: 'glm-5-3-flash-ud-iq4-xs', networkVolumeId: 'volume-id',
+    }, user);
+    expect(service.createModelArtifactPod).toHaveBeenCalledWith({
+      artifactId: 'artifact-id', gpuId: 'gpu',
     }, user);
     expect(service.createManagedNetworkVolume).toHaveBeenCalledWith({ sizeGb: '50' }, user);
     expect(service.deleteManagedNetworkVolume).toHaveBeenCalledWith(
@@ -165,6 +175,12 @@ describe('Runpod Pod admin mutation controller', () => {
       .toBe(NOTICE_KEYS.cloudflareAccessDenied);
     expect(failureNotice({ code: 'RUNPOD_CLOUDFLARE_ACCESS_NOT_ENFORCED' }, 'fallback'))
       .toBe(NOTICE_KEYS.cloudflareAccessNotEnforced);
+    expect(modelArtifactPreparationFailureNotice({ code: 'RUNPOD_ARTIFACT_GPU_UNAVAILABLE' }))
+      .toBe(NOTICE_KEYS.modelArtifactGpuUnavailable);
+    expect(modelArtifactPreparationFailureNotice({ code: 'RUNPOD_NETWORK_VOLUME_IN_USE' }))
+      .toBe(NOTICE_KEYS.modelArtifactVolumeInUse);
+    expect(modelArtifactPodFailureNotice({ code: 'RUNPOD_LLM_GPU_UNAVAILABLE' }))
+      .toBe(NOTICE_KEYS.modelArtifactPodGpuUnavailable);
   });
 
   test('maps an unavailable original GPU start to specific fixed guidance', async () => {
