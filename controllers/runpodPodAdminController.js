@@ -6,6 +6,10 @@ const RUNPOD_ADMIN_PATH = '/admin/runpod';
 const NOTICE_KEYS = Object.freeze({
   templateSynced: 'template-synced',
   templateFailed: 'template-failed',
+  gatewayTemplateSynced: 'gateway-template-synced',
+  gatewayTemplateFailed: 'gateway-template-failed',
+  cloudflareAccessDenied: 'cloudflare-access-denied',
+  cloudflareAccessNotEnforced: 'cloudflare-access-not-enforced',
   modelDownloadCreated: 'model-download-created',
   modelDownloadFailed: 'model-download-failed',
   podCreated: 'pod-created',
@@ -48,6 +52,12 @@ function failureNotice(error, fallback) {
   if (error?.code === 'RUNPOD_NETWORK_VOLUME_COST_LIMIT_EXCEEDED') {
     return NOTICE_KEYS.storageCostLimit;
   }
+  if (error?.code === 'RUNPOD_CLOUDFLARE_ACCESS_DENIED') {
+    return NOTICE_KEYS.cloudflareAccessDenied;
+  }
+  if (error?.code === 'RUNPOD_CLOUDFLARE_ACCESS_NOT_ENFORCED') {
+    return NOTICE_KEYS.cloudflareAccessNotEnforced;
+  }
   return fallback;
 }
 
@@ -87,6 +97,11 @@ function logRejectedOperation(appLogger, action, error) {
     'RUNPOD_NETWORK_VOLUME_IN_USE',
     'RUNPOD_NETWORK_VOLUME_DATACENTER_MISMATCH',
     'RUNPOD_NETWORK_VOLUME_SECURE_CLOUD_REQUIRED',
+    'RUNPOD_CLOUDFLARE_NOT_CONFIGURED',
+    'RUNPOD_CLOUDFLARE_CONFIGURATION_INVALID',
+    'RUNPOD_CLOUDFLARE_ACCESS_DENIED',
+    'RUNPOD_CLOUDFLARE_ACCESS_NOT_ENFORCED',
+    'RUNPOD_GATEWAY_CONNECTOR_CONFLICT',
   ].includes(error?.code);
   appLogger[expectedInputFailure ? 'warning' : 'error']('Runpod admin operation did not complete', {
     category: 'runpod_management',
@@ -157,6 +172,24 @@ function createRunpodPodAdminController({
       } catch (error) {
         logRejectedOperation(appLogger, 'template_sync', error);
         return redirectWithNotice(res, NOTICE_KEYS.templateFailed, 'workload-templates');
+      }
+    },
+
+    async saveOllamaCloudflareTemplate(req, res) {
+      try {
+        await manager.saveOllamaCloudflareTemplate(req.body || {}, req.user);
+        return redirectWithNotice(
+          res,
+          NOTICE_KEYS.gatewayTemplateSynced,
+          'workload-templates'
+        );
+      } catch (error) {
+        logRejectedOperation(appLogger, 'gateway_template_sync', error);
+        return redirectWithNotice(
+          res,
+          NOTICE_KEYS.gatewayTemplateFailed,
+          'workload-templates'
+        );
       }
     },
 

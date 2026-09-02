@@ -1,12 +1,15 @@
 const {
   OLLAMA_MODEL,
   OLLAMA_DOWNLOADER_MODEL,
+  OLLAMA_CLOUDFLARE_TEMPLATE_SLUG,
   RunpodManagementError,
   RunpodPodManager,
+  cloudflareGatewayStartArgs,
   chooseModelDownloadGpu,
   mergeGpuCatalogs,
   normalizeModelName,
   normalizeDownloaderTemplateInput,
+  normalizeCloudflareTemplateInput,
   normalizeTemplateInput,
   projectPodUsage,
   providerTemplatePayload,
@@ -71,6 +74,28 @@ function downloaderTemplate(overrides = {}) {
   };
 }
 
+function cloudflareTemplate(overrides = {}) {
+  return {
+    ...ollamaTemplate(),
+    slug: OLLAMA_CLOUDFLARE_TEMPLATE_SLUG,
+    name: 'Ollama GPU · Cloudflare Access',
+    providerTemplateId: 'provider-cloudflare-template-1',
+    providerTemplateName: 'lentmiien-ollama-cloudflare-v2',
+    args: cloudflareGatewayStartArgs(),
+    ports: [],
+    env: {
+      OLLAMA_HOST: '127.0.0.1:8080',
+      OLLAMA_MODELS: '/root/.ollama/models',
+      TUNNEL_TOKEN: '{{ RUNPOD_SECRET_lentmiien_cloudflare_tunnel_token }}',
+    },
+    defaultModel: 'qwen3.8:27b',
+    servicePort: 8080,
+    accessMode: 'cloudflare_access',
+    gatewayUrl: 'https://llm.lentmiien.com/',
+    ...overrides,
+  };
+}
+
 function gpu(overrides = {}) {
   return {
     id: 'NVIDIA GeForce RTX 4090',
@@ -85,7 +110,7 @@ function gpu(overrides = {}) {
   };
 }
 
-function createFixture({ template = ollamaTemplate(), localPod = null } = {}) {
+function createFixture({ template = ollamaTemplate(), localPod = null, managerOptions = {} } = {}) {
   const runpodService = {
     listPods: jest.fn().mockResolvedValue([]),
     listNetworkVolumes: jest.fn().mockResolvedValue([]),
@@ -140,6 +165,7 @@ function createFixture({ template = ollamaTemplate(), localPod = null } = {}) {
     maxHourlyCostUsd: 10,
     defaultAutoStopMinutes: 60,
     maxRuntimeMinutes: 1440,
+    ...managerOptions,
   });
   return {
     appLogger,
@@ -312,6 +338,49 @@ describe('Runpod workload and picker helpers', () => {
     expect(() => validatedOllamaBaseUrl(`${url}/redirect`)).toThrow(RunpodManagementError);
     expect(normalizeModelName('QWEN2.5:0.5B')).toBe('qwen2.5:0.5b');
     expect(() => normalizeModelName('http://127.0.0.1/model')).toThrow(RunpodManagementError);
+  });
+
+  test('builds an outbound-only Cloudflare profile with a Runpod Secret reference', () => {
+    const normalized = normalizeCloudflareTemplateInput({
+      defaultModel: 'qwen3.8:27b',
+      diskGb: '25',
+    }, {
+      gatewayUrl: 'https://llm.lentmiien.com',
+      tunnelSecretName: 'lentmiien_cloudflare_tunnel_token',
+    });
+    const start = JSON.parse(normalized.args);
+
+    expect(normalized).toEqual(expect.objectContaining({
+      slug: 'ollama-cloudflare',
+      accessMode: 'cloudflare_access',
+      gatewayUrl: 'https://llm.lentmiien.com/',
+      ports: [],
+      servicePort: 8080,
+      env: expect.objectContaining({
+        OLLAMA_HOST: '127.0.0.1:8080',
+        TUNNEL_TOKEN: '{{ RUNPOD_SECRET_lentmiien_cloudflare_tunnel_token }}',
+      }),
+    }));
+    expect(start.entrypoint).toEqual(['/bin/bash', '-lc']);
+    expect(start.cmd[0]).toContain('tunnel --no-autoupdate run');
+    expect(start.cmd[0]).not.toContain('--http-host-header');
+    expect(normalized.args).not.toContain('cloudflare-token-value');
+    expect(providerTemplatePayload(normalized).ports).toEqual([]);
+  });
+
+  test('accepts only the exact configured Cloudflare gateway origin', () => {
+    expect(validatedOllamaBaseUrl('https://llm.lentmiien.com/', {
+      accessMode: 'cloudflare_access',
+      cloudflareGatewayUrl: 'https://llm.lentmiien.com',
+    }).href).toBe('https://llm.lentmiien.com/');
+    expect(() => validatedOllamaBaseUrl('https://llm.lentmiien.com.attacker.test/', {
+      accessMode: 'cloudflare_access',
+      cloudflareGatewayUrl: 'https://llm.lentmiien.com',
+    })).toThrow(RunpodManagementError);
+    expect(() => validatedOllamaBaseUrl('https://llm.lentmiien.com/api/tags', {
+      accessMode: 'cloudflare_access',
+      cloudflareGatewayUrl: 'https://llm.lentmiien.com',
+    })).toThrow(RunpodManagementError);
   });
 });
 
@@ -827,6 +896,186 @@ describe('RunpodPodManager', () => {
     expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
   });
 
+  test('creates a stable Cloudflare gateway Pod without exposing a Runpod HTTP port', async () => {
+    const fixture = createFixture({
+      template: cloudflareTemplate(),
+      managerOptions: {
+        fetchImpl: jest.fn()
+          .mockResolvedValueOnce(new Response(null, {
+            status: 302,
+            headers: { Location: 'https://lentmiien.cloudflareaccess.com/cdn-cgi/access/login' },
+          }))
+          .mockResolvedValueOnce(new Response(null, { status: 502 })),
+        cloudflareGatewayUrl: 'https://llm.lentmiien.com',
+        cloudflareAccessClientId: 'access-id',
+        cloudflareAccessClientSecret: 'access-secret',
+        cloudflareTunnelTokenConfigured: true,
+      },
+    });
+    fixture.runpodService.listNetworkVolumes.mockResolvedValue([{
+      id: 'volume-123',
+      name: 'qwen-cache',
+      size: 50,
+      dataCenter: 'EU-SE-1',
+      type: 'STANDARD',
+    }]);
+    fixture.networkVolumeModel.findOneAndUpdate.mockResolvedValue({
+      _id: VOLUME_RECORD_ID,
+      providerNetworkVolumeId: 'volume-123',
+      name: 'qwen-cache',
+    });
+    fixture.runpodService.createPod.mockResolvedValue({
+      id: 'gateway-pod-1',
+      status: 'PROVISIONING',
+      actions: ['stop', 'terminate'],
+      cost: 0.55,
+      dataCenterId: 'EU-SE-1',
+    });
+    fixture.podModel.create.mockResolvedValue({
+      _id: POD_RECORD_ID,
+      providerPodId: 'gateway-pod-1',
+      toObject: () => ({ _id: POD_RECORD_ID, providerPodId: 'gateway-pod-1' }),
+    });
+    fixture.manager.scheduleProvisioning = jest.fn();
+
+    await expect(fixture.manager.createManagedPod(validCreateInput({
+      templateId: TEMPLATE_ID,
+      networkVolumeId: 'volume-123',
+      model: 'qwen3.8:27b',
+      dataCenterId: 'EU-SE-1',
+      publicAccessAcknowledged: undefined,
+    }))).resolves.toEqual(expect.objectContaining({ providerPodId: 'gateway-pod-1' }));
+
+    expect(fixture.runpodService.createPod).toHaveBeenCalledWith(expect.objectContaining({
+      templateId: 'provider-cloudflare-template-1',
+      mounts: { network: [{ volumeId: 'volume-123', path: '/workspace' }] },
+      env: {
+        OLLAMA_HOST: '127.0.0.1:8080',
+        OLLAMA_MODELS: '/workspace/ollama/models',
+        TUNNEL_TOKEN: '{{ RUNPOD_SECRET_lentmiien_cloudflare_tunnel_token }}',
+      },
+    }));
+    expect(fixture.podModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      accessMode: 'cloudflare_access',
+      publicUrl: 'https://llm.lentmiien.com/',
+      ports: [],
+    }));
+  });
+
+  test('prevents two active connectors from sharing the named Cloudflare Tunnel', async () => {
+    const fixture = createFixture({
+      template: cloudflareTemplate(),
+      managerOptions: {
+        cloudflareAccessClientId: 'access-id',
+        cloudflareAccessClientSecret: 'access-secret',
+        cloudflareTunnelTokenConfigured: true,
+      },
+    });
+    fixture.runpodService.listPods.mockResolvedValue([{
+      id: 'existing-gateway',
+      template: null,
+      status: 'RUNNING',
+      env: {
+        TUNNEL_TOKEN: '{{ RUNPOD_SECRET_lentmiien_cloudflare_tunnel_token }}',
+      },
+    }]);
+
+    await expect(fixture.manager.createManagedPod(validCreateInput({
+      publicAccessAcknowledged: undefined,
+    }))).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_GATEWAY_CONNECTOR_CONFLICT',
+    }));
+    expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
+  });
+
+  test('rejects a Cloudflare Access login redirect before creating billable compute', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(new Response(null, {
+      status: 302,
+      headers: { Location: 'https://lentmiien.cloudflareaccess.com/cdn-cgi/access/login' },
+    }));
+    const fixture = createFixture({
+      template: cloudflareTemplate(),
+      managerOptions: {
+        fetchImpl,
+        cloudflareAccessClientId: 'access-id',
+        cloudflareAccessClientSecret: 'access-secret',
+        cloudflareTunnelTokenConfigured: true,
+      },
+    });
+
+    await expect(fixture.manager.createManagedPod(validCreateInput({
+      publicAccessAcknowledged: undefined,
+    }))).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_CLOUDFLARE_ACCESS_DENIED',
+    }));
+    expect(fetchImpl).toHaveBeenCalledWith(
+      new URL('https://llm.lentmiien.com/api/tags'),
+      expect.objectContaining({ redirect: 'manual' })
+    );
+    expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
+  });
+
+  test('rejects an unprotected Cloudflare hostname before creating billable compute', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(new Response(null, { status: 502 }));
+    const fixture = createFixture({
+      template: cloudflareTemplate(),
+      managerOptions: {
+        fetchImpl,
+        cloudflareAccessClientId: 'access-id',
+        cloudflareAccessClientSecret: 'access-secret',
+        cloudflareTunnelTokenConfigured: true,
+      },
+    });
+
+    await expect(fixture.manager.createManagedPod(validCreateInput({
+      publicAccessAcknowledged: undefined,
+    }))).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_CLOUDFLARE_ACCESS_NOT_ENFORCED',
+    }));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
+  });
+
+  test('prevents a stopped gateway Pod from starting beside another tunnel connector', async () => {
+    const localPod = {
+      _id: POD_RECORD_ID,
+      providerPodId: 'stopped-gateway',
+      providerTemplateId: 'provider-cloudflare-template-1',
+      name: 'stopped-gateway',
+      archivedAt: null,
+      autoStopMinutes: 60,
+      accessMode: 'cloudflare_access',
+      setupStatus: 'ready',
+    };
+    const fixture = createFixture({
+      localPod,
+      managerOptions: {
+        cloudflareAccessClientId: 'access-id',
+        cloudflareAccessClientSecret: 'access-secret',
+        cloudflareTunnelTokenConfigured: true,
+      },
+    });
+    fixture.runpodService.listPods.mockResolvedValue([{
+      id: 'running-gateway',
+      template: null,
+      status: 'RUNNING',
+      env: {
+        TUNNEL_TOKEN: '{{ RUNPOD_SECRET_lentmiien_cloudflare_tunnel_token }}',
+      },
+    }]);
+
+    await expect(fixture.manager.transitionManagedPod(
+      POD_RECORD_ID,
+      'start',
+      { name: 'admin' },
+      { runMinutes: '60' }
+    )).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_GATEWAY_CONNECTOR_CONFLICT',
+    }));
+    expect(fixture.runpodService.getPod).not.toHaveBeenCalled();
+    expect(fixture.runpodService.transitionPod).not.toHaveBeenCalled();
+  });
+
   test('enforces the provider-wide active Pod ceiling before creation', async () => {
     const fixture = createFixture();
     fixture.manager.maxActivePods = 1;
@@ -1302,6 +1551,65 @@ describe('RunpodPodManager', () => {
       'https://example.com/',
       '/api/tags'
     )).rejects.toEqual(expect.objectContaining({ code: 'OLLAMA_URL_INVALID' }));
+  });
+
+  test('authenticates exact-host gateway requests with Cloudflare Access headers', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
+      models: [{ name: 'qwen3.8:27b' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const fixture = createFixture({
+      managerOptions: {
+        fetchImpl,
+        cloudflareGatewayUrl: 'https://llm.lentmiien.com',
+        cloudflareAccessClientId: 'access-id',
+        cloudflareAccessClientSecret: 'access-secret',
+        cloudflareTunnelTokenConfigured: true,
+      },
+    });
+
+    await expect(fixture.manager.verifyOllamaModel(
+      'https://llm.lentmiien.com/',
+      'qwen3.8:27b',
+      { accessMode: 'cloudflare_access' }
+    )).resolves.toBe(true);
+
+    const [url, options] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe('https://llm.lentmiien.com/api/tags');
+    expect(options.headers).toEqual(expect.objectContaining({
+      'CF-Access-Client-Id': 'access-id',
+      'CF-Access-Client-Secret': 'access-secret',
+    }));
+    await expect(fixture.manager.ollamaRequest(
+      'https://llm.lentmiien.com.attacker.test/',
+      '/api/tags',
+      { accessMode: 'cloudflare_access' }
+    )).rejects.toEqual(expect.objectContaining({ code: 'OLLAMA_URL_INVALID' }));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('fails gateway readiness immediately when Ollama rejects the origin Host header', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(new Response(null, { status: 403 }));
+    const fixture = createFixture({
+      managerOptions: {
+        fetchImpl,
+        cloudflareGatewayUrl: 'https://llm.lentmiien.com',
+        cloudflareAccessClientId: 'access-id',
+        cloudflareAccessClientSecret: 'access-secret',
+        cloudflareTunnelTokenConfigured: true,
+      },
+    });
+
+    await expect(fixture.manager.waitForOllama(
+      'https://llm.lentmiien.com/',
+      { accessMode: 'cloudflare_access' }
+    )).rejects.toEqual(expect.objectContaining({
+      code: 'OLLAMA_GATEWAY_FORBIDDEN',
+      providerStatus: 403,
+    }));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   test('streams Ollama model-pull progress so large downloads do not wait silently behind the proxy', async () => {

@@ -76,6 +76,12 @@ const RunpodPodSchema = new mongoose.Schema({
     index: true,
   },
   cleanupErrorCode: { type: String, default: null, trim: true, maxlength: 80 },
+  accessMode: {
+    type: String,
+    enum: ['runpod_proxy', 'cloudflare_access'],
+    default: 'runpod_proxy',
+    index: true,
+  },
   publicUrl: { type: String, default: null, trim: true, maxlength: 500 },
   cloud: { type: String, enum: ['SECURE', 'COMMUNITY', 'UNKNOWN'], default: 'UNKNOWN' },
   dataCenterId: { type: String, default: null, trim: true, maxlength: 100 },

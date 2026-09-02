@@ -19,6 +19,12 @@
     const result = picker.querySelector('[data-gpu-filter-result]');
     const createForm = picker.querySelector('[data-runpod-create-form]');
     const createButton = picker.querySelector('[data-runpod-create-button]');
+    const templateSelect = picker.querySelector('[data-runpod-template-select]');
+    const publicAccessAcknowledgement = picker.querySelector('[data-runpod-public-ack]');
+    const publicAccessCheckbox = publicAccessAcknowledgement?.querySelector(
+      'input[name="publicAccessAcknowledged"]'
+    );
+    const accessSummary = picker.querySelector('[data-runpod-access-summary]');
     const gpuOptions = Array.from(gpuSelect?.options || []);
     const dataCenterOptions = Array.from(dataCenterSelect?.options || []);
     const communityOption = Array.from(cloudSelect?.options || [])
@@ -61,6 +67,24 @@
         size: number(option.dataset.size, 0),
         models: (option.dataset.models || '').split('|').filter(Boolean),
       } : null;
+    }
+
+    function applyAccessMode() {
+      const selected = templateSelect?.selectedOptions?.[0];
+      const accessMode = selected?.dataset.accessMode || 'runpod_proxy';
+      const gatewayUrl = selected?.dataset.gatewayUrl || '';
+      const usesCloudflare = accessMode === 'cloudflare_access';
+      if (publicAccessAcknowledgement) publicAccessAcknowledgement.hidden = usesCloudflare;
+      if (publicAccessCheckbox) {
+        publicAccessCheckbox.disabled = usesCloudflare;
+        publicAccessCheckbox.required = !usesCloudflare;
+        if (usesCloudflare) publicAccessCheckbox.checked = false;
+      }
+      if (accessSummary) {
+        accessSummary.textContent = usesCloudflare
+          ? `Stable authenticated URL: ${gatewayUrl}. Open WebUI and API clients must send the Cloudflare Access service-token headers.`
+          : 'Diagnostic public Runpod proxy selected. Its hostname changes with every replacement Pod.';
+      }
     }
 
     function updateCachedModels(volume) {
@@ -191,6 +215,7 @@
       .filter(Boolean)
       .forEach((element) => element.addEventListener('input', updateEstimate));
     networkVolumeSelect?.addEventListener('input', applyFilters);
+    templateSelect?.addEventListener('input', applyAccessMode);
 
     createForm?.addEventListener('submit', () => {
       if (createButton) {
@@ -199,6 +224,7 @@
       }
     });
 
+    applyAccessMode();
     applyFilters();
   }
 

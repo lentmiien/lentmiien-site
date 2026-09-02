@@ -12,6 +12,8 @@ const {
 
 const OLLAMA_TEMPLATE_SLUG = 'ollama';
 const OLLAMA_PROVIDER_TEMPLATE_NAME = 'lentmiien-ollama-gpu-v2';
+const OLLAMA_CLOUDFLARE_TEMPLATE_SLUG = 'ollama-cloudflare';
+const OLLAMA_CLOUDFLARE_PROVIDER_TEMPLATE_NAME = 'lentmiien-ollama-cloudflare-v2';
 const OLLAMA_DOWNLOADER_TEMPLATE_SLUG = 'ollama-downloader';
 const OLLAMA_DOWNLOADER_PROVIDER_TEMPLATE_NAME = 'lentmiien-ollama-model-downloader-v2';
 const OLLAMA_IMAGE = 'ollama/ollama:latest';
@@ -22,6 +24,16 @@ const OLLAMA_PERSISTENT_PATH = '/root/.ollama';
 const OLLAMA_NETWORK_VOLUME_PATH = '/workspace';
 const OLLAMA_NETWORK_MODELS_PATH = '/workspace/ollama/models';
 const OLLAMA_PUBLIC_URL_SUFFIX = '.proxy.runpod.net';
+const OLLAMA_ACCESS_MODES = new Set(['runpod_proxy', 'cloudflare_access']);
+const OLLAMA_CLOUDFLARE_ORIGIN_PORT = 8080;
+const OLLAMA_CLOUDFLARE_ORIGIN_HOST_HEADER = `localhost:${OLLAMA_CLOUDFLARE_ORIGIN_PORT}`;
+const DEFAULT_CLOUDFLARE_GATEWAY_URL = 'https://llm.lentmiien.com';
+const DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME = 'lentmiien_cloudflare_tunnel_token';
+const DEFAULT_LLM_API_SECRET_NAME = 'lentmiien_llm_api_key';
+const RUNPOD_SECRET_NAME_PATTERN = /^[a-z][a-z0-9_]{0,79}$/u;
+const CLOUDFLARED_VERSION = '2026.8.3';
+const CLOUDFLARED_AMD64_SHA256 = 'f29324fe934d1e100617484c78deef803c4dc2cd351d645bbde42e96b4fccc5e';
+const CLOUDFLARED_AMD64_URL = `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64`;
 const ACTIVE_PROVIDER_STATUSES = new Set(['PROVISIONING', 'STARTING', 'RUNNING']);
 const PROVIDER_STATUSES = new Set([
   'PROVISIONING',
@@ -302,6 +314,74 @@ function publicOllamaUrl(providerPodId, port = OLLAMA_PORT) {
   return `https://${id}-${normalizedPort}${OLLAMA_PUBLIC_URL_SUFFIX}`;
 }
 
+function normalizeOllamaAccessMode(value) {
+  const accessMode = safeString(value, 40).toLowerCase() || 'runpod_proxy';
+  return OLLAMA_ACCESS_MODES.has(accessMode) ? accessMode : 'runpod_proxy';
+}
+
+function validatedCloudflareGatewayUrl(value = DEFAULT_CLOUDFLARE_GATEWAY_URL) {
+  let gateway;
+  try {
+    gateway = new URL(value);
+  } catch (_) {
+    throw new RunpodManagementError('The configured Cloudflare gateway URL is invalid.', {
+      code: 'RUNPOD_CLOUDFLARE_CONFIGURATION_INVALID', status: 503,
+    });
+  }
+  if (
+    gateway.protocol !== 'https:'
+    || gateway.username
+    || gateway.password
+    || gateway.port
+    || gateway.pathname !== '/'
+    || gateway.search
+    || gateway.hash
+  ) {
+    throw new RunpodManagementError('The configured Cloudflare gateway must be an HTTPS origin URL.', {
+      code: 'RUNPOD_CLOUDFLARE_CONFIGURATION_INVALID', status: 503,
+    });
+  }
+  return gateway;
+}
+
+function normalizeRunpodSecretName(value = DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME) {
+  const secretName = safeString(value, 80).toLowerCase();
+  if (!RUNPOD_SECRET_NAME_PATTERN.test(secretName)) {
+    throw new RunpodManagementError('The configured Runpod tunnel Secret name is invalid.', {
+      code: 'RUNPOD_CLOUDFLARE_CONFIGURATION_INVALID', status: 503,
+    });
+  }
+  return secretName;
+}
+
+function runpodSecretReference(secretName) {
+  return `{{ RUNPOD_SECRET_${normalizeRunpodSecretName(secretName)} }}`;
+}
+
+function cloudflareGatewayStartArgs() {
+  const script = [
+    'set -Eeuo pipefail',
+    'cf=/usr/local/bin/cloudflared',
+    `if [ ! -x "$cf" ]; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl >/dev/null && curl -fsSLo "$cf" '${CLOUDFLARED_AMD64_URL}' && chmod 0755 "$cf"; fi`,
+    `printf '%s  %s\\n' '${CLOUDFLARED_AMD64_SHA256}' "$cf" | sha256sum -c - >/dev/null`,
+    '/bin/ollama serve & ollama_pid=$!',
+    '"$cf" tunnel --no-autoupdate run & tunnel_pid=$!',
+    'trap \'kill "$ollama_pid" "$tunnel_pid" 2>/dev/null || true\' EXIT INT TERM',
+    'wait -n "$ollama_pid" "$tunnel_pid"',
+    'exit 1',
+  ].join('; ');
+  return JSON.stringify({
+    entrypoint: ['/bin/bash', '-lc'],
+    cmd: [script],
+  });
+}
+
+function ollamaServiceUrl(providerPodId, template = {}, cloudflareGatewayUrl) {
+  return normalizeOllamaAccessMode(template.accessMode) === 'cloudflare_access'
+    ? validatedCloudflareGatewayUrl(cloudflareGatewayUrl || template.gatewayUrl).toString()
+    : publicOllamaUrl(providerPodId, template.servicePort || OLLAMA_PORT);
+}
+
 function normalizeModelName(value, fallback = OLLAMA_MODEL) {
   const model = safeString(value || fallback, 120).toLowerCase();
   if (!MODEL_PATTERN.test(model)) {
@@ -458,6 +538,48 @@ function normalizeTemplateInput(input = {}) {
     defaultModel: normalizeModelName(input.defaultModel),
     servicePort: OLLAMA_PORT,
     healthPath: '/api/tags',
+    accessMode: 'runpod_proxy',
+    gatewayUrl: null,
+    active: true,
+  };
+}
+
+function normalizeCloudflareTemplateInput(input = {}, {
+  gatewayUrl = DEFAULT_CLOUDFLARE_GATEWAY_URL,
+  tunnelSecretName = DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME,
+} = {}) {
+  const normalizedGatewayUrl = validatedCloudflareGatewayUrl(gatewayUrl).toString();
+  const normalizedSecretName = normalizeRunpodSecretName(tunnelSecretName);
+  return {
+    slug: OLLAMA_CLOUDFLARE_TEMPLATE_SLUG,
+    name: 'Ollama GPU · Cloudflare Access',
+    description: 'Ollama with an outbound-only named Cloudflare Tunnel, a stable Access-protected hostname, and no Runpod proxy port.',
+    providerTemplateName: normalizePodName(
+      input.providerTemplateName || OLLAMA_CLOUDFLARE_PROVIDER_TEMPLATE_NAME
+    ),
+    image: normalizeImage(input.image),
+    args: cloudflareGatewayStartArgs(),
+    diskGb: strictInteger(input.diskGb || 20, {
+      label: 'Container disk', min: 5, max: 500,
+    }),
+    ports: [],
+    env: {
+      OLLAMA_HOST: `127.0.0.1:${OLLAMA_CLOUDFLARE_ORIGIN_PORT}`,
+      OLLAMA_MODELS: `${OLLAMA_PERSISTENT_PATH}/models`,
+      TUNNEL_TOKEN: runpodSecretReference(normalizedSecretName),
+    },
+    persistentDiskGb: strictInteger(input.persistentDiskGb || 10, {
+      label: 'Persistent disk', min: 10, max: 1000,
+    }),
+    persistentPath: OLLAMA_PERSISTENT_PATH,
+    startSsh: false,
+    startJupyter: false,
+    setupKind: 'ollama_pull',
+    defaultModel: normalizeModelName(input.defaultModel),
+    servicePort: OLLAMA_CLOUDFLARE_ORIGIN_PORT,
+    healthPath: '/api/tags',
+    accessMode: 'cloudflare_access',
+    gatewayUrl: normalizedGatewayUrl,
     active: true,
   };
 }
@@ -488,6 +610,8 @@ function normalizeDownloaderTemplateInput(input = {}) {
     defaultModel: normalizeModelName(input.defaultModel, OLLAMA_DOWNLOADER_MODEL),
     servicePort: OLLAMA_PORT,
     healthPath: '/api/tags',
+    accessMode: 'runpod_proxy',
+    gatewayUrl: null,
     active: true,
   };
 }
@@ -530,6 +654,30 @@ function chooseModelDownloadGpu(gpus = [], dataCenterId, maxHourlyCost, requeste
   return candidates[0]?.gpu || null;
 }
 
+function templateEnvironment(template = {}) {
+  const source = template.env instanceof Map
+    ? Object.fromEntries(template.env.entries())
+    : template.env;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+  return Object.fromEntries(
+    Object.entries(source)
+      .slice(0, 50)
+      .filter(([key]) => /^[A-Z_][A-Z0-9_]{0,79}$/u.test(key))
+      .map(([key, value]) => [key, String(value ?? '').slice(0, 2000)])
+  );
+}
+
+function providerPodUsesCloudflareTunnel(providerPod = {}, {
+  tunnelSecretName = DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME,
+  providerTemplateId = '',
+} = {}) {
+  const env = templateEnvironment(providerPod);
+  const templateMatches = Boolean(providerTemplateId)
+    && safeString(providerPod?.template, 128) === safeString(providerTemplateId, 128);
+  return templateMatches
+    || safeString(env.TUNNEL_TOKEN, 2000) === runpodSecretReference(tunnelSecretName);
+}
+
 function providerTemplatePayload(template) {
   return {
     name: template.providerTemplateName,
@@ -538,7 +686,7 @@ function providerTemplatePayload(template) {
     category: 'NVIDIA',
     disk: template.diskGb,
     ports: template.ports,
-    env: template.env,
+    env: templateEnvironment(template),
     mounts: {
       persistent: {
         size: template.persistentDiskGb,
@@ -788,6 +936,7 @@ function mergeGpuCatalogs(secureGpus = [], communityGpus = []) {
 
 function mapTemplateForPage(template, providerTemplateIds) {
   const value = templateToPlain(template) || {};
+  const accessMode = normalizeOllamaAccessMode(value.accessMode);
   return {
     id: value._id?.toString?.() || safeString(value.id, 80),
     slug: safeString(value.slug, 80),
@@ -804,6 +953,10 @@ function mapTemplateForPage(template, providerTemplateIds) {
     setupKind: safeString(value.setupKind, 40),
     defaultModel: safeString(value.defaultModel, 120),
     servicePort: finiteNumber(value.servicePort),
+    accessMode,
+    gatewayUrl: accessMode === 'cloudflare_access'
+      ? safeString(value.gatewayUrl, 500)
+      : '',
     active: value.active === true,
     providerSyncedAt: value.providerSyncedAt || null,
   };
@@ -820,8 +973,14 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
   const providerId = safeString(local.providerPodId || provider.id, 128);
   const usage = projectPodUsage(local, provider, now);
   const providerNetworkMount = providerPodNetworkVolume(provider);
+  const accessMode = normalizeOllamaAccessMode(local.accessMode);
   let publicUrl = safeString(local.publicUrl, 500);
-  if (!publicUrl && providerId && safeArray(local.ports, 20, 40).includes(`${OLLAMA_PORT}/http`)) {
+  if (
+    accessMode === 'runpod_proxy'
+    && !publicUrl
+    && providerId
+    && safeArray(local.ports, 20, 40).includes(`${OLLAMA_PORT}/http`)
+  ) {
     try {
       publicUrl = publicOllamaUrl(providerId, OLLAMA_PORT);
     } catch (_) {
@@ -849,6 +1008,7 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
     autoDeleteAfterSetup: local.autoDeleteAfterSetup === true,
     cleanupStatus: safeString(local.cleanupStatus, 30) || 'not_required',
     cleanupErrorCode: safeString(local.cleanupErrorCode, 80),
+    accessMode,
     publicUrl,
     cloud: safeString(local.cloud || provider.cloud, 20),
     dataCenterId: safeString(provider.dataCenterId || local.dataCenterId, 100),
@@ -993,6 +1153,9 @@ function classifyOllamaFailure(pathname, providerStatus, responseText = '') {
   ) {
     return 'OLLAMA_VERSION_UNSUPPORTED';
   }
+  if (pathname === '/api/tags' && providerStatus === 403) {
+    return 'OLLAMA_GATEWAY_FORBIDDEN';
+  }
   if (providerStatus === 429) return 'OLLAMA_RATE_LIMITED';
   return 'OLLAMA_HTTP_ERROR';
 }
@@ -1004,6 +1167,7 @@ function ollamaFailureMessage(code) {
     OLLAMA_RATE_LIMITED: 'Ollama temporarily rejected the request because of rate limiting.',
     OLLAMA_STORAGE_FULL: 'The Ollama model disk does not have enough free space.',
     OLLAMA_VERSION_UNSUPPORTED: 'The Ollama runtime does not support this model.',
+    OLLAMA_GATEWAY_FORBIDDEN: 'The gateway reached Ollama, but Ollama rejected its origin Host header.',
   };
   return messages[code] || 'The Ollama service returned an error.';
 }
@@ -1122,7 +1286,10 @@ async function readOllamaPullStream(response) {
   return state;
 }
 
-function validatedOllamaBaseUrl(value) {
+function validatedOllamaBaseUrl(value, {
+  accessMode = 'runpod_proxy',
+  cloudflareGatewayUrl = DEFAULT_CLOUDFLARE_GATEWAY_URL,
+} = {}) {
   let base;
   try {
     base = new URL(value);
@@ -1130,6 +1297,15 @@ function validatedOllamaBaseUrl(value) {
     throw new RunpodManagementError('The derived Ollama URL is invalid.', {
       code: 'OLLAMA_URL_INVALID', status: 500,
     });
+  }
+  if (normalizeOllamaAccessMode(accessMode) === 'cloudflare_access') {
+    const configured = validatedCloudflareGatewayUrl(cloudflareGatewayUrl);
+    if (base.toString() !== configured.toString()) {
+      throw new RunpodManagementError('The Ollama gateway URL does not match the configured origin.', {
+        code: 'OLLAMA_URL_INVALID', status: 500,
+      });
+    }
+    return base;
   }
   const proxyLabel = base.hostname.endsWith(OLLAMA_PUBLIC_URL_SUFFIX)
     ? base.hostname.slice(0, -OLLAMA_PUBLIC_URL_SUFFIX.length)
@@ -1215,6 +1391,15 @@ class RunpodPodManager {
       process.env.RUNPOD_POLL_INTERVAL_MS,
       DEFAULT_POLL_INTERVAL_MS
     ),
+    cloudflareGatewayUrl = process.env.RUNPOD_CLOUDFLARE_GATEWAY_URL
+      || DEFAULT_CLOUDFLARE_GATEWAY_URL,
+    cloudflareTunnelSecretName = process.env.RUNPOD_CLOUDFLARE_TUNNEL_SECRET_NAME
+      || DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME,
+    cloudflareAccessClientId = process.env.RUNPOD_CLOUDFLARE_ACCESS_CLIENT_ID || '',
+    cloudflareAccessClientSecret = process.env.RUNPOD_CLOUDFLARE_ACCESS_CLIENT_SECRET || '',
+    cloudflareTunnelTokenConfigured = Boolean(process.env.RUNPOD_CLOUDFLARE_TUNNEL_TOKEN),
+    llmApiKeyConfigured = Boolean(process.env.RUNPOD_LLM_API_KEY),
+    llmApiSecretName = process.env.RUNPOD_LLM_API_SECRET_NAME || DEFAULT_LLM_API_SECRET_NAME,
   } = {}) {
     this.runpodService = runpodService;
     this.podModel = podModel;
@@ -1240,6 +1425,13 @@ class RunpodPodManager {
     this.ollamaPullTimeoutMs = ollamaPullTimeoutMs;
     this.modelDownloadTimeoutMs = modelDownloadTimeoutMs;
     this.pollIntervalMs = pollIntervalMs;
+    this.cloudflareGatewayUrl = validatedCloudflareGatewayUrl(cloudflareGatewayUrl).toString();
+    this.cloudflareTunnelSecretName = normalizeRunpodSecretName(cloudflareTunnelSecretName);
+    this.cloudflareAccessClientId = String(cloudflareAccessClientId || '').trim().slice(0, 500);
+    this.cloudflareAccessClientSecret = String(cloudflareAccessClientSecret || '').trim().slice(0, 1000);
+    this.cloudflareTunnelTokenConfigured = cloudflareTunnelTokenConfigured === true;
+    this.llmApiKeyConfigured = llmApiKeyConfigured === true;
+    this.llmApiSecretName = normalizeRunpodSecretName(llmApiSecretName);
     this.provisioning = new Map();
     this.creationQueue = Promise.resolve();
     this.templateQueue = Promise.resolve();
@@ -1266,6 +1458,92 @@ class RunpodPodManager {
       ),
       maxRuntimeMinutes: this.maxRuntimeMinutes,
     };
+  }
+
+  gatewayConfiguration() {
+    const serviceTokenConfigured = Boolean(
+      this.cloudflareAccessClientId && this.cloudflareAccessClientSecret
+    );
+    return {
+      accessMode: 'cloudflare_access',
+      gatewayUrl: this.cloudflareGatewayUrl,
+      originHostHeader: OLLAMA_CLOUDFLARE_ORIGIN_HOST_HEADER,
+      serviceTokenConfigured,
+      serviceTokenPartiallyConfigured: Boolean(
+        this.cloudflareAccessClientId || this.cloudflareAccessClientSecret
+      ) && !serviceTokenConfigured,
+      tunnelTokenConfigured: this.cloudflareTunnelTokenConfigured,
+      runpodSecretName: this.cloudflareTunnelSecretName,
+      llmApiKeyConfigured: this.llmApiKeyConfigured,
+      llmApiSecretName: this.llmApiSecretName,
+      readyForTemplate: serviceTokenConfigured && this.cloudflareTunnelTokenConfigured,
+    };
+  }
+
+  async verifyCloudflareAccessServiceToken({ timeoutMs = 15_000 } = {}) {
+    if (typeof this.fetch !== 'function') {
+      throw new RunpodManagementError('Cloudflare Access connectivity is not configured.', {
+        code: 'RUNPOD_CLOUDFLARE_ACCESS_PREFLIGHT_FAILED', status: 503,
+      });
+    }
+    if (!this.gatewayConfiguration().serviceTokenConfigured) {
+      throw new RunpodManagementError(
+        'Cloudflare Access service-token credentials are not configured on this server.',
+        { code: 'RUNPOD_CLOUDFLARE_NOT_CONFIGURED', status: 503 }
+      );
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), positiveInteger(timeoutMs, 15_000));
+    try {
+      const requestStatus = async (headers) => {
+        const response = await this.fetch(new URL('/api/tags', this.cloudflareGatewayUrl), {
+          headers,
+          redirect: 'manual',
+          signal: controller.signal,
+        });
+        try {
+          await response.body?.cancel?.();
+        } catch (_) {
+          // Only the status is needed for this bounded preflight.
+        }
+        return response.status;
+      };
+      const accessDenied = (status) => status === 401
+        || status === 403
+        || (status >= 300 && status < 400);
+      const anonymousStatus = await requestStatus({ Accept: 'application/json' });
+      if (!accessDenied(anonymousStatus)) {
+        throw new RunpodManagementError(
+          'Cloudflare Access did not block the anonymous gateway preflight. Protect the entire hostname before renting a GPU.',
+          { code: 'RUNPOD_CLOUDFLARE_ACCESS_NOT_ENFORCED', status: 503 }
+        );
+      }
+      const authenticatedStatus = await requestStatus({
+        Accept: 'application/json',
+        'CF-Access-Client-Id': this.cloudflareAccessClientId,
+        'CF-Access-Client-Secret': this.cloudflareAccessClientSecret,
+      });
+      if (accessDenied(authenticatedStatus)) {
+        throw new RunpodManagementError(
+          'The Cloudflare Access application did not authorize the configured service token. Add it to a Service Auth policy before renting a GPU.',
+          { code: 'RUNPOD_CLOUDFLARE_ACCESS_DENIED', status: 503 }
+        );
+      }
+      return { anonymousStatus, authenticatedStatus };
+    } catch (error) {
+      if (error instanceof RunpodManagementError) throw error;
+      if (error?.name === 'AbortError') {
+        throw new RunpodManagementError('The Cloudflare Access preflight timed out.', {
+          code: 'RUNPOD_CLOUDFLARE_ACCESS_PREFLIGHT_FAILED', status: 504,
+        });
+      }
+      throw new RunpodManagementError('The Cloudflare Access preflight could not reach the gateway.', {
+        code: 'RUNPOD_CLOUDFLARE_ACCESS_PREFLIGHT_FAILED', status: 502,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async recordEvent(event) {
@@ -1452,6 +1730,7 @@ class RunpodPodManager {
 
     return {
       limits: this.limits(),
+      gateway: this.gatewayConfiguration(),
       templates: values.templates.map((template) => mapTemplateForPage(template, providerTemplateIds)),
       managedPods: mappedPods.filter((pod) => (
         pod.podPurpose !== 'model_download' && pod.lifecycleGroup !== 'archived'
@@ -1767,6 +2046,25 @@ class RunpodPodManager {
     return operation;
   }
 
+  saveOllamaCloudflareTemplate(input, principal) {
+    const gateway = this.gatewayConfiguration();
+    if (!gateway.readyForTemplate) {
+      throw new RunpodManagementError(
+        'Configure the Cloudflare tunnel token and Access service-token credentials before syncing this template.',
+        { code: 'RUNPOD_CLOUDFLARE_NOT_CONFIGURED', status: 503 }
+      );
+    }
+    const operation = this.templateQueue.then(() => this._saveOllamaTemplate(
+      normalizeCloudflareTemplateInput(input, {
+        gatewayUrl: this.cloudflareGatewayUrl,
+        tunnelSecretName: this.cloudflareTunnelSecretName,
+      }),
+      principal
+    ));
+    this.templateQueue = operation.catch(() => {});
+    return operation;
+  }
+
   saveOllamaDownloaderTemplate(input, principal) {
     const operation = this.templateQueue.then(() => this._saveOllamaTemplate(
       normalizeDownloaderTemplateInput(input),
@@ -1986,6 +2284,16 @@ class RunpodPodManager {
         code: 'RUNPOD_INPUT_INVALID',
       });
     }
+    const accessMode = normalizeOllamaAccessMode(template.accessMode);
+    if (
+      accessMode === 'cloudflare_access'
+      && !this.gatewayConfiguration().serviceTokenConfigured
+    ) {
+      throw new RunpodManagementError(
+        'Cloudflare Access service-token credentials are not configured on this server.',
+        { code: 'RUNPOD_CLOUDFLARE_NOT_CONFIGURED', status: 503 }
+      );
+    }
 
     const cloud = safeString(input.cloud, 20).toUpperCase();
     if (!['SECURE', 'COMMUNITY'].includes(cloud)) {
@@ -2013,7 +2321,10 @@ class RunpodPodManager {
       input.autoStopMinutes || this.defaultAutoStopMinutes,
       { label: 'Auto-stop time', min: 15, max: this.maxRuntimeMinutes }
     );
-    if (input.publicAccessAcknowledged !== 'acknowledged') {
+    if (
+      accessMode === 'runpod_proxy'
+      && input.publicAccessAcknowledged !== 'acknowledged'
+    ) {
       throw new RunpodManagementError('Acknowledge that the Ollama proxy URL is public.', {
         code: 'RUNPOD_PUBLIC_ACCESS_NOT_ACKNOWLEDGED',
       });
@@ -2034,6 +2345,24 @@ class RunpodPodManager {
         `The configured limit of ${this.maxActivePods} active Runpod pod${this.maxActivePods === 1 ? '' : 's'} has been reached.`,
         { code: 'RUNPOD_ACTIVE_POD_LIMIT', status: 409 }
       );
+    }
+    if (
+      accessMode === 'cloudflare_access'
+      && providerPods.some((pod) => (
+        providerPodUsesCloudflareTunnel(pod, {
+          tunnelSecretName: this.cloudflareTunnelSecretName,
+          providerTemplateId: template.providerTemplateId,
+        })
+        && ACTIVE_PROVIDER_STATUSES.has(normalizeProviderStatus(pod?.status))
+      ))
+    ) {
+      throw new RunpodManagementError(
+        'This named Cloudflare Tunnel already has an active managed connector. Stop it before creating another gateway Pod.',
+        { code: 'RUNPOD_GATEWAY_CONNECTOR_CONFLICT', status: 409 }
+      );
+    }
+    if (accessMode === 'cloudflare_access') {
+      await this.verifyCloudflareAccessServiceToken();
     }
 
     const gpu = gpuCatalog.find((entry) => safeString(entry?.id, 240) === gpuId);
@@ -2134,6 +2463,7 @@ class RunpodPodManager {
     const trackedNetworkVolume = selectedNetworkVolume
       ? await this.trackProviderNetworkVolume(selectedNetworkVolume, actor, 'provider_import')
       : null;
+    const runtimeEnv = templateEnvironment(template);
     const providerPayload = {
       name,
       templateId: template.providerTemplateId,
@@ -2155,7 +2485,10 @@ class RunpodPodManager {
         },
       ...(selectedNetworkVolume ? {
         env: {
-          OLLAMA_HOST: `0.0.0.0:${OLLAMA_PORT}`,
+          ...runtimeEnv,
+          OLLAMA_HOST: accessMode === 'cloudflare_access'
+            ? `127.0.0.1:${OLLAMA_CLOUDFLARE_ORIGIN_PORT}`
+            : `0.0.0.0:${OLLAMA_PORT}`,
           OLLAMA_MODELS: OLLAMA_NETWORK_MODELS_PATH,
         },
       } : {}),
@@ -2174,6 +2507,11 @@ class RunpodPodManager {
         );
       }
       const providerPodId = safeString(providerPod.id, 128);
+      const serviceUrl = ollamaServiceUrl(
+        providerPodId,
+        template,
+        this.cloudflareGatewayUrl
+      );
       const now = this.now();
       const pod = await this.podModel.create({
         providerPodId,
@@ -2188,7 +2526,8 @@ class RunpodPodManager {
         autoDeleteAfterSetup,
         cleanupStatus: autoDeleteAfterSetup ? 'pending' : 'not_required',
         cleanupErrorCode: null,
-        publicUrl: publicOllamaUrl(providerPodId, template.servicePort),
+        accessMode,
+        publicUrl: serviceUrl,
         cloud,
         dataCenterId: safeString(providerPod.dataCenterId || dataCenterId, 100) || null,
         gpu: {
@@ -2342,8 +2681,10 @@ class RunpodPodManager {
 
     try {
       const providerPod = await this.waitForRunningPod(pod.providerPodId);
-      const url = publicOllamaUrl(providerPod.id, template.servicePort);
-      await this.waitForOllama(url);
+      const accessMode = normalizeOllamaAccessMode(template.accessMode);
+      const url = ollamaServiceUrl(providerPod.id, template, this.cloudflareGatewayUrl);
+      const accessOptions = accessMode === 'cloudflare_access' ? { accessMode } : {};
+      await this.waitForOllama(url, accessOptions);
       await this.podModel.updateOne(
         { _id: pod._id, archivedAt: null },
         { $set: { setupStatus: 'downloading', publicUrl: url, updatedBy: actor } }
@@ -2353,8 +2694,9 @@ class RunpodPodManager {
         timeoutMs: pod.podPurpose === 'model_download'
           ? this.modelDownloadTimeoutMs
           : this.ollamaPullTimeoutMs,
+        ...accessOptions,
       });
-      await this.verifyOllamaModel(url, setupModel);
+      await this.verifyOllamaModel(url, setupModel, accessOptions);
       const completedAt = this.now();
       await this.recordCachedModel(pod, setupModel, completedAt);
       await this.podModel.updateOne(
@@ -2536,13 +2878,27 @@ class RunpodPodManager {
     body,
     timeoutMs = 15_000,
     responseReader = null,
+    accessMode = 'runpod_proxy',
   } = {}) {
     if (typeof this.fetch !== 'function') {
       throw new RunpodManagementError('Ollama connectivity is not configured.', {
         code: 'OLLAMA_FETCH_UNAVAILABLE', status: 503,
       });
     }
-    const base = validatedOllamaBaseUrl(baseUrl);
+    const normalizedAccessMode = normalizeOllamaAccessMode(accessMode);
+    if (
+      normalizedAccessMode === 'cloudflare_access'
+      && !this.gatewayConfiguration().serviceTokenConfigured
+    ) {
+      throw new RunpodManagementError(
+        'Cloudflare Access service-token credentials are not configured on this server.',
+        { code: 'RUNPOD_CLOUDFLARE_NOT_CONFIGURED', status: 503 }
+      );
+    }
+    const base = validatedOllamaBaseUrl(baseUrl, {
+      accessMode: normalizedAccessMode,
+      cloudflareGatewayUrl: this.cloudflareGatewayUrl,
+    });
     const allowedPaths = new Set(['/', '/api/tags', '/api/pull']);
     if (!allowedPaths.has(pathname)) {
       throw new RunpodManagementError('The Ollama API path is not allowed.', {
@@ -2553,11 +2909,16 @@ class RunpodPodManager {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
+      const headers = body === undefined
+        ? { Accept: 'application/json, text/plain' }
+        : { Accept: 'application/json', 'Content-Type': 'application/json' };
+      if (normalizedAccessMode === 'cloudflare_access') {
+        headers['CF-Access-Client-Id'] = this.cloudflareAccessClientId;
+        headers['CF-Access-Client-Secret'] = this.cloudflareAccessClientSecret;
+      }
       const response = await this.fetch(url, {
         method,
-        headers: body === undefined
-          ? { Accept: 'application/json, text/plain' }
-          : { Accept: 'application/json', 'Content-Type': 'application/json' },
+        headers,
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         redirect: 'error',
         signal: controller.signal,
@@ -2588,15 +2949,16 @@ class RunpodPodManager {
     }
   }
 
-  async waitForOllama(baseUrl) {
+  async waitForOllama(baseUrl, { accessMode = 'runpod_proxy' } = {}) {
     const deadline = Date.now() + this.provisionTimeoutMs;
     let lastError;
     while (Date.now() < deadline) {
       try {
-        await this.ollamaRequest(baseUrl, '/api/tags');
+        await this.ollamaRequest(baseUrl, '/api/tags', { accessMode });
         return true;
       } catch (error) {
         lastError = error;
+        if (error?.code === 'OLLAMA_GATEWAY_FORBIDDEN') throw error;
         await this.sleep(this.pollIntervalMs);
       }
     }
@@ -2606,7 +2968,10 @@ class RunpodPodManager {
     });
   }
 
-  async pullOllamaModel(baseUrl, model, { timeoutMs = this.ollamaPullTimeoutMs } = {}) {
+  async pullOllamaModel(baseUrl, model, {
+    timeoutMs = this.ollamaPullTimeoutMs,
+    accessMode = 'runpod_proxy',
+  } = {}) {
     const requested = normalizeModelName(model);
     const boundedTimeoutMs = positiveInteger(timeoutMs, this.ollamaPullTimeoutMs);
     const deadline = Date.now() + boundedTimeoutMs;
@@ -2620,13 +2985,14 @@ class RunpodPodManager {
           body: { model: requested, stream: true },
           timeoutMs: remainingMs,
           responseReader: readOllamaPullStream,
+          accessMode,
         });
         return true;
       } catch (error) {
         lastError = error;
         if (!OLLAMA_PULL_RETRY_CODES.has(error?.code)) throw error;
         try {
-          await this.verifyOllamaModel(baseUrl, requested);
+          await this.verifyOllamaModel(baseUrl, requested, { accessMode });
           return true;
         } catch (_) {
           // Ollama keeps partial blobs, so a new pull request can resume after a proxy cut-off.
@@ -2641,8 +3007,8 @@ class RunpodPodManager {
     });
   }
 
-  async verifyOllamaModel(baseUrl, model) {
-    const response = await this.ollamaRequest(baseUrl, '/api/tags');
+  async verifyOllamaModel(baseUrl, model, { accessMode = 'runpod_proxy' } = {}) {
+    const response = await this.ollamaRequest(baseUrl, '/api/tags', { accessMode });
     let result;
     try {
       result = JSON.parse(response.text);
@@ -2724,6 +3090,24 @@ class RunpodPodManager {
       : null;
     let providerActionAccepted = false;
     try {
+      if (action === 'start' && normalizeOllamaAccessMode(pod.accessMode) === 'cloudflare_access') {
+        const providerPods = await this.runpodService.listPods();
+        const competingConnector = providerPods.find((entry) => (
+          safeString(entry?.id, 128) !== safeString(pod.providerPodId, 128)
+          && providerPodUsesCloudflareTunnel(entry, {
+            tunnelSecretName: this.cloudflareTunnelSecretName,
+            providerTemplateId: pod.providerTemplateId,
+          })
+          && ACTIVE_PROVIDER_STATUSES.has(normalizeProviderStatus(entry?.status))
+        ));
+        if (competingConnector) {
+          throw new RunpodManagementError(
+            'Another Pod is already connected to this named Cloudflare Tunnel. Stop it before starting this Pod.',
+            { code: 'RUNPOD_GATEWAY_CONNECTOR_CONFLICT', status: 409 }
+          );
+        }
+        await this.verifyCloudflareAccessServiceToken();
+      }
       const current = await this.runpodService.getPod(pod.providerPodId);
       if (!normalizeActions(current.actions).includes(action)) {
         throw new RunpodManagementError(`The pod cannot be ${action === 'start' ? 'started' : 'stopped'} in its current state.`, {
@@ -3233,6 +3617,8 @@ module.exports = {
   DEFAULT_MAX_NETWORK_VOLUME_GB,
   DEFAULT_MAX_NETWORK_VOLUME_MONTHLY_COST_USD,
   DEFAULT_MAX_RUNTIME_MINUTES,
+  DEFAULT_CLOUDFLARE_GATEWAY_URL,
+  DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME,
   DEFAULT_OLLAMA_PULL_TIMEOUT_MS,
   DEFAULT_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS,
   DEFAULT_POLL_INTERVAL_MS,
@@ -3245,6 +3631,9 @@ module.exports = {
   OLLAMA_DOWNLOADER_MODEL,
   OLLAMA_DOWNLOADER_PROVIDER_TEMPLATE_NAME,
   OLLAMA_DOWNLOADER_TEMPLATE_SLUG,
+  OLLAMA_CLOUDFLARE_ORIGIN_PORT,
+  OLLAMA_CLOUDFLARE_PROVIDER_TEMPLATE_NAME,
+  OLLAMA_CLOUDFLARE_TEMPLATE_SLUG,
   OLLAMA_MODEL,
   OLLAMA_NETWORK_MODELS_PATH,
   OLLAMA_NETWORK_VOLUME_PATH,
@@ -3256,18 +3645,22 @@ module.exports = {
   RunpodPodManager,
   actorFromPrincipal,
   chooseModelDownloadGpu,
+  cloudflareGatewayStartArgs,
   lifecycleGroupForStatus,
   mapPodForPage,
   mapNetworkVolumeForPage,
   mergeGpuCatalogs,
   normalizeModelName,
   normalizeDownloaderTemplateInput,
+  normalizeCloudflareTemplateInput,
   normalizeNetworkVolumeName,
   normalizeNetworkVolumeType,
   normalizePodName,
   normalizeTemplateInput,
+  ollamaServiceUrl,
   providerPodFields,
   providerPodNetworkVolume,
+  providerPodUsesCloudflareTunnel,
   estimateStandardNetworkVolumeMonthlyCost,
   providerTemplatePayload,
   projectPodUsage,
@@ -3278,4 +3671,5 @@ module.exports = {
   usageFieldsForObservation,
   usageStateForStatus,
   validatedOllamaBaseUrl,
+  validatedCloudflareGatewayUrl,
 };

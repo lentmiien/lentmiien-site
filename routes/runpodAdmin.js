@@ -160,6 +160,13 @@ router.post(
   runpodPodAdminController.saveOllamaTemplate
 );
 router.post(
+  '/templates/ollama-cloudflare',
+  runpodMutationLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.templateManage),
+  runpodPodAdminController.saveOllamaCloudflareTemplate
+);
+router.post(
   '/model-downloads',
   runpodMutationLimiter,
   runpodCreateLimiter,

@@ -15,6 +15,7 @@ function manager() {
     deleteManagedNetworkVolume: jest.fn().mockResolvedValue(true),
     syncProviderNetworkVolumes: jest.fn().mockResolvedValue({}),
     saveOllamaTemplate: jest.fn().mockResolvedValue({}),
+    saveOllamaCloudflareTemplate: jest.fn().mockResolvedValue({}),
     createModelDownload: jest.fn().mockResolvedValue({}),
     createManagedPod: jest.fn().mockResolvedValue({}),
     transitionManagedPod: jest.fn().mockResolvedValue({}),
@@ -35,6 +36,7 @@ describe('Runpod Pod admin mutation controller', () => {
     ['deleteNetworkVolume', 'deleteManagedNetworkVolume', { id: 'volume-id' }, { confirmation: 'volume-name' }, NOTICE_KEYS.networkVolumeDeleted, 'network-volumes'],
     ['syncNetworkVolumes', 'syncProviderNetworkVolumes', {}, {}, NOTICE_KEYS.networkVolumesSynced, 'network-volumes'],
     ['saveOllamaTemplate', 'saveOllamaTemplate', {}, {}, NOTICE_KEYS.templateSynced, 'workload-templates'],
+    ['saveOllamaCloudflareTemplate', 'saveOllamaCloudflareTemplate', {}, {}, NOTICE_KEYS.gatewayTemplateSynced, 'workload-templates'],
     ['createModelDownload', 'createModelDownload', {}, {}, NOTICE_KEYS.modelDownloadCreated, 'model-downloader'],
     ['createPod', 'createManagedPod', {}, {}, NOTICE_KEYS.podCreated, 'pods'],
     ['startPod', 'transitionManagedPod', { id: 'local-id' }, { runMinutes: '240' }, NOTICE_KEYS.podStarted, 'pods'],
@@ -151,6 +153,10 @@ describe('Runpod Pod admin mutation controller', () => {
     );
     expect(JSON.stringify(appLogger.warning.mock.calls)).not.toContain(secret);
     expect(failureNotice({ status: 402 }, 'fallback')).toBe(NOTICE_KEYS.insufficientBalance);
+    expect(failureNotice({ code: 'RUNPOD_CLOUDFLARE_ACCESS_DENIED' }, 'fallback'))
+      .toBe(NOTICE_KEYS.cloudflareAccessDenied);
+    expect(failureNotice({ code: 'RUNPOD_CLOUDFLARE_ACCESS_NOT_ENFORCED' }, 'fallback'))
+      .toBe(NOTICE_KEYS.cloudflareAccessNotEnforced);
   });
 
   test('maps an unavailable original GPU start to specific fixed guidance', async () => {

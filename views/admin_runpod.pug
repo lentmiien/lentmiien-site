@@ -15,9 +15,12 @@ block content
   - const operationLabel = (value) => ({ start: 'Pod start', stop: 'Pod stop', extend: 'deadline extension', delete: 'Pod deletion', auto_stop: 'automatic stop' }[value] || 'Pod operation');
   - const isoTimestamp = (value) => { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date.toISOString() : ''; };
   - const refreshHref = `${adminPath}?bucketSize=${encodeURIComponent(filters.bucketSize)}&lastN=${encodeURIComponent(filters.lastN)}&refresh=1`;
-  - const management = podManagement || { limits: {}, templates: [], managedPods: [], archivedPods: [], modelDownloads: [], networkVolumes: [], archivedNetworkVolumes: [], unmanagedProviderPods: [], gpuOptions: [], errors: {} };
+  - const management = podManagement || { limits: {}, gateway: {}, templates: [], managedPods: [], archivedPods: [], modelDownloads: [], networkVolumes: [], archivedNetworkVolumes: [], unmanagedProviderPods: [], gpuOptions: [], errors: {} };
   - const ollamaTemplate = management.templates.find((entry) => entry.slug === 'ollama') || null;
+  - const cloudflareTemplate = management.templates.find((entry) => entry.slug === 'ollama-cloudflare') || null;
   - const downloaderTemplate = management.templates.find((entry) => entry.slug === 'ollama-downloader') || null;
+  - const servingTemplates = management.templates.filter((entry) => ['ollama', 'ollama-cloudflare'].includes(entry.slug) && entry.providerPresent).sort((left, right) => (left.accessMode === 'cloudflare_access' ? -1 : 1) - (right.accessMode === 'cloudflare_access' ? -1 : 1));
+  - const defaultServingTemplate = servingTemplates[0] || cloudflareTemplate || ollamaTemplate || null;
   - const availableNetworkVolumes = management.networkVolumes.filter((volume) => volume.providerPresent && volume.attachedPodCount === 0);
   - const defaultNetworkVolume = availableNetworkVolumes[0] || null;
   - const defaultCachedModel = defaultNetworkVolume && defaultNetworkVolume.cachedModels && defaultNetworkVolume.cachedModels.length ? defaultNetworkVolume.cachedModels[0] : 'qwen3.8:27b';
@@ -353,37 +356,71 @@ block content
       .runpod-panel__header
         div
           p.runpod-eyebrow Reusable setup
-          h2#runpodWorkloadTemplateHeading Ollama workload template
-          p.runpod-panel__subtitle The container settings are stored as a private Runpod v2 template. The local database links that provider template to the bounded Ollama model-download workflow.
-        if ollamaTemplate
-          span.runpod-status(class=ollamaTemplate.providerPresent ? 'runpod-status--ready' : 'runpod-status--warning')= ollamaTemplate.providerPresent ? 'SYNCED' : 'RESYNC NEEDED'
+          h2#runpodWorkloadTemplateHeading Ollama workload profiles
+          p.runpod-panel__subtitle Private Runpod v2 templates provide either a stable Cloudflare Access gateway or the original per-Pod public proxy. Model downloads keep their short-lived direct proxy workflow.
+        if cloudflareTemplate
+          span.runpod-status(class=cloudflareTemplate.providerPresent ? 'runpod-status--ready' : 'runpod-status--warning')= cloudflareTemplate.providerPresent ? 'GATEWAY SYNCED' : 'GATEWAY RESYNC NEEDED'
 
       .runpod-two-column
         article.runpod-template-summary
-          if ollamaTemplate
-            h3= ollamaTemplate.name
-            code= ollamaTemplate.providerTemplateId || 'Provider ID pending'
+          h3 Stable Cloudflare gateway
+          dl
+            div
+              dt Hostname
+              dd
+                a(href=management.gateway.gatewayUrl, target='_blank', rel='noopener noreferrer')= management.gateway.gatewayUrl
+            div
+              dt Cloudflare route HTTP Host Header
+              dd
+                code= management.gateway.originHostHeader || 'localhost:8080'
+            div
+              dt Access service token
+              dd= management.gateway.serviceTokenConfigured ? 'Configured for server-side health checks' : 'Missing or incomplete'
+            div
+              dt Local tunnel token
+              dd= management.gateway.tunnelTokenConfigured ? 'Configured for one-time Secret bootstrap' : 'Missing'
+            div
+              dt Runpod Secret reference
+              dd
+                code= management.gateway.runpodSecretName
+            div
+              dt Native LLM API key
+              dd= management.gateway.llmApiKeyConfigured ? 'Configured for the native llama.cpp/vLLM gateway' : 'Not configured'
+            div
+              dt Native API key Secret reference
+              dd
+                code= management.gateway.llmApiSecretName || 'lentmiien_llm_api_key'
+          if cloudflareTemplate
+            code= cloudflareTemplate.providerTemplateId || 'Provider ID pending'
             dl
               div
                 dt Image
-                dd= ollamaTemplate.image
+                dd= cloudflareTemplate.image
               div
                 dt Test model
-                dd= ollamaTemplate.defaultModel
+                dd= cloudflareTemplate.defaultModel
               div
                 dt Storage
-                dd #{formatInteger(ollamaTemplate.diskGb)} GB container + #{formatInteger(ollamaTemplate.persistentDiskGb)} GB persistent
+                dd #{formatInteger(cloudflareTemplate.diskGb)} GB container + #{formatInteger(cloudflareTemplate.persistentDiskGb)} GB persistent
               div
-                dt Public service
-                dd Port #{formatInteger(ollamaTemplate.servicePort)} through Runpod HTTPS proxy
-            if downloaderTemplate
-              p.runpod-form-help Downloader template: #{downloaderTemplate.providerPresent ? 'synced and reusable' : 'will be repaired automatically on the next download'}.
+                dt Exposure
+                dd Outbound-only tunnel; no Runpod proxy ports
           else
-            h3 No local Ollama template yet
-            p Save the defaults once to create a private provider template and its local setup recipe.
+            p No local Cloudflare profile has been synced yet.
+          p.runpod-form-help The Cloudflare tunnel route must save the HTTP Host Header shown above; a remotely managed tunnel does not let the Pod override that central route setting. The tunnel token stays in server environment configuration for the one-time bootstrap; it is never stored in MongoDB, source control, or the provider template. The template contains only a Runpod Secret reference. Only one active connector is allowed for this named tunnel.
+          form.runpod-form(method='post', action=`${adminPath}/templates/ollama-cloudflare`)
+            input(type='hidden', name='_csrf', value=csrfToken)
+            input(type='hidden', name='providerTemplateName', value=cloudflareTemplate ? cloudflareTemplate.providerTemplateName : 'lentmiien-ollama-cloudflare-v2')
+            input(type='hidden', name='image', value=cloudflareTemplate ? cloudflareTemplate.image : 'ollama/ollama:latest')
+            input(type='hidden', name='defaultModel', value=cloudflareTemplate ? cloudflareTemplate.defaultModel : 'qwen3.8:27b')
+            input(type='hidden', name='diskGb', value=cloudflareTemplate ? cloudflareTemplate.diskGb : 20)
+            input(type='hidden', name='persistentDiskGb', value=cloudflareTemplate ? cloudflareTemplate.persistentDiskGb : 10)
+            button.runpod-button.runpod-button--primary(type='submit', disabled=!management.gateway.readyForTemplate)= cloudflareTemplate ? 'Update Cloudflare profile' : 'Create Cloudflare profile'
+          if !management.gateway.readyForTemplate
+            p.runpod-form-help Add the missing Cloudflare environment variables before syncing.
 
         details.runpod-advanced.runpod-advanced--standalone(open=!ollamaTemplate)
-          summary Advanced template settings
+          summary Diagnostic public-proxy profile
           form.runpod-form(method='post', action=`${adminPath}/templates/ollama`)
             input(type='hidden', name='_csrf', value=csrfToken)
             .runpod-form-grid
@@ -402,8 +439,10 @@ block content
               label.runpod-field
                 span Persistent model disk (GB)
                 input(type='number', name='persistentDiskGb', min='10', max='1000', step='1', value=ollamaTemplate ? ollamaTemplate.persistentDiskGb : 10, required)
-            p.runpod-form-help Pod-local models survive stop/start but not Pod deletion. A network volume is preferred for reusable models. Pin the image by digest for reproducible long-term use.
-            button.runpod-button.runpod-button--primary(type='submit')= ollamaTemplate ? 'Update and resync template' : 'Create Ollama template'
+            p.runpod-form-help This legacy profile exposes Ollama through an unauthenticated, per-Pod Runpod URL. Keep it only for diagnostics or tunnel recovery. Pod-local models survive stop/start but not Pod deletion.
+            button.runpod-button.runpod-button--secondary(type='submit')= ollamaTemplate ? 'Update public-proxy profile' : 'Create public-proxy profile'
+      if downloaderTemplate
+        p.runpod-form-help Downloader template: #{downloaderTemplate.providerPresent ? 'synced and reusable' : 'will be repaired automatically on the next download'}.
 
     section#pod-creator.runpod-panel(aria-labelledby='runpodPodCreatorHeading')
       .runpod-panel__header
@@ -413,16 +452,30 @@ block content
           p.runpod-panel__subtitle Filter systems by VRAM and cost, then choose current availability, cloud, location, storage, model, and an automatic stop time.
         span.runpod-panel__meta #{formatInteger(management.gpuOptions.length)} GPU choices
 
-      .runpod-alert.runpod-alert--warning(role='note')
-        strong Public endpoint warning.
-        |  Ollama does not authenticate local API requests. Runpod's HTTPS proxy URL is public to anyone who learns it. Keep auto-stop short and stop or delete the Pod when finished.
+      if cloudflareTemplate && cloudflareTemplate.providerPresent && management.gateway.serviceTokenConfigured
+        .runpod-alert.runpod-alert--success(role='note')
+          strong Stable authenticated profile ready.
+          |  The preferred profile publishes no Runpod proxy port. Cloudflare Tunnel makes the outbound connection and Access protects #{management.gateway.gatewayUrl}.
+      else
+        .runpod-alert.runpod-alert--warning(role='note')
+          strong Stable gateway is not ready yet.
+          |  Sync the Cloudflare profile above. The diagnostic fallback uses an unauthenticated, per-Pod Runpod proxy URL.
 
-      if ollamaTemplate && ollamaTemplate.providerPresent && management.gpuOptions.length
+      if servingTemplates.length && management.gpuOptions.length
         .runpod-picker(data-runpod-picker)
           form.runpod-form(method='post', action=`${adminPath}/pods`, data-runpod-create-form)
             input(type='hidden', name='_csrf', value=csrfToken)
-            input(type='hidden', name='templateId', value=ollamaTemplate.id)
             .runpod-form-grid.runpod-form-grid--wide
+              label.runpod-field
+                span Access profile
+                select(name='templateId', data-runpod-template-select, required)
+                  each template in servingTemplates
+                    option(
+                      value=template.id,
+                      data-access-mode=template.accessMode,
+                      data-gateway-url=template.gatewayUrl || '',
+                      selected=defaultServingTemplate && template.id === defaultServingTemplate.id
+                    )= template.accessMode === 'cloudflare_access' ? `Cloudflare Access · ${template.gatewayUrl}` : 'Diagnostic Runpod public proxy'
               label.runpod-field
                 span Pod name
                 input(type='text', name='name', maxlength='80', value='ollama-qwen', pattern='[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}', required)
@@ -467,9 +520,12 @@ block content
               label.runpod-field
                 span Auto-stop after (minutes)
                 input(type='number', name='autoStopMinutes', min='15', max=management.limits.maxRuntimeMinutes, step='1', value=management.limits.defaultAutoStopMinutes, required)
-              label.runpod-check.runpod-check--warning
-                input(type='checkbox', name='publicAccessAcknowledged', value='acknowledged', required)
+              label.runpod-check.runpod-check--warning(data-runpod-public-ack, hidden=defaultServingTemplate && defaultServingTemplate.accessMode === 'cloudflare_access')
+                input(type='checkbox', name='publicAccessAcknowledged', value='acknowledged', required=defaultServingTemplate && defaultServingTemplate.accessMode === 'runpod_proxy', disabled=defaultServingTemplate && defaultServingTemplate.accessMode === 'cloudflare_access')
                 span I understand that the Ollama proxy URL has no application-level authentication.
+            output.runpod-location-summary(data-runpod-access-summary aria-live='polite')
+              strong= defaultServingTemplate && defaultServingTemplate.accessMode === 'cloudflare_access' ? `Stable URL: ${defaultServingTemplate.gatewayUrl}` : 'Diagnostic public Runpod proxy selected'
+              small= defaultServingTemplate && defaultServingTemplate.accessMode === 'cloudflare_access' ? 'Open WebUI must send the configured Cloudflare Access service-token headers.' : 'The hostname changes whenever a replacement Pod is created.'
             p.runpod-form-help(data-storage-help) Large models need storage beyond their published download size. Allow at least 10 GB of headroom; qwen3.8:27b is about 18 GB, so use 30 GB or more. A selected network volume replaces the Pod-local persistent disk and fixes the cloud and data center.
             details.runpod-advanced
               summary Advanced placement, pricing, and disk settings
@@ -504,10 +560,10 @@ block content
                       option(value=dataCenter.id, data-global-network=dataCenter.globalNetwork ? '1' : '0')= `${dataCenter.name} · ${dataCenter.region.replaceAll('_', ' ')}`
                 label.runpod-field
                   span Container disk (GB)
-                  input(type='number', name='diskGb', min='5', max='500', step='1', value=ollamaTemplate.diskGb, required)
+                  input(type='number', name='diskGb', min='5', max='500', step='1', value=defaultServingTemplate.diskGb, required)
                 label.runpod-field
                   span Pod-local persistent disk (GB)
-                  input(type='number', name='persistentDiskGb', min='10', max='1000', step='1', value=ollamaTemplate.persistentDiskGb, data-persistent-disk, required)
+                  input(type='number', name='persistentDiskGb', min='10', max='1000', step='1', value=defaultServingTemplate.persistentDiskGb, data-persistent-disk, required)
                 label.runpod-field
                   span Confirmed maximum total / hour
                   input(type='number', name='maxHourlyCost', min='0.01', max=management.limits.maxHourlyCostUsd, step='0.01', value='1.00', data-gpu-cost-limit, required)
@@ -519,10 +575,10 @@ block content
               strong(data-gpu-estimate) Choose a GPU
               small Disk charges may make Runpod's final Pod rate slightly higher. Creation is cancelled and cleaned up if the returned total exceeds your confirmed maximum.
             button.runpod-button.runpod-button--primary(type='submit', data-runpod-create-button) Create Pod and set up Ollama
-      else if !ollamaTemplate || !ollamaTemplate.providerPresent
+      else if !servingTemplates.length
         .runpod-empty
-          strong Sync the Ollama workload template first
-          p Pod creation stays disabled until both the local recipe and private Runpod template are present.
+          strong Sync an Ollama workload profile first
+          p Pod creation stays disabled until a local recipe and its private Runpod v2 template are both present.
       else
         .runpod-empty
           strong GPU picker unavailable
@@ -558,6 +614,9 @@ block content
                   span Setup
                   strong= `${pod.setupStatus}${pod.setupModel ? ` · ${pod.setupModel}` : ''}`
                 div
+                  span Access
+                  strong= pod.accessMode === 'cloudflare_access' ? 'Cloudflare Access tunnel' : 'Runpod public proxy'
+                div
                   span Model storage
                   if pod.providerNetworkVolumeId
                     strong= `${pod.networkVolumeName || pod.providerNetworkVolumeId} · ${pod.networkVolumeMountPath || '/workspace'}`
@@ -588,9 +647,12 @@ block content
                 p.runpod-form-help Provider ledger: #{formatUsd(pod.billing.computeUsd)} compute + #{formatUsd(pod.billing.storageUsd)} disk. Billing can lag current usage; last synced #{formatTimestamp(pod.billing.syncedAt)}.
               if pod.setupStatus === 'ready' && pod.providerStatus === 'RUNNING' && pod.publicUrl
                 .runpod-endpoint
-                  span Public Ollama URL
+                  span= pod.accessMode === 'cloudflare_access' ? 'Stable authenticated Ollama URL' : 'Public Ollama URL'
                   a(href=pod.publicUrl, target='_blank', rel='noopener noreferrer')= pod.publicUrl
-                  small The root page should say “Ollama is running.” API requests are unauthenticated.
+                  if pod.accessMode === 'cloudflare_access'
+                    small Browser requests use your Cloudflare Access login. API clients and Open WebUI must send the Access service-token headers.
+                  else
+                    small The root page should say “Ollama is running.” API requests are unauthenticated.
               else if pod.setupStatus === 'failed'
                 .runpod-alert.runpod-alert--error
                   strong Setup failed and an automatic stop was attempted.

@@ -149,6 +149,7 @@ describe('Runpod route wiring', () => {
   test('exposes read and CSRF-protected capability-scoped Pod mutations', () => {
     expect(routeSource).toContain("router.get('/', runpodReadLimiter, runpodAdminController.index);");
     expect(routeSource).toContain("'/templates/ollama'");
+    expect(routeSource).toContain("'/templates/ollama-cloudflare'");
     expect(routeSource).toContain("'/network-volumes'");
     expect(routeSource).toContain("'/network-volumes/sync'");
     expect(routeSource).toContain("'/network-volumes/:id/delete'");

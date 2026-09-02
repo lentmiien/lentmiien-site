@@ -217,6 +217,74 @@ describe('Runpod admin page', () => {
     expect(html).not.toContain('https://rest.runpod.io/v1');
   });
 
+  test('prefers the stable Cloudflare Access profile without rendering credentials', () => {
+    const html = renderPage({
+      dataCenters: [{ id: 'EU-RO-1', name: 'EU-RO-1', region: 'EUROPE' }],
+    }, {
+      gateway: {
+        gatewayUrl: 'https://llm.lentmiien.com/',
+        originHostHeader: 'localhost:8080',
+        serviceTokenConfigured: true,
+        tunnelTokenConfigured: true,
+        runpodSecretName: 'lentmiien_cloudflare_tunnel_token',
+        llmApiKeyConfigured: true,
+        llmApiSecretName: 'lentmiien_llm_api_key',
+        readyForTemplate: true,
+      },
+      templates: [{
+        id: 'gateway-template-id',
+        slug: 'ollama-cloudflare',
+        name: 'Ollama GPU · Cloudflare Access',
+        providerTemplateName: 'lentmiien-ollama-cloudflare-v2',
+        providerTemplateId: 'provider-gateway-template-id',
+        providerPresent: true,
+        setupKind: 'ollama_pull',
+        accessMode: 'cloudflare_access',
+        gatewayUrl: 'https://llm.lentmiien.com/',
+        image: 'ollama/ollama:latest',
+        defaultModel: 'qwen3.8:27b',
+        diskGb: 20,
+        persistentDiskGb: 10,
+      }],
+      gpuOptions: [{
+        id: 'NVIDIA A40',
+        name: 'A40',
+        memoryGb: 48,
+        securePrice: 0.5,
+        secureAvailability: 'HIGH',
+        secureMaxCount: 1,
+        secureDataCenters: [{ id: 'EU-RO-1' }],
+        communityDataCenters: [],
+      }],
+      networkVolumes: [],
+      managedPods: [{
+        id: 'gateway-pod-record',
+        providerPodId: 'gateway-pod-provider',
+        name: 'ollama-gateway',
+        providerStatus: 'RUNNING',
+        setupStatus: 'ready',
+        setupModel: 'qwen3.8:27b',
+        accessMode: 'cloudflare_access',
+        publicUrl: 'https://llm.lentmiien.com/',
+        gpuName: 'A40',
+        gpuCount: 1,
+      }],
+    });
+
+    expect(html).toContain('action="/admin/runpod/templates/ollama-cloudflare"');
+    expect(html).toContain('Stable authenticated profile ready.');
+    expect(html).toContain('name="templateId"');
+    expect(html).toContain('data-access-mode="cloudflare_access"');
+    expect(html).toContain('Stable authenticated Ollama URL');
+    expect(html).toContain('https://llm.lentmiien.com/');
+    expect(html).toContain('Cloudflare route HTTP Host Header');
+    expect(html).toContain('localhost:8080');
+    expect(html).toContain('lentmiien_cloudflare_tunnel_token');
+    expect(html).toContain('lentmiien_llm_api_key');
+    expect(html).not.toContain('access-client-secret-value');
+    expect(html).not.toContain('tunnel-token-value');
+  });
+
   test('escapes provider-controlled text in every displayed catalog context', () => {
     const payload = '<script>window.runpodInjected=true</script>';
     const html = renderPage({
