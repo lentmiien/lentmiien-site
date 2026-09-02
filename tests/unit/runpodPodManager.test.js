@@ -944,6 +944,7 @@ describe('RunpodPodManager', () => {
     });
     expect(fixture.podModel.create).toHaveBeenCalledWith(expect.objectContaining({
       podPurpose: 'model_artifact_prepare',
+      modelArtifactRecordId: artifactId,
       accessMode: 'private_none',
       ports: [],
       autoDeleteAfterSetup: true,
@@ -1023,6 +1024,90 @@ describe('RunpodPodManager', () => {
       expect.objectContaining({ upsert: true, runValidators: true })
     );
     expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
+  });
+
+  test('retries transient artifact-log timeouts and preserves verified readiness when cleanup fails', async () => {
+    const artifactId = '507f191e810c19729de860ad';
+    const localPod = {
+      _id: POD_RECORD_ID,
+      providerPodId: 'preparer-pod-1',
+      name: 'prepare-glm53',
+      podPurpose: 'model_artifact_prepare',
+      providerStatus: 'PROVISIONING',
+      lifecycleGroup: 'running',
+      setupStatus: 'waiting',
+      cleanupStatus: 'pending',
+      usageTrackingMode: 'observed',
+      usageState: 'running',
+      usageStateEnteredAt: FIXED_NOW,
+      runningMs: 0,
+      stoppedMs: 0,
+    };
+    const artifact = {
+      _id: artifactId,
+      slug: 'glm-5-3-flash-ud-iq4-xs',
+      preparationStatus: 'preparing',
+      preparationStage: 'building_runtime',
+      providerNetworkVolumeId: 'provider-glm-volume-id',
+      networkVolumeRecordId: VOLUME_RECORD_ID,
+    };
+    const fixture = createFixture({ localPod });
+    fixture.modelArtifactModel.findOne.mockImplementation(() => queryResult(artifact));
+    fixture.runpodService.getPod
+      .mockResolvedValueOnce({ id: 'preparer-pod-1', status: 'PROVISIONING' })
+      .mockResolvedValueOnce({ id: 'preparer-pod-1', status: 'RUNNING' });
+    fixture.runpodService.getPodLogSnapshot
+      .mockRejectedValueOnce(new RunpodApiError('Pod logs timed out.', {
+        code: 'RUNPOD_TIMEOUT', operation: 'Pod logs',
+      }))
+      .mockResolvedValueOnce({
+        events: [{ line: 'RUNPOD_ARTIFACT_READY slug=glm-5-3-flash-ud-iq4-xs' }],
+      });
+    fixture.manager.cleanupCompletedModelDownload = jest.fn().mockRejectedValue(
+      new RunpodApiError('Cleanup failed.', { code: 'RUNPOD_HTTP_ERROR', status: 503 })
+    );
+
+    await expect(fixture.manager._monitorModelArtifactPreparation(
+      POD_RECORD_ID,
+      artifactId,
+      { name: 'admin' }
+    )).resolves.toBe(true);
+
+    expect(fixture.runpodService.getPodLogSnapshot).toHaveBeenCalledTimes(2);
+    expect(fixture.appLogger.warning).toHaveBeenCalledWith(
+      'Runpod model-artifact logs are temporarily unavailable; verification will retry',
+      expect.objectContaining({
+        category: 'runpod_management',
+        metadata: expect.objectContaining({ errorCode: 'RUNPOD_TIMEOUT' }),
+      })
+    );
+    expect(fixture.modelArtifactModel.updateOne).toHaveBeenCalledWith(
+      { _id: artifactId, archivedAt: null },
+      { $set: expect.objectContaining({
+        preparationStatus: 'preparing',
+        preparationStage: 'building_runtime',
+      }) }
+    );
+    expect(fixture.modelArtifactModel.updateOne).toHaveBeenCalledWith(
+      { _id: artifactId, archivedAt: null },
+      { $set: expect.objectContaining({
+        preparationStatus: 'ready',
+        preparationStage: 'ready',
+        verifiedAt: FIXED_NOW,
+      }) }
+    );
+    expect(fixture.modelArtifactModel.updateOne).not.toHaveBeenCalledWith(
+      expect.anything(),
+      { $set: expect.objectContaining({ preparationStatus: 'failed' }) }
+    );
+    expect(fixture.manager.cleanupCompletedModelDownload).toHaveBeenCalledWith(
+      POD_RECORD_ID,
+      { name: 'admin' }
+    );
+    expect(fixture.appLogger.error).toHaveBeenCalledWith(
+      'Runpod verified model-artifact Pod cleanup failed',
+      expect.objectContaining({ category: 'runpod_management' })
+    );
   });
 
   test('verifies a downloaded model, records it on the volume, and archives the temporary Pod', async () => {

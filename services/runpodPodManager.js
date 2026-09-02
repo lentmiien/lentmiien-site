@@ -2674,6 +2674,7 @@ class RunpodPodManager {
         recordOrigin: 'managed',
         podPurpose: 'model_artifact_prepare',
         workloadTemplateId: template._id,
+        modelArtifactRecordId: artifact._id,
         providerTemplateId: template.providerTemplateId,
         ...providerPodFields(providerPod, startedAt),
         setupStatus: 'waiting',
@@ -3317,20 +3318,56 @@ class RunpodPodManager {
         code: 'RUNPOD_ARTIFACT_RECORD_INVALID', status: 409,
       });
     }
+    if (artifact.preparationStatus === 'ready' && pod.setupStatus === 'ready') {
+      await this.cleanupCompletedModelDownload(pod._id, actor).catch((error) => {
+        this.logOperationFailure(
+          'Runpod verified model-artifact Pod cleanup failed',
+          'artifact_prepare_cleanup',
+          error
+        );
+      });
+      return true;
+    }
     const deadline = Date.now() + this.modelArtifactPreparationTimeoutMs;
     let currentPod = pod;
+    let lastPreparationStage = artifact.preparationStage || 'provisioning';
+    let consecutiveLogFailures = 0;
     try {
       while (Date.now() < deadline) {
-        const [providerPod, logs] = await Promise.all([
+        const [providerPod, logObservation] = await Promise.all([
           this.runpodService.getPod(pod.providerPodId),
           this.runpodService.getPodLogSnapshot(pod.providerPodId, {
             source: 'container',
             tail: 1000,
             maxWaitMs: 2_000,
+          }).then((logs) => ({ logs, error: null })).catch((error) => {
+            if (!(error instanceof RunpodApiError)) throw error;
+            return { logs: { events: [] }, error };
           }),
         ]);
         const observedAt = this.now();
-        const signal = modelArtifactPreparationSignal(logs.events);
+        const hasLogEvents = Array.isArray(logObservation.logs?.events)
+          && logObservation.logs.events.length > 0;
+        const signal = hasLogEvents
+          ? modelArtifactPreparationSignal(logObservation.logs.events)
+          : { status: 'preparing', stage: lastPreparationStage, errorCode: null };
+        lastPreparationStage = signal.stage;
+        if (logObservation.error) {
+          consecutiveLogFailures += 1;
+          if (consecutiveLogFailures === 1 || consecutiveLogFailures % 20 === 0) {
+            this.logger.warning('Runpod model-artifact logs are temporarily unavailable; verification will retry', {
+              category: 'runpod_management',
+              metadata: {
+                action: 'artifact_prepare_log_observation',
+                errorCode: safeString(logObservation.error?.code, 80) || 'RUNPOD_LOG_OBSERVATION_FAILED',
+                providerStatus: providerStatusForError(logObservation.error),
+                consecutiveFailures: consecutiveLogFailures,
+              },
+            });
+          }
+        } else {
+          consecutiveLogFailures = 0;
+        }
         currentPod = { ...currentPod, ...providerPodFields(providerPod, observedAt) };
         await Promise.all([
           this.podModel.updateOne(
@@ -3392,7 +3429,13 @@ class RunpodPodManager {
             outcome: 'succeeded',
             actor,
           });
-          await this.cleanupCompletedModelDownload(pod._id, actor);
+          await this.cleanupCompletedModelDownload(pod._id, actor).catch((error) => {
+            this.logOperationFailure(
+              'Runpod verified model-artifact Pod cleanup failed',
+              'artifact_prepare_cleanup',
+              error
+            );
+          });
           return true;
         }
         const status = normalizeProviderStatus(providerPod.status);
