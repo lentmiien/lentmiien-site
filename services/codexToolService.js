@@ -8,6 +8,7 @@ const CodexWorkspace = require('../models/codex_workspace');
 const CodexSession = require('../models/codex_session');
 const CodexTurn = require('../models/codex_turn');
 const CodexEvent = require('../models/codex_event');
+const CodexTurnMessage = require('../models/codex_turn_message');
 const CodexWorkspaceLock = require('../models/codex_workspace_lock');
 const CodexTokenPrice = require('../models/codex_token_price');
 const CodexRequestProfile = require('../models/codex_request_profile');
@@ -317,6 +318,65 @@ async function canUseRunpodModelProviders(user) {
     roleModel: Role,
     roleCapabilityBundles: CODEX_ROLE_CAPABILITY_BUNDLES,
   });
+}
+
+async function canSteerCodexTurns(user) {
+  return hasCapabilities(user, [CODEX_CAPABILITIES.turnSteer], {
+    roleModel: Role,
+    roleCapabilityBundles: CODEX_ROLE_CAPABILITY_BUNDLES,
+  });
+}
+
+function getPrincipalId(user) {
+  return normalizeOptionalString(user && (user._id || user.id), 160);
+}
+
+function canAccessTurnForSteering(turn, user) {
+  if (!turn || !user) {
+    return false;
+  }
+  if (user.type_user === 'admin') {
+    return true;
+  }
+  const principalId = getPrincipalId(user);
+  const ownerId = normalizeOptionalString(turn.createdBy && turn.createdBy.id, 160);
+  return Boolean(principalId && ownerId && principalId === ownerId);
+}
+
+async function canSteerTurn(turn, user) {
+  return Boolean(
+    await canSteerCodexTurns(user) &&
+    canAccessTurnForSteering(turn, user)
+  );
+}
+
+async function assertCanSteerCodexTurns(user) {
+  let allowed = false;
+  try {
+    allowed = await canSteerCodexTurns(user);
+  } catch (error) {
+    logger.error('Codex turn steering authorization failed', {
+      category: 'authorization',
+      metadata: { errorName: error?.name || 'Error' },
+    });
+    throw createHttpError(503, 'Codex message authorization is temporarily unavailable.');
+  }
+  if (!allowed) {
+    throw createHttpError(403, 'You do not have permission to add messages to Codex turns.');
+  }
+}
+
+function buildSteerTurnScope(turnId, user) {
+  const query = { _id: turnId };
+  if (user && user.type_user === 'admin') {
+    return query;
+  }
+  const principalId = getPrincipalId(user);
+  if (!principalId) {
+    throw createHttpError(403, 'Your account cannot add messages to Codex turns.');
+  }
+  query['createdBy.id'] = principalId;
+  return query;
 }
 
 async function getRunningRunpodPodNames() {
@@ -1007,6 +1067,14 @@ function getRuntimeConfig() {
     lockTtlMs: getPositiveIntegerEnv('CODEX_LOCK_TTL_MS', 5 * 60 * 1000, 60 * 1000),
     heartbeatMs: getPositiveIntegerEnv('CODEX_LOCK_HEARTBEAT_MS', 15 * 1000, 2000),
     maxPromptChars: getPositiveIntegerEnv('CODEX_MAX_PROMPT_CHARS', 20000, 1000, 500000),
+    maxAdditionalMessagesPerTurn: getPositiveIntegerEnv(
+      'CODEX_MAX_ADDITIONAL_MESSAGES_PER_TURN',
+      20,
+      1,
+      100
+    ),
+    additionalMessagePollMs: getPositiveIntegerEnv('CODEX_MESSAGE_POLL_MS', 1000, 250, 10000),
+    additionalMessageTimeoutMs: getPositiveIntegerEnv('CODEX_MESSAGE_TIMEOUT_MS', 15000, 1000, 60000),
     maxEventsPerTurn: getPositiveIntegerEnv('CODEX_MAX_EVENTS_PER_TURN', 2000, 20, 100000),
     maxEventTextChars: getPositiveIntegerEnv('CODEX_MAX_EVENT_TEXT_CHARS', 12000, 1000, 100000),
     remoteValidationTimeoutMs: getPositiveIntegerEnv('CODEX_REMOTE_VALIDATION_TIMEOUT_MS', 15000, 1000, 120000),
@@ -1310,7 +1378,7 @@ async function ensureDefaultRequestProfiles() {
 
 function makeOwner(user) {
   return {
-    id: user && user._id ? String(user._id) : null,
+    id: user && (user._id || user.id) ? String(user._id || user.id) : null,
     name: user && user.name ? String(user.name) : '',
   };
 }
@@ -1337,6 +1405,31 @@ function normalizePrompt(prompt) {
     throw createHttpError(400, `Prompt is too long. Maximum length is ${maxPromptChars} characters.`);
   }
   return value;
+}
+
+function normalizeAdditionalTurnMessagePayload(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw createHttpError(400, 'A JSON object containing a message is required.');
+  }
+  const keys = Object.keys(payload);
+  if (keys.some((key) => key !== 'message')) {
+    throw createHttpError(400, 'The message request contains unsupported fields.');
+  }
+  if (typeof payload.message !== 'string') {
+    throw createHttpError(400, 'Message must be a string.');
+  }
+  const message = payload.message.trim();
+  const { maxPromptChars } = getRuntimeConfig();
+  if (!message) {
+    throw createHttpError(400, 'Message is required.');
+  }
+  if (message.includes('\0')) {
+    throw createHttpError(400, 'Message contains an unsupported character.');
+  }
+  if (message.length > maxPromptChars) {
+    throw createHttpError(400, `Message is too long. Maximum length is ${maxPromptChars} characters.`);
+  }
+  return message;
 }
 
 function titleFromPrompt(prompt) {
@@ -2514,19 +2607,32 @@ async function getTurnDetail(turnId, options = {}) {
   if (!turn) {
     throw createHttpError(404, 'Turn not found.');
   }
-  const [session, workspace, target, pricingByProvider, sessionTurns, config] = await Promise.all([
+  const canAddMessagePromise = canSteerTurn(turn, options.user).catch((error) => {
+    logger.error('Codex turn message availability lookup failed', {
+      category: 'authorization',
+      metadata: {
+        turnId: String(turn._id),
+        errorName: error?.name || 'Error',
+      },
+    });
+    return false;
+  });
+  const [session, workspace, target, pricingByProvider, sessionTurns, config, canAddMessage] = await Promise.all([
     CodexSession.findById(turn.sessionId).lean().exec(),
     CodexWorkspace.findById(turn.workspaceId).lean().exec(),
     CodexExecutionTarget.findById(turn.targetId).lean().exec(),
     getTokenPricingByProvider(),
     CodexTurn.find({ sessionId: turn.sessionId }).sort({ sequence: 1 }).lean().exec(),
     publicConfig(options),
+    canAddMessagePromise,
   ]);
   const turnsWithUsage = annotateTurnsWithTokenUsage(sessionTurns.length ? sessionTurns : [turn]);
   const turnWithUsage = turnsWithUsage.find((entry) => String(entry._id) === String(turn._id)) ||
     annotateTurnsWithTokenUsage([turn])[0];
+  const serializedTurn = serializeTurn(turnWithUsage, { workspace, pricingByProvider });
+  serializedTurn.canAddMessage = canAddMessage;
   return {
-    turn: serializeTurn(turnWithUsage, { workspace, pricingByProvider }),
+    turn: serializedTurn,
     session: serializeSession(session, { workspace, target }),
     workspace: serializeWorkspace(workspace, { target }),
     target: serializeTarget(target),
@@ -2538,10 +2644,20 @@ async function getTurnDetail(turnId, options = {}) {
 
 async function listTurnEvents(turnId, options = {}) {
   const afterSeq = Math.max(Number.parseInt(options.afterSeq, 10) || 0, 0);
-  const eventQuery = CodexEvent.find({
+  const query = {
     turnId,
     seq: { $gt: afterSeq },
-  }).sort({ seq: 1 });
+  };
+  if (options.user && options.user.type_user !== 'admin') {
+    const principalId = getPrincipalId(options.user);
+    query.$or = [
+      { 'payload.item.type': { $ne: 'user_message' } },
+    ];
+    if (principalId) {
+      query.$or.push({ 'payload.ownerId': principalId });
+    }
+  }
+  const eventQuery = CodexEvent.find(query).sort({ seq: 1 });
   const requestedLimit = options.limit;
   const hasLimit = requestedLimit !== undefined &&
     requestedLimit !== null &&
@@ -2573,6 +2689,107 @@ async function getQueueState() {
     })),
     runningTurns: runningTurns.map((turn) => serializeTurn(turn, { workspace: workspaceById.get(String(turn.workspaceId)) })),
     locks: locks.map(serializeLock),
+  };
+}
+
+async function queueAdditionalTurnMessage(turnIdInput, payload = {}, user) {
+  const turnId = normalizeOptionalString(turnIdInput, 160);
+  if (!turnId) {
+    throw createHttpError(400, 'Turn id is required.');
+  }
+  await assertCanSteerCodexTurns(user);
+
+  const scope = buildSteerTurnScope(turnId, user);
+  const turn = await CodexTurn.findOne(scope).lean().exec();
+  if (!turn) {
+    throw createHttpError(404, 'Turn not found.');
+  }
+  if (turn.status !== 'running' || turn.cancelRequestedAt) {
+    throw createHttpError(409, 'Additional messages can only be sent while the Codex turn is running.');
+  }
+  const message = normalizeAdditionalTurnMessagePayload(payload);
+
+  const config = getRuntimeConfig();
+  if (Number(turn.additionalMessageCount) >= config.maxAdditionalMessagesPerTurn) {
+    throw createHttpError(
+      429,
+      `This turn has reached its limit of ${config.maxAdditionalMessagesPerTurn} additional messages.`
+    );
+  }
+
+  const reservedTurn = await CodexTurn.findOneAndUpdate({
+    ...scope,
+    status: 'running',
+    cancelRequestedAt: null,
+    $or: [
+      { additionalMessageCount: { $lt: config.maxAdditionalMessagesPerTurn } },
+      { additionalMessageCount: { $exists: false } },
+    ],
+  }, {
+    $inc: { additionalMessageCount: 1 },
+  }, { returnDocument: 'after' }).exec();
+  if (!reservedTurn) {
+    throw createHttpError(409, 'The Codex turn is no longer accepting additional messages.');
+  }
+
+  let queuedMessage;
+  try {
+    queuedMessage = await CodexTurnMessage.create({
+      turnId,
+      sessionId: String(turn.sessionId),
+      workspaceId: String(turn.workspaceId),
+      message,
+      status: 'queued',
+      createdBy: makeOwner(user),
+      queuedAt: new Date(),
+    });
+  } catch (error) {
+    await CodexTurn.updateOne(
+      { _id: turnId, additionalMessageCount: { $gt: 0 } },
+      { $inc: { additionalMessageCount: -1 } }
+    ).exec().catch(() => {});
+    logger.error('Codex additional message could not be queued', {
+      category: 'codex_tool',
+      metadata: {
+        turnId,
+        errorName: error?.name || 'Error',
+      },
+    });
+    throw createHttpError(500, 'The additional message could not be queued.');
+  }
+
+  const turnStillAccepting = await CodexTurn.exists({
+    ...scope,
+    status: 'running',
+    cancelRequestedAt: null,
+  }).exec();
+  if (!turnStillAccepting) {
+    const failedMessage = await CodexTurnMessage.findOneAndUpdate({
+      _id: queuedMessage._id,
+      status: 'queued',
+    }, {
+      $set: {
+        status: 'failed',
+        failedAt: new Date(),
+        errorMessage: 'The Codex turn ended before this message could be delivered.',
+      },
+    }, { returnDocument: 'after' }).exec();
+    if (failedMessage) {
+      await CodexTurn.updateOne(
+        { _id: turnId, additionalMessageCount: { $gt: 0 } },
+        { $inc: { additionalMessageCount: -1 } }
+      ).exec().catch(() => {});
+      throw createHttpError(409, 'The Codex turn is no longer accepting additional messages.');
+    }
+  }
+
+  return {
+    accepted: true,
+    message: {
+      id: String(queuedMessage._id),
+      status: queuedMessage.status || 'queued',
+      queuedAt: queuedMessage.queuedAt || queuedMessage.createdAt || null,
+    },
   };
 }
 
@@ -2949,6 +3166,7 @@ module.exports = {
   archiveSession,
   assertModelProviderAvailable,
   buildSessionStats,
+  canSteerCodexTurns,
   canUseRunpodModelProviders,
   cancelTurn,
   createFollowupTurn,
@@ -2989,6 +3207,7 @@ module.exports = {
   normalizeTokenUsage,
   previewFromText,
   publicConfig,
+  queueAdditionalTurnMessage,
   resolveTurnRequestOptions,
   retryTurn,
   serializeEvent,

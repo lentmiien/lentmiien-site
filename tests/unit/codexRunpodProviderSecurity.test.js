@@ -25,6 +25,15 @@ describe('Codex Runpod provider security wiring', () => {
     expect(CODEX_ROLE_CAPABILITY_BUNDLES.other).not.toContain(capability);
   });
 
+  test('grants turn steering to normal authenticated roles but not unknown roles', () => {
+    const capability = CODEX_CAPABILITIES.turnSteer;
+
+    expect(CODEX_ROLE_CAPABILITY_BUNDLES.admin).toContain(capability);
+    expect(CODEX_ROLE_CAPABILITY_BUNDLES.family).toContain(capability);
+    expect(CODEX_ROLE_CAPABILITY_BUNDLES.user).toContain(capability);
+    expect(CODEX_ROLE_CAPABILITY_BUNDLES.other).not.toContain(capability);
+  });
+
   test('requires CSRF validation for every Codex mutation and sends the token from the browser', () => {
     const mutationRoutes = routeSource
       .split('\n')
@@ -35,6 +44,7 @@ describe('Codex Runpod provider security wiring', () => {
       expect(route).toContain('csrf.requireToken');
     });
     expect(clientSource).toContain("'X-CSRF-Token': bootstrap.csrfToken");
+    expect(routeSource).toContain("router.post('/api/turns/:turnId/messages', additionalMessageLimiter, csrf.requireToken");
   });
 
   test('marks authenticated Codex responses private and non-cacheable', () => {

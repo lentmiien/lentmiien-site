@@ -36,6 +36,8 @@ jest.mock('../../services/appSettingsService', () => ({
 }));
 
 const CodexEvent = require('../../models/codex_event');
+const CodexTurn = require('../../models/codex_turn');
+const CodexTurnMessage = require('../../models/codex_turn_message');
 const CodexWorkspaceLock = require('../../models/codex_workspace_lock');
 const RunpodPod = require('../../models/runpod_pod');
 const Role = require('../../models/role');
@@ -271,6 +273,215 @@ function createEventQuery(events) {
   return query;
 }
 
+function createLeanQuery(value) {
+  return {
+    lean: jest.fn().mockReturnThis(),
+    exec: jest.fn().mockResolvedValue(value),
+  };
+}
+
+describe('codexToolService.queueAdditionalTurnMessage', () => {
+  const owner = { _id: 'user-1', name: 'Owner', type_user: 'user' };
+  const runningTurn = {
+    _id: 'turn-1',
+    sessionId: 'session-1',
+    workspaceId: 'workspace-1',
+    status: 'running',
+    additionalMessageCount: 0,
+    cancelRequestedAt: null,
+    createdBy: { id: 'user-1', name: 'Owner' },
+  };
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('queues a bounded owner message and reserves one slot atomically', async () => {
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery(runningTurn));
+    const reserveQuery = { exec: jest.fn().mockResolvedValue({ ...runningTurn, additionalMessageCount: 1 }) };
+    jest.spyOn(CodexTurn, 'findOneAndUpdate').mockReturnValue(reserveQuery);
+    const queuedAt = new Date('2026-09-03T10:00:00.000Z');
+    jest.spyOn(CodexTurnMessage, 'create').mockResolvedValue({
+      _id: 'message-1',
+      status: 'queued',
+      queuedAt,
+    });
+    jest.spyOn(CodexTurn, 'exists').mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ _id: 'turn-1' }),
+    });
+
+    await expect(codexToolService.queueAdditionalTurnMessage(
+      'turn-1',
+      { message: '  Check the forgotten edge case.  ' },
+      owner
+    )).resolves.toEqual({
+      accepted: true,
+      message: { id: 'message-1', status: 'queued', queuedAt },
+    });
+
+    expect(CodexTurn.findOne).toHaveBeenCalledWith({
+      _id: 'turn-1',
+      'createdBy.id': 'user-1',
+    });
+    expect(CodexTurn.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: 'turn-1',
+        'createdBy.id': 'user-1',
+        status: 'running',
+        cancelRequestedAt: null,
+      }),
+      { $inc: { additionalMessageCount: 1 } },
+      { returnDocument: 'after' }
+    );
+    expect(CodexTurnMessage.create).toHaveBeenCalledWith(expect.objectContaining({
+      turnId: 'turn-1',
+      sessionId: 'session-1',
+      workspaceId: 'workspace-1',
+      message: 'Check the forgotten edge case.',
+      createdBy: { id: 'user-1', name: 'Owner' },
+    }));
+  });
+
+  test('fails closed when the principal lacks the steering capability', async () => {
+    await expect(codexToolService.queueAdditionalTurnMessage(
+      'turn-1',
+      { message: 'Try to steer' },
+      { _id: 'outsider-1', name: 'Outsider', type_user: 'other' }
+    )).rejects.toMatchObject({ statusCode: 403 });
+
+    expect(Role.findOne).toHaveBeenCalledTimes(2);
+  });
+
+  test('does not disclose a turn owned by another user', async () => {
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery(null));
+
+    await expect(codexToolService.queueAdditionalTurnMessage(
+      'turn-foreign',
+      { message: 'Try to steer' },
+      owner
+    )).rejects.toMatchObject({ statusCode: 404, message: 'Turn not found.' });
+
+    expect(CodexTurn.findOne).toHaveBeenCalledWith({
+      _id: 'turn-foreign',
+      'createdBy.id': 'user-1',
+    });
+  });
+
+  test('allows the declared admin object-scope override', async () => {
+    const foreignTurn = {
+      ...runningTurn,
+      createdBy: { id: 'someone-else', name: 'Someone else' },
+    };
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery(foreignTurn));
+    jest.spyOn(CodexTurn, 'findOneAndUpdate').mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ ...foreignTurn, additionalMessageCount: 1 }),
+    });
+    jest.spyOn(CodexTurnMessage, 'create').mockResolvedValue({
+      _id: 'message-admin',
+      status: 'queued',
+      queuedAt: new Date(),
+    });
+    jest.spyOn(CodexTurn, 'exists').mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ _id: 'turn-1' }),
+    });
+
+    await expect(codexToolService.queueAdditionalTurnMessage(
+      'turn-1',
+      { message: 'Administrator correction' },
+      { _id: 'admin-1', name: 'Admin', type_user: 'admin' }
+    )).resolves.toEqual(expect.objectContaining({ accepted: true }));
+
+    expect(CodexTurn.findOne).toHaveBeenCalledWith({ _id: 'turn-1' });
+  });
+
+  test('rejects terminal turns and malformed message objects', async () => {
+    jest.spyOn(CodexTurn, 'findOne')
+      .mockReturnValueOnce(createLeanQuery({ ...runningTurn, status: 'succeeded' }))
+      .mockReturnValueOnce(createLeanQuery(runningTurn));
+
+    await expect(codexToolService.queueAdditionalTurnMessage(
+      'turn-1',
+      { message: 'Too late' },
+      owner
+    )).rejects.toMatchObject({ statusCode: 409 });
+    await expect(codexToolService.queueAdditionalTurnMessage(
+      'turn-1',
+      { message: 'Valid text', ownerId: 'user-2' },
+      owner
+    )).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining('unsupported fields') });
+  });
+
+  test('rejects empty and oversized messages', async () => {
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery(runningTurn));
+
+    await expect(codexToolService.queueAdditionalTurnMessage(
+      'turn-1',
+      { message: '   ' },
+      owner
+    )).rejects.toMatchObject({ statusCode: 400, message: 'Message is required.' });
+    await expect(codexToolService.queueAdditionalTurnMessage(
+      'turn-1',
+      { message: 'x'.repeat(20001) },
+      owner
+    )).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining('too long') });
+  });
+
+  test('enforces the per-turn message limit before allocating more work', async () => {
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery({
+      ...runningTurn,
+      additionalMessageCount: 20,
+    }));
+    const reserveSpy = jest.spyOn(CodexTurn, 'findOneAndUpdate');
+
+    await expect(codexToolService.queueAdditionalTurnMessage(
+      'turn-1',
+      { message: 'One too many' },
+      owner
+    )).rejects.toMatchObject({ statusCode: 429 });
+
+    expect(reserveSpy).not.toHaveBeenCalled();
+  });
+
+  test('fails a newly queued message when the turn completes during submission', async () => {
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery(runningTurn));
+    jest.spyOn(CodexTurn, 'findOneAndUpdate').mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ ...runningTurn, additionalMessageCount: 1 }),
+    });
+    jest.spyOn(CodexTurnMessage, 'create').mockResolvedValue({
+      _id: 'message-raced',
+      status: 'queued',
+      queuedAt: new Date(),
+    });
+    jest.spyOn(CodexTurn, 'exists').mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+    jest.spyOn(CodexTurnMessage, 'findOneAndUpdate').mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ _id: 'message-raced', status: 'failed' }),
+    });
+    const decrementQuery = { exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }) };
+    jest.spyOn(CodexTurn, 'updateOne').mockReturnValue(decrementQuery);
+
+    await expect(codexToolService.queueAdditionalTurnMessage(
+      'turn-1',
+      { message: 'Late correction' },
+      owner
+    )).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'The Codex turn is no longer accepting additional messages.',
+    });
+
+    expect(CodexTurnMessage.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: 'message-raced', status: 'queued' },
+      expect.objectContaining({
+        $set: expect.objectContaining({ status: 'failed' }),
+      }),
+      { returnDocument: 'after' }
+    );
+    expect(CodexTurn.updateOne).toHaveBeenCalledWith(
+      { _id: 'turn-1', additionalMessageCount: { $gt: 0 } },
+      { $inc: { additionalMessageCount: -1 } }
+    );
+  });
+});
+
 describe('codexToolService.listTurnEvents', () => {
   beforeEach(() => {
     CodexEvent.find.mockReset();
@@ -305,6 +516,38 @@ describe('codexToolService.listTurnEvents', () => {
       seq: { $gt: 5 },
     });
     expect(query.limit).toHaveBeenCalledWith(25);
+  });
+
+  test('limits user-message details to the authenticated turn owner', async () => {
+    const query = createEventQuery([]);
+    CodexEvent.find.mockReturnValue(query);
+
+    await codexToolService.listTurnEvents('turn-1', {
+      user: { _id: 'user-1', type_user: 'user' },
+    });
+
+    expect(CodexEvent.find).toHaveBeenCalledWith({
+      turnId: 'turn-1',
+      seq: { $gt: 0 },
+      $or: [
+        { 'payload.item.type': { $ne: 'user_message' } },
+        { 'payload.ownerId': 'user-1' },
+      ],
+    });
+  });
+
+  test('lets administrators read all turn details', async () => {
+    const query = createEventQuery([]);
+    CodexEvent.find.mockReturnValue(query);
+
+    await codexToolService.listTurnEvents('turn-1', {
+      user: { _id: 'admin-1', type_user: 'admin' },
+    });
+
+    expect(CodexEvent.find).toHaveBeenCalledWith({
+      turnId: 'turn-1',
+      seq: { $gt: 0 },
+    });
   });
 });
 

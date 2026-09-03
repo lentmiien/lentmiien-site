@@ -182,6 +182,7 @@ const CodexWorkspace = require('./models/codex_workspace');
 const CodexSession = require('./models/codex_session');
 const CodexTurn = require('./models/codex_turn');
 const CodexEvent = require('./models/codex_event');
+const CodexTurnMessage = require('./models/codex_turn_message');
 const CodexWorkspaceLock = require('./models/codex_workspace_lock');
 const CodexTokenPrice = require('./models/codex_token_price');
 const CodexRequestProfile = require('./models/codex_request_profile');
@@ -335,6 +336,7 @@ module.exports = {
   CodexSession,
   CodexTurn,
   CodexEvent,
+  CodexTurnMessage,
   CodexWorkspaceLock,
   CodexTokenPrice,
   CodexRequestProfile,

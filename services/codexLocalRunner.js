@@ -1,9 +1,6 @@
-const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { randomUUID } = require('crypto');
-const { execFile, spawn } = require('child_process');
-const { promisify } = require('util');
+const { spawn } = require('child_process');
 
 const codexToolService = require('./codexToolService');
 const logger = require('../utils/logger');
@@ -11,13 +8,11 @@ const {
   buildRemoteShellCommand,
   buildSshArgs,
   getRemoteCodexInvocation,
-  getRemoteTempDir,
   getSshBinary,
   getSshDestination,
   quotePosixShellArg,
 } = require('./codexSsh');
 
-const execFileAsync = promisify(execFile);
 const PROFILE_ENV_SHELL_SCRIPT = [
   'set -a',
   '. "$1"',
@@ -27,6 +22,38 @@ const PROFILE_ENV_SHELL_SCRIPT = [
   'shift',
   'exec "$@"',
 ].join('; ');
+const APP_SERVER_CLIENT_INFO = Object.freeze({
+  name: 'lentmiien_site',
+  title: 'Lentmiien Codex worker',
+  version: '1.0.0',
+});
+const OPTED_OUT_NOTIFICATION_METHODS = Object.freeze([
+  'item/agentMessage/delta',
+  'item/commandExecution/outputDelta',
+  'item/plan/delta',
+  'item/reasoning/summaryPartAdded',
+  'item/reasoning/summaryTextDelta',
+  'item/reasoning/textDelta',
+  'turn/diff/updated',
+]);
+const ITEM_TYPE_MAP = Object.freeze({
+  agentMessage: 'agent_message',
+  collabAgentToolCall: 'collab_agent_tool_call',
+  commandExecution: 'command_execution',
+  contextCompaction: 'context_compaction',
+  dynamicToolCall: 'dynamic_tool_call',
+  fileChange: 'file_change',
+  functionCallOutput: 'function_call_output',
+  imageGeneration: 'image_generation',
+  imageView: 'image_view',
+  mcpToolCall: 'mcp_tool_call',
+  plan: 'reasoning',
+  reasoning: 'reasoning',
+  sleep: 'sleep',
+  subAgentActivity: 'sub_agent_activity',
+  userMessage: 'user_message',
+  webSearch: 'web_search',
+});
 
 function clipText(value, maxLength) {
   const text = String(value || '');
@@ -36,78 +63,8 @@ function clipText(value, maxLength) {
   return `${text.slice(0, maxLength - 18)}\n[output truncated]`;
 }
 
-function appendJsonTextFragments(value, fragments) {
-  if (!value || typeof value !== 'object') {
-    return;
-  }
-  if (typeof value.text === 'string' && value.text.trim()) {
-    fragments.push(value.text);
-  }
-  if (typeof value.content === 'string' && value.content.trim()) {
-    fragments.push(value.content);
-  }
-  if (Array.isArray(value.content)) {
-    value.content.forEach((entry) => appendJsonTextFragments(entry, fragments));
-  }
-  if (value.message) {
-    appendJsonTextFragments(value.message, fragments);
-  }
-}
-
-function extractAssistantText(event) {
-  const type = event && (event.type || event.event || event.payload?.type);
-  if (!String(type || '').includes('agent') && !String(type || '').includes('assistant')) {
-    return '';
-  }
-  const fragments = [];
-  appendJsonTextFragments(event.payload || event, fragments);
-  return fragments.join('\n').trim();
-}
-
-function extractCodexThreadId(event) {
-  if (!event || typeof event !== 'object') {
-    return '';
-  }
-  const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
-  if (event.type === 'session_meta') {
-    return String(payload.session_id || payload.id || event.session_id || event.id || '').trim();
-  }
-  return String(
-    payload.session_id ||
-    payload.codex_session_id ||
-    payload.thread_id ||
-    payload.conversation_id ||
-    event.session_id ||
-    event.codex_session_id ||
-    event.thread_id ||
-    event.conversation_id ||
-    ''
-  ).trim();
-}
-
-function extractUsage(event) {
-  if (!event || typeof event !== 'object') {
-    return null;
-  }
-  const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
-  return event.usage || payload.usage || payload.token_usage || null;
-}
-
 function isRemoteSshTarget(target) {
   return target && target.type === 'remote-ssh-linux';
-}
-
-function createLocalOutputPath(turnId) {
-  return path.join(
-    path.resolve(__dirname, '..', 'tmp_data'),
-    `codex-last-message-${turnId}-${randomUUID()}.txt`
-  );
-}
-
-function createRemoteOutputPath(target, turnId) {
-  const tempDir = getRemoteTempDir(target && target.connection);
-  const trimmedTempDir = tempDir.endsWith('/') && tempDir !== '/' ? tempDir.slice(0, -1) : tempDir;
-  return `${trimmedTempDir}/codex-last-message-${turnId}-${randomUUID()}.txt`;
 }
 
 function normalizeProfileEnvironmentFile(value) {
@@ -151,54 +108,149 @@ function buildProfileEnvironmentShellScript(commandText, environmentFileExpressi
   ].join('; ');
 }
 
-function buildCodexArgs({ turn, session, workspace, outputPath, ollamaProfile }) {
+function getTurnLaunchSettings(turn, ollamaProfile) {
   const modelProvider = codexToolService.getTurnModelProvider(turn);
   const providerProfile = codexToolService.getModelProviderCodexProfile(modelProvider);
   const effectiveProfile = providerProfile || (modelProvider === 'ollama'
     ? (ollamaProfile || turn.profile || '')
     : (turn.profile || ''));
-  const args = [
-    'exec',
-    '--json',
-    '--color',
-    'never',
-    '--cd',
-    workspace.rootPath,
-    '-o',
-    outputPath,
-  ];
+  return {
+    effectiveProfile,
+    model: providerProfile ? '' : String(turn.model || ''),
+    modelProvider,
+    reasoningEffort: providerProfile ? '' : String(turn.reasoningEffort || ''),
+  };
+}
 
-  if (modelProvider === 'ollama') {
+function buildAppServerArgs({ turn, workspace, ollamaProfile }) {
+  const settings = getTurnLaunchSettings(turn, ollamaProfile);
+  const args = [];
+
+  if (settings.modelProvider === 'ollama') {
     args.push('--oss');
   }
-  if (turn.model && !providerProfile) {
-    args.push('-m', turn.model);
+  if (settings.model) {
+    args.push('-m', settings.model);
   }
-  if (effectiveProfile) {
-    args.push('-p', effectiveProfile);
+  if (settings.effectiveProfile) {
+    args.push('-p', settings.effectiveProfile);
   }
-  if (turn.reasoningEffort && !providerProfile) {
-    args.push('-c', `model_reasoning_effort="${turn.reasoningEffort}"`);
+  if (settings.reasoningEffort) {
+    args.push('-c', `model_reasoning_effort="${settings.reasoningEffort}"`);
   }
+  args.push('-C', workspace.rootPath);
   if (turn.permissionMode === 'yolo') {
     args.push('--dangerously-bypass-approvals-and-sandbox');
   } else {
     args.push('--sandbox', turn.permissionMode || 'read-only');
   }
+  // Stdio is App Server's default transport. Some Codex builds advertise
+  // --stdio in help but reject the redundant flag, so rely on the default.
+  args.push('app-server');
 
-  const isFollowup = String(turn.kind || '').startsWith('followup_');
-  if (isFollowup) {
-    args.push('resume', session.codexThreadId, '-');
-  } else {
-    args.push('-');
+  return { args, settings };
+}
+
+function sandboxModeForTurn(turn) {
+  return turn.permissionMode === 'yolo'
+    ? 'danger-full-access'
+    : (turn.permissionMode || 'read-only');
+}
+
+function textFromUserContent(content) {
+  return (Array.isArray(content) ? content : [])
+    .filter((entry) => entry && entry.type === 'text')
+    .map((entry) => String(entry.text || ''))
+    .filter(Boolean)
+    .join('\n');
+}
+
+function normalizeAppServerItem(item) {
+  if (!item || typeof item !== 'object') {
+    return item;
   }
+  const normalizedType = ITEM_TYPE_MAP[item.type] || String(item.type || 'item');
+  const normalized = { ...item, type: normalizedType };
 
-  return { args, isFollowup, effectiveProfile };
+  if (item.type === 'userMessage') {
+    normalized.text = textFromUserContent(item.content);
+  } else if (item.type === 'reasoning') {
+    normalized.text = [...(item.summary || []), ...(item.content || [])]
+      .map((entry) => String(entry || ''))
+      .filter(Boolean)
+      .join('\n\n');
+  } else if (item.type === 'plan') {
+    normalized.text = String(item.text || '');
+  }
+  return normalized;
+}
+
+function normalizePlanPayload(params) {
+  return {
+    ...params,
+    item: {
+      type: 'todo_list',
+      items: (Array.isArray(params?.plan) ? params.plan : []).map((entry) => ({
+        text: String(entry?.step || ''),
+        completed: entry?.status === 'completed',
+      })),
+    },
+  };
+}
+
+function slimTurn(turn) {
+  if (!turn || typeof turn !== 'object') {
+    return turn || {};
+  }
+  return {
+    id: turn.id || '',
+    status: turn.status || '',
+    startedAt: turn.startedAt ?? null,
+    completedAt: turn.completedAt ?? null,
+    durationMs: turn.durationMs ?? null,
+    error: turn.error || null,
+  };
+}
+
+function normalizeNotificationPayload(method, params) {
+  const payload = params && typeof params === 'object' ? params : {};
+  if ((method === 'item/completed' || method === 'item/started') && payload.item) {
+    return { ...payload, item: normalizeAppServerItem(payload.item) };
+  }
+  if (method === 'turn/plan/updated') {
+    return normalizePlanPayload(payload);
+  }
+  if (method === 'turn/completed' || method === 'turn/started') {
+    return { ...payload, turn: slimTurn(payload.turn) };
+  }
+  return payload;
+}
+
+function eventTypeFromMethod(method) {
+  return String(method || 'codex/event').replaceAll('/', '.');
+}
+
+function tokenBreakdown(value) {
+  const usage = value && typeof value === 'object' ? value : {};
+  return {
+    input_tokens: Number(usage.inputTokens) || 0,
+    cached_input_tokens: Number(usage.cachedInputTokens) || 0,
+    output_tokens: Number(usage.outputTokens) || 0,
+    reasoning_output_tokens: Number(usage.reasoningOutputTokens) || 0,
+    total_tokens: Number(usage.totalTokens) || 0,
+  };
+}
+
+function createProtocolError(method, rpcError) {
+  const error = new Error(`Codex app server rejected ${method}.`);
+  error.code = rpcError?.code || 'CODEX_RPC_ERROR';
+  return error;
 }
 
 class CodexLocalRunner {
   constructor(config = {}) {
     this.config = config;
+    this.activeRuns = new Map();
   }
 
   getConfig() {
@@ -211,20 +263,30 @@ class CodexLocalRunner {
   buildCommand({ turn, session, workspace, target }) {
     const config = this.getConfig();
     const remote = isRemoteSshTarget(target);
-    const modelProvider = codexToolService.getTurnModelProvider(turn);
-    const needsProfileEnvironment = codexToolService.modelProviderNeedsProfileEnvironment(modelProvider);
-    const outputPath = remote ? createRemoteOutputPath(target, turn._id) : createLocalOutputPath(turn._id);
-    const {
-      args: codexArgs,
-      isFollowup,
-      effectiveProfile,
-    } = buildCodexArgs({
+    const needsProfileEnvironment = codexToolService.modelProviderNeedsProfileEnvironment(
+      codexToolService.getTurnModelProvider(turn)
+    );
+    const { args: codexArgs, settings } = buildAppServerArgs({
       turn,
-      session,
       workspace,
-      outputPath,
       ollamaProfile: config.ollamaProfile,
     });
+    const isFollowup = String(turn.kind || '').startsWith('followup_');
+    const summary = {
+      binary: config.binaryPath,
+      args: codexArgs,
+      cwd: workspace.rootPath,
+      operation: 'app-server',
+      resume: isFollowup,
+      permissionMode: turn.permissionMode,
+      modelProvider: settings.modelProvider,
+      modelProviderLabel: codexToolService.getModelProviderLabel(settings.modelProvider),
+      profileEnvironmentFile: needsProfileEnvironment ? config.runpodProfileEnvFile : '',
+      oss: settings.modelProvider === 'ollama',
+      model: settings.model,
+      profile: settings.effectiveProfile,
+      reasoningEffort: settings.reasoningEffort,
+    };
 
     if (remote) {
       const connection = target.connection || {};
@@ -241,47 +303,23 @@ class CodexLocalRunner {
           quoteRemoteProfileEnvironmentFile(config.runpodProfileEnvFile)
         )
         : `exec ${codexCommandText}`;
-      const remoteCommand = buildRemoteShellCommand(
-        remoteScript,
-        executionConnection
-      );
+      const remoteCommand = buildRemoteShellCommand(remoteScript, executionConnection);
       const sshArgs = buildSshArgs(connection, remoteCommand);
-      const destination = getSshDestination(connection);
 
       return {
         binary: getSshBinary(connection),
         args: sshArgs,
         cwd: path.resolve(__dirname, '..'),
-        outputPath,
-        outputLocation: 'remote',
-        remoteRead: {
-          binary: getSshBinary(connection),
-          args: buildSshArgs(
-            connection,
-            buildRemoteShellCommand(
-              `if [ -f ${quotePosixShellArg(outputPath)} ]; then cat ${quotePosixShellArg(outputPath)}; rm -f ${quotePosixShellArg(outputPath)}; fi`,
-              connection
-            )
-          ),
-        },
         timeoutMs: config.timeoutMs,
+        settings,
         commandSummary: {
+          ...summary,
           binary: getSshBinary(connection),
           args: sshArgs,
-          cwd: workspace.rootPath,
           outputLocation: 'remote',
           remoteCodexCommand: remoteCodexInvocation,
-          sshDestination: destination,
+          sshDestination: getSshDestination(connection),
           targetType: target.type,
-          resume: isFollowup,
-          permissionMode: turn.permissionMode,
-          modelProvider,
-          modelProviderLabel: codexToolService.getModelProviderLabel(modelProvider),
-          profileEnvironmentFile: needsProfileEnvironment ? config.runpodProfileEnvFile : '',
-          oss: modelProvider === 'ollama',
-          model: turn.model || '',
-          profile: effectiveProfile,
-          reasoningEffort: turn.reasoningEffort || '',
         },
       };
     }
@@ -304,183 +342,357 @@ class CodexLocalRunner {
       binary: localLaunch.binary,
       args: localLaunch.args,
       cwd: workspace.rootPath,
-      outputPath,
-      outputLocation: 'local',
       timeoutMs: config.timeoutMs,
+      settings,
       commandSummary: {
-        binary: config.binaryPath,
-        args: codexArgs,
-        cwd: workspace.rootPath,
+        ...summary,
         outputLocation: 'local',
-        resume: isFollowup,
-        permissionMode: turn.permissionMode,
-        modelProvider,
-        modelProviderLabel: codexToolService.getModelProviderLabel(modelProvider),
-        profileEnvironmentFile: needsProfileEnvironment ? config.runpodProfileEnvFile : '',
-        oss: modelProvider === 'ollama',
-        model: turn.model || '',
-        profile: effectiveProfile,
-        reasoningEffort: turn.reasoningEffort || '',
+        targetType: target?.type || 'local',
       },
     };
   }
 
-  async readFinalResponse(command, assistantMessages) {
-    if (command.outputLocation === 'remote') {
-      try {
-        const result = await execFileAsync(command.remoteRead.binary, command.remoteRead.args, {
-          timeout: 15000,
-          maxBuffer: 1024 * 1024 * 5,
-        });
-        return String(result.stdout || '').trim();
-      } catch (_error) {
-        return assistantMessages.join('\n\n');
-      }
+  async sendAdditionalMessage({ turn, message, messageId }) {
+    const active = this.activeRuns.get(String(turn?._id || ''));
+    if (!active || !active.accepting || !active.threadId || !active.turnId) {
+      const unavailableError = new Error('Codex did not accept the additional message.');
+      unavailableError.code = 'TURN_NOT_STEERABLE';
+      throw unavailableError;
     }
 
     try {
-      return await fs.promises.readFile(command.outputPath, 'utf8');
-    } catch (_error) {
-      return assistantMessages.join('\n\n');
+      const result = await active.sendRequest('turn/steer', {
+        threadId: active.threadId,
+        expectedTurnId: active.turnId,
+        input: [{ type: 'text', text: String(message || '') }],
+        ...(messageId ? { clientUserMessageId: String(messageId) } : {}),
+      }, this.getConfig().additionalMessageTimeoutMs);
+      if (String(result?.turnId || '') !== active.turnId) {
+        throw createProtocolError('turn/steer', { code: 'TURN_ID_MISMATCH' });
+      }
+      return {
+        accepted: true,
+        commandSummary: {
+          operation: 'turn.steer',
+          transport: 'app-server-stdio',
+        },
+      };
+    } catch (error) {
+      const deliveryError = new Error('Codex did not accept the additional message.');
+      deliveryError.code = error?.code || 'CODEX_STEER_FAILED';
+      throw deliveryError;
     }
   }
 
-  async runTurn({ turn, session, workspace, target, onEvent, onCommand, isCancellationRequested }) {
+  async runTurn({
+    turn,
+    session,
+    workspace,
+    target,
+    onEvent,
+    onCommand,
+    onThreadId,
+    onTurnStarted,
+    isCancellationRequested,
+  }) {
     const command = this.buildCommand({ turn, session, workspace, target });
     const runnerConfig = this.getConfig();
     const completionExitGraceMs = Number.isFinite(runnerConfig.completionExitGraceMs)
       ? Math.max(1, runnerConfig.completionExitGraceMs)
       : 2000;
-    if (command.outputLocation !== 'remote') {
-      await fs.promises.mkdir(path.dirname(command.outputPath), { recursive: true });
-    }
+    const requestTimeoutMs = runnerConfig.additionalMessageTimeoutMs || 15000;
     if (typeof onCommand === 'function') {
       await onCommand(command.commandSummary);
     }
 
     const startedAt = Date.now();
-    const assistantMessages = [];
+    const runKey = String(turn._id);
     const stderrChunks = [];
     let stdoutRemainder = '';
     let stderrRemainder = '';
     let codexThreadId = '';
+    let codexTurnId = '';
+    let finalAssistantMessage = '';
     let usage = null;
     let timedOut = false;
     let cancelled = false;
     let childError = null;
-    let killTimer = null;
-    let cancelInterval = null;
+    let terminalTurn = null;
+    let childClosed = false;
     let timeoutHandle = null;
-    let completionExitTimer = null;
-    // Codex can finish authoritatively before its wrapper emits close.
-    let terminalCompletionSeen = false;
-    let completionGraceExpired = false;
-    let resolveCompletionGraceExpired;
-    const completionGraceExpiredPromise = new Promise((resolve) => {
-      resolveCompletionGraceExpired = resolve;
-    });
+    let cancelInterval = null;
+    let killTimer = null;
+    let interruptFallbackTimer = null;
+    let terminalFallbackTimer = null;
+    let requestSequence = 0;
     let streamChain = Promise.resolve();
     let pendingStreamTaskCount = 0;
-    let scheduleCompletionFallback = () => {};
-
-    const emit = async (event) => {
-      if (typeof onEvent === 'function') {
-        await onEvent(event);
-      }
-    };
-
-    const handleJsonLine = async (line) => {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        return;
-      }
-      try {
-        const parsed = JSON.parse(trimmed);
-        const eventType = parsed.type || parsed.event || parsed.payload?.type || 'codex.event';
-        const nextThreadId = extractCodexThreadId(parsed);
-        if (nextThreadId) {
-          codexThreadId = nextThreadId;
-        }
-        const nextUsage = extractUsage(parsed);
-        if (nextUsage) {
-          usage = nextUsage;
-        }
-        const isTerminalCompletion = eventType === 'turn.completed';
-        if (isTerminalCompletion) {
-          terminalCompletionSeen = true;
-          if (timeoutHandle) {
-            clearTimeout(timeoutHandle);
-            timeoutHandle = null;
-          }
-          if (cancelInterval) {
-            clearInterval(cancelInterval);
-            cancelInterval = null;
-          }
-          scheduleCompletionFallback();
-        }
-        const assistantText = extractAssistantText(parsed);
-        if (assistantText) {
-          assistantMessages.push(assistantText);
-        }
-        await emit({
-          stream: 'stdout-json',
-          eventType,
-          payload: parsed,
-          text: '',
-          severity: eventType === 'error' ? 'error' : 'info',
-        });
-      } catch (_error) {
-        await emit({
-          stream: 'stdout',
-          eventType: 'stdout.line',
-          text: clipText(line, this.getConfig().maxEventTextChars),
-          severity: 'info',
-        });
-      }
-    };
-
-    const handleStdoutChunk = async (chunk) => {
-      stdoutRemainder += chunk.toString('utf8');
-      const lines = stdoutRemainder.split(/\r?\n/);
-      stdoutRemainder = lines.pop() || '';
-      for (const line of lines) {
-        await handleJsonLine(line);
-      }
-    };
-
-    const handleStderrChunk = async (chunk) => {
-      stderrRemainder += chunk.toString('utf8');
-      stderrChunks.push(chunk.toString('utf8'));
-      const lines = stderrRemainder.split(/\r?\n/);
-      stderrRemainder = lines.pop() || '';
-      for (const line of lines) {
-        if (!line.trim()) {
-          continue;
-        }
-        await emit({
-          stream: 'stderr',
-          eventType: 'stderr.line',
-          text: clipText(line, this.getConfig().maxEventTextChars),
-          severity: 'warning',
-        });
-      }
-    };
-
-    const cleanupOperationalTimers = () => {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-      if (cancelInterval) clearInterval(cancelInterval);
-      if (killTimer) clearTimeout(killTimer);
-    };
-
-    const clearCompletionExitTimer = () => {
-      if (completionExitTimer) {
-        clearTimeout(completionExitTimer);
-        completionExitTimer = null;
-      }
-    };
+    const pendingRequests = new Map();
 
     return new Promise((resolve) => {
       let settled = false;
+      let finishing = false;
+      let child;
+      let terminalDeadlineExpired = false;
+      let resolveTerminalDeadline;
+      const terminalDeadline = new Promise((deadlineResolve) => {
+        resolveTerminalDeadline = deadlineResolve;
+      });
+
+      const emit = async (event) => {
+        if (typeof onEvent === 'function') {
+          await onEvent(event);
+        }
+      };
+
+      const clearRequest = (id) => {
+        const pending = pendingRequests.get(String(id));
+        if (!pending) {
+          return null;
+        }
+        pendingRequests.delete(String(id));
+        clearTimeout(pending.timer);
+        return pending;
+      };
+
+      const writeMessage = (message) => {
+        if (!child?.stdin || child.stdin.destroyed || child.stdin.writableEnded) {
+          throw new Error('Codex app server input is unavailable.');
+        }
+        child.stdin.write(`${JSON.stringify(message)}\n`);
+      };
+
+      const sendRequest = (method, params, timeoutMs = requestTimeoutMs) => {
+        requestSequence += 1;
+        const id = requestSequence;
+        return new Promise((requestResolve, requestReject) => {
+          const timer = setTimeout(() => {
+            const pending = clearRequest(id);
+            if (!pending) {
+              return;
+            }
+            const error = new Error(`Codex app server did not respond to ${method}.`);
+            error.code = 'CODEX_RPC_TIMEOUT';
+            requestReject(error);
+          }, timeoutMs);
+          if (timer.unref) {
+            timer.unref();
+          }
+          pendingRequests.set(String(id), {
+            method,
+            reject: requestReject,
+            resolve: requestResolve,
+            timer,
+          });
+          try {
+            writeMessage({ method, id, params });
+          } catch (error) {
+            clearRequest(id);
+            requestReject(error);
+          }
+        });
+      };
+
+      const sendNotification = (method, params = {}) => {
+        writeMessage({ method, params });
+      };
+
+      const reportThreadId = async (threadId) => {
+        const nextThreadId = String(threadId || '').trim();
+        if (!nextThreadId || nextThreadId === codexThreadId) {
+          return;
+        }
+        codexThreadId = nextThreadId;
+        if (typeof onThreadId === 'function') {
+          await onThreadId(nextThreadId);
+        }
+      };
+
+      const reportTurnStarted = async (turnId) => {
+        const nextTurnId = String(turnId || '').trim();
+        if (!nextTurnId) {
+          return;
+        }
+        if (nextTurnId === codexTurnId && this.activeRuns.has(runKey)) {
+          return;
+        }
+        codexTurnId = nextTurnId;
+        const active = {
+          accepting: true,
+          sendRequest,
+          threadId: codexThreadId,
+          turnId: codexTurnId,
+        };
+        this.activeRuns.set(runKey, active);
+        if (typeof onTurnStarted === 'function') {
+          await onTurnStarted({ threadId: codexThreadId, turnId: codexTurnId });
+        }
+      };
+
+      const captureAssistantMessage = (item) => {
+        if (item?.type !== 'agentMessage' || !String(item.text || '').trim()) {
+          return;
+        }
+        const text = String(item.text).trim();
+        if (item.phase === 'final_answer' || !finalAssistantMessage || item.phase !== 'commentary') {
+          finalAssistantMessage = text;
+        }
+      };
+
+      const scheduleTerminalFallback = () => {
+        if (terminalFallbackTimer || terminalDeadlineExpired) {
+          return;
+        }
+        terminalFallbackTimer = setTimeout(() => {
+          terminalFallbackTimer = null;
+          terminalDeadlineExpired = true;
+          resolveTerminalDeadline();
+          finish({
+            exitCode: child?.exitCode ?? null,
+            exitSignal: child?.signalCode || '',
+          }).catch(() => {});
+        }, completionExitGraceMs);
+      };
+
+      const handleNotification = async (method, params) => {
+        if (method === 'thread/started') {
+          await reportThreadId(params?.thread?.id);
+        }
+        if (method === 'turn/started') {
+          await reportThreadId(params?.threadId);
+          if (!codexTurnId) {
+            await reportTurnStarted(params?.turn?.id);
+          }
+        }
+        if (method === 'thread/tokenUsage/updated') {
+          const total = params?.tokenUsage?.total;
+          if (total && typeof total === 'object') {
+            // Preserve Codex's cumulative thread total. The service layer
+            // derives per-turn deltas for resumed threads when presenting cost.
+            usage = tokenBreakdown(total);
+          }
+        }
+        if (method === 'item/completed') {
+          captureAssistantMessage(params?.item);
+          if (params?.item?.type === 'userMessage') {
+            return;
+          }
+        }
+        if (method === 'item/started' || OPTED_OUT_NOTIFICATION_METHODS.includes(method)) {
+          return;
+        }
+        if (method === 'turn/completed') {
+          terminalTurn = params?.turn || {};
+          const finalItem = Array.isArray(terminalTurn.items)
+            ? terminalTurn.items.findLast((item) => item?.type === 'agentMessage')
+            : null;
+          captureAssistantMessage(finalItem);
+          const active = this.activeRuns.get(runKey);
+          if (active) {
+            active.accepting = false;
+          }
+          scheduleTerminalFallback();
+        }
+
+        const eventType = eventTypeFromMethod(method);
+        const terminalFailed = method === 'turn/completed' && params?.turn?.status === 'failed';
+        const eventIsWarning = /(?:error|failed|warning)/i.test(method);
+        await emit({
+          stream: 'stdout-json',
+          eventType,
+          payload: normalizeNotificationPayload(method, params),
+          text: '',
+          severity: terminalFailed ? 'error' : (eventIsWarning ? 'warning' : 'info'),
+        });
+
+        if (method === 'turn/completed') {
+          setImmediate(() => {
+            finish({
+              exitCode: child?.exitCode ?? null,
+              exitSignal: child?.signalCode || '',
+            }).catch(() => {});
+          });
+        }
+      };
+
+      const handleJsonLine = async (line) => {
+        const trimmed = String(line || '').trim();
+        if (!trimmed) {
+          return;
+        }
+        let parsed;
+        try {
+          parsed = JSON.parse(trimmed);
+        } catch (_error) {
+          await emit({
+            stream: 'stdout',
+            eventType: 'stdout.line',
+            text: clipText(line, runnerConfig.maxEventTextChars),
+            severity: 'info',
+          });
+          return;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(parsed, 'id') && !parsed.method) {
+          const pending = clearRequest(parsed.id);
+          if (!pending) {
+            return;
+          }
+          if (parsed.error) {
+            pending.reject(createProtocolError(pending.method, parsed.error));
+          } else {
+            pending.resolve(parsed.result || {});
+          }
+          return;
+        }
+
+        if (parsed.method && Object.prototype.hasOwnProperty.call(parsed, 'id')) {
+          await emit({
+            stream: 'stdout-json',
+            eventType: 'app_server.unsupported_request',
+            payload: { method: parsed.method },
+            text: 'Codex requested an interactive response that this worker does not support.',
+            severity: 'warning',
+          });
+          writeMessage({
+            id: parsed.id,
+            error: { code: -32601, message: 'Unsupported client request.' },
+          });
+          return;
+        }
+
+        if (parsed.method) {
+          await handleNotification(parsed.method, parsed.params || {});
+        }
+      };
+
+      const handleStdoutChunk = async (chunk) => {
+        stdoutRemainder += chunk.toString('utf8');
+        const lines = stdoutRemainder.split(/\r?\n/);
+        stdoutRemainder = lines.pop() || '';
+        for (const line of lines) {
+          await handleJsonLine(line);
+        }
+      };
+
+      const handleStderrChunk = async (chunk) => {
+        const text = chunk.toString('utf8');
+        stderrRemainder += text;
+        stderrChunks.push(text);
+        const lines = stderrRemainder.split(/\r?\n/);
+        stderrRemainder = lines.pop() || '';
+        for (const line of lines) {
+          if (line.trim()) {
+            await emit({
+              stream: 'stderr',
+              eventType: 'stderr.line',
+              text: clipText(line, runnerConfig.maxEventTextChars),
+              severity: 'warning',
+            });
+          }
+        }
+      };
+
       const enqueueStreamWork = (task) => {
         pendingStreamTaskCount += 1;
         streamChain = streamChain
@@ -492,174 +704,167 @@ class CodexLocalRunner {
             pendingStreamTaskCount -= 1;
           });
       };
-      const finish = async (result) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        cleanupOperationalTimers();
 
-        let finalStreamEventPending = false;
-        const drainStreamWork = async () => {
-          await streamChain;
-          if (stdoutRemainder.trim()) {
-            const finalStdoutLine = stdoutRemainder;
-            stdoutRemainder = '';
-            finalStreamEventPending = true;
-            try {
-              await handleJsonLine(finalStdoutLine);
-            } finally {
-              finalStreamEventPending = false;
-            }
-          }
-          if (stderrRemainder.trim()) {
-            const finalStderrLine = stderrRemainder;
-            stderrRemainder = '';
-            finalStreamEventPending = true;
-            try {
-              await emit({
-                stream: 'stderr',
-                eventType: 'stderr.line',
-                text: clipText(finalStderrLine, this.getConfig().maxEventTextChars),
-                severity: 'warning',
-              });
-            } finally {
-              finalStreamEventPending = false;
-            }
-          }
-        };
-        // Do not let a completed turn remain running because its final event write never settles.
-        let streamDrained = await Promise.race([
-          drainStreamWork()
-            .then(() => true)
-            .catch((error) => {
-              childError = childError || error;
-              return true;
-            }),
-          completionGraceExpiredPromise.then(() => false),
-        ]);
-        if (!streamDrained && pendingStreamTaskCount === 0 && !finalStreamEventPending &&
-          !stdoutRemainder.trim() && !stderrRemainder.trim()) {
-          streamDrained = true;
-        }
-        clearCompletionExitTimer();
-        if (!streamDrained) {
-          logger.warning('Codex event stream did not drain after turn.completed; finalizing from the terminal event', {
-            category: 'codex_tool',
-            metadata: {
-              turnId: String(turn._id),
-              pendingStreamTaskCount,
-              finalStreamEventPending,
-              completionExitGraceMs,
-            },
-          }).catch(() => {});
-        }
-
-        let finalResponse = '';
-        try {
-          finalResponse = await this.readFinalResponse(command, assistantMessages);
-        } catch (error) {
-          childError = childError || error;
-          finalResponse = assistantMessages.join('\n\n');
-        }
-        if (command.outputLocation !== 'remote') {
-          fs.promises.unlink(command.outputPath).catch(() => {});
-        }
-
-        const durationMs = Date.now() - startedAt;
-        const stderrText = stderrChunks.join('').trim();
-        const status = terminalCompletionSeen
-          ? 'succeeded'
-          : cancelled
-            ? 'cancelled'
-            : timedOut
-              ? 'timed_out'
-              : result.exitCode === 0
-                ? 'succeeded'
-                : 'failed';
-        resolve({
-          ...result,
-          status,
-          finalResponse: String(finalResponse || '').trim(),
-          codexThreadId,
-          usage,
-          durationMs,
-          errorMessage: result.errorMessage || clipText(stderrText || childError?.message || '', 1800),
-          commandSummary: command.commandSummary,
+      const rejectPendingRequests = () => {
+        pendingRequests.forEach((pending) => {
+          clearTimeout(pending.timer);
+          const error = new Error('Codex app server connection closed.');
+          error.code = 'CODEX_RPC_CLOSED';
+          pending.reject(error);
         });
+        pendingRequests.clear();
       };
 
-      const child = spawn(command.binary, command.args, {
-        cwd: command.cwd,
-        env: process.env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-
-      scheduleCompletionFallback = () => {
-        if (completionGraceExpired || completionExitTimer) {
+      const closeChild = () => {
+        if (!child || childClosed) {
           return;
         }
-        completionExitTimer = setTimeout(() => {
-          completionExitTimer = null;
-          completionGraceExpired = true;
-          resolveCompletionGraceExpired();
-          if (settled) {
-            return;
+        try {
+          if (!child.stdin.destroyed && !child.stdin.writableEnded) {
+            child.stdin.end();
           }
-          logger.warning('Codex process did not exit after turn.completed; finalizing from the terminal event', {
-            category: 'codex_tool',
-            metadata: {
-              turnId: String(turn._id),
-              processId: child.pid || null,
-              outputLocation: command.outputLocation,
-              completionExitGraceMs,
-            },
-          }).catch(() => {});
-          if (child.exitCode === null && child.signalCode === null) {
-            try {
-              child.kill('SIGKILL');
-            } catch (_error) {
-              // The process may already be gone even when Node has not emitted close.
-            }
-          }
-          finish({
-            exitCode: child.exitCode,
-            exitSignal: child.signalCode || '',
-            errorMessage: childError ? childError.message : '',
-          }).catch(() => {});
-        }, completionExitGraceMs);
-      };
-
-      const terminate = (reason) => {
-        if (reason === 'timeout') {
-          timedOut = true;
+        } catch (_error) {
+          // The transport may already be closed.
         }
-        if (reason === 'cancelled') {
-          cancelled = true;
-        }
-        if (!child.killed) {
+        if (child.exitCode === null && child.signalCode === null && !child.killed) {
           child.kill('SIGTERM');
           killTimer = setTimeout(() => {
             if (child.exitCode === null && child.signalCode === null) {
               child.kill('SIGKILL');
             }
           }, 10000);
-          if (killTimer.unref) killTimer.unref();
+          if (killTimer.unref) {
+            killTimer.unref();
+          }
         }
       };
 
-      timeoutHandle = setTimeout(() => {
-        terminate('timeout');
-      }, command.timeoutMs);
-      if (timeoutHandle.unref) timeoutHandle.unref();
+      const drainStream = async () => {
+        if (terminalDeadlineExpired) {
+          return false;
+        }
+        const drain = streamChain.then(() => true).catch((error) => {
+          childError = childError || error;
+          return true;
+        });
+        if (terminalTurn) {
+          return Promise.race([drain, terminalDeadline.then(() => false)]);
+        }
+        return Promise.race([
+          drain,
+          new Promise((drainResolve) => {
+            const timer = setTimeout(() => drainResolve(false), completionExitGraceMs);
+            if (timer.unref) timer.unref();
+          }),
+        ]);
+      };
 
+      const finish = async (result = {}) => {
+        if (settled || finishing) {
+          return;
+        }
+        finishing = true;
+        settled = true;
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (cancelInterval) clearInterval(cancelInterval);
+        if (terminalFallbackTimer) clearTimeout(terminalFallbackTimer);
+        if (killTimer) clearTimeout(killTimer);
+        if (interruptFallbackTimer) clearTimeout(interruptFallbackTimer);
+        const active = this.activeRuns.get(runKey);
+        if (active) active.accepting = false;
+        this.activeRuns.delete(runKey);
+
+        const streamDrained = await drainStream();
+        if (!streamDrained && terminalTurn) {
+          Promise.resolve(logger.warning(
+            'Codex event stream did not drain after turn.completed; finalizing from the terminal event',
+            {
+              category: 'codex_tool',
+              metadata: {
+                turnId: runKey,
+                pendingStreamTaskCount,
+                completionExitGraceMs,
+              },
+            }
+          )).catch(() => {});
+        }
+
+        rejectPendingRequests();
+        closeChild();
+        const terminalStatus = terminalTurn?.status || '';
+        const status = timedOut
+          ? 'timed_out'
+          : cancelled || terminalStatus === 'interrupted'
+            ? 'cancelled'
+            : terminalStatus === 'completed'
+              ? 'succeeded'
+              : 'failed';
+        const stderrText = stderrChunks.join('').trim();
+        const terminalError = terminalTurn?.error?.message || '';
+        resolve({
+          exitCode: result.exitCode ?? child?.exitCode ?? null,
+          exitSignal: result.exitSignal || child?.signalCode || '',
+          status,
+          finalResponse: finalAssistantMessage,
+          codexThreadId,
+          usage,
+          durationMs: Date.now() - startedAt,
+          errorMessage: status === 'succeeded'
+            ? ''
+            : clipText(terminalError || stderrText || childError?.message || '', 1800),
+          commandSummary: command.commandSummary,
+        });
+      };
+
+      const requestInterrupt = (reason) => {
+        if (reason === 'timeout') timedOut = true;
+        if (reason === 'cancelled') cancelled = true;
+        const active = this.activeRuns.get(runKey);
+        if (active) active.accepting = false;
+        if (codexThreadId && codexTurnId && !childClosed) {
+          sendRequest('turn/interrupt', {
+            threadId: codexThreadId,
+            turnId: codexTurnId,
+          }, requestTimeoutMs).catch((error) => {
+            childError = childError || error;
+            closeChild();
+          });
+          interruptFallbackTimer = setTimeout(() => {
+            closeChild();
+            finish({
+              exitCode: child?.exitCode ?? null,
+              exitSignal: child?.signalCode || '',
+            }).catch(() => {});
+          }, 10000);
+          if (interruptFallbackTimer.unref) {
+            interruptFallbackTimer.unref();
+          }
+          return;
+        }
+        closeChild();
+      };
+
+      try {
+        child = spawn(command.binary, command.args, {
+          cwd: command.cwd,
+          env: process.env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch (error) {
+        childError = error;
+        finish({ exitCode: null, exitSignal: '' }).catch(() => {});
+        return;
+      }
+
+      timeoutHandle = setTimeout(() => requestInterrupt('timeout'), command.timeoutMs);
+      if (timeoutHandle.unref) timeoutHandle.unref();
       cancelInterval = setInterval(async () => {
-        if (cancelled || timedOut) {
+        if (cancelled || timedOut || terminalTurn) {
           return;
         }
         try {
           if (typeof isCancellationRequested === 'function' && await isCancellationRequested()) {
-            terminate('cancelled');
+            requestInterrupt('cancelled');
           }
         } catch (_error) {
           // A failed cancellation poll should not interrupt the Codex process.
@@ -667,28 +872,69 @@ class CodexLocalRunner {
       }, 2000);
       if (cancelInterval.unref) cancelInterval.unref();
 
-      child.stdout.on('data', (chunk) => {
-        enqueueStreamWork(() => handleStdoutChunk(chunk));
-      });
-      child.stderr.on('data', (chunk) => {
-        enqueueStreamWork(() => handleStderrChunk(chunk));
-      });
+      child.stdout.on('data', (chunk) => enqueueStreamWork(() => handleStdoutChunk(chunk)));
+      child.stderr.on('data', (chunk) => enqueueStreamWork(() => handleStderrChunk(chunk)));
+      if (typeof child.stdin.on === 'function') {
+        child.stdin.on('error', (error) => {
+          childError = childError || error;
+        });
+      }
       child.on('error', (error) => {
-        childError = error;
+        childError = childError || error;
       });
       child.on('close', (exitCode, signal) => {
-        finish({
-          exitCode,
-          exitSignal: signal || '',
-          errorMessage: childError ? childError.message : '',
-        }).catch(() => {});
+        childClosed = true;
+        finish({ exitCode, exitSignal: signal || '' }).catch(() => {});
       });
 
-      try {
-        child.stdin.end(`${turn.prompt}\n`);
-      } catch (error) {
+      const startProtocol = async () => {
+        await sendRequest('initialize', {
+          clientInfo: APP_SERVER_CLIENT_INFO,
+          capabilities: {
+            optOutNotificationMethods: OPTED_OUT_NOTIFICATION_METHODS,
+          },
+        });
+        sendNotification('initialized');
+
+        const threadParams = {
+          cwd: workspace.rootPath,
+          approvalPolicy: 'never',
+          sandbox: sandboxModeForTurn(turn),
+          ...(command.settings.model ? { model: command.settings.model } : {}),
+        };
+        const isFollowup = String(turn.kind || '').startsWith('followup_');
+        const threadResponse = isFollowup
+          ? await sendRequest('thread/resume', {
+            ...threadParams,
+            threadId: String(session?.codexThreadId || ''),
+            excludeTurns: true,
+          })
+          : await sendRequest('thread/start', threadParams);
+        await reportThreadId(threadResponse?.thread?.id);
+        if (!codexThreadId) {
+          throw new Error('Codex app server did not return a thread id.');
+        }
+
+        const turnResponse = await sendRequest('turn/start', {
+          threadId: codexThreadId,
+          input: [{ type: 'text', text: String(turn.prompt || '') }],
+          clientUserMessageId: runKey,
+          cwd: workspace.rootPath,
+          approvalPolicy: 'never',
+          ...(command.settings.model ? { model: command.settings.model } : {}),
+          ...(command.settings.reasoningEffort ? { effort: command.settings.reasoningEffort } : {}),
+        });
+        await reportTurnStarted(turnResponse?.turn?.id);
+        if (!codexTurnId) {
+          throw new Error('Codex app server did not return a turn id.');
+        }
+      };
+
+      startProtocol().catch((error) => {
         childError = childError || error;
-      }
+        finish({ exitCode: child?.exitCode ?? null, exitSignal: child?.signalCode || '' })
+          .catch(() => {});
+      });
     });
   }
 }

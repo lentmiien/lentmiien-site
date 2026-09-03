@@ -1,10 +1,21 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 
 const controller = require('../controllers/codexController');
 const { PRIVATE_NO_STORE, createSessionCsrf } = require('../middleware/sessionCsrf');
 
 const router = express.Router();
 const csrf = createSessionCsrf();
+const additionalMessageLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  handler: (_req, res) => res
+    .status(429)
+    .set('Cache-Control', PRIVATE_NO_STORE)
+    .json({ ok: false, error: 'Additional Codex messages can be submitted up to 30 times per minute.' }),
+});
 
 function requireAdmin(req, res, next) {
   if (req.user && req.user.type_user === 'admin') {
@@ -57,6 +68,7 @@ router.post('/api/sessions/:sessionId/turns', csrf.requireToken, controller.crea
 router.get('/api/turns/:turnId', controller.getTurn);
 router.post('/api/turns/:turnId/cancel', csrf.requireToken, controller.cancelTurn);
 router.post('/api/turns/:turnId/retry', csrf.requireToken, controller.retryTurn);
+router.post('/api/turns/:turnId/messages', additionalMessageLimiter, csrf.requireToken, controller.addTurnMessage);
 router.get('/api/turns/:turnId/events', controller.getTurnEvents);
 
 router.get('/api/queue', controller.getQueue);

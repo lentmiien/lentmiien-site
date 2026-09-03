@@ -1466,6 +1466,26 @@
   margin-top: 16px;
 }
 
+.codex-additional-message-panel > .codex-field-help {
+  margin: 0 0 10px;
+}
+
+.codex-additional-message-panel textarea {
+  min-height: 92px;
+}
+
+.codex-events[data-event-view-mode='focused'] .codex-event--user-message {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.codex-event__user-message {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
 .codex-turn-detail {
   display: grid;
   gap: 14px;

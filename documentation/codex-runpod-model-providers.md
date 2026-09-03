@@ -24,7 +24,7 @@ For a local Linux execution target, `~` resolves to the Codex worker account's h
 set -a
 . ~/.codex/lentmiien.env
 set +a
-exec codex exec --profile lentmiien-qwen ...
+exec codex --profile lentmiien-qwen app-server
 ```
 
 `set -a` makes ordinary `NAME=value` entries available to Codex even if the file does not use `export`. Restrict the file because it contains credentials:

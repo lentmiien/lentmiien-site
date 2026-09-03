@@ -1,6 +1,7 @@
 const path = require('path');
 const pug = require('pug');
 const {
+  canSubmitAdditionalMessage,
   filterPromptTemplatesByWorkspace,
   getPromptLengthState,
   selectErrorProcessEvents,
@@ -411,9 +412,10 @@ describe('Codex focused process details', () => {
       { seq: 3, payload: { item: { type: 'command_execution' } } },
       { seq: 4, payload: { item: { type: 'todo_list', items: [{ text: 'Current' }] } } },
       { seq: 5, payload: { item: { type: 'agent_message', text: 'Done' } } },
+      { seq: 6, payload: { item: { type: 'user_message', text: 'Also check tests' } } },
     ];
 
-    expect(selectFocusedProcessEvents(events).map((event) => event.seq)).toEqual([2, 5, 4]);
+    expect(selectFocusedProcessEvents(events).map((event) => event.seq)).toEqual([2, 5, 6, 4]);
   });
 
   test('recognizes focused event types from server presentation data', () => {
@@ -540,8 +542,71 @@ describe('Codex focused process details', () => {
     });
 
     expect(html).toContain('data-event-view-mode="focused" aria-pressed="true"');
-    expect(html).toContain('Agent messages, reasoning & todos');
+    expect(html).toContain('Messages, reasoning & todos');
     expect(html).toContain('data-event-view-mode="errors" aria-pressed="false"');
     expect(html).toContain('>Errors</button>');
+  });
+
+  test('renders the additional-message form only for an authorized active turn', () => {
+    const baseState = {
+      config: { maxPromptChars: 12345 },
+      session: { id: 'session-1', title: 'Session' },
+      workspace: { id: 'workspace-1', name: 'Workspace' },
+    };
+    const runningHtml = renderCodexView('turn', {
+      ...baseState,
+      turn: {
+        id: 'turn-running',
+        sequence: 1,
+        status: 'running',
+        prompt: 'Update the app',
+        tokenUsage: {},
+        costEstimate: {},
+        canAddMessage: true,
+      },
+    });
+    const terminalHtml = renderCodexView('turn', {
+      ...baseState,
+      turn: {
+        id: 'turn-complete',
+        sequence: 1,
+        status: 'succeeded',
+        prompt: 'Update the app',
+        tokenUsage: {},
+        costEstimate: {},
+        canAddMessage: true,
+      },
+    });
+    const queuedHtml = renderCodexView('turn', {
+      ...baseState,
+      turn: {
+        id: 'turn-queued',
+        sequence: 1,
+        status: 'queued',
+        prompt: 'Update the app',
+        tokenUsage: {},
+        costEstimate: {},
+        canAddMessage: true,
+      },
+    });
+
+    expect(runningHtml).toContain('id="codex-additional-message-form"');
+    expect(runningHtml).toContain('maxlength="12345"');
+    expect(runningHtml).toContain('data-additional-message-panel');
+    expect(queuedHtml).toContain('id="codex-additional-message-form"');
+    expect(queuedHtml).toContain('data-additional-message-panel hidden');
+    expect(terminalHtml).not.toContain('id="codex-additional-message-form"');
+  });
+
+  test('enables message submission only for authorized running turns', () => {
+    expect(canSubmitAdditionalMessage({ status: 'running', canAddMessage: true })).toBe(true);
+    expect(canSubmitAdditionalMessage({ status: 'queued', canAddMessage: true })).toBe(false);
+    expect(canSubmitAdditionalMessage({ status: 'succeeded', canAddMessage: true })).toBe(false);
+    expect(canSubmitAdditionalMessage({
+      status: 'running',
+      canAddMessage: true,
+      cancelRequestedAt: '2026-09-03T10:00:00.000Z',
+    })).toBe(false);
+    expect(canSubmitAdditionalMessage({ status: 'running', canAddMessage: false })).toBe(false);
   });
 });

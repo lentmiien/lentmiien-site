@@ -14,7 +14,14 @@ function createFakeChild() {
   child.pid = 12345;
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  child.stdin = { end: jest.fn() };
+  child.stdin = {
+    destroyed: false,
+    writableEnded: false,
+    write: jest.fn(() => true),
+    end: jest.fn(() => {
+      child.stdin.writableEnded = true;
+    }),
+  };
   child.killed = false;
   child.exitCode = null;
   child.signalCode = null;
@@ -25,100 +32,148 @@ function createFakeChild() {
   return child;
 }
 
-async function waitForSpawn() {
+function writtenMessages(child) {
+  return child.stdin.write.mock.calls.map(([line]) => JSON.parse(String(line).trim()));
+}
+
+async function waitForMessage(child, predicate) {
   const deadline = Date.now() + 2000;
   while (Date.now() < deadline) {
-    if (spawn.mock.calls.length > 0) {
-      return;
+    const message = writtenMessages(child).find(predicate);
+    if (message) {
+      return message;
     }
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
-  throw new Error('Codex runner did not spawn its child process.');
+  throw new Error('Expected Codex app-server message was not written.');
 }
 
-function createRunInput(onEvent) {
+function respond(child, request, result) {
+  child.stdout.emit('data', Buffer.from(`${JSON.stringify({ id: request.id, result })}\n`));
+}
+
+function rejectRequest(child, request, code = -32600) {
+  child.stdout.emit('data', Buffer.from(`${JSON.stringify({
+    id: request.id,
+    error: { code, message: 'Provider detail that must stay private.' },
+  })}\n`));
+}
+
+function notify(child, method, params) {
+  child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method, params })}\n`));
+}
+
+function createRunInput(overrides = {}) {
   return {
     turn: {
       _id: 'turn-lifecycle',
       kind: 'question',
       prompt: 'Answer the question.',
       permissionMode: 'read-only',
+      ...overrides.turn,
     },
-    session: {},
+    session: overrides.session || {},
     workspace: { rootPath: '/workspace/project' },
-    onEvent,
+    target: { type: 'local-linux' },
+    onEvent: overrides.onEvent || jest.fn().mockResolvedValue(),
+    onCommand: overrides.onCommand,
+    onThreadId: overrides.onThreadId,
+    onTurnStarted: overrides.onTurnStarted,
+    isCancellationRequested: overrides.isCancellationRequested,
   };
 }
 
-describe('CodexLocalRunner', () => {
-  test('builds a new-session exec command that reads prompt from stdin', () => {
-    const runner = new CodexLocalRunner({
-      binaryPath: 'codex-test',
-      timeoutMs: 60000,
-    });
+async function startAppServerTurn(runner, child, input, options = {}) {
+  const resultPromise = runner.runTurn(input);
+  const initialize = await waitForMessage(child, (message) => message.method === 'initialize');
+  respond(child, initialize, {
+    codexHome: '/home/test/.codex',
+    platformFamily: 'unix',
+    platformOs: 'linux',
+    userAgent: 'codex-test',
+  });
+  await waitForMessage(child, (message) => message.method === 'initialized');
+  const threadMethod = options.resume ? 'thread/resume' : 'thread/start';
+  const threadRequest = await waitForMessage(child, (message) => message.method === threadMethod);
+  respond(child, threadRequest, { thread: { id: options.threadId || 'thread-123' } });
+  const turnRequest = await waitForMessage(child, (message) => message.method === 'turn/start');
+  respond(child, turnRequest, {
+    turn: { id: options.turnId || 'codex-turn-123', status: 'inProgress', items: [] },
+  });
+  await waitForMessage(child, (message) => message.method === 'turn/start');
+  const deadline = Date.now() + 2000;
+  while (!runner.activeRuns.has(String(input.turn._id)) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  return { resultPromise, threadRequest, turnRequest };
+}
 
+describe('CodexLocalRunner', () => {
+  beforeEach(() => {
+    spawn.mockReset();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('builds a local app-server command that preserves turn settings', () => {
+    const runner = new CodexLocalRunner({ binaryPath: 'codex-test', timeoutMs: 60000 });
     const command = runner.buildCommand({
       turn: {
         _id: 'turn-1',
         kind: 'action',
-        model: '',
-        profile: '',
+        model: 'gpt-5.6-terra',
+        profile: 'local',
+        reasoningEffort: 'high',
         permissionMode: 'workspace-write',
       },
       session: {},
       workspace: { rootPath: '/workspace/project' },
+      target: { type: 'local-linux' },
     });
 
     expect(command.binary).toBe('codex-test');
     expect(command.args).toEqual(expect.arrayContaining([
-      'exec',
-      '--json',
-      '--cd',
-      '/workspace/project',
-      '--sandbox',
-      'workspace-write',
-      '-',
+      '-m', 'gpt-5.6-terra',
+      '-p', 'local',
+      '-C', '/workspace/project',
+      '--sandbox', 'workspace-write',
+      'app-server',
     ]));
-    expect(command.args[command.args.length - 1]).toBe('-');
-    expect(command.commandSummary.resume).toBe(false);
+    expect(command.args).not.toContain('exec');
+    expect(command.args).not.toContain('Answer the question.');
+    expect(command.commandSummary).toEqual(expect.objectContaining({
+      operation: 'app-server',
+      resume: false,
+      model: 'gpt-5.6-terra',
+      reasoningEffort: 'high',
+    }));
   });
 
-  test('builds a follow-up resume command with the stored Codex session id', () => {
-    const runner = new CodexLocalRunner({
-      binaryPath: 'codex-test',
-      timeoutMs: 60000,
-    });
-
+  test('marks a follow-up for thread resume without putting its thread id on the command line', () => {
+    const runner = new CodexLocalRunner({ binaryPath: 'codex-test', timeoutMs: 60000 });
     const command = runner.buildCommand({
       turn: {
         _id: 'turn-2',
         kind: 'followup_question',
-        model: 'gpt-5',
-        profile: 'local',
         permissionMode: 'read-only',
       },
-      session: { codexThreadId: 'codex-session-123' },
+      session: { codexThreadId: 'thread-private' },
       workspace: { rootPath: '/workspace/project' },
     });
 
-    expect(command.args).toEqual(expect.arrayContaining([
-      '-m',
-      'gpt-5',
-      '-p',
-      'local',
-      'resume',
-      'codex-session-123',
-      '-',
-    ]));
     expect(command.commandSummary.resume).toBe(true);
+    expect(command.args).toContain('app-server');
+    expect(command.args).not.toContain('thread-private');
   });
 
-  test('adds the Ollama OSS flags for a local-model turn', () => {
+  test('adds the configured Ollama profile and OSS flag', () => {
     const runner = new CodexLocalRunner({
       binaryPath: 'codex-test',
       timeoutMs: 60000,
+      ollamaProfile: 'local-qwen',
     });
-
     const command = runner.buildCommand({
       turn: {
         _id: 'turn-local',
@@ -132,62 +187,29 @@ describe('CodexLocalRunner', () => {
     });
 
     expect(command.args).toEqual(expect.arrayContaining([
-      '--oss',
-      '-p',
-      'ollama',
-      '-m',
-      'qwen3.6:27b',
+      '--oss', '-p', 'local-qwen', '-m', 'qwen3.6:27b', 'app-server',
     ]));
     expect(command.commandSummary).toEqual(expect.objectContaining({
       modelProvider: 'ollama',
       model: 'qwen3.6:27b',
       oss: true,
-      profile: 'ollama',
+      profile: 'local-qwen',
     }));
   });
 
-  test('allows the Ollama Codex profile to be configured', () => {
-    const runner = new CodexLocalRunner({
-      binaryPath: 'codex-test',
-      timeoutMs: 60000,
-      ollamaProfile: 'local-qwen',
-    });
-
-    const command = runner.buildCommand({
-      turn: {
-        _id: 'turn-local-profile',
-        kind: 'question',
-        modelProvider: 'ollama',
-        model: 'qwen3.6:27b',
-        permissionMode: 'read-only',
-      },
-      session: {},
-      workspace: { rootPath: '/workspace/project' },
-    });
-
-    expect(command.args).toEqual(expect.arrayContaining([
-      '--oss',
-      '-p',
-      'local-qwen',
-    ]));
-    expect(command.commandSummary.profile).toBe('local-qwen');
-  });
-
-  test('sources the shared environment and launches the fixed Qwen Runpod profile locally', () => {
+  test('sources the shared environment for the fixed Runpod profile', () => {
     const runner = new CodexLocalRunner({
       binaryPath: 'codex-test',
       timeoutMs: 60000,
       runpodProfileEnvFile: '/home/tester/.codex/lentmiien.env',
       runpodProfileShell: '/bin/bash-test',
     });
-
     const command = runner.buildCommand({
       turn: {
-        _id: 'turn-runpod-qwen',
+        _id: 'turn-runpod',
         kind: 'action',
         modelProvider: 'runpod-qwen',
-        model: 'ignored-client-model',
-        profile: 'ignored-client-profile',
+        model: 'ignored-model',
         reasoningEffort: 'ultra',
         permissionMode: 'yolo',
       },
@@ -199,272 +221,375 @@ describe('CodexLocalRunner', () => {
     expect(command.args).toEqual(expect.arrayContaining([
       '/home/tester/.codex/lentmiien.env',
       'codex-test',
-      'exec',
       '-p',
       'lentmiien-qwen',
       '--dangerously-bypass-approvals-and-sandbox',
+      'app-server',
     ]));
     expect(command.args[1]).toContain('. "$1"');
-    expect(command.args).not.toContain('--oss');
-    expect(command.args).not.toContain('ignored-client-model');
-    expect(command.args).not.toContain('ignored-client-profile');
+    expect(command.args).not.toContain('ignored-model');
     expect(command.commandSummary).toEqual(expect.objectContaining({
-      binary: 'codex-test',
-      modelProvider: 'runpod-qwen',
-      modelProviderLabel: 'Qwen (Runpod)',
       profile: 'lentmiien-qwen',
-      profileEnvironmentFile: '/home/tester/.codex/lentmiien.env',
-      oss: false,
+      model: '',
+      reasoningEffort: '',
     }));
   });
 
-  test('sources the target user environment and launches the fixed GLM profile over SSH', () => {
-    const runner = new CodexLocalRunner({
-      binaryPath: 'codex-test',
-      timeoutMs: 60000,
-      runpodProfileEnvFile: '~/.codex/lentmiien.env',
-    });
-
+  test('builds an app-server stdio command over SSH', () => {
+    const runner = new CodexLocalRunner({ binaryPath: 'codex-test', timeoutMs: 60000 });
     const command = runner.buildCommand({
       turn: {
-        _id: 'turn-runpod-glm',
-        kind: 'question',
-        modelProvider: 'runpod-glm',
-        permissionMode: 'read-only',
-      },
-      session: {},
-      workspace: { rootPath: '/home/lennart/Programming/lentmiien-site' },
-      target: {
-        type: 'remote-ssh-linux',
-        connection: {
-          destination: 'lennart@192.168.0.20',
-          sshBinaryPath: 'ssh-test',
-          codexBinaryPath: 'codex',
-        },
-      },
-    });
-
-    const remoteCommand = command.args[command.args.length - 1];
-    expect(remoteCommand).toContain("'/bin/bash' -lc");
-    expect(remoteCommand).toContain('$HOME');
-    expect(remoteCommand).toContain('.codex/lentmiien.env');
-    expect(remoteCommand).toContain('lentmiien-glm');
-    expect(remoteCommand).not.toContain('--oss');
-    expect(command.commandSummary).toEqual(expect.objectContaining({
-      modelProvider: 'runpod-glm',
-      modelProviderLabel: 'GLM-5.3 Flash (Runpod)',
-      profile: 'lentmiien-glm',
-      profileEnvironmentFile: '~/.codex/lentmiien.env',
-      oss: false,
-    }));
-  });
-
-  test('uses the dangerous bypass flag only for yolo mode', () => {
-    const runner = new CodexLocalRunner({
-      binaryPath: 'codex-test',
-      timeoutMs: 60000,
-    });
-
-    const command = runner.buildCommand({
-      turn: {
-        _id: 'turn-3',
+        _id: 'turn-remote',
         kind: 'action',
-        model: '',
-        profile: '',
-        permissionMode: 'yolo',
-      },
-      session: {},
-      workspace: { rootPath: '/workspace/project' },
-    });
-
-    expect(command.args).toContain('--dangerously-bypass-approvals-and-sandbox');
-    expect(command.args).not.toContain('--sandbox');
-  });
-
-  test('builds a remote SSH command for Linux targets', () => {
-    const runner = new CodexLocalRunner({
-      binaryPath: 'codex-test',
-      timeoutMs: 60000,
-    });
-
-    const command = runner.buildCommand({
-      turn: {
-        _id: 'turn-4',
-        kind: 'action',
-        model: '',
-        profile: '',
         permissionMode: 'workspace-write',
       },
       session: {},
-      workspace: { rootPath: '/home/lennart/Programming/lentmiien-site' },
+      workspace: { rootPath: '/home/lennart/project' },
       target: {
         type: 'remote-ssh-linux',
         connection: {
-          destination: 'lennart@192.168.0.20',
+          destination: 'worker@example.test',
           sshBinaryPath: 'ssh-test',
           codexBinaryPath: 'codex',
-          envWrapperPath: '/home/lennart/bin/codex-env',
-          tempDir: '/var/tmp',
           options: ['-o', 'BatchMode=yes'],
         },
       },
     });
 
     expect(command.binary).toBe('ssh-test');
-    expect(command.outputLocation).toBe('remote');
-    expect(command.outputPath).toMatch(/^\/var\/tmp\/codex-last-message-turn-4-/);
     expect(command.args).toEqual(expect.arrayContaining([
-      '-T',
-      '-o',
-      'BatchMode=yes',
-      'lennart@192.168.0.20',
+      '-T', '-o', 'BatchMode=yes', 'worker@example.test',
     ]));
     const remoteCommand = command.args[command.args.length - 1];
-    expect(remoteCommand).toContain('/home/lennart/bin/codex-env');
-    expect(remoteCommand).toContain('codex');
-    expect(remoteCommand).toContain('/home/lennart/Programming/lentmiien-site');
-    expect(remoteCommand).toContain('--sandbox');
-    expect(remoteCommand).toContain('workspace-write');
-    expect(command.commandSummary.sshDestination).toBe('lennart@192.168.0.20');
-    expect(command.remoteRead.args).toContain('lennart@192.168.0.20');
+    expect(remoteCommand).toContain('app-server');
+    expect(remoteCommand).toContain('/home/lennart/project');
+    expect(command.commandSummary).toEqual(expect.objectContaining({
+      outputLocation: 'remote',
+      sshDestination: 'worker@example.test',
+    }));
   });
 
-  test('maps remote yolo mode to the dangerous bypass flag', () => {
-    const runner = new CodexLocalRunner({
-      binaryPath: 'codex-test',
-      timeoutMs: 60000,
-    });
-
-    const command = runner.buildCommand({
-      turn: {
-        _id: 'turn-5',
-        kind: 'action',
-        model: '',
-        profile: '',
-        permissionMode: 'yolo',
-      },
-      session: {},
-      workspace: { rootPath: '/workspace/project' },
-      target: {
-        type: 'remote-ssh-linux',
-        connection: {
-          destination: 'lennart@192.168.0.20',
-          codexBinaryPath: 'codex',
-          envWrapperPath: '/home/lennart/bin/codex-env',
-        },
-      },
-    });
-
-    const remoteCommand = command.args[command.args.length - 1];
-    expect(remoteCommand).toContain('--dangerously-bypass-approvals-and-sandbox');
-    expect(remoteCommand).not.toContain('--sandbox');
-  });
-
-  describe('turn lifecycle', () => {
-    let warningSpy;
-
-    beforeEach(() => {
-      spawn.mockReset();
-      warningSpy = jest.spyOn(logger, 'warning').mockResolvedValue();
-    });
-
-    afterEach(() => {
-      jest.restoreAllMocks();
-    });
-
-    test('settles successfully from turn.completed when child close never arrives', async () => {
+  describe('app-server lifecycle', () => {
+    test('initializes, starts a thread, and records the completed turn', async () => {
       const child = createFakeChild();
-      const usage = {
-        input_tokens: 120,
-        cached_input_tokens: 40,
-        output_tokens: 30,
-      };
-      const terminalEvent = { type: 'turn.completed', usage };
+      const onEvent = jest.fn().mockResolvedValue();
+      const onThreadId = jest.fn().mockResolvedValue();
+      const onTurnStarted = jest.fn().mockResolvedValue();
+      spawn.mockReturnValue(child);
+      const runner = new CodexLocalRunner({
+        binaryPath: 'codex-test',
+        timeoutMs: 60000,
+        additionalMessageTimeoutMs: 1000,
+        completionExitGraceMs: 100,
+      });
+      const input = createRunInput({ onEvent, onThreadId, onTurnStarted });
+      const { resultPromise, threadRequest, turnRequest } = await startAppServerTurn(
+        runner,
+        child,
+        input
+      );
+      notify(child, 'turn/started', {
+        threadId: 'thread-123',
+        turn: { id: 'codex-turn-123', status: 'inProgress', items: [] },
+      });
+
+      expect(threadRequest.params).toEqual(expect.objectContaining({
+        cwd: '/workspace/project',
+        approvalPolicy: 'never',
+        sandbox: 'read-only',
+      }));
+      expect(turnRequest.params).toEqual(expect.objectContaining({
+        threadId: 'thread-123',
+        input: [{ type: 'text', text: 'Answer the question.' }],
+        clientUserMessageId: 'turn-lifecycle',
+      }));
+      notify(child, 'item/completed', {
+        threadId: 'thread-123',
+        turnId: 'codex-turn-123',
+        item: {
+          id: 'agent-1',
+          type: 'agentMessage',
+          phase: 'final_answer',
+          text: 'Finished response',
+        },
+      });
+      notify(child, 'thread/tokenUsage/updated', {
+        threadId: 'thread-123',
+        turnId: 'codex-turn-123',
+        tokenUsage: {
+          total: {
+            inputTokens: 120,
+            cachedInputTokens: 40,
+            outputTokens: 30,
+            reasoningOutputTokens: 10,
+            totalTokens: 150,
+          },
+        },
+      });
+      notify(child, 'turn/completed', {
+        threadId: 'thread-123',
+        turn: {
+          id: 'codex-turn-123',
+          status: 'completed',
+          items: [],
+        },
+      });
+
+      await expect(resultPromise).resolves.toEqual(expect.objectContaining({
+        status: 'succeeded',
+        finalResponse: 'Finished response',
+        codexThreadId: 'thread-123',
+        usage: {
+          input_tokens: 120,
+          cached_input_tokens: 40,
+          output_tokens: 30,
+          reasoning_output_tokens: 10,
+          total_tokens: 150,
+        },
+      }));
+      expect(onThreadId).toHaveBeenCalledWith('thread-123');
+      expect(onTurnStarted).toHaveBeenCalledWith({
+        threadId: 'thread-123',
+        turnId: 'codex-turn-123',
+      });
+      expect(onTurnStarted).toHaveBeenCalledTimes(1);
+      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+        eventType: 'item.completed',
+        payload: expect.objectContaining({
+          item: expect.objectContaining({ type: 'agent_message', text: 'Finished response' }),
+        }),
+      }));
+      expect(child.stdin.end).toHaveBeenCalled();
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    });
+
+    test('resumes a follow-up with history hydration disabled', async () => {
+      const child = createFakeChild();
+      spawn.mockReturnValue(child);
+      const runner = new CodexLocalRunner({
+        binaryPath: 'codex-test',
+        timeoutMs: 60000,
+        additionalMessageTimeoutMs: 1000,
+        completionExitGraceMs: 100,
+      });
+      const input = createRunInput({
+        turn: { kind: 'followup_question' },
+        session: { codexThreadId: 'existing-thread' },
+      });
+      const { resultPromise, threadRequest } = await startAppServerTurn(runner, child, input, {
+        resume: true,
+        threadId: 'existing-thread',
+      });
+
+      expect(threadRequest.params).toEqual(expect.objectContaining({
+        threadId: 'existing-thread',
+        excludeTurns: true,
+      }));
+      notify(child, 'turn/completed', {
+        threadId: 'existing-thread',
+        turn: { id: 'codex-turn-123', status: 'completed', items: [] },
+      });
+      await expect(resultPromise).resolves.toEqual(expect.objectContaining({ status: 'succeeded' }));
+    });
+
+    test('retains cumulative thread usage for service-layer follow-up accounting', async () => {
+      const child = createFakeChild();
+      spawn.mockReturnValue(child);
+      const runner = new CodexLocalRunner({
+        binaryPath: 'codex-test',
+        timeoutMs: 60000,
+        additionalMessageTimeoutMs: 1000,
+        completionExitGraceMs: 100,
+      });
+      const input = createRunInput({
+        turn: { kind: 'followup_question' },
+        session: { codexThreadId: 'existing-thread' },
+      });
+      const resultPromise = runner.runTurn(input);
+      const initialize = await waitForMessage(child, (message) => message.method === 'initialize');
+      respond(child, initialize, {
+        codexHome: '/home/test/.codex',
+        platformFamily: 'unix',
+        platformOs: 'linux',
+        userAgent: 'codex-test',
+      });
+      const resumeRequest = await waitForMessage(child, (message) => message.method === 'thread/resume');
+      respond(child, resumeRequest, { thread: { id: 'existing-thread' } });
+      notify(child, 'thread/tokenUsage/updated', {
+        threadId: 'existing-thread',
+        turnId: 'previous-turn',
+        tokenUsage: {
+          total: {
+            inputTokens: 100,
+            cachedInputTokens: 20,
+            outputTokens: 40,
+            reasoningOutputTokens: 10,
+            totalTokens: 140,
+          },
+        },
+      });
+      const turnRequest = await waitForMessage(child, (message) => message.method === 'turn/start');
+      respond(child, turnRequest, {
+        turn: { id: 'current-turn', status: 'inProgress', items: [] },
+      });
+      notify(child, 'thread/tokenUsage/updated', {
+        threadId: 'existing-thread',
+        turnId: 'current-turn',
+        tokenUsage: {
+          total: {
+            inputTokens: 135,
+            cachedInputTokens: 25,
+            outputTokens: 52,
+            reasoningOutputTokens: 14,
+            totalTokens: 187,
+          },
+        },
+      });
+      notify(child, 'turn/completed', {
+        threadId: 'existing-thread',
+        turn: { id: 'current-turn', status: 'completed', items: [] },
+      });
+
+      await expect(resultPromise).resolves.toEqual(expect.objectContaining({
+        usage: {
+          input_tokens: 135,
+          cached_input_tokens: 25,
+          output_tokens: 52,
+          reasoning_output_tokens: 14,
+          total_tokens: 187,
+        },
+      }));
+    });
+
+    test('steers the active turn over the same app-server connection', async () => {
+      const child = createFakeChild();
+      spawn.mockReturnValue(child);
+      const runner = new CodexLocalRunner({
+        binaryPath: 'codex-test',
+        timeoutMs: 60000,
+        additionalMessageTimeoutMs: 1000,
+        completionExitGraceMs: 100,
+      });
+      const input = createRunInput();
+      const { resultPromise } = await startAppServerTurn(runner, child, input);
+
+      const steerPromise = runner.sendAdditionalMessage({
+        turn: input.turn,
+        message: 'Check the forgotten edge case.',
+        messageId: 'message-1',
+      });
+      const steerRequest = await waitForMessage(child, (message) => message.method === 'turn/steer');
+      expect(steerRequest.params).toEqual({
+        threadId: 'thread-123',
+        expectedTurnId: 'codex-turn-123',
+        input: [{ type: 'text', text: 'Check the forgotten edge case.' }],
+        clientUserMessageId: 'message-1',
+      });
+      respond(child, steerRequest, { turnId: 'codex-turn-123' });
+      await expect(steerPromise).resolves.toEqual({
+        accepted: true,
+        commandSummary: {
+          operation: 'turn.steer',
+          transport: 'app-server-stdio',
+        },
+      });
+
+      notify(child, 'turn/completed', {
+        threadId: 'thread-123',
+        turn: { id: 'codex-turn-123', status: 'completed', items: [] },
+      });
+      await resultPromise;
+    });
+
+    test('does not duplicate app-server user items in the detail stream', async () => {
+      const child = createFakeChild();
       const onEvent = jest.fn().mockResolvedValue();
       spawn.mockReturnValue(child);
       const runner = new CodexLocalRunner({
         binaryPath: 'codex-test',
         timeoutMs: 60000,
-        completionExitGraceMs: 10,
+        additionalMessageTimeoutMs: 1000,
+        completionExitGraceMs: 100,
       });
-      runner.readFinalResponse = jest.fn().mockResolvedValue('Finished response');
+      const input = createRunInput({ onEvent });
+      const { resultPromise } = await startAppServerTurn(runner, child, input);
 
-      const resultPromise = runner.runTurn(createRunInput(onEvent));
-      await waitForSpawn();
-      child.stdout.emit('data', Buffer.from(`${JSON.stringify(terminalEvent)}\n`));
+      notify(child, 'item/completed', {
+        threadId: 'thread-123',
+        turnId: 'codex-turn-123',
+        item: {
+          id: 'user-1',
+          type: 'userMessage',
+          clientId: 'message-1',
+          content: [{ type: 'text', text: 'Additional private text' }],
+        },
+      });
+      notify(child, 'turn/completed', {
+        threadId: 'thread-123',
+        turn: { id: 'codex-turn-123', status: 'completed', items: [] },
+      });
+      await resultPromise;
 
-      const result = await resultPromise;
-
-      expect(result).toEqual(expect.objectContaining({
-        status: 'succeeded',
-        exitCode: null,
-        finalResponse: 'Finished response',
-        usage,
-      }));
-      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
-        eventType: 'turn.completed',
-        payload: terminalEvent,
-      }));
-      expect(child.kill).toHaveBeenCalledWith('SIGKILL');
-      expect(warningSpy).toHaveBeenCalledWith(
-        'Codex process did not exit after turn.completed; finalizing from the terminal event',
+      expect(onEvent.mock.calls.flat()).not.toEqual(expect.arrayContaining([
         expect.objectContaining({
-          category: 'codex_tool',
-          metadata: expect.objectContaining({
-            turnId: 'turn-lifecycle',
-            completionExitGraceMs: 10,
+          payload: expect.objectContaining({
+            item: expect.objectContaining({ type: 'user_message' }),
           }),
-        })
-      );
+        }),
+      ]));
     });
 
-    test('lets turn.completed override a racing nonzero child close', async () => {
+    test('returns a generic error when Codex rejects steering', async () => {
       const child = createFakeChild();
-      const usage = { input_tokens: 25, output_tokens: 10 };
       spawn.mockReturnValue(child);
       const runner = new CodexLocalRunner({
         binaryPath: 'codex-test',
         timeoutMs: 60000,
-        completionExitGraceMs: 1000,
+        additionalMessageTimeoutMs: 1000,
+        completionExitGraceMs: 100,
       });
-      runner.readFinalResponse = jest.fn().mockResolvedValue('Completed before exit');
+      const input = createRunInput();
+      const { resultPromise } = await startAppServerTurn(runner, child, input);
 
-      const resultPromise = runner.runTurn(createRunInput(jest.fn().mockResolvedValue()));
-      await waitForSpawn();
-      child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'turn.completed', usage })}\n`));
-      child.exitCode = 1;
-      child.emit('close', 1, null);
+      const steerPromise = runner.sendAdditionalMessage({
+        turn: input.turn,
+        message: 'Private correction',
+        messageId: 'message-private',
+      });
+      const steerRequest = await waitForMessage(child, (message) => message.method === 'turn/steer');
+      rejectRequest(child, steerRequest);
+      await expect(steerPromise).rejects.toThrow('Codex did not accept the additional message.');
+      await expect(steerPromise).rejects.not.toThrow('Provider detail');
 
-      await expect(resultPromise).resolves.toEqual(expect.objectContaining({
-        status: 'succeeded',
-        exitCode: 1,
-        usage,
-      }));
-      expect(child.kill).not.toHaveBeenCalled();
-      expect(warningSpy).not.toHaveBeenCalled();
+      notify(child, 'turn/completed', {
+        threadId: 'thread-123',
+        turn: { id: 'codex-turn-123', status: 'completed', items: [] },
+      });
+      await resultPromise;
     });
 
-    test('settles when terminal event persistence never finishes', async () => {
+    test('finalizes from turn.completed when event persistence stalls', async () => {
       const child = createFakeChild();
-      const usage = { input_tokens: 50, output_tokens: 20 };
-      const onEvent = jest.fn(() => new Promise(() => {}));
+      const warningSpy = jest.spyOn(logger, 'warning').mockResolvedValue();
+      const onEvent = jest.fn((event) => event.eventType === 'turn.completed'
+        ? new Promise(() => {})
+        : Promise.resolve());
       spawn.mockReturnValue(child);
       const runner = new CodexLocalRunner({
         binaryPath: 'codex-test',
         timeoutMs: 60000,
+        additionalMessageTimeoutMs: 1000,
         completionExitGraceMs: 10,
       });
-      runner.readFinalResponse = jest.fn().mockResolvedValue('Persisted final response');
+      const input = createRunInput({ onEvent });
+      const { resultPromise } = await startAppServerTurn(runner, child, input);
 
-      const resultPromise = runner.runTurn(createRunInput(onEvent));
-      await waitForSpawn();
-      child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'turn.completed', usage })}\n`));
+      notify(child, 'turn/completed', {
+        threadId: 'thread-123',
+        turn: { id: 'codex-turn-123', status: 'completed', items: [] },
+      });
 
-      await expect(resultPromise).resolves.toEqual(expect.objectContaining({
-        status: 'succeeded',
-        finalResponse: 'Persisted final response',
-        usage,
-      }));
+      await expect(resultPromise).resolves.toEqual(expect.objectContaining({ status: 'succeeded' }));
       expect(warningSpy).toHaveBeenCalledWith(
         'Codex event stream did not drain after turn.completed; finalizing from the terminal event',
         expect.objectContaining({

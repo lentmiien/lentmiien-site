@@ -13,6 +13,15 @@
     };
   }
 
+  function canSubmitAdditionalMessage(turn) {
+    return Boolean(
+      turn &&
+      turn.status === 'running' &&
+      !turn.cancelRequestedAt &&
+      turn.canAddMessage === true
+    );
+  }
+
   function filterPromptTemplatesByWorkspace(templates, workspaceId) {
     const selectedWorkspaceId = String(workspaceId || '').trim();
     return (Array.isArray(templates) ? templates : []).filter((template) => {
@@ -40,7 +49,7 @@
   }
 
   function isFocusedProcessEvent(event) {
-    return ['agent_message', 'reasoning', 'todo_list'].includes(eventItemType(event));
+    return ['agent_message', 'reasoning', 'todo_list', 'user_message'].includes(eventItemType(event));
   }
 
   function selectFocusedProcessEvents(events) {
@@ -140,6 +149,7 @@
 
   if (typeof module === 'object' && module.exports && typeof document === 'undefined') {
     module.exports = {
+      canSubmitAdditionalMessage,
       filterPromptTemplatesByWorkspace,
       getPromptLengthState,
       selectErrorProcessEvents,
@@ -1564,6 +1574,7 @@
     if (!container) return;
     const activityState = getLiveActivityState(turn);
     renderTurnActions(turn);
+    syncAdditionalMessageForm(turn);
     const activitySlot = root.querySelector('[data-live-activity-slot]');
     if (activitySlot) {
       activitySlot.innerHTML = '';
@@ -1632,9 +1643,28 @@
     const turnId = root.dataset.turnId;
     if (!turnId) return null;
     const payload = await requestJson(`/codex/api/turns/${encodeURIComponent(turnId)}`);
+    bootstrap.turn = payload.turn;
     syncLiveActivityTurns([payload.turn]);
     renderTurnDetail(payload.turn, payload.workspace);
     return payload;
+  }
+
+  function syncAdditionalMessageForm(turn) {
+    const panel = root.querySelector('[data-additional-message-panel]');
+    if (!panel) return;
+    const form = panel.querySelector('#codex-additional-message-form');
+    const field = form && form.querySelector('[name="message"]');
+    const submit = form && form.querySelector('[type="submit"]');
+    const state = panel.querySelector('[data-additional-message-state]');
+    const available = canSubmitAdditionalMessage(turn);
+    const submitting = form?.dataset.submitting === 'true';
+
+    panel.hidden = !available;
+    if (field) field.disabled = !available || submitting;
+    if (submit) submit.disabled = !available || submitting;
+    if (state) {
+      state.textContent = available ? 'Running' : 'Closed';
+    }
   }
 
   function renderFocusedEventContent(wrapper, event) {
@@ -1643,6 +1673,21 @@
     const presentation = event.presentation && typeof event.presentation === 'object'
       ? event.presentation
       : {};
+
+    if (itemType === 'user_message') {
+      wrapper.appendChild(createEl('p', {
+        className: 'codex-event__user-message',
+        text: String(presentation.text || item?.text || ''),
+      }));
+      if (presentation.deliveryStatus === 'failed') {
+        wrapper.appendChild(createEl('p', {
+          className: 'codex-form-status',
+          'data-tone': 'error',
+          text: 'Codex did not accept this message.',
+        }));
+      }
+      return;
+    }
 
     if (itemType === 'agent_message' || itemType === 'reasoning') {
       const content = createEl('div', { className: 'codex-event__markdown' });
@@ -1761,7 +1806,7 @@
     if (visibleEvents.length === 0 && editedFiles.length === 0) {
       let message = 'No process details stored.';
       if (viewMode === 'focused') {
-        message = 'No agent messages, reasoning updates, todo lists, or edited files stored.';
+        message = 'No user or agent messages, reasoning updates, todo lists, or edited files stored.';
       } else if (viewMode === 'errors') {
         message = 'No error outputs stored.';
       }
@@ -1769,7 +1814,7 @@
         message = 'Loading process details…';
       } else if (options.isRunning) {
         if (viewMode === 'focused') {
-          message = 'Waiting for an agent message, reasoning update, todo list, or file change…';
+          message = 'Waiting for a message, reasoning update, todo list, or file change…';
         } else if (viewMode === 'errors') {
           message = 'No error output recorded yet.';
         } else {
@@ -1794,6 +1839,7 @@
           agent_message: 'Agent message',
           reasoning: 'Reasoning',
           todo_list: 'Current todo list',
+          user_message: 'Your additional message',
         };
         const focusedLabel = focusedLabels[itemType] || humanizeEventName(itemType);
         header.appendChild(createEl('strong', {
@@ -1840,7 +1886,7 @@
       }));
       listener.appendChild(createEl('span', {
         text: viewMode === 'focused'
-          ? 'Live · listening for messages, reasoning, todos and file changes'
+          ? 'Live · listening for user and agent messages, reasoning, todos and file changes'
           : (viewMode === 'errors'
             ? 'Live · listening for error output'
             : 'Live · listening for more details'),
@@ -2112,6 +2158,8 @@
 
   function initTurn() {
     let refreshTimer = null;
+    const additionalMessageForm = document.getElementById('codex-additional-message-form');
+    const additionalMessageStatus = document.getElementById('codex-additional-message-status');
 
     function startAutoRefresh() {
       if (refreshTimer) return;
@@ -2137,10 +2185,63 @@
       }
     }
 
+    if (additionalMessageForm) {
+      const messageControl = bindPromptLengthControl(additionalMessageForm);
+      additionalMessageForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const messageField = additionalMessageForm.querySelector('[name="message"]');
+        const messageState = messageControl && messageControl.sync();
+        if (messageState && messageState.overLimit) {
+          setStatus(
+            additionalMessageStatus,
+            `Message is too long. Maximum length is ${messageState.maximum.toLocaleString()} characters.`,
+            'error',
+          );
+          return;
+        }
+        if (!messageField || !messageField.value.trim()) {
+          setStatus(additionalMessageStatus, 'Message is required.', 'error');
+          return;
+        }
+
+        additionalMessageForm.dataset.submitting = 'true';
+        if (messageControl) messageControl.setSubmitting(true);
+        syncAdditionalMessageForm(bootstrap.turn);
+        setStatus(additionalMessageStatus, 'Queueing message…', '');
+        try {
+          await requestJson(
+            `/codex/api/turns/${encodeURIComponent(additionalMessageForm.dataset.turnId)}/messages`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ message: messageField.value }),
+            }
+          );
+          messageField.value = '';
+          if (messageControl) messageControl.sync();
+          setStatus(additionalMessageStatus, 'Message queued for this running turn.', 'success');
+          window.setTimeout(() => loadTurnActivity(additionalMessageForm.dataset.turnId), 500);
+          try {
+            const payload = await refreshTurn();
+            bootstrap.turn = payload.turn;
+            syncAutoRefresh(payload);
+          } catch (_refreshError) {
+            // Submission succeeded; ordinary page polling will retry the refresh.
+          }
+        } catch (error) {
+          setStatus(additionalMessageStatus, error.message, 'error');
+        } finally {
+          delete additionalMessageForm.dataset.submitting;
+          if (messageControl) messageControl.setSubmitting(false);
+          syncAdditionalMessageForm(bootstrap.turn);
+        }
+      });
+    }
+
     syncPageAutoRefresh = syncAutoRefresh;
     syncLiveActivityTurns(bootstrap.turn ? [bootstrap.turn] : []);
     if (bootstrap.turn) {
       updateLiveActivityIndicators(bootstrap.turn.id, { renderEventPanels: true });
+      syncAdditionalMessageForm(bootstrap.turn);
     }
     syncAutoRefresh({ turn: bootstrap.turn });
   }

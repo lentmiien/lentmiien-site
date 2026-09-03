@@ -181,13 +181,16 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `VUE_PATH` | Optional absolute path to a built Vue frontend served to authenticated users. |
 | `API_KEY` | Bearer token required for `/api` automation routes. |
 | `API_TIER1_USER_ID`, `API_TIER2_USER_ID` | User IDs required by `/api/records` endpoints after bearer-token authentication. |
-| `CODEX_BINARY_PATH` | Optional absolute path to the Codex CLI executable used by the Codex queue worker. |
+| `CODEX_BINARY_PATH` | Optional absolute path to the Codex CLI executable used by the Codex queue worker. The installed CLI must provide App Server `turn/steer` support. |
 | `CODEX_HOME` | Optional Codex state directory for auth/config when the worker runs under a service or scheduled task. |
 | `CODEX_WORKER_ENABLED` | Enables the Codex queue worker for worker processes (defaults to `true`). |
 | `CODEX_WEB_WORKER_ENABLED` | Enables the embedded Codex worker inside `app.js` (defaults to `CODEX_WORKER_ENABLED`). Set this to `false` when running the worker as a separate user-login process. |
 | `CODEX_GLOBAL_CONCURRENCY` | Maximum Codex turns this worker may run at once across different workspaces. Each workspace is still locked to one running turn. Defaults to `1`; set higher, such as `5`, on a remote Linux worker with multiple workspaces. |
-| `CODEX_COMPLETION_EXIT_GRACE_MS` | Time to wait for the Codex process to exit after its terminal `turn.completed` event before finalizing from that event. Defaults to `2000` ms. |
+| `CODEX_COMPLETION_EXIT_GRACE_MS` | Maximum time to wait for terminal App Server event persistence before finalizing and closing the turn connection. Defaults to `2000` ms. |
 | `CODEX_MAX_EVENTS_PER_TURN` | Maximum number of detail events persisted for each Codex turn before a truncation warning is stored. Defaults to `2000`. |
+| `CODEX_MAX_ADDITIONAL_MESSAGES_PER_TURN` | Maximum mid-turn messages accepted for one running Codex turn. Defaults to `20`. |
+| `CODEX_MESSAGE_POLL_MS` | How often a running worker checks for queued mid-turn messages. Defaults to `1000` ms. |
+| `CODEX_MESSAGE_TIMEOUT_MS` | Maximum time allowed for one App Server `turn/steer` request. Defaults to `15000` ms. |
 | `CODEX_YOLO_ENABLED` | Enables server-side acceptance of yolo Codex turns when the selected workspace also allows yolo. Defaults to `false`. |
 | `CODEX_OLLAMA_PROFILE` | Codex config profile layered onto every Ollama turn. Defaults to `ollama`, which loads `$CODEX_HOME/ollama.config.toml`. |
 | `CODEX_RUNPOD_PROFILE_ENV_FILE` | Shell environment file sourced before Runpod-backed Qwen or GLM Codex turns. Defaults to `~/.codex/lentmiien.env` on the machine executing Codex. |
@@ -271,7 +274,7 @@ stream_max_retries = 5
 
 The `900000` ms SSE idle timeout lets Ollama spend up to 15 minutes without emitting a stream event. Selecting Ollama in `/codex` starts the CLI with `--oss -p <ollama-profile> -m <local-model>`. The worker reserves the AI Gateway `ollama` container for at least six hours before each local turn and releases it once no other local Ollama turn is queued or running. OpenAI and Ollama token prices and cost estimates are stored and displayed separately.
 
-The Codex provider selector also supports two fixed Runpod-backed profiles. `Qwen (Runpod)` uses `lentmiien-qwen` and is shown only while the `/admin/runpod` record named `ollama-qwen` is `RUNNING`; `GLM-5.3 Flash (Runpod)` similarly uses `lentmiien-glm` and requires a running `glm53-flash` record. These options are restricted to administrators by default (or accounts explicitly granted `codex.run.runpod_model`). The worker checks the pod state again when accepting and claiming a turn, sources `CODEX_RUNPOD_PROFILE_ENV_FILE`, and then launches `codex exec -p <profile>`. Both providers are included in the Ollama usage and cost totals. See [documentation/codex-runpod-model-providers.md](documentation/codex-runpod-model-providers.md) for setup and security details.
+The Codex provider selector also supports two fixed Runpod-backed profiles. `Qwen (Runpod)` uses `lentmiien-qwen` and is shown only while the `/admin/runpod` record named `ollama-qwen` is `RUNNING`; `GLM-5.3 Flash (Runpod)` similarly uses `lentmiien-glm` and requires a running `glm53-flash` record. These options are restricted to administrators by default (or accounts explicitly granted `codex.run.runpod_model`). The worker checks the pod state again when accepting and claiming a turn, sources `CODEX_RUNPOD_PROFILE_ENV_FILE`, and then launches `codex -p <profile> app-server`. Both providers are included in the Ollama usage and cost totals. See [documentation/codex-runpod-model-providers.md](documentation/codex-runpod-model-providers.md) for setup and security details.
 
 For SSH-backed Linux targets, make sure the worker account can run a non-interactive SSH command such as:
 ```powershell

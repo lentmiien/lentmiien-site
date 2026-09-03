@@ -127,6 +127,25 @@ describe('codexEventPresentation', () => {
     });
   });
 
+  test('presents an additional user message as inert text with delivery state', () => {
+    const presentation = buildCodexEventPresentation({
+      payload: {
+        item: {
+          type: 'user_message',
+          text: '<img src=x onerror=alert(1)> **do not render Markdown**',
+        },
+        deliveryStatus: 'delivered',
+      },
+    });
+
+    expect(presentation).toEqual({
+      itemType: 'user_message',
+      text: '<img src=x onerror=alert(1)> **do not render Markdown**',
+      deliveryStatus: 'delivered',
+    });
+    expect(presentation).not.toHaveProperty('html');
+  });
+
   test('adds presentation without changing unsupported events', () => {
     const event = { seq: 1, payload: { item: { type: 'command_execution' } } };
     const presented = addCodexEventPresentation(event);

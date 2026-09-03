@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const CodexWorkspaceLock = require('../models/codex_workspace_lock');
 const CodexTurn = require('../models/codex_turn');
 const CodexEvent = require('../models/codex_event');
+const CodexTurnMessage = require('../models/codex_turn_message');
 const CodexSession = require('../models/codex_session');
 const codexToolService = require('./codexToolService');
 const CodexLocalRunner = require('./codexLocalRunner');
@@ -25,6 +26,15 @@ function clipText(value, maxLength) {
 function sanitizePayload(payload, maxLength) {
   if (!payload || typeof payload !== 'object') {
     return payload || {};
+  }
+  if (payload.item?.type === 'user_message') {
+    return {
+      ...payload,
+      item: {
+        ...payload.item,
+        text: clipText(payload.item.text, Math.max(100, maxLength - 500)),
+      },
+    };
   }
   try {
     const serialized = JSON.stringify(payload);
@@ -151,6 +161,10 @@ class CodexQueueWorker {
         },
       }, { returnDocument: 'after' }).exec();
       await CodexWorkspaceLock.deleteMany({ turnId: turn._id }).exec();
+      await this.failOutstandingAdditionalMessages(
+        turn._id,
+        'The Codex worker stopped before this message could be delivered.'
+      );
       await this.recordEvent(updatedTurn, 1, {
         stream: 'system',
         eventType: 'worker.recovered_orphaned_turn',
@@ -253,6 +267,11 @@ class CodexQueueWorker {
         workspaceId: String(claimedTurn.workspaceId),
         modelProvider: codexToolService.getTurnModelProvider(claimedTurn),
         startedAt: now,
+        processStarted: false,
+        acceptingMessages: true,
+        codexThreadId: '',
+        codexTurnId: '',
+        deliveryPromise: null,
       });
 
       this.runClaimedTurn(claimedTurn, bundle.workspace, bundle.target, lock).catch((error) => {
@@ -374,17 +393,216 @@ class CodexQueueWorker {
     }
   }
 
+  async recordAdditionalMessageEvent(active, turnMessage, deliveryStatus) {
+    if (!active || typeof active.onEvent !== 'function' || !turnMessage) {
+      return;
+    }
+    const delivered = deliveryStatus === 'delivered';
+    try {
+      const result = await active.onEvent({
+        stream: 'system',
+        eventType: delivered ? 'user.message.sent' : 'user.message.failed',
+        payload: {
+          item: {
+            type: 'user_message',
+            text: String(turnMessage.message || ''),
+          },
+          deliveryStatus,
+          ownerId: String(active.turn.createdBy?.id || ''),
+        },
+        text: '',
+        severity: delivered ? 'info' : 'error',
+        hiddenByDefault: false,
+      });
+      if (result && result.stored) {
+        await CodexTurn.updateOne(
+          { _id: active.turn._id },
+          { $set: { eventCount: result.count } }
+        ).exec();
+      }
+    } catch (error) {
+      logger.error('Codex additional message detail could not be recorded', {
+        category: 'codex_tool',
+        metadata: {
+          workerId: this.workerId,
+          turnId: String(active.turn._id),
+          messageId: String(turnMessage._id),
+          errorName: error?.name || 'Error',
+        },
+      });
+    }
+  }
+
+  async deliverPendingAdditionalMessages(turnId) {
+    const active = this.activeTurns.get(String(turnId));
+    if (!active || !active.acceptingMessages || !active.processStarted ||
+      !active.codexThreadId || !active.codexTurnId) {
+      return false;
+    }
+    if (active.deliveryPromise) {
+      return active.deliveryPromise;
+    }
+
+    const deliveryPromise = this.deliverPendingAdditionalMessagesNow(active);
+    active.deliveryPromise = deliveryPromise;
+    try {
+      return await deliveryPromise;
+    } finally {
+      if (active.deliveryPromise === deliveryPromise) {
+        active.deliveryPromise = null;
+      }
+    }
+  }
+
+  async deliverPendingAdditionalMessagesNow(active) {
+    const config = this.getConfig();
+    const messages = await CodexTurnMessage.find({
+      turnId: String(active.turn._id),
+      status: 'queued',
+    })
+      .sort({ queuedAt: 1 })
+      .limit(config.maxAdditionalMessagesPerTurn)
+      .lean()
+      .exec();
+    let deliveredCount = 0;
+
+    for (const message of messages) {
+      if (!active.acceptingMessages) {
+        break;
+      }
+      const deliveryStartedAt = new Date();
+      const claimedMessage = await CodexTurnMessage.findOneAndUpdate({
+        _id: message._id,
+        turnId: String(active.turn._id),
+        status: 'queued',
+      }, {
+        $set: {
+          status: 'delivering',
+          workerId: this.workerId,
+          deliveryStartedAt,
+          errorMessage: '',
+        },
+      }, { returnDocument: 'after' }).lean().exec();
+      if (!claimedMessage) {
+        continue;
+      }
+
+      try {
+        await this.runner.sendAdditionalMessage({
+          turn: active.turn,
+          workspace: active.workspace,
+          target: active.target,
+          threadId: active.codexThreadId,
+          expectedTurnId: active.codexTurnId,
+          messageId: claimedMessage._id,
+          message: claimedMessage.message,
+        });
+      } catch (error) {
+        const failedAt = new Date();
+        await CodexTurnMessage.updateOne({
+          _id: claimedMessage._id,
+          status: 'delivering',
+          workerId: this.workerId,
+        }, {
+          $set: {
+            status: 'failed',
+            failedAt,
+            errorMessage: 'Codex did not accept the additional message.',
+          },
+        }).exec();
+        await this.recordAdditionalMessageEvent(active, claimedMessage, 'failed');
+        logger.warning('Codex additional message delivery failed', {
+          category: 'codex_tool',
+          metadata: {
+            workerId: this.workerId,
+            turnId: String(active.turn._id),
+            messageId: String(claimedMessage._id),
+            errorName: error?.name || 'Error',
+            errorCode: error?.code || null,
+          },
+        });
+        continue;
+      }
+
+      await CodexTurnMessage.updateOne({
+        _id: claimedMessage._id,
+        status: 'delivering',
+        workerId: this.workerId,
+      }, {
+        $set: {
+          status: 'delivered',
+          deliveredAt: new Date(),
+          errorMessage: '',
+        },
+      }).exec().catch((error) => {
+        logger.error('Codex additional message delivery status could not be saved', {
+          category: 'codex_tool',
+          metadata: {
+            workerId: this.workerId,
+            turnId: String(active.turn._id),
+            messageId: String(claimedMessage._id),
+            errorName: error?.name || 'Error',
+          },
+        });
+      });
+      await this.recordAdditionalMessageEvent(active, claimedMessage, 'delivered');
+      deliveredCount += 1;
+    }
+
+    return deliveredCount > 0;
+  }
+
+  async failQueuedAdditionalMessages(active, errorMessage) {
+    const messages = await CodexTurnMessage.find({
+      turnId: String(active.turn._id),
+      status: 'queued',
+    }).sort({ queuedAt: 1 }).lean().exec();
+
+    for (const message of messages) {
+      const failedMessage = await CodexTurnMessage.findOneAndUpdate({
+        _id: message._id,
+        status: 'queued',
+      }, {
+        $set: {
+          status: 'failed',
+          workerId: this.workerId,
+          failedAt: new Date(),
+          errorMessage,
+        },
+      }, { returnDocument: 'after' }).lean().exec();
+      if (failedMessage) {
+        await this.recordAdditionalMessageEvent(active, failedMessage, 'failed');
+      }
+    }
+  }
+
+  async failOutstandingAdditionalMessages(turnId, errorMessage) {
+    await CodexTurnMessage.updateMany({
+      turnId: String(turnId),
+      status: { $in: ['queued', 'delivering'] },
+    }, {
+      $set: {
+        status: 'failed',
+        failedAt: new Date(),
+        errorMessage,
+      },
+    }).exec();
+  }
+
   async runClaimedTurn(turn, workspace, target, lock) {
     const config = this.getConfig();
     let nextEventSeq = 1;
     let storedEventCount = 0;
     let eventCapReached = false;
     let heartbeatInterval = null;
+    let additionalMessageInterval = null;
+    let eventWriteChain = Promise.resolve();
     const usesOllama = codexToolService.getTurnModelProvider(turn) === 'ollama';
 
     const session = await CodexSession.findById(turn.sessionId).lean().exec();
-    const onEvent = async (event) => {
-      if (storedEventCount >= config.maxEventsPerTurn) {
+    const storeEvent = async (event) => {
+      const isAdditionalUserMessage = event?.payload?.item?.type === 'user_message';
+      if (storedEventCount >= config.maxEventsPerTurn && !isAdditionalUserMessage) {
         if (!eventCapReached) {
           eventCapReached = true;
           await this.recordEvent(turn, nextEventSeq, {
@@ -396,12 +614,34 @@ class CodexQueueWorker {
           nextEventSeq += 1;
           storedEventCount += 1;
         }
-        return;
+        return { stored: false, count: storedEventCount };
       }
       await this.recordEvent(turn, nextEventSeq, event);
       nextEventSeq += 1;
       storedEventCount += 1;
+      return { stored: true, count: storedEventCount };
     };
+    const onEvent = (event) => {
+      const operation = eventWriteChain.then(() => storeEvent(event));
+      eventWriteChain = operation.catch(() => {});
+      return operation;
+    };
+    const active = this.activeTurns.get(String(turn._id)) || {};
+    Object.assign(active, {
+      turn,
+      session,
+      workspace,
+      target,
+      onEvent,
+      codexThreadId: String(turn.codexThreadIdSeen || session?.codexThreadId || ''),
+      codexTurnId: '',
+      processStarted: false,
+      acceptingMessages: true,
+      deliveryPromise: null,
+      messagePollErrorReported: false,
+    });
+    this.activeTurns.set(String(turn._id), active);
+
     const onCommand = async (commandSummary) => {
       await CodexTurn.updateOne({ _id: turn._id }, { $set: { commandSummary } }).exec();
       await onEvent({
@@ -411,10 +651,76 @@ class CodexQueueWorker {
         text: 'Codex process started.',
         severity: 'info',
       });
+      active.processStarted = true;
+    };
+    const onThreadId = async (threadId) => {
+      active.codexThreadId = String(threadId || '');
+      if (!active.codexThreadId) {
+        return;
+      }
+      try {
+        await Promise.all([
+          CodexTurn.updateOne({ _id: turn._id, status: 'running' }, {
+            $set: { codexThreadIdSeen: active.codexThreadId },
+          }).exec(),
+          CodexSession.updateOne({
+            _id: turn.sessionId,
+            codexThreadId: { $in: [null, ''] },
+          }, {
+            $set: { codexThreadId: active.codexThreadId },
+          }).exec(),
+        ]);
+      } catch (error) {
+        logger.error('Codex thread id could not be persisted while the turn was running', {
+          category: 'codex_tool',
+          metadata: {
+            workerId: this.workerId,
+            turnId: String(turn._id),
+            errorName: error?.name || 'Error',
+          },
+        });
+      }
+    };
+    const onTurnStarted = async ({ threadId, turnId }) => {
+      active.codexThreadId = String(threadId || active.codexThreadId || '');
+      active.codexTurnId = String(turnId || '');
+      if (active.codexTurnId) {
+        pollAdditionalMessages();
+      }
     };
     const isCancellationRequested = async () => {
       const currentTurn = await CodexTurn.findById(turn._id).select({ cancelRequestedAt: 1, status: 1 }).lean().exec();
       return Boolean(currentTurn && (currentTurn.cancelRequestedAt || currentTurn.status === 'cancelled'));
+    };
+    const pollAdditionalMessages = () => {
+      this.deliverPendingAdditionalMessages(turn._id)
+        .then(() => {
+          active.messagePollErrorReported = false;
+        })
+        .catch((error) => {
+          this.lastError = error.message;
+          if (!active.messagePollErrorReported) {
+            active.messagePollErrorReported = true;
+            logger.warning('Codex additional message polling failed', {
+              category: 'codex_tool',
+              metadata: {
+                workerId: this.workerId,
+                turnId: String(turn._id),
+                errorName: error?.name || 'Error',
+              },
+            });
+          }
+        });
+    };
+    const stopAdditionalMessageDelivery = async () => {
+      active.acceptingMessages = false;
+      if (additionalMessageInterval) {
+        clearInterval(additionalMessageInterval);
+        additionalMessageInterval = null;
+      }
+      if (active.deliveryPromise) {
+        await active.deliveryPromise.catch(() => {});
+      }
     };
 
     heartbeatInterval = setInterval(() => {
@@ -434,6 +740,10 @@ class CodexQueueWorker {
     }, config.heartbeatMs);
     if (heartbeatInterval.unref) {
       heartbeatInterval.unref();
+    }
+    additionalMessageInterval = setInterval(pollAdditionalMessages, config.additionalMessagePollMs);
+    if (additionalMessageInterval.unref) {
+      additionalMessageInterval.unref();
     }
 
     try {
@@ -463,17 +773,21 @@ class CodexQueueWorker {
         target,
         onEvent,
         onCommand,
+        onThreadId,
+        onTurnStarted,
         isCancellationRequested,
       });
+      await stopAdditionalMessageDelivery();
 
       const completedAt = new Date();
       const finalResponse = result.finalResponse || '';
+      const codexThreadId = result.codexThreadId || active.codexThreadId || null;
       const updatedTurn = await CodexTurn.findByIdAndUpdate(turn._id, {
         $set: {
           status: result.status,
           finalResponse,
           responsePreview: codexToolService.previewFromText(finalResponse),
-          codexThreadIdSeen: result.codexThreadId || null,
+          codexThreadIdSeen: codexThreadId,
           commandSummary: result.commandSummary || {},
           exitCode: result.exitCode,
           exitSignal: result.exitSignal || '',
@@ -485,6 +799,19 @@ class CodexQueueWorker {
         },
       }, { returnDocument: 'after' }).exec();
 
+      await this.failQueuedAdditionalMessages(
+        active,
+        'The Codex turn finished before this message could be delivered.'
+      ).catch((error) => {
+        logger.error('Queued Codex messages could not be finalized after turn completion', {
+          category: 'codex_tool',
+          metadata: {
+            workerId: this.workerId,
+            turnId: String(turn._id),
+            errorName: error?.name || 'Error',
+          },
+        });
+      });
       await onEvent({
         stream: 'system',
         eventType: `turn.${result.status}`,
@@ -494,16 +821,17 @@ class CodexQueueWorker {
       updatedTurn.eventCount = storedEventCount;
       await CodexTurn.updateOne({ _id: turn._id }, { $set: { eventCount: storedEventCount } }).exec();
 
-      if (result.codexThreadId) {
+      if (codexThreadId) {
         await CodexSession.updateOne({
           _id: turn.sessionId,
           codexThreadId: { $in: [null, ''] },
         }, {
-          $set: { codexThreadId: result.codexThreadId },
+          $set: { codexThreadId },
         }).exec();
       }
       await codexToolService.updateSessionAfterTurn(updatedTurn);
     } catch (error) {
+      await stopAdditionalMessageDelivery();
       const completedAt = new Date();
       const durationMs = turn.startedAt ? completedAt.getTime() - new Date(turn.startedAt).getTime() : null;
       const updatedTurn = await CodexTurn.findByIdAndUpdate(turn._id, {
@@ -515,6 +843,19 @@ class CodexQueueWorker {
           eventCount: storedEventCount,
         },
       }, { returnDocument: 'after' }).exec();
+      await this.failQueuedAdditionalMessages(
+        active,
+        'The Codex turn failed before this message could be delivered.'
+      ).catch((messageError) => {
+        logger.error('Queued Codex messages could not be finalized after turn failure', {
+          category: 'codex_tool',
+          metadata: {
+            workerId: this.workerId,
+            turnId: String(turn._id),
+            errorName: messageError?.name || 'Error',
+          },
+        });
+      });
       await onEvent({
         stream: 'system',
         eventType: 'turn.failed',
@@ -525,9 +866,24 @@ class CodexQueueWorker {
       await CodexTurn.updateOne({ _id: turn._id }, { $set: { eventCount: storedEventCount } }).exec();
       await codexToolService.updateSessionAfterTurn(updatedTurn);
     } finally {
+      await stopAdditionalMessageDelivery();
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
       }
+      await this.failOutstandingAdditionalMessages(
+        turn._id,
+        'The Codex turn ended before this message could be delivered.'
+      ).catch((error) => {
+        this.lastError = error.message;
+        logger.error('Outstanding Codex messages could not be finalized', {
+          category: 'codex_tool',
+          metadata: {
+            workerId: this.workerId,
+            turnId: String(turn._id),
+            errorName: error?.name || 'Error',
+          },
+        });
+      });
       this.activeTurns.delete(String(turn._id));
       if (usesOllama) {
         await this.releaseOllamaReservationIfIdle(turn._id);

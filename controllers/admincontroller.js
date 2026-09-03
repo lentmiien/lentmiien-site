@@ -106,6 +106,7 @@ const routes = [
   "test",
   "archive",
   "codex.run.runpod_model",
+  "codex.turn.steer",
   "runpod.catalog.read",
   "runpod.billing.read",
   "runpod.billing.sync",

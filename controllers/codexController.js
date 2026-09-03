@@ -28,17 +28,20 @@ function renderPageError(req, res, error, fallbackMessage) {
   return res.status(status).render('error_page', { error: message });
 }
 
-function renderJsonError(req, res, error, fallbackMessage) {
+function renderJsonError(req, res, error, fallbackMessage, options = {}) {
   const status = error?.statusCode || 500;
   const message = error?.message || fallbackMessage;
+  const metadata = {
+    path: req.originalUrl,
+    status,
+    error: message,
+  };
+  if (options.includeUser !== false) {
+    metadata.user = req.user?.name || null;
+  }
   logger.warning('Codex API request failed', {
     category: 'codex_tool',
-    metadata: {
-      path: req.originalUrl,
-      user: req.user?.name || null,
-      status,
-      error: message,
-    },
+    metadata,
   });
   return res.status(status).json({ ok: false, error: message });
 }
@@ -236,6 +239,7 @@ exports.getTurnEvents = async (req, res) => {
     const events = await codexToolService.listTurnEvents(req.params.turnId, {
       afterSeq: req.query.afterSeq,
       limit: req.query.limit,
+      user: req.user,
     });
     return res.json({
       ok: true,
@@ -243,6 +247,25 @@ exports.getTurnEvents = async (req, res) => {
     });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to load Codex events.');
+  }
+};
+
+exports.addTurnMessage = async (req, res) => {
+  try {
+    const result = await codexToolService.queueAdditionalTurnMessage(
+      req.params.turnId,
+      req.body || {},
+      req.user
+    );
+    return res.status(202).json({ ok: true, ...result });
+  } catch (error) {
+    return renderJsonError(
+      req,
+      res,
+      error,
+      'Unable to add the message to this Codex turn.',
+      { includeUser: false }
+    );
   }
 };
 

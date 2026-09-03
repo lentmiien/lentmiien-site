@@ -2,7 +2,12 @@ const marked = require('marked');
 const sanitizeHtml = require('sanitize-html');
 
 const MARKDOWN_ITEM_TYPES = new Set(['agent_message', 'reasoning']);
-const SUPPORTED_ITEM_TYPES = new Set([...MARKDOWN_ITEM_TYPES, 'todo_list', 'file_change']);
+const SUPPORTED_ITEM_TYPES = new Set([
+  ...MARKDOWN_ITEM_TYPES,
+  'todo_list',
+  'file_change',
+  'user_message',
+]);
 
 function extractCodexItem(payload) {
   if (!payload || typeof payload !== 'object') {
@@ -80,6 +85,14 @@ function buildCodexEventPresentation(event) {
           }))
           .filter((change) => change.path)
         : [],
+    };
+  }
+
+  if (itemType === 'user_message') {
+    return {
+      itemType,
+      text: String(item.text || ''),
+      deliveryStatus: String(event?.payload?.deliveryStatus || '').trim().toLowerCase(),
     };
   }
 

@@ -1,16 +1,17 @@
 const CODEX_CAPABILITIES = Object.freeze({
   runpodModelRun: 'codex.run.runpod_model',
+  turnSteer: 'codex.turn.steer',
 });
 
 const CODEX_ADMIN_CAPABILITIES = Object.freeze(Object.values(CODEX_CAPABILITIES));
 
-// Runpod-backed models can incur infrastructure cost, so they are restricted to
-// the administrator capability bundle by default. An individual account can be
-// granted the semantic capability through the existing role store when needed.
+// Runpod-backed models can incur infrastructure cost, so that capability is
+// restricted to administrators by default. Turn steering follows the normal
+// authenticated Codex roles and still requires object-level ownership.
 const CODEX_ROLE_CAPABILITY_BUNDLES = Object.freeze({
   admin: CODEX_ADMIN_CAPABILITIES,
-  family: Object.freeze([]),
-  user: Object.freeze([]),
+  family: Object.freeze([CODEX_CAPABILITIES.turnSteer]),
+  user: Object.freeze([CODEX_CAPABILITIES.turnSteer]),
   other: Object.freeze([]),
 });
 
