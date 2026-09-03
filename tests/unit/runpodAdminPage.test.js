@@ -54,7 +54,7 @@ describe('Runpod admin page', () => {
         totalBytes: 156822111075,
         recommendedVolumeGb: 250,
         recommendedVramGb: 192,
-        defaultContextTokens: 16384,
+        defaultContextTokens: 32768,
         sourceRevision: '2975ab414d30340466d8c51533c6e91f0cca64c1',
         runtimeRevision: '949f7efb097eb20ef36fecdb1afaebff9a4ae7ed',
       }],
@@ -106,6 +106,8 @@ describe('Runpod admin page', () => {
     expect(html).toContain('2× RTX PRO 6000');
     expect(html).toContain('No Pod-local persistent disk is allocated');
     expect(html).toContain('name="billingAcknowledged"');
+    expect(html).toContain('Total context (prompt + thinking + answer)');
+    expect(html).toContain('32,768 tokens · conservative default');
   });
 
   test('renders v2 catalog, billing, template, picker, and lifecycle controls', () => {
@@ -195,7 +197,7 @@ describe('Runpod admin page', () => {
         totalBytes: 156822111075,
         recommendedVolumeGb: 250,
         recommendedVramGb: 192,
-        defaultContextTokens: 16384,
+        defaultContextTokens: 32768,
       }],
       modelArtifacts: [{
         slug: 'glm-5-3-flash-ud-iq4-xs',
@@ -278,6 +280,27 @@ describe('Runpod admin page', () => {
           occurredAt: '2026-09-01T00:30:00.000Z',
         },
       }, {
+        id: 'glm-local-pod-id',
+        name: 'glm53-flash',
+        providerPodId: 'glm-provider-pod-id',
+        providerStatus: 'RUNNING',
+        podPurpose: 'llama_cpp_service',
+        gpuName: 'RTX PRO 6000',
+        gpuId: 'NVIDIA RTX PRO 6000 Blackwell Server Edition',
+        gpuCount: 2,
+        costPerHour: 4.18,
+        setupStatus: 'ready',
+        setupModel: 'glm-5-3-flash-ud-iq4-xs',
+        contextTokens: 16384,
+        accessMode: 'cloudflare_access',
+        publicUrl: 'https://llm.lentmiien.com/',
+        autoStopAt: '2026-09-01T02:00:00.000Z',
+        canStart: false,
+        canStop: true,
+        canExtend: true,
+        canReconfigureContext: true,
+        canDelete: true,
+      }, {
         id: 'stopped-local-pod-id',
         name: 'stopped-ollama',
         providerPodId: 'stopped-provider-pod-id',
@@ -336,6 +359,7 @@ describe('Runpod admin page', () => {
     expect(html).toContain('action="/admin/runpod/pods"');
     expect(html).toContain('action="/admin/runpod/pods/local-pod-id/stop"');
     expect(html).toContain('action="/admin/runpod/pods/local-pod-id/extend"');
+    expect(html).toContain('action="/admin/runpod/pods/glm-local-pod-id/llama-cpp-context"');
     expect(html).toContain('action="/admin/runpod/pods/stopped-local-pod-id/start"');
     expect(html).toContain('action="/admin/runpod/pods/local-pod-id/delete"');
     expect(html).toContain('Start for…');
@@ -344,6 +368,11 @@ describe('Runpod admin page', () => {
     expect(html).toContain('+1h');
     expect(html).toContain('+4h');
     expect(html).toContain('Custom (minutes)');
+    expect(html).toContain('Change total context and reload model');
+    expect(html).toContain('98,304 tokens · recommended for 2×96 GB');
+    expect(html).toContain('131,072 tokens · maximum tested on 2×96 GB');
+    expect(html).toContain('name="reloadAcknowledged"');
+    expect(html).toContain('The automatic-stop deadline does not move');
     expect(html).toContain('data-runpod-countdown');
     expect(html).toContain('RUNPOD_START_GPU_UNAVAILABLE');
     expect(html).toContain('Original GPU unavailable');

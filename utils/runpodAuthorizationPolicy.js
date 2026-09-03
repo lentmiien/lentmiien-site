@@ -13,6 +13,7 @@ const RUNPOD_CAPABILITIES = Object.freeze({
   modelDownloadCreate: 'runpod.model_download.create',
   modelArtifactPrepare: 'runpod.model_artifact.prepare',
   llamaCppCreate: 'runpod.llama_cpp.create',
+  llamaCppReconfigure: 'runpod.llama_cpp.reconfigure',
   networkVolumeRead: 'runpod.network_volume.read',
   networkVolumeCreate: 'runpod.network_volume.create',
   networkVolumeDelete: 'runpod.network_volume.delete',

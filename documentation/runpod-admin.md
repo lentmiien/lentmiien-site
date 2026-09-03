@@ -301,15 +301,36 @@ Current Secure Cloud candidates from the 2026-09-02 live v2 catalog are:
 These are catalog rates, not reservations. Before creation the app must refresh
 the exact data-center stock, confirm that the requested count exists on one
 machine, and reject any returned Pod rate above the administrator's explicit
-limit. Start at 16,384 context tokens, one parallel slot, and a 60-minute
-automatic stop. A model advertising 1M context does not imply that 1M context
-fits this VRAM budget.
+limit. Start at 32,768 context tokens, one parallel slot, and a 60-minute
+automatic stop. Prompt/history, reasoning, and the visible answer share this
+total window. The server leaves generation unlimited within that window. A
+model advertising 1M context does not imply that 1M context fits this VRAM
+budget.
+
+A 2026-09-03 live calibration on 2 × RTX PRO 6000 Blackwell Server Edition
+GPUs found that 128K starts successfully and serves authenticated completions,
+but it is the practical ceiling for this profile: `nvidia-smi` reported
+94,901 / 97,887 MiB and 93,125 / 97,887 MiB immediately after readiness. The
+32K run was approximately 77–78 GiB per GPU. Interpolating the runtime's much
+larger context-dependent attention workspace—not just the relatively small KV
+cache—gives these planning ranges:
+
+| Total context | Approximate VRAM used per GPU | Planning tier |
+| ---: | ---: | --- |
+| 32K | 77–78 GiB | Conservative |
+| 64K | 82–84 GiB | Comfortable |
+| 96K | 87–90 GiB | Recommended high-context balance |
+| 128K | 90.9–92.7 GiB observed | Maximum tested; only 2.9–4.7 GiB free |
+
+The exact allocation can change with llama.cpp revisions, batching flags, and
+GPU placement, so remeasure after a runtime change. The server emits one
+`RUNPOD_LLM_GPU_MEMORY` marker per GPU after readiness for that purpose.
 
 The pinned llama.cpp server profile should use:
 
 - model path on the network volume, beginning with the first split GGUF shard;
-- `--gpu-layers all`, one slot, `--ctx-size 16384`, and layer split across all
-  visible GPUs;
+- `--gpu-layers all`, one slot, `--ctx-size 32768`, `--n-predict -1`, and layer
+  split across all visible GPUs;
 - `NVIDIA_TF32_OVERRIDE=0` and `--flash-attn off` until the pinned PR says those
   workarounds are no longer required;
 - `--host 127.0.0.1 --port 8080`, no Runpod proxy ports, and the existing named
@@ -324,7 +345,10 @@ Open WebUI must use an **OpenAI-compatible connection**, not its Ollama
 connection: base URL `https://llm.lentmiien.com/v1`, API key equal to the native
 LLM key, plus the two Cloudflare Access service-token headers. The browser root
 may use Cloudflare interactive login, but API requests need both authentication
-layers.
+layers. Leave Open WebUI's per-model context/output overrides unset unless a
+smaller bound is intentional. An API request's `max_tokens` still imposes its
+own output cap, while llama.cpp's server default is unlimited inside the shared
+context window.
 
 Implementation sequence:
 
@@ -348,6 +372,17 @@ Implementation sequence:
    provider-error, archival, one-volume-writer, and one-tunnel-connector controls.
    Delete compute after a failed test; never delete the large model volume as
    implicit Pod cleanup.
+
+An administrator can change a running managed llama.cpp Pod between the reviewed
+16K, 32K, 64K, 96K, and 128K context sizes. The app PATCHes only the Pod's generated
+entrypoint arguments through Runpod v2 and then verifies the effective `n_ctx`
+from `/props` before marking setup ready. Runpod resets the container for this
+edit, so active responses are interrupted and the model must reload. The Pod,
+GPU allocation, attached network volume, and stable Cloudflare URL remain in
+place; ephemeral container-disk changes outside `/workspace` do not. The
+automatic-stop deadline is deliberately unchanged and the app refuses to begin
+a reload with less than 15 minutes remaining. The UI recommends extending by at
+least 30 minutes first.
 
 Steps 1 and 2 now have an implementation path in the admin page. The
 `runpod_model_artifacts` collection stores the immutable source/runtime contract
@@ -381,7 +416,7 @@ Security zone: logged-in
 Interactive principals: admin
 Machine principals: internal bounded artifact-preparation and Pod-observer jobs; Cloudflare Access service-token client
 Data classification: sensitive provider resource/artifact metadata; secret Runpod, tunnel, Access, and native LLM credentials
-Capabilities: runpod.model_artifact.read, runpod.model_artifact.prepare, runpod.model_artifact.archive, runpod.llama_cpp.create, plus the existing Pod lifecycle capabilities
+Capabilities: runpod.model_artifact.read, runpod.model_artifact.prepare, runpod.model_artifact.archive, runpod.llama_cpp.create, runpod.llama_cpp.reconfigure, plus the existing Pod lifecycle capabilities
 Object scope: account-wide admin-managed records resolved from local MongoDB IDs; provider volume/Pod IDs are derived server-side
 Admin override: no implicit override; each operation requires its explicit semantic capability
 Browser mutations and CSRF control: POST only; shared token, Origin, and Fetch Metadata checks

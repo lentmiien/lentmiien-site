@@ -32,6 +32,9 @@ const NOTICE_KEYS = Object.freeze({
   podStopFailed: 'pod-stop-failed',
   podExtended: 'pod-extended',
   podExtendFailed: 'pod-extend-failed',
+  llamaCppReconfigured: 'llama-cpp-reconfigured',
+  llamaCppReconfigureFailed: 'llama-cpp-reconfigure-failed',
+  llamaCppReloadDeadlineTooClose: 'llama-cpp-reload-deadline-too-close',
   podDeleted: 'pod-deleted',
   podDeleteFailed: 'pod-delete-failed',
   setupQueued: 'setup-queued',
@@ -107,6 +110,13 @@ function startFailureNotice(error) {
   return failureNotice(error, NOTICE_KEYS.podStartFailed);
 }
 
+function llamaCppReconfigureFailureNotice(error) {
+  if (error?.code === 'RUNPOD_LLAMA_CPP_RELOAD_DEADLINE_TOO_CLOSE') {
+    return NOTICE_KEYS.llamaCppReloadDeadlineTooClose;
+  }
+  return failureNotice(error, NOTICE_KEYS.llamaCppReconfigureFailed);
+}
+
 function logRejectedOperation(appLogger, action, error) {
   const expectedInputFailure = [
     'RUNPOD_INPUT_INVALID',
@@ -128,6 +138,9 @@ function logRejectedOperation(appLogger, action, error) {
     'RUNPOD_LLM_GATEWAY_NOT_CONFIGURED',
     'RUNPOD_LLM_GPU_UNAVAILABLE',
     'RUNPOD_LLM_VRAM_INSUFFICIENT',
+    'RUNPOD_LLAMA_CPP_RECONFIGURE_UNSUPPORTED',
+    'RUNPOD_LLAMA_CPP_RELOAD_NOT_ACKNOWLEDGED',
+    'RUNPOD_LLAMA_CPP_RELOAD_DEADLINE_TOO_CLOSE',
     'RUNPOD_MODEL_ARTIFACT_NOT_READY',
     'RUNPOD_DATACENTER_UNAVAILABLE',
     'RUNPOD_DATACENTER_NETWORKING_UNAVAILABLE',
@@ -333,6 +346,23 @@ function createRunpodPodAdminController({
       }
     },
 
+    async reconfigureLlamaCppPod(req, res) {
+      try {
+        await manager.reconfigureManagedLlamaCppPod(
+          req.params.id,
+          req.body || {},
+          req.user
+        );
+        return redirectWithNotice(res, NOTICE_KEYS.llamaCppReconfigured);
+      } catch (error) {
+        logRejectedOperation(appLogger, 'llama_cpp_reconfigure', error);
+        return redirectWithNotice(
+          res,
+          llamaCppReconfigureFailureNotice(error)
+        );
+      }
+    },
+
     async deletePod(req, res) {
       try {
         await manager.deleteManagedPod(req.params.id, req.body?.confirmation, req.user);
@@ -382,6 +412,7 @@ module.exports = {
   NOTICE_KEYS,
   createRunpodPodAdminController,
   failureNotice,
+  llamaCppReconfigureFailureNotice,
   modelArtifactPodFailureNotice,
   modelArtifactPreparationFailureNotice,
   redirectWithNotice,

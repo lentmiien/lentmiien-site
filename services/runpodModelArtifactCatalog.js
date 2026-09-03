@@ -7,6 +7,16 @@ const GLM53_FLASH_UD_IQ4_XS_SLUG = 'glm-5-3-flash-ud-iq4-xs';
 const GLM53_FLASH_LLAMA_CPP_PROVIDER_TEMPLATE_NAME = 'lentmiien-glm53-llama-cpp-cloudflare-v2';
 const GLM53_FLASH_LLAMA_CPP_ORIGIN_PORT = 8080;
 const GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS = 'glm-5.3-flash';
+const GLM53_FLASH_DEFAULT_CONTEXT_TOKENS = 32_768;
+const GLM53_FLASH_CONTEXT_TOKEN_OPTIONS = Object.freeze([
+  16_384,
+  32_768,
+  65_536,
+  98_304,
+  131_072,
+]);
+const MIN_ARTIFACT_SERVER_CONTEXT_TOKENS = 2_048;
+const MAX_ARTIFACT_SERVER_CONTEXT_TOKENS = 131_072;
 const CLOUDFLARED_VERSION = '2026.8.3';
 const CLOUDFLARED_AMD64_SHA256 = 'f29324fe934d1e100617484c78deef803c4dc2cd351d645bbde42e96b4fccc5e';
 const CLOUDFLARED_AMD64_URL = `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64`;
@@ -31,7 +41,7 @@ const GLM53_FLASH_UD_IQ4_XS = Object.freeze({
   totalBytes: 156_822_111_075,
   recommendedVolumeGb: 250,
   recommendedVramGb: 192,
-  defaultContextTokens: 16_384,
+  defaultContextTokens: GLM53_FLASH_DEFAULT_CONTEXT_TOKENS,
   preparationDiskGb: 40,
   preparationMaxHourlyCostUsd: 0.99,
   preparationTimeoutSeconds: 4 * 60 * 60,
@@ -75,6 +85,38 @@ function shellQuote(value) {
 function getModelArtifactPreset(slug) {
   const normalized = typeof slug === 'string' ? slug.trim().toLowerCase() : '';
   return MODEL_ARTIFACT_PRESETS[normalized] || null;
+}
+
+function artifactServerContextFromArgs(value) {
+  const rawArgs = typeof value === 'string' ? value : '';
+  if (!rawArgs || Buffer.byteLength(rawArgs, 'utf8') > 64 * 1024) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(rawArgs);
+  } catch (_) {
+    return null;
+  }
+  const command = Array.isArray(parsed?.cmd) && typeof parsed.cmd[0] === 'string'
+    ? parsed.cmd[0]
+    : '';
+  const encodedScript = command.match(
+    /printf '%s' '([A-Za-z0-9+/=]{1,49152})' \| base64 -d > \/tmp\/runpod-artifact-server\.sh/u
+  )?.[1];
+  if (!encodedScript) return null;
+  const script = Buffer.from(encodedScript, 'base64').toString('utf8');
+  if (
+    Buffer.byteLength(script, 'utf8') > 48 * 1024
+    || !script.includes(`model_alias=${GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS}`)
+    || !script.includes(`/workspace/${GLM53_FLASH_UD_IQ4_XS.relativeReadyPath}`)
+  ) {
+    return null;
+  }
+  const context = Number(script.match(/(?:^|\s)--ctx-size\s+(\d{1,9})(?:\s|\\|$)/mu)?.[1]);
+  return Number.isSafeInteger(context)
+    && context >= MIN_ARTIFACT_SERVER_CONTEXT_TOKENS
+    && context <= MAX_ARTIFACT_SERVER_CONTEXT_TOKENS
+    ? context
+    : null;
 }
 
 function modelArtifactDiagnosticCode(lines = []) {
@@ -474,8 +516,12 @@ function buildArtifactServerShell(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, {
   const requestedContext = Number(contextTokens ?? preset.defaultContextTokens);
   const requestedGpuCount = Number(gpuCount);
   const requestedPort = Number(originPort);
-  if (!Number.isSafeInteger(requestedContext) || requestedContext < 2048 || requestedContext > 131072) {
-    throw new TypeError('Artifact server context must be between 2048 and 131072 tokens.');
+  if (
+    !Number.isSafeInteger(requestedContext)
+    || requestedContext < MIN_ARTIFACT_SERVER_CONTEXT_TOKENS
+    || requestedContext > MAX_ARTIFACT_SERVER_CONTEXT_TOKENS
+  ) {
+    throw new TypeError(`Artifact server context must be between ${MIN_ARTIFACT_SERVER_CONTEXT_TOKENS} and ${MAX_ARTIFACT_SERVER_CONTEXT_TOKENS} tokens.`);
   }
   if (!Number.isSafeInteger(requestedGpuCount) || requestedGpuCount < 1 || requestedGpuCount > 32) {
     throw new TypeError('Artifact server GPU count must be between 1 and 32.');
@@ -557,6 +603,7 @@ printf 'RUNPOD_LLM_STAGE stage=loading_model model_bytes=${preset.totalBytes} gp
   --split-mode layer \
   --tensor-split ${shellQuote(tensorSplit)} \
   --ctx-size ${requestedContext} \
+  --n-predict -1 \
   --parallel 1 \
   --flash-attn off \
   --jinja &
@@ -585,6 +632,19 @@ done
 curl -fsS -H "Authorization: Bearer $LLAMA_API_KEY" \
   "http://127.0.0.1:${requestedPort}/health" >/dev/null \
   || fail LLAMA_CPP_STARTUP_TIMEOUT loading_model
+
+if command -v nvidia-smi >/dev/null 2>&1; then
+  nvidia-smi --query-gpu=index,memory.used,memory.total \
+    --format=csv,noheader,nounits 2>/dev/null \
+    | awk -F',' -v context=${requestedContext} '
+        {
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1)
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2)
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", $3)
+          printf "RUNPOD_LLM_GPU_MEMORY gpu=%s used_mib=%s total_mib=%s context=%s\\n", $1, $2, $3, context
+        }
+      ' || true
+fi
 
 wait -n "$server_pid" "$tunnel_pid"
 fail SERVICE_PROCESS_EXITED serving
@@ -662,15 +722,20 @@ function artifactServerProviderPayload(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, option
 
 module.exports = {
   ARTIFACT_PATH_PATTERN,
+  GLM53_FLASH_CONTEXT_TOKEN_OPTIONS,
+  GLM53_FLASH_DEFAULT_CONTEXT_TOKENS,
   GLM53_FLASH_UD_IQ4_XS,
   GLM53_FLASH_UD_IQ4_XS_SLUG,
   GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS,
   GLM53_FLASH_LLAMA_CPP_ORIGIN_PORT,
   GLM53_FLASH_LLAMA_CPP_PROVIDER_TEMPLATE_NAME,
+  MAX_ARTIFACT_SERVER_CONTEXT_TOKENS,
+  MIN_ARTIFACT_SERVER_CONTEXT_TOKENS,
   MODEL_ARTIFACT_PRESETS,
   SHA256_PATTERN,
   artifactPreparerProviderPayload,
   artifactPreparerTemplate,
+  artifactServerContextFromArgs,
   artifactServerProviderPayload,
   artifactServerTemplate,
   assertPresetIntegrity,

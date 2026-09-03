@@ -1,7 +1,10 @@
 const {
+  GLM53_FLASH_CONTEXT_TOKEN_OPTIONS,
+  GLM53_FLASH_DEFAULT_CONTEXT_TOKENS,
   GLM53_FLASH_UD_IQ4_XS,
   GLM53_FLASH_UD_IQ4_XS_SLUG,
   artifactPreparerProviderPayload,
+  artifactServerContextFromArgs,
   artifactServerProviderPayload,
   assertPresetIntegrity,
   buildArtifactPreparerArgs,
@@ -30,8 +33,16 @@ describe('Runpod model artifact catalog', () => {
       totalBytes: 156_822_111_075,
       recommendedVolumeGb: 250,
       recommendedVramGb: 192,
+      defaultContextTokens: GLM53_FLASH_DEFAULT_CONTEXT_TOKENS,
     }));
     expect(preset.manifest).toHaveLength(5);
+    expect(GLM53_FLASH_CONTEXT_TOKEN_OPTIONS).toEqual([
+      16_384,
+      32_768,
+      65_536,
+      98_304,
+      131_072,
+    ]);
     expect(preset.manifest.reduce((total, file) => total + file.sizeBytes, 0))
       .toBe(preset.totalBytes);
     expect(getModelArtifactPreset('../arbitrary')).toBeNull();
@@ -132,7 +143,8 @@ describe('Runpod model artifact catalog', () => {
     expect(shell).toContain('--tensor-split \'1,1\'');
     expect(shell).toContain('--n-gpu-layers 999');
     expect(shell).toContain('--flash-attn off');
-    expect(shell).toContain('--ctx-size 16384');
+    expect(shell).toContain('--ctx-size 32768');
+    expect(shell).toContain('--n-predict -1');
     expect(shell).toContain('test -n "${LLAMA_API_KEY:-}"');
     expect(shell).not.toContain('--api-key "$LLAMA_API_KEY"');
     expect(shell).toContain("cloudflared_url='https://github.com/cloudflare/cloudflared/releases/download/2026.8.3/cloudflared-linux-amd64'");
@@ -141,10 +153,20 @@ describe('Runpod model artifact catalog', () => {
     expect(shell).not.toContain('$CLOUDFLARED_AMD64_SHA256');
     expect(shell).toContain('seq 1 270');
     expect(shell).toContain('RUNPOD_LLM_READY');
+    expect(shell).toContain('--query-gpu=index,memory.used,memory.total');
+    expect(shell).toContain('RUNPOD_LLM_GPU_MEMORY gpu=%s used_mib=%s total_mib=%s context=%s');
     expect(shell).toContain('/workspace/artifacts/glm-5.3-flash-ud-iq4-xs/READY.json');
     expect(shell).not.toContain('RUNPOD_API_KEY');
     expect(spawnSync('/bin/bash', ['-n'], { input: shell, encoding: 'utf8' }))
       .toEqual(expect.objectContaining({ status: 0, stderr: '' }));
+    expect(artifactServerContextFromArgs(payload.args)).toBe(32768);
+    expect(artifactServerContextFromArgs(artifactServerProviderPayload(
+      GLM53_FLASH_UD_IQ4_XS_SLUG,
+      { contextTokens: 65536 }
+    ).args)).toBe(65536);
+    expect(artifactServerContextFromArgs(JSON.stringify({
+      cmd: ['echo --ctx-size 131072'],
+    }))).toBeNull();
   });
 
   test('recognizes the Xet background-writer failure returned for network-volume writes', () => {

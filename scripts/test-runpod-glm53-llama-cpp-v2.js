@@ -5,6 +5,7 @@ require('dotenv').config({ quiet: true });
 
 const { RunpodApiV2Service } = require('../services/runpodApiV2Service');
 const {
+  GLM53_FLASH_DEFAULT_CONTEXT_TOKENS,
   GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS,
   GLM53_FLASH_LLAMA_CPP_PROVIDER_TEMPLATE_NAME,
   GLM53_FLASH_UD_IQ4_XS_SLUG,
@@ -17,7 +18,7 @@ const EXECUTE_FLAG = '--execute';
 const DEFAULT_VOLUME_NAME = 'glm-5-3-flash-ud-iq4-xs';
 const OLLAMA_CLOUDFLARE_TEMPLATE_NAME = 'lentmiien-ollama-cloudflare-v2';
 const DEFAULT_GPU_COUNT = 2;
-const DEFAULT_CONTEXT_TOKENS = 16_384;
+const DEFAULT_CONTEXT_TOKENS = GLM53_FLASH_DEFAULT_CONTEXT_TOKENS;
 const DEFAULT_MAX_HOURLY_COST_USD = 4.25;
 const DEFAULT_STARTUP_TIMEOUT_MS = 45 * 60 * 1000;
 const DEFAULT_INFERENCE_TIMEOUT_MS = 15 * 60 * 1000;

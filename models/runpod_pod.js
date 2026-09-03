@@ -8,7 +8,7 @@ const ActorSchema = new mongoose.Schema({
 const OperationErrorSchema = new mongoose.Schema({
   action: {
     type: String,
-    enum: ['start', 'stop', 'extend', 'delete', 'auto_stop'],
+    enum: ['start', 'stop', 'extend', 'reconfigure', 'delete', 'auto_stop'],
     required: true,
   },
   code: { type: String, required: true, trim: true, maxlength: 80 },

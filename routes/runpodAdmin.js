@@ -234,6 +234,13 @@ router.post(
   runpodPodAdminController.extendPod
 );
 router.post(
+  '/pods/:id/llama-cpp-context',
+  runpodMutationLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.llamaCppReconfigure),
+  runpodPodAdminController.reconfigureLlamaCppPod
+);
+router.post(
   '/pods/:id/setup',
   runpodMutationLimiter,
   csrf.requireToken,

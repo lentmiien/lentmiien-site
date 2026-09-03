@@ -13,11 +13,12 @@ block content
   - const formatDuration = (value) => { if (!Number.isFinite(value)) return 'Not recorded'; const seconds = Math.max(0, Math.floor(value / 1000)); const days = Math.floor(seconds / 86400); const hours = Math.floor((seconds % 86400) / 3600); const minutes = Math.floor((seconds % 3600) / 60); return days ? `${days}d ${hours}h ${minutes}m` : hours ? `${hours}h ${minutes}m` : `${minutes}m`; };
   - const formatBytes = (value) => Number.isFinite(value) ? `${(value / 1000 / 1000 / 1000).toFixed(1)} GB` : '—';
   - const formatMinutes = (value) => value % 1440 === 0 ? `${value / 1440} day${value === 1440 ? '' : 's'}` : value % 60 === 0 ? `${value / 60} hour${value === 60 ? '' : 's'}` : `${value} minutes`;
-  - const operationLabel = (value) => ({ start: 'Pod start', stop: 'Pod stop', extend: 'deadline extension', delete: 'Pod deletion', auto_stop: 'automatic stop' }[value] || 'Pod operation');
+  - const operationLabel = (value) => ({ start: 'Pod start', stop: 'Pod stop', extend: 'deadline extension', reconfigure: 'context reload', delete: 'Pod deletion', auto_stop: 'automatic stop' }[value] || 'Pod operation');
   - const artifactErrorMessage = (value) => ({ HF_DOWNLOAD_TIMEOUT: 'The Hugging Face transfer stalled. Retry will reuse completed shards and make a fresh bounded attempt for the affected shard.', HF_DOWNLOAD_AUTHORIZATION_FAILED: 'Hugging Face rejected the download. Check whether the pinned repository or revision now requires authentication.', HF_DOWNLOAD_RATE_LIMITED: 'Hugging Face rate-limited the download. Wait before retrying; completed shards will be reused.', HF_XET_DOWNLOAD_ERROR: 'The Hugging Face Xet writer failed on the network volume. The preparer now removes incompatible partial reconstruction data, uses sequential HTTP downloads, and reuses completed shards.', HF_DOWNLOAD_NETWORK_ERROR: 'The preparation Pod lost its connection to Hugging Face. Retry when provider networking is stable.', RUNPOD_ARTIFACT_VOLUME_FULL: 'The selected volume does not have enough free capacity for the remaining shards plus 10 GB of headroom.', DEPENDENCY_INSTALL_FAILED: 'The preparation Pod could not install its pinned build dependencies.', RUNTIME_BUILD_FAILED: 'The pinned llama.cpp runtime could not be built or validated.', ARTIFACT_VERIFICATION_FAILED: 'A downloaded shard failed its exact size or SHA-256 verification.', ARTIFACT_FINALIZATION_FAILED: 'The files verified, but the final ready marker could not be written.', RUNPOD_ARTIFACT_PREPARATION_TIMEOUT: 'The four-hour preparation deadline expired before verification completed.' }[value] || 'The preparation Pod failed before the artifact could be verified.');
   - const isoTimestamp = (value) => { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date.toISOString() : ''; };
   - const refreshHref = `${adminPath}?bucketSize=${encodeURIComponent(filters.bucketSize)}&lastN=${encodeURIComponent(filters.lastN)}&refresh=1`;
   - const management = podManagement || { limits: {}, gateway: {}, templates: [], managedPods: [], archivedPods: [], modelDownloads: [], modelArtifactPreparations: [], modelArtifacts: [], modelArtifactPresets: [], networkVolumes: [], archivedNetworkVolumes: [], unmanagedProviderPods: [], gpuOptions: [], errors: {} };
+  - const llamaCppContextTokenOptions = Array.isArray(management.limits.llamaCppContextTokenOptions) && management.limits.llamaCppContextTokenOptions.length ? management.limits.llamaCppContextTokenOptions : [16384, 32768, 65536, 98304, 131072];
   - const ollamaTemplate = management.templates.find((entry) => entry.slug === 'ollama') || null;
   - const cloudflareTemplate = management.templates.find((entry) => entry.slug === 'ollama-cloudflare') || null;
   - const downloaderTemplate = management.templates.find((entry) => entry.slug === 'ollama-downloader') || null;
@@ -168,8 +169,11 @@ block content
                       span GPU count
                       input(type='number', name='gpuCount', min='2', max=management.limits.maxGpuCount, step='1', value='2', required)
                     label.runpod-field
-                      span Context tokens
-                      input(type='number', name='contextTokens', min='2048', max='131072', step='1024', value=largeModelPreset.defaultContextTokens, required)
+                      span Total context (prompt + thinking + answer)
+                      select(name='contextTokens', required)
+                        each contextTokens in llamaCppContextTokenOptions
+                          - const contextNote = contextTokens === 32768 ? ' · conservative default' : contextTokens === 65536 ? ' · comfortable' : contextTokens === 98304 ? ' · recommended for 2×96 GB' : contextTokens === 131072 ? ' · maximum tested on 2×96 GB' : '';
+                          option(value=contextTokens, selected=contextTokens === largeModelPreset.defaultContextTokens)= `${formatInteger(contextTokens)} tokens${contextNote}`
                     label.runpod-field
                       span Auto-stop after (minutes)
                       input(type='number', name='autoStopMinutes', min='15', max=management.limits.maxRuntimeMinutes, step='1', value=management.limits.defaultAutoStopMinutes, required)
@@ -179,6 +183,7 @@ block content
                     label.runpod-field
                       span Confirmed maximum total / hour
                       input(type='number', name='maxHourlyCost', min='0.01', max=management.limits.maxHourlyCostUsd, step='0.01', value='4.25', required)
+                  p.runpod-form-help Generation is not independently capped: prompt, hidden reasoning, and answer share this total window. For 2×96 GB, 96K is the recommended high-context setting; 128K was live-tested but leaves only about 3–5 GiB free per GPU.
                 button.runpod-button.runpod-button--primary(type='submit') Start GLM Pod
             else if largeModelVolume && largeModelVolume.attachedPodCount > 0
               .runpod-alert.runpod-alert--warning
@@ -950,6 +955,24 @@ block content
                         dd= pod.lastOperationError.detail
                   if pod.lastOperationError.occurredAt
                     small= `Recorded ${formatTimestamp(pod.lastOperationError.occurredAt)}`
+              if pod.canReconfigureContext
+                - const currentContextTokens = Number.isFinite(pod.contextTokens) ? pod.contextTokens : 32768;
+                - const podContextOptions = Array.from(new Set([...llamaCppContextTokenOptions, currentContextTokens])).sort((left, right) => left - right);
+                details.runpod-advanced
+                  summary Change total context and reload model
+                  form.runpod-context-control(method='post', action=`${adminPath}/pods/${pod.id}/llama-cpp-context`)
+                    input(type='hidden', name='_csrf', value=csrfToken)
+                    label.runpod-field
+                      span Total context (prompt + thinking + answer)
+                      select(name='contextTokens', required)
+                        each contextTokens in podContextOptions
+                          - const contextNote = contextTokens === 32768 ? ' · conservative' : contextTokens === 65536 ? ' · comfortable' : contextTokens === 98304 ? ' · recommended for 2×96 GB' : contextTokens === 131072 ? ' · maximum tested on 2×96 GB' : '';
+                          option(value=contextTokens, selected=contextTokens === currentContextTokens)= `${formatInteger(contextTokens)} tokens${contextNote}`
+                    p.runpod-form-help This resets the running container and interrupts active responses while the model reloads. It keeps the Pod, GPU allocation, network volume, and stable gateway URL. The automatic-stop deadline does not move, so extend it first if less than 30 minutes remain. On 2×96 GB, prefer 96K for headroom; 128K is available when maximum single-session context matters.
+                    label.runpod-check.runpod-check--warning
+                      input(type='checkbox', name='reloadAcknowledged', value='acknowledged', required)
+                      span I understand that the model will be unavailable during the reload.
+                    button.runpod-button.runpod-button--primary(type='submit') Apply context and reload
               .runpod-pod-card__actions
                 if pod.canStart
                   - const storedStartMinutes = Number.isFinite(pod.autoStopMinutes) ? pod.autoStopMinutes : null;

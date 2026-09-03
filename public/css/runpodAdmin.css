@@ -542,6 +542,15 @@
   margin-bottom: 0.8rem;
 }
 
+.runpod-context-control {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.runpod-context-control .runpod-form-help {
+  margin: 0;
+}
+
 .runpod-advanced--standalone {
   margin: 0;
   background: var(--surface-2);

@@ -893,6 +893,15 @@ class RunpodApiV2Service {
     return ensureResource(body, 'pod creation');
   }
 
+  async updatePod(id, input) {
+    const body = await this.requestJson(podPath(id), {
+      method: 'PATCH',
+      body: input,
+      operation: 'pod update',
+    });
+    return ensureResource(body, 'pod update');
+  }
+
   async transitionPod(id, action) {
     const normalizedAction = normalizePodAction(action);
     const body = await this.requestJson(podPath(id, '/action'), {

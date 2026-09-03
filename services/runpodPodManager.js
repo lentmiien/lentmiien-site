@@ -7,9 +7,13 @@ const {
   RunpodWorkloadTemplate,
 } = require('../database');
 const {
+  GLM53_FLASH_CONTEXT_TOKEN_OPTIONS,
   GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS,
   GLM53_FLASH_UD_IQ4_XS_SLUG,
+  MAX_ARTIFACT_SERVER_CONTEXT_TOKENS,
+  MIN_ARTIFACT_SERVER_CONTEXT_TOKENS,
   artifactPreparerTemplate,
+  artifactServerContextFromArgs,
   artifactServerTemplate,
   getModelArtifactPreset,
   modelArtifactPreparationSignal,
@@ -85,6 +89,7 @@ const DEFAULT_OLLAMA_PULL_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS = (4 * 60 + 10) * 60 * 1000;
 const DEFAULT_LLAMA_CPP_STARTUP_TIMEOUT_MS = 45 * 60 * 1000;
+const MIN_LLAMA_CPP_RELOAD_REMAINING_MS = 15 * 60 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const AUTO_STOP_CLAIM_LEASE_MS = 5 * 60 * 1000;
 const OLLAMA_RESPONSE_LIMIT_BYTES = 2 * 1024 * 1024;
@@ -1137,6 +1142,9 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
   const accessMode = local.accessMode === 'private_none'
     ? 'private_none'
     : normalizeOllamaAccessMode(local.accessMode);
+  const providerContextTokens = local.podPurpose === 'llama_cpp_service'
+    ? artifactServerContextFromArgs(provider.args)
+    : null;
   let publicUrl = safeString(local.publicUrl, 500);
   if (
     accessMode === 'runpod_proxy'
@@ -1165,10 +1173,14 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
     canStop: !archivedAt && actions.includes('stop'),
     canExtend: !archivedAt && status === 'RUNNING' && actions.includes('stop'),
     canDelete: !archivedAt && (actions.includes('terminate') || !provider.id),
+    canReconfigureContext: !archivedAt
+      && Boolean(provider.id)
+      && local.podPurpose === 'llama_cpp_service'
+      && status === 'RUNNING',
     setupStatus: safeString(local.setupStatus, 30) || 'not_applicable',
     setupErrorCode: safeString(local.setupErrorCode, 80),
     setupModel: safeString(local.setupModel, 120),
-    contextTokens: finiteNumber(local.contextTokens),
+    contextTokens: providerContextTokens || finiteNumber(local.contextTokens),
     setupStartedAt: local.setupStartedAt || null,
     setupCompletedAt: local.setupCompletedAt || null,
     autoDeleteAfterSetup: local.autoDeleteAfterSetup === true,
@@ -1618,6 +1630,7 @@ class RunpodPodManager {
     this.llmApiKeyConfigured = Boolean(this.llmApiKey);
     this.llmApiSecretName = normalizeRunpodSecretName(llmApiSecretName);
     this.provisioning = new Map();
+    this.reconfiguring = new Map();
     this.creationQueue = Promise.resolve();
     this.templateQueue = Promise.resolve();
     this.networkVolumeQueue = Promise.resolve();
@@ -1645,6 +1658,7 @@ class RunpodPodManager {
         getModelArtifactPreset(GLM53_FLASH_UD_IQ4_XS_SLUG).preparationMaxHourlyCostUsd,
         this.maxHourlyCostUsd
       ),
+      llamaCppContextTokenOptions: [...GLM53_FLASH_CONTEXT_TOKEN_OPTIONS],
       maxRuntimeMinutes: this.maxRuntimeMinutes,
     };
   }
@@ -3661,7 +3675,10 @@ class RunpodPodManager {
       const url = validatedCloudflareGatewayUrl(
         template.gatewayUrl || this.cloudflareGatewayUrl
       ).toString();
-      await this.waitForLlamaCpp(url, { providerPodId: pod.providerPodId });
+      await this.waitForLlamaCpp(url, {
+        providerPodId: pod.providerPodId,
+        expectedContextTokens: finiteNumber(pod.contextTokens),
+      });
       await this.verifyLlamaCppModel(url, GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS);
       const completedAt = this.now();
       await this.podModel.updateOne(
@@ -3728,7 +3745,7 @@ class RunpodPodManager {
         { code: 'RUNPOD_LLM_GATEWAY_NOT_CONFIGURED', status: 503 }
       );
     }
-    const allowedPaths = new Set(['/health', '/v1/models']);
+    const allowedPaths = new Set(['/health', '/props', '/v1/models']);
     if (!allowedPaths.has(pathname)) {
       throw new RunpodManagementError('The llama.cpp API path is not allowed.', {
         code: 'LLAMA_CPP_PATH_NOT_ALLOWED', status: 500,
@@ -3781,7 +3798,10 @@ class RunpodPodManager {
     }
   }
 
-  async waitForLlamaCpp(baseUrl, { providerPodId = '' } = {}) {
+  async waitForLlamaCpp(baseUrl, {
+    providerPodId = '',
+    expectedContextTokens = null,
+  } = {}) {
     const deadline = Date.now() + this.llamaCppStartupTimeoutMs;
     let lastError;
     while (Date.now() < deadline) {
@@ -3815,6 +3835,9 @@ class RunpodPodManager {
       }
       try {
         await this.llamaCppRequest(baseUrl, '/health');
+        if (Number.isSafeInteger(expectedContextTokens)) {
+          await this.verifyLlamaCppContext(baseUrl, expectedContextTokens);
+        }
         return true;
       } catch (error) {
         lastError = error;
@@ -3852,6 +3875,31 @@ class RunpodPodManager {
       throw new RunpodManagementError('The expected GLM model alias is missing from llama.cpp.', {
         code: 'LLAMA_CPP_MODEL_MISSING', status: 502,
       });
+    }
+    return true;
+  }
+
+  async verifyLlamaCppContext(baseUrl, expectedContextTokens) {
+    const expected = strictInteger(expectedContextTokens, {
+      label: 'Expected context size',
+      min: MIN_ARTIFACT_SERVER_CONTEXT_TOKENS,
+      max: MAX_ARTIFACT_SERVER_CONTEXT_TOKENS,
+    });
+    const text = await this.llamaCppRequest(baseUrl, '/props');
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch (_) {
+      throw new RunpodManagementError('llama.cpp returned invalid runtime properties.', {
+        code: 'LLAMA_CPP_INVALID_RESPONSE', status: 502,
+      });
+    }
+    const actual = finiteNumber(payload?.default_generation_settings?.n_ctx);
+    if (!Number.isSafeInteger(actual) || actual !== expected) {
+      throw new RunpodManagementError(
+        'llama.cpp has not loaded the requested context allocation yet.',
+        { code: 'LLAMA_CPP_CONTEXT_NOT_READY', status: 503 }
+      );
     }
     return true;
   }
@@ -4176,6 +4224,155 @@ class RunpodPodManager {
     return pod;
   }
 
+  async reconfigureManagedLlamaCppPod(podRecordId, input = {}, principal) {
+    const id = safeString(podRecordId, 30);
+    if (!OBJECT_ID_PATTERN.test(id)) {
+      throw new RunpodManagementError('Pod not found.', {
+        code: 'RUNPOD_POD_NOT_FOUND', status: 404,
+      });
+    }
+    if (this.reconfiguring.has(id) || this.provisioning.has(id)) {
+      throw new RunpodManagementError(
+        'This Pod is already loading or applying a runtime change.',
+        { code: 'RUNPOD_ACTION_CONFLICT', status: 409 }
+      );
+    }
+    const operation = this._reconfigureManagedLlamaCppPod(id, input, principal);
+    this.reconfiguring.set(id, operation);
+    try {
+      return await operation;
+    } finally {
+      this.reconfiguring.delete(id);
+    }
+  }
+
+  async _reconfigureManagedLlamaCppPod(podRecordId, input = {}, principal) {
+    const actor = actorFromPrincipal(principal);
+    const pod = await this.findManagedPod(podRecordId);
+    try {
+      if (pod.podPurpose !== 'llama_cpp_service') {
+        throw new RunpodManagementError(
+          'Context reloads are available only for managed llama.cpp Pods.',
+          { code: 'RUNPOD_LLAMA_CPP_RECONFIGURE_UNSUPPORTED', status: 409 }
+        );
+      }
+      if (input.reloadAcknowledged !== 'acknowledged') {
+        throw new RunpodManagementError(
+          'Acknowledge that active responses will stop while the model reloads.',
+          { code: 'RUNPOD_LLAMA_CPP_RELOAD_NOT_ACKNOWLEDGED' }
+        );
+      }
+      const contextTokens = strictInteger(input.contextTokens, {
+        label: 'Context size',
+        min: MIN_ARTIFACT_SERVER_CONTEXT_TOKENS,
+        max: MAX_ARTIFACT_SERVER_CONTEXT_TOKENS,
+      });
+      if (!GLM53_FLASH_CONTEXT_TOKEN_OPTIONS.includes(contextTokens)) {
+        throw new RunpodManagementError(
+          'Choose one of the reviewed llama.cpp context sizes.',
+          { code: 'RUNPOD_INPUT_INVALID' }
+        );
+      }
+      const artifact = await this.modelArtifactModel.findOne({
+        _id: pod.modelArtifactRecordId,
+        preparationStatus: 'ready',
+        archivedAt: null,
+      }).lean();
+      const preset = artifact ? getModelArtifactPreset(artifact.slug) : null;
+      if (!artifact || !preset) {
+        throw new RunpodManagementError(
+          'The verified model artifact for this Pod is no longer available.',
+          { code: 'RUNPOD_MODEL_ARTIFACT_NOT_READY', status: 409 }
+        );
+      }
+      if (!this.gatewayConfiguration().readyForLargeModel) {
+        throw new RunpodManagementError(
+          'The Cloudflare gateway and native LLM credentials must be configured before reloading this Pod.',
+          { code: 'RUNPOD_LLM_GATEWAY_NOT_CONFIGURED', status: 503 }
+        );
+      }
+      const current = await this.runpodService.getPod(pod.providerPodId);
+      if (normalizeProviderStatus(current.status) !== 'RUNNING') {
+        throw new RunpodManagementError(
+          'Start the llama.cpp Pod before changing its live context allocation.',
+          { code: 'RUNPOD_ACTION_CONFLICT', status: 409 }
+        );
+      }
+      const currentContext = artifactServerContextFromArgs(current.args)
+        || finiteNumber(pod.contextTokens);
+      if (currentContext === contextTokens) {
+        await this.podModel.updateOne(
+          { _id: pod._id, archivedAt: null },
+          { $set: { contextTokens, lastOperationError: null, updatedBy: actor } }
+        );
+        return { contextTokens, reloaded: false };
+      }
+      const now = this.now();
+      const autoStopAt = dateOrNull(pod.autoStopAt);
+      if (
+        !autoStopAt
+        || autoStopAt.getTime() - now.getTime() < MIN_LLAMA_CPP_RELOAD_REMAINING_MS
+      ) {
+        throw new RunpodManagementError(
+          'Extend the automatic-stop deadline before starting a model reload.',
+          { code: 'RUNPOD_LLAMA_CPP_RELOAD_DEADLINE_TOO_CLOSE', status: 409 }
+        );
+      }
+      await this.verifyCloudflareAccessServiceToken();
+      const gpuCount = strictInteger(current.gpu?.count ?? pod.gpu?.count, {
+        label: 'GPU count', min: 1, max: this.maxGpuCount,
+      });
+      const runtime = artifactServerTemplate(preset.slug, {
+        contextTokens,
+        gpuCount,
+        cloudflareTunnelSecretName: this.cloudflareTunnelSecretName,
+        llmApiSecretName: this.llmApiSecretName,
+      });
+      const providerPod = await this.runpodService.updatePod(
+        pod.providerPodId,
+        { args: runtime.args }
+      );
+      await this.podModel.updateOne(
+        { _id: pod._id, archivedAt: null },
+        {
+          $set: {
+            ...reconciledProviderPodFields(pod, providerPod, now),
+            contextTokens,
+            setupStatus: 'pending',
+            setupErrorCode: null,
+            setupStartedAt: null,
+            setupCompletedAt: null,
+            lastOperationError: null,
+            lastActionAt: now,
+            updatedBy: actor,
+          },
+        }
+      );
+      await this.recordEvent({
+        resourceType: 'pod',
+        podRecordId: pod._id,
+        action: 'reconfigure',
+        outcome: 'requested',
+        actor,
+      });
+      this.scheduleProvisioning(pod._id, actor);
+      return { contextTokens, reloaded: true };
+    } catch (error) {
+      await this.persistPodOperationError(pod._id, 'reconfigure', error, actor);
+      await this.recordEvent({
+        resourceType: 'pod',
+        podRecordId: pod._id,
+        action: 'reconfigure',
+        outcome: 'failed',
+        providerStatus: providerStatusForError(error),
+        errorCode: safeString(error?.code, 80) || 'RUNPOD_LLAMA_CPP_RECONFIGURE_FAILED',
+        actor,
+      });
+      this.logOperationFailure('Runpod llama.cpp context reload failed', 'reconfigure', error);
+      throw error;
+    }
+  }
+
   async transitionManagedPod(podRecordId, action, principal, options = {}) {
     if (!['start', 'stop'].includes(action)) {
       throw new RunpodManagementError('Unsupported pod action.', {
@@ -4467,12 +4664,16 @@ class RunpodPodManager {
       const existing = await this.podModel.findOne({ providerPodId }).lean();
       const statusFields = providerPodFields(providerPod, now);
       if (existing) {
+        const observedContextTokens = existing.podPurpose === 'llama_cpp_service'
+          ? artifactServerContextFromArgs(providerPod.args)
+          : null;
         await this.podModel.updateOne(
           { _id: existing._id },
           {
             $set: {
               ...statusFields,
               ...usageFieldsForObservation(existing, providerPod, now),
+              ...(observedContextTokens ? { contextTokens: observedContextTokens } : {}),
               updatedBy: actor,
             },
           }

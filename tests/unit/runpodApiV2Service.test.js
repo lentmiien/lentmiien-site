@@ -356,6 +356,9 @@ describe('RunpodApiV2Service', () => {
       if (url.pathname === '/v2/pods/pod-1' && options.method === 'GET') {
         return jsonResponse({ id: 'pod-1', status: 'RUNNING' });
       }
+      if (url.pathname === '/v2/pods/pod-1' && options.method === 'PATCH') {
+        return jsonResponse({ id: 'pod-1', status: 'RUNNING' });
+      }
       if (url.pathname === '/v2/pods/pod-1/action') {
         return jsonResponse({ id: 'pod-1', status: 'EXITED' });
       }
@@ -374,6 +377,8 @@ describe('RunpodApiV2Service', () => {
     await expect(service.listPods()).resolves.toEqual([{ id: 'pod-1' }]);
     await expect(service.createPod(createBody)).resolves.toEqual(expect.objectContaining({ id: 'pod-1' }));
     await expect(service.getPod('pod-1')).resolves.toEqual(expect.objectContaining({ status: 'RUNNING' }));
+    await expect(service.updatePod('pod-1', { args: '{"cmd":["test"]}' }))
+      .resolves.toEqual(expect.objectContaining({ status: 'RUNNING' }));
     await expect(service.transitionPod('pod-1', 'stop')).resolves.toEqual(expect.objectContaining({ status: 'EXITED' }));
     await expect(service.deletePod('pod-1')).resolves.toBe(true);
 
@@ -382,11 +387,13 @@ describe('RunpodApiV2Service', () => {
       ['/v2/pods', 'GET'],
       ['/v2/pods', 'POST'],
       ['/v2/pods/pod-1', 'GET'],
+      ['/v2/pods/pod-1', 'PATCH'],
       ['/v2/pods/pod-1/action', 'POST'],
       ['/v2/pods/pod-1', 'DELETE'],
     ]);
     expect(JSON.parse(calls[1].options.body)).toEqual(createBody);
-    expect(JSON.parse(calls[3].options.body)).toEqual({ action: 'stop' });
+    expect(JSON.parse(calls[3].options.body)).toEqual({ args: '{"cmd":["test"]}' });
+    expect(JSON.parse(calls[4].options.body)).toEqual({ action: 'stop' });
   });
 
   test('reads a bounded v2 Pod-log SSE snapshot and redacts configured credentials', async () => {

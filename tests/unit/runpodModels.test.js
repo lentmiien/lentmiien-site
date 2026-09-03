@@ -57,7 +57,7 @@ describe('Runpod persistence models', () => {
       totalBytes: 156822111075,
       recommendedVolumeGb: 250,
       recommendedVramGb: 192,
-      defaultContextTokens: 16384,
+      defaultContextTokens: 32768,
     };
 
     await expect(new RunpodModelArtifact(base).validate()).resolves.toBeUndefined();
