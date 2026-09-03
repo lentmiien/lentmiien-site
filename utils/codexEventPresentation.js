@@ -60,6 +60,11 @@ function renderAgentMessageMarkdown(text) {
   });
 }
 
+function normalizeFileChangeKind(value) {
+  const kind = value && typeof value === 'object' ? value.type : value;
+  return String(kind || '').trim().toLowerCase();
+}
+
 function buildCodexEventPresentation(event) {
   const item = extractCodexItem(event?.payload);
   const itemType = String(item?.type || '').trim().toLowerCase();
@@ -81,7 +86,7 @@ function buildCodexEventPresentation(event) {
         ? item.changes
           .map((change) => ({
             path: String(change?.path || '').trim(),
-            kind: String(change?.kind || '').trim().toLowerCase(),
+            kind: normalizeFileChangeKind(change?.kind),
           }))
           .filter((change) => change.path)
         : [],
@@ -116,5 +121,6 @@ module.exports = {
   addCodexEventPresentation,
   buildCodexEventPresentation,
   extractCodexItem,
+  normalizeFileChangeKind,
   renderAgentMessageMarkdown,
 };

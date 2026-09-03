@@ -429,6 +429,29 @@ describe('Codex focused process details', () => {
     expect(selectFocusedProcessEvents(null)).toEqual([]);
   });
 
+  test('omits focused entries that have no displayable content', () => {
+    const events = [
+      { seq: 1, payload: { item: { type: 'reasoning', text: '' } } },
+      {
+        seq: 2,
+        presentation: { itemType: 'reasoning', html: '  ' },
+        payload: { item: { type: 'reasoning', text: 'Ignored when presentation HTML is empty' } },
+      },
+      { seq: 3, payload: { item: { type: 'agent_message', text: '\n\t' } } },
+      { seq: 4, payload: { item: { type: 'user_message', text: '   ' } } },
+      { seq: 5, payload: { item: { type: 'reasoning', text: 'Inspecting output' } } },
+      {
+        seq: 6,
+        presentation: { itemType: 'agent_message', html: '<p>Finished</p>' },
+        payload: {},
+      },
+      { seq: 7, payload: { item: { type: 'todo_list', items: [{ text: 'Old todo' }] } } },
+      { seq: 8, payload: { item: { type: 'todo_list', items: [{ text: '   ' }] } } },
+    ];
+
+    expect(selectFocusedProcessEvents(events).map((event) => event.seq)).toEqual([5, 6]);
+  });
+
   test('combines file-change kinds by path and ignores unrelated event items', () => {
     const events = [
       {
@@ -438,7 +461,7 @@ describe('Codex focused process details', () => {
             type: 'file_change',
             changes: [
               { path: '/workspace/models/item.js', kind: 'add' },
-              { path: '/workspace/app.js', kind: 'update' },
+              { path: '/workspace/app.js', kind: { type: 'update', move_path: null } },
             ],
           },
         },
@@ -449,7 +472,7 @@ describe('Codex focused process details', () => {
           itemType: 'file_change',
           changes: [
             { path: '/workspace/app.js', kind: 'update' },
-            { path: '/workspace/app.js', kind: 'rename' },
+            { path: '/workspace/app.js', kind: { type: 'rename' } },
           ],
         },
         payload: {},

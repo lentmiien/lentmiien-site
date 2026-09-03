@@ -48,8 +48,54 @@
     return String(presentedType || item?.type || '').trim().toLowerCase();
   }
 
+  function normalizeFileChangeKind(value) {
+    const kind = value && typeof value === 'object' ? value.type : value;
+    return String(kind || '').trim().toLowerCase();
+  }
+
   function isFocusedProcessEvent(event) {
     return ['agent_message', 'reasoning', 'todo_list', 'user_message'].includes(eventItemType(event));
+  }
+
+  function hasRenderedHtmlContent(value) {
+    const html = String(value || '').trim();
+    if (!html) {
+      return false;
+    }
+
+    const text = html
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&(?:nbsp|#0*160|#x0*a0);/gi, ' ')
+      .trim();
+    return Boolean(text) || /<hr\b/i.test(html);
+  }
+
+  function hasFocusedProcessEventContent(event) {
+    const itemType = eventItemType(event);
+    const item = extractEventItem(event);
+    const presentation = event?.presentation && typeof event.presentation === 'object'
+      ? event.presentation
+      : {};
+
+    if (itemType === 'agent_message' || itemType === 'reasoning') {
+      return typeof presentation.html === 'string'
+        ? hasRenderedHtmlContent(presentation.html)
+        : Boolean(String(item?.text || '').trim());
+    }
+
+    if (itemType === 'user_message') {
+      return Boolean(String(presentation.text || item?.text || '').trim());
+    }
+
+    if (itemType === 'todo_list') {
+      const todos = Array.isArray(presentation.items)
+        ? presentation.items
+        : (Array.isArray(item?.items) ? item.items : []);
+      return todos.some((todo) => Boolean(String(todo?.text || '').trim()));
+    }
+
+    return false;
   }
 
   function selectFocusedProcessEvents(events) {
@@ -60,12 +106,12 @@
       const itemType = eventItemType(event);
       if (itemType === 'todo_list') {
         latestTodo = event;
-      } else if (isFocusedProcessEvent(event)) {
+      } else if (isFocusedProcessEvent(event) && hasFocusedProcessEventContent(event)) {
         messages.push(event);
       }
     });
 
-    if (latestTodo) {
+    if (latestTodo && hasFocusedProcessEventContent(latestTodo)) {
       messages.push(latestTodo);
     }
     return messages;
@@ -94,7 +140,7 @@
         if (!filesByPath.has(filePath)) {
           filesByPath.set(filePath, { path: filePath, kinds: [] });
         }
-        const kind = String(change?.kind || '').trim().toLowerCase();
+        const kind = normalizeFileChangeKind(change?.kind);
         const file = filesByPath.get(filePath);
         if (kind && !file.kinds.includes(kind)) {
           file.kinds.push(kind);

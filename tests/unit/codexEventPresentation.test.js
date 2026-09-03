@@ -110,8 +110,8 @@ describe('codexEventPresentation', () => {
         item: {
           type: 'file_change',
           changes: [
-            { path: ' /workspace/app.js ', kind: 'UPDATE' },
-            { path: '/workspace/models/item.js', kind: 'add' },
+            { path: ' /workspace/app.js ', kind: { type: 'update', move_path: null } },
+            { path: '/workspace/models/item.js', kind: { type: 'ADD' } },
             { path: '', kind: 'delete' },
           ],
         },
