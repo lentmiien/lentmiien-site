@@ -49,15 +49,28 @@ function safeEqual(left, right) {
     && crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function renderDenied(req, res) {
-  return res
-    .status(403)
-    .set('Cache-Control', PRIVATE_NO_STORE)
-    .render('accessDenied', {
-      title: 'Request Rejected',
-      message: 'The form expired or came from an untrusted page. Reload and try again.',
-      user: req.user,
-    });
+function wantsJson(req) {
+  return String(req.get?.('accept') || '').includes('application/json')
+    || String(req.get?.('content-type') || '').includes('application/json')
+    || String(req.originalUrl || '').includes('/api/');
+}
+
+function renderDenied(req, res, {
+  status = 403,
+  title = 'Request Rejected',
+  message = 'The form expired or came from an untrusted page. Reload and try again.',
+} = {}) {
+  const response = res
+    .status(status)
+    .set('Cache-Control', PRIVATE_NO_STORE);
+  if (wantsJson(req)) {
+    return response.json({ ok: false, error: message });
+  }
+  return response.render('accessDenied', {
+    title,
+    message,
+    user: req.user,
+  });
 }
 
 function createSessionCsrf({
@@ -72,14 +85,11 @@ function createSessionCsrf({
       appLogger.error('Session unavailable while issuing CSRF token', {
         category: 'csrf',
       });
-      return res
-        .status(503)
-        .set('Cache-Control', PRIVATE_NO_STORE)
-        .render('accessDenied', {
-          title: 'Session Unavailable',
-          message: 'A secure form session could not be created. Please try again.',
-          user: req.user,
-        });
+      return renderDenied(req, res, {
+        status: 503,
+        title: 'Session Unavailable',
+        message: 'A secure form session could not be created. Please try again.',
+      });
     }
 
     if (!TOKEN_PATTERN.test(req.session.csrfToken || '')) {
@@ -145,4 +155,5 @@ module.exports = {
   requestFetchSite,
   requestOrigin,
   safeEqual,
+  wantsJson,
 };

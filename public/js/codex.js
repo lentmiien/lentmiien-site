@@ -126,6 +126,18 @@
     return (Array.isArray(events) ? events : []).filter(isErrorProcessEvent);
   }
 
+  function unexpectedResponseMessage(response, text) {
+    const contentType = String(response?.headers?.get?.('content-type') || '').toLowerCase();
+    const responseUrl = String(response?.url || '');
+    if (response?.redirected && /\/login(?:[?#]|$)/i.test(responseUrl)) {
+      return 'Your session expired. Reload the page and sign in again.';
+    }
+    if (contentType.includes('text/html') || /^\s*(?:<!doctype\s+html|<html\b)/i.test(String(text || ''))) {
+      return 'The server returned a page instead of an API response. Reload this page and try again.';
+    }
+    return text || 'Unexpected server response.';
+  }
+
   if (typeof module === 'object' && module.exports && typeof document === 'undefined') {
     module.exports = {
       filterPromptTemplatesByWorkspace,
@@ -133,6 +145,7 @@
       selectErrorProcessEvents,
       selectFocusedProcessEvents,
       summarizeEditedFiles,
+      unexpectedResponseMessage,
     };
     return;
   }
@@ -315,7 +328,7 @@
     try {
       return text ? JSON.parse(text) : {};
     } catch (_error) {
-      return { ok: false, error: text || 'Unexpected server response.' };
+      return { ok: false, error: unexpectedResponseMessage(response, text) };
     }
   }
 

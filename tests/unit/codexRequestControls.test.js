@@ -6,6 +6,7 @@ const {
   selectErrorProcessEvents,
   selectFocusedProcessEvents,
   summarizeEditedFiles,
+  unexpectedResponseMessage,
 } = require('../../public/js/codex');
 
 const commonLocals = {
@@ -27,6 +28,28 @@ function renderCodexView(view, codexState, locals = {}) {
 }
 
 describe('Codex request prompt controls', () => {
+  test('does not expose an HTML error document as inline form status', () => {
+    const response = {
+      headers: { get: () => 'text/html; charset=utf-8' },
+      redirected: false,
+      url: 'https://example.test/codex/api/sessions',
+    };
+
+    expect(unexpectedResponseMessage(response, '<!DOCTYPE html><html>denied</html>'))
+      .toBe('The server returned a page instead of an API response. Reload this page and try again.');
+  });
+
+  test('reports an authentication redirect as an expired session', () => {
+    const response = {
+      headers: { get: () => 'text/html; charset=utf-8' },
+      redirected: true,
+      url: 'https://example.test/login',
+    };
+
+    expect(unexpectedResponseMessage(response, '<!DOCTYPE html><html>login</html>'))
+      .toBe('Your session expired. Reload the page and sign in again.');
+  });
+
   test('reports the configured prompt boundary and over-limit state', () => {
     const atLimit = getPromptLengthState('x'.repeat(20000), 20000);
     const overLimit = getPromptLengthState('x'.repeat(20001), 20000);

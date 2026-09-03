@@ -10,6 +10,7 @@ function response() {
     locals: {},
     status: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnThis(),
+    json: jest.fn().mockReturnThis(),
     render: jest.fn().mockReturnThis(),
   };
 }
@@ -19,14 +20,17 @@ function request({
   origin = 'https://admin.example.test',
   host = 'admin.example.test',
   secFetchSite,
+  accept,
   session = {},
 } = {}) {
   const headers = { origin, host };
   if (secFetchSite !== undefined) headers['sec-fetch-site'] = secFetchSite;
+  if (accept !== undefined) headers.accept = accept;
   return {
     body: token === undefined ? {} : { _csrf: token },
     protocol: 'https',
     route: { path: '/pods' },
+    originalUrl: '/admin/runpod/pods',
     session,
     user: { name: 'admin' },
     get: jest.fn((name) => headers[String(name).toLowerCase()] || null),
@@ -152,6 +156,21 @@ describe('session CSRF middleware', () => {
       title: 'Request Rejected',
     }));
     expect(JSON.stringify(appLogger.warning.mock.calls)).not.toContain(secret);
+  });
+
+  test('returns a JSON error to API clients instead of rendering an HTML page', () => {
+    const csrf = createSessionCsrf({ appLogger: { warning: jest.fn() } });
+    const req = request({ accept: 'application/json' });
+    const res = response();
+
+    csrf.requireToken(req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: false,
+      error: 'The form expired or came from an untrusted page. Reload and try again.',
+    });
+    expect(res.render).not.toHaveBeenCalled();
   });
 
   test('fails closed when session middleware is unavailable', () => {
