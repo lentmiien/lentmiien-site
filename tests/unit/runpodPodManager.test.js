@@ -2,6 +2,8 @@ const {
   OLLAMA_MODEL,
   OLLAMA_DOWNLOADER_MODEL,
   OLLAMA_CLOUDFLARE_TEMPLATE_SLUG,
+  QWEN38_27B_CONTEXT_TOKEN_OPTIONS,
+  QWEN38_27B_NATIVE_CONTEXT_TOKENS,
   RunpodManagementError,
   RunpodPodManager,
   cloudflareGatewayStartArgs,
@@ -17,6 +19,8 @@ const {
   projectPodUsage,
   providerTemplatePayload,
   publicOllamaUrl,
+  qwen38ContextRecommendationForVram,
+  resolveOllamaContextTokens,
   usageFieldsForObservation,
   validatedOllamaBaseUrl,
 } = require('../../services/runpodPodManager');
@@ -390,6 +394,21 @@ describe('Runpod workload and picker helpers', () => {
     expect(() => validatedOllamaBaseUrl(`${url}/redirect`)).toThrow(RunpodManagementError);
     expect(normalizeModelName('QWEN2.5:0.5B')).toBe('qwen2.5:0.5b');
     expect(() => normalizeModelName('http://127.0.0.1/model')).toThrow(RunpodManagementError);
+  });
+
+  test('selects reviewed Qwen context profiles from aggregate VRAM', () => {
+    expect(qwen38ContextRecommendationForVram(24)).toBe(65536);
+    expect(qwen38ContextRecommendationForVram(32)).toBe(196608);
+    expect(qwen38ContextRecommendationForVram(48)).toBe(262144);
+    expect(qwen38ContextRecommendationForVram(80)).toBe(262144);
+    expect(resolveOllamaContextTokens('qwen3.8:27b', 'auto', 32)).toBe(196608);
+    expect(resolveOllamaContextTokens('qwen3.8:27b', '131072', 32)).toBe(131072);
+    expect(QWEN38_27B_CONTEXT_TOKEN_OPTIONS.at(-1))
+      .toBe(QWEN38_27B_NATIVE_CONTEXT_TOKENS);
+    expect(() => resolveOllamaContextTokens('qwen3.8:27b', '100000', 32))
+      .toThrow(RunpodManagementError);
+    expect(() => resolveOllamaContextTokens('llama3.2:1b', '65536', 24))
+      .toThrow(RunpodManagementError);
   });
 
   test('builds an outbound-only Cloudflare profile with a Runpod Secret reference', () => {
@@ -960,6 +979,130 @@ describe('RunpodPodManager', () => {
     );
   });
 
+  test('reloads a running Qwen Ollama Pod with a reviewed persistent context', async () => {
+    const localPod = {
+      _id: POD_RECORD_ID,
+      providerPodId: 'qwen-provider-pod-id',
+      name: 'ollama-qwen',
+      archivedAt: null,
+      podPurpose: 'ollama_service',
+      workloadTemplateId: TEMPLATE_ID,
+      providerStatus: 'RUNNING',
+      setupModel: 'qwen3.8:27b',
+      contextTokens: 65536,
+      accessMode: 'cloudflare_access',
+      providerNetworkVolumeId: 'volume-123',
+      gpu: { id: 'NVIDIA RTX PRO 4500 Blackwell', memoryGb: 32, count: 1 },
+      autoStopAt: new Date('2026-09-01T01:00:00.000Z'),
+    };
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { Location: 'https://access.example.test/' },
+      }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    const fixture = createFixture({
+      template: cloudflareTemplate(),
+      localPod,
+      managerOptions: {
+        fetchImpl,
+        cloudflareGatewayUrl: 'https://llm.lentmiien.com',
+        cloudflareAccessClientId: 'access-id',
+        cloudflareAccessClientSecret: 'access-secret',
+        cloudflareTunnelTokenConfigured: true,
+      },
+    });
+    fixture.runpodService.getPod.mockResolvedValue({
+      id: 'qwen-provider-pod-id',
+      status: 'RUNNING',
+      actions: ['stop', 'terminate'],
+      gpu: { id: 'NVIDIA RTX PRO 4500 Blackwell', count: 1 },
+      env: {
+        OLLAMA_HOST: '127.0.0.1:8080',
+        OLLAMA_MODELS: '/workspace/ollama/models',
+        TUNNEL_TOKEN: '{{ RUNPOD_SECRET_lentmiien_cloudflare_tunnel_token }}',
+      },
+    });
+    fixture.runpodService.updatePod.mockResolvedValue({
+      id: 'qwen-provider-pod-id',
+      status: 'RUNNING',
+      actions: ['stop', 'terminate'],
+      gpu: { id: 'NVIDIA RTX PRO 4500 Blackwell', count: 1 },
+    });
+    fixture.manager.scheduleProvisioning = jest.fn();
+
+    await expect(fixture.manager.reconfigureManagedOllamaPod(
+      POD_RECORD_ID,
+      { contextTokens: '196608', reloadAcknowledged: 'acknowledged' },
+      { name: 'admin' }
+    )).resolves.toEqual({ contextTokens: 196608, reloaded: true });
+
+    expect(fixture.runpodService.updatePod).toHaveBeenCalledWith(
+      'qwen-provider-pod-id',
+      { env: expect.objectContaining({
+        OLLAMA_CONTEXT_LENGTH: '196608',
+        OLLAMA_FLASH_ATTENTION: '1',
+        OLLAMA_KV_CACHE_TYPE: 'f16',
+        OLLAMA_MAX_LOADED_MODELS: '1',
+        OLLAMA_MODELS: '/workspace/ollama/models',
+        OLLAMA_NUM_PARALLEL: '1',
+        TUNNEL_TOKEN: '{{ RUNPOD_SECRET_lentmiien_cloudflare_tunnel_token }}',
+      }) }
+    );
+    expect(fixture.podModel.updateOne).toHaveBeenCalledWith(
+      { _id: POD_RECORD_ID, archivedAt: null },
+      { $set: expect.objectContaining({
+        contextTokens: 196608,
+        setupStatus: 'pending',
+      }) }
+    );
+    expect(fixture.eventModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'reconfigure', outcome: 'requested',
+    }));
+    expect(fixture.manager.scheduleProvisioning).toHaveBeenCalledWith(
+      POD_RECORD_ID,
+      expect.objectContaining({ name: 'admin' })
+    );
+  });
+
+  test('refuses a Qwen Ollama reload when automatic shutdown is less than 15 minutes away', async () => {
+    const localPod = {
+      _id: POD_RECORD_ID,
+      providerPodId: 'qwen-provider-pod-id',
+      name: 'ollama-qwen',
+      archivedAt: null,
+      podPurpose: 'ollama_service',
+      workloadTemplateId: TEMPLATE_ID,
+      providerStatus: 'RUNNING',
+      setupModel: 'qwen3.8:27b',
+      contextTokens: 65536,
+      accessMode: 'cloudflare_access',
+      providerNetworkVolumeId: 'volume-123',
+      gpu: { id: 'NVIDIA RTX PRO 4500 Blackwell', memoryGb: 32, count: 1 },
+      autoStopAt: new Date('2026-09-01T00:14:59.000Z'),
+    };
+    const fixture = createFixture({ template: cloudflareTemplate(), localPod });
+    fixture.runpodService.getPod.mockResolvedValue({
+      id: 'qwen-provider-pod-id',
+      status: 'RUNNING',
+      gpu: { id: 'NVIDIA RTX PRO 4500 Blackwell', count: 1 },
+      env: {
+        OLLAMA_HOST: '127.0.0.1:8080',
+        OLLAMA_MODELS: '/workspace/ollama/models',
+        TUNNEL_TOKEN: '{{ RUNPOD_SECRET_lentmiien_cloudflare_tunnel_token }}',
+      },
+    });
+
+    await expect(fixture.manager.reconfigureManagedOllamaPod(
+      POD_RECORD_ID,
+      { contextTokens: '196608', reloadAcknowledged: 'acknowledged' },
+      { name: 'admin' }
+    )).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_OLLAMA_RELOAD_DEADLINE_TOO_CLOSE',
+    }));
+    expect(fixture.runpodService.updatePod).not.toHaveBeenCalled();
+  });
+
   test('refuses a llama.cpp reload when automatic shutdown is less than 15 minutes away', async () => {
     const artifactId = '507f191e810c19729de860ad';
     const localPod = {
@@ -1450,13 +1593,19 @@ describe('RunpodPodManager', () => {
       templateId: 'provider-cloudflare-template-1',
       mounts: { network: [{ volumeId: 'volume-123', path: '/workspace' }] },
       env: {
+        OLLAMA_CONTEXT_LENGTH: '65536',
+        OLLAMA_FLASH_ATTENTION: '1',
         OLLAMA_HOST: '127.0.0.1:8080',
+        OLLAMA_KV_CACHE_TYPE: 'f16',
+        OLLAMA_MAX_LOADED_MODELS: '1',
         OLLAMA_MODELS: '/workspace/ollama/models',
+        OLLAMA_NUM_PARALLEL: '1',
         TUNNEL_TOKEN: '{{ RUNPOD_SECRET_lentmiien_cloudflare_tunnel_token }}',
       },
     }));
     expect(fixture.podModel.create).toHaveBeenCalledWith(expect.objectContaining({
       accessMode: 'cloudflare_access',
+      contextTokens: 65536,
       publicUrl: 'https://llm.lentmiien.com/',
       ports: [],
     }));
@@ -1819,6 +1968,42 @@ describe('RunpodPodManager', () => {
     );
   });
 
+  test('revalidates the persistent Qwen context after a stopped Pod starts', async () => {
+    const localPod = {
+      _id: POD_RECORD_ID,
+      providerPodId: 'qwen-pod-123',
+      name: 'ollama-qwen',
+      archivedAt: null,
+      podPurpose: 'ollama_service',
+      setupModel: 'qwen3.8:27b',
+      contextTokens: 196608,
+      autoStopMinutes: 60,
+      autoStopAt: null,
+      setupStatus: 'ready',
+      accessMode: 'runpod_proxy',
+    };
+    const fixture = createFixture({ localPod });
+    fixture.runpodService.getPod.mockResolvedValue({
+      id: 'qwen-pod-123', status: 'EXITED', actions: ['start', 'terminate'],
+    });
+    fixture.runpodService.transitionPod.mockResolvedValue({
+      id: 'qwen-pod-123', status: 'STARTING', actions: ['stop', 'terminate'],
+    });
+    fixture.manager.scheduleProvisioning = jest.fn();
+
+    await fixture.manager.transitionManagedPod(
+      POD_RECORD_ID,
+      'start',
+      { name: 'admin' },
+      { runMinutes: '240' }
+    );
+
+    expect(fixture.manager.scheduleProvisioning).toHaveBeenCalledWith(
+      POD_RECORD_ID,
+      expect.objectContaining({ name: 'admin' })
+    );
+  });
+
   test('rejects invalid start and extension durations before provider work', async () => {
     const localPod = {
       _id: POD_RECORD_ID,
@@ -2088,6 +2273,54 @@ describe('RunpodPodManager', () => {
       { accessMode: 'cloudflare_access' }
     )).rejects.toEqual(expect.objectContaining({ code: 'OLLAMA_URL_INVALID' }));
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('preloads and verifies a reviewed Qwen context through bounded Ollama APIs', async () => {
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        model: 'qwen3.8:27b', done: true, done_reason: 'load',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        models: [{ name: 'qwen3.8:27b', context_length: 196608 }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    const fixture = createFixture({
+      managerOptions: {
+        fetchImpl,
+        cloudflareGatewayUrl: 'https://llm.lentmiien.com',
+        cloudflareAccessClientId: 'access-id',
+        cloudflareAccessClientSecret: 'access-secret',
+        cloudflareTunnelTokenConfigured: true,
+      },
+    });
+
+    await expect(fixture.manager.preloadOllamaModel(
+      'https://llm.lentmiien.com/',
+      'qwen3.8:27b',
+      196608,
+      { accessMode: 'cloudflare_access' }
+    )).resolves.toBe(true);
+    await expect(fixture.manager.verifyOllamaContext(
+      'https://llm.lentmiien.com/',
+      'qwen3.8:27b',
+      196608,
+      { accessMode: 'cloudflare_access' }
+    )).resolves.toBe(true);
+
+    expect(new URL(fetchImpl.mock.calls[0][0]).pathname).toBe('/api/generate');
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({
+      model: 'qwen3.8:27b',
+      prompt: '',
+      stream: false,
+      keep_alive: -1,
+      options: { num_ctx: 196608 },
+    });
+    expect(new URL(fetchImpl.mock.calls[1][0]).pathname).toBe('/api/ps');
   });
 
   test('verifies llama.cpp through both Cloudflare Access and the native bearer key', async () => {

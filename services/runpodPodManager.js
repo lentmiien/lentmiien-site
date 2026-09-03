@@ -23,6 +23,15 @@ const {
   RunpodApiError,
   RunpodApiV2Service,
 } = require('./runpodApiV2Service');
+const {
+  QWEN38_27B_CONTEXT_PROFILES,
+  QWEN38_27B_CONTEXT_TOKEN_OPTIONS,
+  QWEN38_27B_MODEL,
+  QWEN38_27B_NATIVE_CONTEXT_TOKENS,
+  isQwen38Model,
+  ollamaContextFromEnv,
+  qwen38ContextRecommendationForVram,
+} = require('./runpodOllamaModelCatalog');
 
 const OLLAMA_TEMPLATE_SLUG = 'ollama';
 const OLLAMA_PROVIDER_TEMPLATE_NAME = 'lentmiien-ollama-gpu-v2';
@@ -90,6 +99,7 @@ const DEFAULT_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS = (4 * 60 + 10) * 60 * 1000;
 const DEFAULT_LLAMA_CPP_STARTUP_TIMEOUT_MS = 45 * 60 * 1000;
 const MIN_LLAMA_CPP_RELOAD_REMAINING_MS = 15 * 60 * 1000;
+const MIN_OLLAMA_RELOAD_REMAINING_MS = 15 * 60 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const AUTO_STOP_CLAIM_LEASE_MS = 5 * 60 * 1000;
 const OLLAMA_RESPONSE_LIMIT_BYTES = 2 * 1024 * 1024;
@@ -155,6 +165,34 @@ function strictInteger(value, { label, min, max }) {
     });
   }
   return parsed;
+}
+
+function resolveOllamaContextTokens(model, value, aggregateVramGb) {
+  const supplied = value !== undefined && value !== null && String(value).trim() !== '';
+  if (!isQwen38Model(model)) {
+    if (supplied && String(value).trim().toLowerCase() !== 'auto') {
+      throw new RunpodManagementError(
+        'Managed context profiles are currently available only for qwen3.8:27b.',
+        { code: 'RUNPOD_INPUT_INVALID' }
+      );
+    }
+    return null;
+  }
+  const normalized = supplied ? String(value).trim().toLowerCase() : 'auto';
+  const contextTokens = normalized === 'auto'
+    ? qwen38ContextRecommendationForVram(aggregateVramGb)
+    : strictInteger(normalized, {
+      label: 'Context size',
+      min: QWEN38_27B_CONTEXT_TOKEN_OPTIONS[0],
+      max: QWEN38_27B_NATIVE_CONTEXT_TOKENS,
+    });
+  if (!QWEN38_27B_CONTEXT_TOKEN_OPTIONS.includes(contextTokens)) {
+    throw new RunpodManagementError(
+      'Choose one of the reviewed qwen3.8:27b context sizes.',
+      { code: 'RUNPOD_INPUT_INVALID' }
+    );
+  }
+  return contextTokens;
 }
 
 function strictMoney(value, { label, min = 0.01, max }) {
@@ -831,6 +869,34 @@ function templateEnvironment(template = {}) {
   );
 }
 
+function ollamaRuntimeEnvironment(template, {
+  networkVolume = false,
+  contextTokens = null,
+} = {}) {
+  const accessMode = normalizeOllamaAccessMode(template?.accessMode);
+  const env = {
+    ...templateEnvironment(template),
+    OLLAMA_HOST: accessMode === 'cloudflare_access'
+      ? `127.0.0.1:${OLLAMA_CLOUDFLARE_ORIGIN_PORT}`
+      : `0.0.0.0:${OLLAMA_PORT}`,
+    OLLAMA_MODELS: networkVolume
+      ? OLLAMA_NETWORK_MODELS_PATH
+      : safeString(template?.persistentPath, 300)
+        ? `${safeString(template.persistentPath, 300)}/models`
+        : `${OLLAMA_PERSISTENT_PATH}/models`,
+  };
+  if (Number.isSafeInteger(contextTokens)) {
+    Object.assign(env, {
+      OLLAMA_CONTEXT_LENGTH: String(contextTokens),
+      OLLAMA_FLASH_ATTENTION: '1',
+      OLLAMA_KV_CACHE_TYPE: 'f16',
+      OLLAMA_MAX_LOADED_MODELS: '1',
+      OLLAMA_NUM_PARALLEL: '1',
+    });
+  }
+  return env;
+}
+
 function providerPodUsesCloudflareTunnel(providerPod = {}, {
   tunnelSecretName = DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME,
   providerTemplateId = '',
@@ -1144,7 +1210,11 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
     : normalizeOllamaAccessMode(local.accessMode);
   const providerContextTokens = local.podPurpose === 'llama_cpp_service'
     ? artifactServerContextFromArgs(provider.args)
-    : null;
+    : local.podPurpose === 'ollama_service' && isQwen38Model(local.setupModel)
+      ? ollamaContextFromEnv(provider.env)
+      : null;
+  const aggregateVramGb = finiteNumber(local.gpu?.memoryGb, 0)
+    * Math.max(1, finiteNumber(provider.gpu?.count ?? local.gpu?.count, 1));
   let publicUrl = safeString(local.publicUrl, 500);
   if (
     accessMode === 'runpod_proxy'
@@ -1177,10 +1247,18 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
       && Boolean(provider.id)
       && local.podPurpose === 'llama_cpp_service'
       && status === 'RUNNING',
+    canReconfigureOllamaContext: !archivedAt
+      && Boolean(provider.id)
+      && local.podPurpose === 'ollama_service'
+      && isQwen38Model(local.setupModel)
+      && status === 'RUNNING',
     setupStatus: safeString(local.setupStatus, 30) || 'not_applicable',
     setupErrorCode: safeString(local.setupErrorCode, 80),
     setupModel: safeString(local.setupModel, 120),
     contextTokens: providerContextTokens || finiteNumber(local.contextTokens),
+    recommendedContextTokens: isQwen38Model(local.setupModel)
+      ? qwen38ContextRecommendationForVram(aggregateVramGb)
+      : null,
     setupStartedAt: local.setupStartedAt || null,
     setupCompletedAt: local.setupCompletedAt || null,
     autoDeleteAfterSetup: local.autoDeleteAfterSetup === true,
@@ -1659,6 +1737,10 @@ class RunpodPodManager {
         this.maxHourlyCostUsd
       ),
       llamaCppContextTokenOptions: [...GLM53_FLASH_CONTEXT_TOKEN_OPTIONS],
+      qwen38ContextProfiles: QWEN38_27B_CONTEXT_PROFILES.map((profile) => ({ ...profile })),
+      qwen38ContextTokenOptions: [...QWEN38_27B_CONTEXT_TOKEN_OPTIONS],
+      qwen38Model: QWEN38_27B_MODEL,
+      qwen38NativeContextTokens: QWEN38_27B_NATIVE_CONTEXT_TOKENS,
       maxRuntimeMinutes: this.maxRuntimeMinutes,
     };
   }
@@ -3135,10 +3217,22 @@ class RunpodPodManager {
         label: 'Persistent disk', min: 10, max: 1000,
       });
     const setupModel = normalizeModelName(input.model || template.defaultModel);
+    const contextTokens = podPurpose === 'llama_cpp_service'
+      ? finiteNumber(options.contextTokens)
+      : podPurpose === 'ollama_service'
+        ? resolveOllamaContextTokens(setupModel, input.contextTokens, aggregateVramGb)
+        : null;
     const trackedNetworkVolume = selectedNetworkVolume
       ? await this.trackProviderNetworkVolume(selectedNetworkVolume, actor, 'provider_import')
       : null;
-    const runtimeEnv = templateEnvironment(template);
+    const runtimeEnv = podPurpose === 'llama_cpp_service'
+      ? templateEnvironment(template)
+      : ollamaRuntimeEnvironment(template, {
+        networkVolume: Boolean(selectedNetworkVolume),
+        contextTokens,
+      });
+    const shouldOverrideEnvironment = Boolean(selectedNetworkVolume)
+      || (podPurpose === 'ollama_service' && Number.isSafeInteger(contextTokens));
     const providerPayload = {
       name,
       templateId: template.providerTemplateId,
@@ -3158,17 +3252,7 @@ class RunpodPodManager {
             path: template.persistentPath,
           },
         },
-      ...(selectedNetworkVolume ? {
-        env: {
-          ...runtimeEnv,
-          ...(podPurpose === 'llama_cpp_service' ? {} : {
-            OLLAMA_HOST: accessMode === 'cloudflare_access'
-              ? `127.0.0.1:${OLLAMA_CLOUDFLARE_ORIGIN_PORT}`
-              : `0.0.0.0:${OLLAMA_PORT}`,
-            OLLAMA_MODELS: OLLAMA_NETWORK_MODELS_PATH,
-          }),
-        },
-      } : {}),
+      ...(shouldOverrideEnvironment ? { env: runtimeEnv } : {}),
       globalNetworking,
       ...(dataCenterId ? { dataCenterIds: [dataCenterId] } : {}),
     };
@@ -3201,7 +3285,7 @@ class RunpodPodManager {
         ...providerPodFields(providerPod, now),
         setupStatus: 'pending',
         setupModel,
-        contextTokens: finiteNumber(options.contextTokens),
+        contextTokens,
         autoDeleteAfterSetup,
         cleanupStatus: autoDeleteAfterSetup ? 'pending' : 'not_required',
         cleanupErrorCode: null,
@@ -3592,6 +3676,17 @@ class RunpodPodManager {
         ...accessOptions,
       });
       await this.verifyOllamaModel(url, setupModel, accessOptions);
+      if (
+        pod.podPurpose === 'ollama_service'
+        && isQwen38Model(setupModel)
+        && Number.isSafeInteger(pod.contextTokens)
+      ) {
+        await this.preloadOllamaModel(url, setupModel, pod.contextTokens, {
+          timeoutMs: this.ollamaPullTimeoutMs,
+          ...accessOptions,
+        });
+        await this.verifyOllamaContext(url, setupModel, pod.contextTokens, accessOptions);
+      }
       const completedAt = this.now();
       await this.recordCachedModel(pod, setupModel, completedAt);
       await this.podModel.updateOne(
@@ -4048,7 +4143,13 @@ class RunpodPodManager {
       accessMode: normalizedAccessMode,
       cloudflareGatewayUrl: this.cloudflareGatewayUrl,
     });
-    const allowedPaths = new Set(['/', '/api/tags', '/api/pull']);
+    const allowedPaths = new Set([
+      '/',
+      '/api/generate',
+      '/api/ps',
+      '/api/pull',
+      '/api/tags',
+    ]);
     if (!allowedPaths.has(pathname)) {
       throw new RunpodManagementError('The Ollama API path is not allowed.', {
         code: 'OLLAMA_PATH_NOT_ALLOWED', status: 500,
@@ -4174,6 +4275,59 @@ class RunpodPodManager {
       throw new RunpodManagementError('The requested Ollama model is not present after setup.', {
         code: 'OLLAMA_MODEL_MISSING', status: 502,
       });
+    }
+    return true;
+  }
+
+  async preloadOllamaModel(baseUrl, model, contextTokens, {
+    timeoutMs = this.ollamaPullTimeoutMs,
+    accessMode = 'runpod_proxy',
+  } = {}) {
+    const requested = normalizeModelName(model);
+    const context = resolveOllamaContextTokens(requested, contextTokens, 0);
+    await this.ollamaRequest(baseUrl, '/api/generate', {
+      method: 'POST',
+      body: {
+        model: requested,
+        prompt: '',
+        stream: false,
+        keep_alive: -1,
+        options: { num_ctx: context },
+      },
+      timeoutMs: positiveInteger(timeoutMs, this.ollamaPullTimeoutMs),
+      accessMode,
+    });
+    return true;
+  }
+
+  async verifyOllamaContext(
+    baseUrl,
+    model,
+    expectedContextTokens,
+    { accessMode = 'runpod_proxy' } = {}
+  ) {
+    const requested = normalizeModelName(model);
+    const expected = resolveOllamaContextTokens(requested, expectedContextTokens, 0);
+    const response = await this.ollamaRequest(baseUrl, '/api/ps', { accessMode });
+    let result;
+    try {
+      result = JSON.parse(response.text);
+    } catch (_) {
+      throw new RunpodManagementError('Ollama returned invalid runtime data.', {
+        code: 'OLLAMA_INVALID_RESPONSE', status: 502,
+      });
+    }
+    const running = Array.isArray(result?.models)
+      ? result.models.find((entry) => (
+        safeString(entry?.name || entry?.model, 120).toLowerCase() === requested
+      ))
+      : null;
+    const actual = finiteNumber(running?.context_length);
+    if (!running || !Number.isSafeInteger(actual) || actual !== expected) {
+      throw new RunpodManagementError(
+        'Ollama has not loaded the requested context allocation yet.',
+        { code: 'OLLAMA_CONTEXT_NOT_READY', status: 503 }
+      );
     }
     return true;
   }
@@ -4373,6 +4527,149 @@ class RunpodPodManager {
     }
   }
 
+  async reconfigureManagedOllamaPod(podRecordId, input = {}, principal) {
+    const id = safeString(podRecordId, 30);
+    if (!OBJECT_ID_PATTERN.test(id)) {
+      throw new RunpodManagementError('Pod not found.', {
+        code: 'RUNPOD_POD_NOT_FOUND', status: 404,
+      });
+    }
+    if (this.reconfiguring.has(id) || this.provisioning.has(id)) {
+      throw new RunpodManagementError(
+        'This Pod is already loading or applying a runtime change.',
+        { code: 'RUNPOD_ACTION_CONFLICT', status: 409 }
+      );
+    }
+    const operation = this._reconfigureManagedOllamaPod(id, input, principal);
+    this.reconfiguring.set(id, operation);
+    try {
+      return await operation;
+    } finally {
+      this.reconfiguring.delete(id);
+    }
+  }
+
+  async _reconfigureManagedOllamaPod(podRecordId, input = {}, principal) {
+    const actor = actorFromPrincipal(principal);
+    const pod = await this.findManagedPod(podRecordId);
+    try {
+      if (pod.podPurpose !== 'ollama_service' || !isQwen38Model(pod.setupModel)) {
+        throw new RunpodManagementError(
+          'Qwen context reloads are available only for managed qwen3.8:27b Ollama Pods.',
+          { code: 'RUNPOD_OLLAMA_RECONFIGURE_UNSUPPORTED', status: 409 }
+        );
+      }
+      if (input.reloadAcknowledged !== 'acknowledged') {
+        throw new RunpodManagementError(
+          'Acknowledge that active responses will stop while Ollama reloads the model.',
+          { code: 'RUNPOD_OLLAMA_RELOAD_NOT_ACKNOWLEDGED' }
+        );
+      }
+      const aggregateVramGb = finiteNumber(pod.gpu?.memoryGb, 0)
+        * Math.max(1, finiteNumber(pod.gpu?.count, 1));
+      const contextTokens = resolveOllamaContextTokens(
+        pod.setupModel,
+        input.contextTokens,
+        aggregateVramGb
+      );
+      const template = await this.templateModel.findOne({
+        _id: pod.workloadTemplateId,
+        active: true,
+        setupKind: 'ollama_pull',
+      }).lean();
+      if (!template) {
+        throw new RunpodManagementError(
+          'The managed Ollama workload profile for this Pod is no longer available.',
+          { code: 'RUNPOD_TEMPLATE_NOT_READY', status: 409 }
+        );
+      }
+      const current = await this.runpodService.getPod(pod.providerPodId);
+      if (normalizeProviderStatus(current.status) !== 'RUNNING') {
+        throw new RunpodManagementError(
+          'Start the Ollama Pod before changing its live context allocation.',
+          { code: 'RUNPOD_ACTION_CONFLICT', status: 409 }
+        );
+      }
+      const currentEnv = templateEnvironment(current);
+      const currentContext = ollamaContextFromEnv(currentEnv)
+        || finiteNumber(pod.contextTokens);
+      const runtimeAlreadyMatches = currentContext === contextTokens
+        && currentEnv.OLLAMA_CONTEXT_LENGTH === String(contextTokens)
+        && currentEnv.OLLAMA_FLASH_ATTENTION === '1'
+        && currentEnv.OLLAMA_KV_CACHE_TYPE === 'f16'
+        && currentEnv.OLLAMA_MAX_LOADED_MODELS === '1'
+        && currentEnv.OLLAMA_NUM_PARALLEL === '1';
+      if (runtimeAlreadyMatches) {
+        await this.podModel.updateOne(
+          { _id: pod._id, archivedAt: null },
+          { $set: { contextTokens, lastOperationError: null, updatedBy: actor } }
+        );
+        return { contextTokens, reloaded: false };
+      }
+      const now = this.now();
+      const autoStopAt = dateOrNull(pod.autoStopAt);
+      if (
+        !autoStopAt
+        || autoStopAt.getTime() - now.getTime() < MIN_OLLAMA_RELOAD_REMAINING_MS
+      ) {
+        throw new RunpodManagementError(
+          'Extend the automatic-stop deadline before starting an Ollama model reload.',
+          { code: 'RUNPOD_OLLAMA_RELOAD_DEADLINE_TOO_CLOSE', status: 409 }
+        );
+      }
+      const accessMode = normalizeOllamaAccessMode(pod.accessMode || template.accessMode);
+      if (accessMode === 'cloudflare_access') {
+        await this.verifyCloudflareAccessServiceToken();
+      }
+      const runtimeEnv = ollamaRuntimeEnvironment(template, {
+        networkVolume: Boolean(pod.providerNetworkVolumeId),
+        contextTokens,
+      });
+      const providerPod = await this.runpodService.updatePod(
+        pod.providerPodId,
+        { env: runtimeEnv }
+      );
+      await this.podModel.updateOne(
+        { _id: pod._id, archivedAt: null },
+        {
+          $set: {
+            ...reconciledProviderPodFields(pod, providerPod, now),
+            contextTokens,
+            setupStatus: 'pending',
+            setupErrorCode: null,
+            setupStartedAt: null,
+            setupCompletedAt: null,
+            lastOperationError: null,
+            lastActionAt: now,
+            updatedBy: actor,
+          },
+        }
+      );
+      await this.recordEvent({
+        resourceType: 'pod',
+        podRecordId: pod._id,
+        action: 'reconfigure',
+        outcome: 'requested',
+        actor,
+      });
+      this.scheduleProvisioning(pod._id, actor);
+      return { contextTokens, reloaded: true };
+    } catch (error) {
+      await this.persistPodOperationError(pod._id, 'reconfigure', error, actor);
+      await this.recordEvent({
+        resourceType: 'pod',
+        podRecordId: pod._id,
+        action: 'reconfigure',
+        outcome: 'failed',
+        providerStatus: providerStatusForError(error),
+        errorCode: safeString(error?.code, 80) || 'RUNPOD_OLLAMA_RECONFIGURE_FAILED',
+        actor,
+      });
+      this.logOperationFailure('Runpod Ollama context reload failed', 'reconfigure', error);
+      throw error;
+    }
+  }
+
   async transitionManagedPod(podRecordId, action, principal, options = {}) {
     if (!['start', 'stop'].includes(action)) {
       throw new RunpodManagementError('Unsupported pod action.', {
@@ -4457,7 +4754,15 @@ class RunpodPodManager {
       });
       if (
         action === 'start'
-        && (pod.setupStatus !== 'ready' || pod.podPurpose === 'llama_cpp_service')
+        && (
+          pod.setupStatus !== 'ready'
+          || pod.podPurpose === 'llama_cpp_service'
+          || (
+            pod.podPurpose === 'ollama_service'
+            && isQwen38Model(pod.setupModel)
+            && Number.isSafeInteger(pod.contextTokens)
+          )
+        )
       ) {
         this.scheduleProvisioning(pod._id, actor);
       }
@@ -4666,7 +4971,9 @@ class RunpodPodManager {
       if (existing) {
         const observedContextTokens = existing.podPurpose === 'llama_cpp_service'
           ? artifactServerContextFromArgs(providerPod.args)
-          : null;
+          : existing.podPurpose === 'ollama_service' && isQwen38Model(existing.setupModel)
+            ? ollamaContextFromEnv(providerPod.env)
+            : null;
         await this.podModel.updateOne(
           { _id: existing._id },
           {
@@ -4968,6 +5275,10 @@ module.exports = {
   OLLAMA_PORT,
   OLLAMA_PROVIDER_TEMPLATE_NAME,
   OLLAMA_TEMPLATE_SLUG,
+  QWEN38_27B_CONTEXT_PROFILES,
+  QWEN38_27B_CONTEXT_TOKEN_OPTIONS,
+  QWEN38_27B_MODEL,
+  QWEN38_27B_NATIVE_CONTEXT_TOKENS,
   MODEL_ARTIFACT_PREPARER_TEMPLATE_SLUG,
   MODEL_ARTIFACT_SERVER_TEMPLATE_SLUG,
   RunpodManagementError,
@@ -4989,6 +5300,8 @@ module.exports = {
   normalizeNetworkVolumeType,
   normalizePodName,
   normalizeTemplateInput,
+  ollamaContextFromEnv,
+  ollamaRuntimeEnvironment,
   ollamaServiceUrl,
   providerPodFields,
   providerPodNetworkVolume,
@@ -4998,8 +5311,10 @@ module.exports = {
   mapModelArtifactForPage,
   projectPodUsage,
   publicOllamaUrl,
+  qwen38ContextRecommendationForVram,
   readLimitedText,
   reconciledProviderPodFields,
+  resolveOllamaContextTokens,
   runpodPodManager: manager,
   usageFieldsForObservation,
   usageStateForStatus,

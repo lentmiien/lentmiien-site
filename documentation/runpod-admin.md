@@ -23,7 +23,7 @@ The catalog and billing monitor uses:
 Pod management uses:
 
 - `GET` and `POST /v2/pods`
-- `GET` and `DELETE /v2/pods/{id}`
+- `GET`, `PATCH`, and `DELETE /v2/pods/{id}`
 - `POST /v2/pods/{id}/action` with `start` or `stop`
 - `GET` and `POST /v2/templates`
 - `PATCH /v2/templates/{id}`
@@ -70,7 +70,9 @@ REST API v2 is currently public beta, so response fields may evolve. Current ref
 6. Background setup waits for `RUNNING`, checks either the exact configured
    Cloudflare hostname with its Access service-token headers or the fixed Runpod HTTPS proxy,
    calls Ollama `POST /api/pull` as a bounded progress stream, and verifies the model in
-   `GET /api/tags`. A model already present on the network volume completes this
+   `GET /api/tags`. For the managed Qwen3.8 profile it then preloads the selected
+   context with `POST /api/generate` and confirms the effective allocation in
+   `GET /api/ps`. A model already present on the network volume completes this
    step without downloading its blobs again.
 7. The dashboard exposes the stable authenticated hostname (or diagnostic
    public proxy URL) only after setup succeeds.
@@ -94,10 +96,54 @@ server.
 The live v2 handoff check populated the retained 50 GB Standard volume
 `ollama-qwen3-8-27b-cache` in `EU-RO-1` with `qwen3.8:27b` (an 18 GB Ollama
 package). A fresh Pod mounted the same volume, found the tag without a second
-pull, and completed a small-context inference. The verification used a 32 GB GPU
-and a 2,048-token context; that does not imply that the model's full advertised
-256K context fits in 32 GB, because KV-cache memory grows with context and
-concurrency.
+pull, and completed an inference without downloading the model again.
+
+### Qwen3.8 27B context profiles
+
+Qwen3.8 27B advertises a 262,144-token native window. The managed Ollama
+profiles below assume its current Q4_K_M package, one loaded model, one parallel
+request, Flash Attention, and the high-quality f16 KV cache. Context means the
+combined prompt, image/input tokens, thinking, and answer; a client-side output
+limit can still stop an answer before this total window is full.
+
+| GPU VRAM | Comfortable context | Tighter reviewed ceiling | Guidance |
+| --- | ---: | ---: | --- |
+| 24 GB | 65,536 | 98,304 | Suitable for ordinary long prompts; the tighter tier leaves less room for vision/runtime workspace |
+| 32 GB | 196,608 | 229,376 | Recommended RTX PRO 4500 profile; 196K is the live-verified balance |
+| 48 GB | 262,144 | 262,144 | Comfortably reaches the model's full native window |
+| 80+ GB | 262,144 | 262,144 | Native Ollama maximum is unchanged; use the margin for concurrency or a higher-precision model |
+
+The 2026-09-03 RTX PRO 4500 Blackwell test used Ollama 0.33.2 and loaded
+196,608 tokens in about 36 seconds. Ollama reported the requested context in
+`GET /api/ps`, and a real chat request completed. Provider logs projected about
+27.9 GiB of CUDA allocations on the 32,125 MiB device, leaving roughly 4.2 GiB
+of nominal margin; this included about 12 GiB of target-model KV cache, 0.75 GiB
+of draft/MTP KV cache, and recurrent-state/runtime allocations. A 229K window
+is available as an explicit tighter option, but 262K consumes the remaining
+32 GB margin and is reserved for 48 GB or larger GPUs in automatic selection.
+
+New `qwen3.8:27b` Pods select the comfortable tier automatically from aggregate
+VRAM, or an administrator can choose a reviewed size explicitly. A running Pod
+can be changed in place: the app PATCHes its environment through REST v2,
+resets the container, reloads the already-cached model, and verifies the
+effective context with `/api/ps`. The Pod ID, GPU allocation, network volume,
+and stable Cloudflare hostname remain unchanged. Active responses are
+interrupted, the automatic-stop deadline does not move, and the app refuses to
+start the reload when less than 15 minutes remain. Open WebUI should leave its
+per-model context override unset or set it to the same value; otherwise its
+request-level `num_ctx` can cause Ollama to reload a different allocation.
+
+These are measured operating profiles, not an architectural guarantee. Ollama
+KV use grows with context and parallelism, and vision or concurrent work needs
+additional margin. If more concurrency is needed later, first move to a larger
+GPU; changing `OLLAMA_NUM_PARALLEL` multiplies the effective context allocation.
+For context beyond 262,144, use a separately tested vLLM/SGLang YaRN profile
+rather than stretching this Ollama profile beyond the model's native window.
+
+References: [Qwen3.8 27B model card](https://huggingface.co/Qwen/Qwen3.8-27B),
+[Ollama qwen3.8 package](https://ollama.com/library/qwen3.8),
+[Ollama context-length guide](https://docs.ollama.com/context-length), and
+[Ollama FAQ memory controls](https://docs.ollama.com/faq).
 
 Network volumes are independent, regional Secure Cloud resources. A Pod must be
 created in the volume's data center. Stopping a Pod leaves the volume attached;
@@ -517,7 +563,7 @@ Security zone: logged-in, administrator only
 Interactive principals: validated admin sessions
 Machine principals: internal `runpod-state-observer`, `runpod-auto-stop`, and `runpod-billing-scheduler` labels; Cloudflare Access service-token client for outbound gateway checks; no inbound application machine route (`RUNPOD_API_KEY` is an outbound provider credential)
 Data classification: public catalogs; sensitive account billing/resource metadata; secret provider, tunnel, Access-token, and future LLM-gateway credentials
-Capabilities: runpod.catalog.read, runpod.billing.read, runpod.billing.sync, runpod.pod.read, runpod.pod.create, runpod.pod.start, runpod.pod.stop, runpod.pod.extend, runpod.pod.delete, runpod.pod.setup, runpod.pod.sync, runpod.model_download.create, runpod.model_artifact.prepare, runpod.llama_cpp.create, runpod.network_volume.read, runpod.network_volume.create, runpod.network_volume.delete, runpod.network_volume.sync, runpod.template.manage
+Capabilities: runpod.catalog.read, runpod.billing.read, runpod.billing.sync, runpod.pod.read, runpod.pod.create, runpod.pod.start, runpod.pod.stop, runpod.pod.extend, runpod.pod.delete, runpod.pod.setup, runpod.pod.sync, runpod.model_download.create, runpod.model_artifact.prepare, runpod.ollama.reconfigure, runpod.llama_cpp.create, runpod.llama_cpp.reconfigure, runpod.network_volume.read, runpod.network_volume.create, runpod.network_volume.delete, runpod.network_volume.sync, runpod.template.manage
 Object scope: account-wide admin feature; Pod and volume browser actions use local MongoDB IDs and resolve provider IDs server-side; model downloads accept a provider volume ID but verify it against the authenticated account's v2 volume list and derive cloud/location server-side; volume deletion also verifies the resolved provider ID against that list
 Admin override: no implicit bypass; admin receives the explicit capability bundle and each mutation checks its semantic capability
 Browser mutations and CSRF control: POST only; shared session token, timing-safe comparison, and Origin validation, with a same-origin Fetch Metadata fallback for opaque browser origins; Pod and volume deletion also require the exact resource name
@@ -525,7 +571,7 @@ Public/secret abuse controls: authentication plus admin guard, semantic capabili
 Request and upload limits: URL-encoded forms only, at most 16 KiB and 20 scalar fields; no uploads; provider requests capped at 64 KiB; provider responses capped at 4 MiB
 Output/rendering contexts: bounded normalized values rendered with escaped Pug interpolation; sanitized provider error fields may be shown to administrators, but no provider HTML, raw response bodies, environment values, or inline JSON
 Private file/media storage and delivery: none
-Outbound hosts/services: fixed HTTPS api.runpod.io v2 paths; a standalone one-time Secret bootstrap to fixed HTTPS api.runpod.io/graphql; exact <pod>-<port>.proxy.runpod.net diagnostic URLs; exact configured https://llm.lentmiien.com gateway origin; the Pod wrapper downloads only the pinned cloudflared AMD64 release URL and verifies its SHA-256; redirects rejected; Ollama paths restricted to /api/tags and /api/pull
+Outbound hosts/services: fixed HTTPS api.runpod.io v2 paths; a standalone one-time Secret bootstrap to fixed HTTPS api.runpod.io/graphql; exact <pod>-<port>.proxy.runpod.net diagnostic URLs; exact configured https://llm.lentmiien.com gateway origin; the Pod wrapper downloads only the pinned cloudflared AMD64 release URL and verifies its SHA-256; redirects rejected; Ollama paths restricted to /, /api/tags, /api/pull, /api/generate, and /api/ps
 Cache policy: browser responses are private/no-store; catalog results use a short in-memory cache
 Security-relevant logs: stable action, category, safe error code, and HTTP status metadata only; no key, billing amount, resource ID, principal data, or provider body
 Retention/deletion behavior: provider deletion archives local serving and downloader Pod lifecycle/cost metadata plus volume and per-Pod billing metadata; verified model tags remain on the active volume record; account months, Pod billing periods, and audit events are retained; model files are permanently removed only by provider volume deletion; application databases persist only non-secret gateway mode/URL and Runpod Secret references, never credential values

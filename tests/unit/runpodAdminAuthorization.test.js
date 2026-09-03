@@ -161,6 +161,7 @@ describe('Runpod route wiring', () => {
     expect(routeSource).toContain("'/pods/:id/stop'");
     expect(routeSource).toContain("'/pods/:id/extend'");
     expect(routeSource).toContain("'/pods/:id/llama-cpp-context'");
+    expect(routeSource).toContain("'/pods/:id/ollama-context'");
     expect(routeSource).toContain("'/pods/:id/delete'");
     expect(routeSource).toContain("'/billing/sync'");
     expect(routeSource).toContain('csrf.requireToken');
@@ -171,6 +172,7 @@ describe('Runpod route wiring', () => {
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.llamaCppCreate)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podExtend)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.llamaCppReconfigure)');
+    expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.ollamaReconfigure)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podDelete)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.billingSync)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.networkVolumeCreate)');

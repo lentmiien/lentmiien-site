@@ -72,7 +72,7 @@ const RunpodPodSchema = new mongoose.Schema({
   },
   setupErrorCode: { type: String, default: null, trim: true, maxlength: 80 },
   setupModel: { type: String, default: '', trim: true, maxlength: 120 },
-  contextTokens: { type: Number, default: null, min: 2048, max: 131072 },
+  contextTokens: { type: Number, default: null, min: 2048, max: 262144 },
   setupStartedAt: { type: Date, default: null },
   setupCompletedAt: { type: Date, default: null },
   autoDeleteAfterSetup: { type: Boolean, default: false },

@@ -141,6 +141,7 @@ describe('Runpod persistence models', () => {
     ]);
     expect(RunpodPod.schema.path('modelArtifactRecordId')).toBeDefined();
     expect(RunpodPod.schema.path('contextTokens')).toBeDefined();
+    expect(RunpodPod.schema.path('contextTokens').options.max).toBe(262144);
     expect(RunpodPod.schema.path('cleanupStatus').options.enum).toEqual([
       'not_required', 'pending', 'completed', 'failed',
     ]);

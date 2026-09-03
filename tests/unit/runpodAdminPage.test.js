@@ -42,6 +42,14 @@ describe('Runpod admin page', () => {
         maxHourlyCostUsd: 100,
         defaultAutoStopMinutes: 60,
         maxRuntimeMinutes: 1440,
+        qwen38NativeContextTokens: 262144,
+        qwen38ContextTokenOptions: [32768, 65536, 98304, 131072, 196608, 229376, 262144],
+        qwen38ContextProfiles: [{
+          vramLabel: '32 GB',
+          recommendedContextTokens: 196608,
+          practicalCeilingTokens: 229376,
+          note: 'Live-tested with nominal headroom.',
+        }],
       },
       gateway: {
         readyForLargeModel: true,
@@ -101,6 +109,10 @@ describe('Runpod admin page', () => {
 
     expect(html).toContain('id="model-library"');
     expect(html).toContain('Qwen3.8 · 27B');
+    expect(html).toContain('Native context');
+    expect(html).toContain('262,144 tokens');
+    expect(html).toContain('196,608 recommended');
+    expect(html).toContain('Up to 229,376 is tighter');
     expect(html).toContain('method="post" action="/admin/runpod/model-artifacts/pods"');
     expect(html).toContain('name="artifactId" value="507f191e810c19729de860ad"');
     expect(html).toContain('2× RTX PRO 6000');
@@ -261,13 +273,17 @@ describe('Runpod admin page', () => {
         gpuCount: 1,
         costPerHour: 0.69,
         setupStatus: 'ready',
-        setupModel: 'qwen2.5:0.5b',
+        podPurpose: 'ollama_service',
+        setupModel: 'qwen3.8:27b',
+        contextTokens: 65536,
+        recommendedContextTokens: 65536,
         publicUrl: 'https://provider-pod-id-11434.proxy.runpod.net',
         autoStopMinutes: 60,
         autoStopAt: '2026-09-01T02:00:00.000Z',
         canStart: false,
         canStop: true,
         canExtend: true,
+        canReconfigureOllamaContext: true,
         canDelete: true,
         lastOperationError: {
           action: 'start',
@@ -360,6 +376,7 @@ describe('Runpod admin page', () => {
     expect(html).toContain('action="/admin/runpod/pods/local-pod-id/stop"');
     expect(html).toContain('action="/admin/runpod/pods/local-pod-id/extend"');
     expect(html).toContain('action="/admin/runpod/pods/glm-local-pod-id/llama-cpp-context"');
+    expect(html).toContain('action="/admin/runpod/pods/local-pod-id/ollama-context"');
     expect(html).toContain('action="/admin/runpod/pods/stopped-local-pod-id/start"');
     expect(html).toContain('action="/admin/runpod/pods/local-pod-id/delete"');
     expect(html).toContain('Start for…');
@@ -373,6 +390,9 @@ describe('Runpod admin page', () => {
     expect(html).toContain('131,072 tokens · maximum tested on 2×96 GB');
     expect(html).toContain('name="reloadAcknowledged"');
     expect(html).toContain('The automatic-stop deadline does not move');
+    expect(html).toContain('Change Qwen context and reload Ollama');
+    expect(html).toContain('196,608 tokens · live-tested on 32 GB');
+    expect(html).toContain('262,144 tokens · native max · 48 GB recommended');
     expect(html).toContain('data-runpod-countdown');
     expect(html).toContain('RUNPOD_START_GPU_UNAVAILABLE');
     expect(html).toContain('Original GPU unavailable');

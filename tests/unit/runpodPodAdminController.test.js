@@ -3,6 +3,7 @@ const {
   createRunpodPodAdminController,
   failureNotice,
   llamaCppReconfigureFailureNotice,
+  ollamaReconfigureFailureNotice,
   modelArtifactPodFailureNotice,
   modelArtifactPreparationFailureNotice,
   startFailureNotice,
@@ -26,6 +27,7 @@ function manager() {
     transitionManagedPod: jest.fn().mockResolvedValue({}),
     extendManagedPod: jest.fn().mockResolvedValue({}),
     reconfigureManagedLlamaCppPod: jest.fn().mockResolvedValue({}),
+    reconfigureManagedOllamaPod: jest.fn().mockResolvedValue({}),
     deleteManagedPod: jest.fn().mockResolvedValue(true),
     retryProvisioning: jest.fn().mockResolvedValue(true),
     syncProviderPods: jest.fn().mockResolvedValue({}),
@@ -51,6 +53,7 @@ describe('Runpod Pod admin mutation controller', () => {
     ['stopPod', 'transitionManagedPod', { id: 'local-id' }, {}, NOTICE_KEYS.podStopped, 'pods'],
     ['extendPod', 'extendManagedPod', { id: 'local-id' }, { extensionMinutes: '60' }, NOTICE_KEYS.podExtended, 'pods'],
     ['reconfigureLlamaCppPod', 'reconfigureManagedLlamaCppPod', { id: 'local-id' }, { contextTokens: '32768', reloadAcknowledged: 'acknowledged' }, NOTICE_KEYS.llamaCppReconfigured, 'pods'],
+    ['reconfigureOllamaPod', 'reconfigureManagedOllamaPod', { id: 'local-id' }, { contextTokens: '196608', reloadAcknowledged: 'acknowledged' }, NOTICE_KEYS.ollamaReconfigured, 'pods'],
     ['deletePod', 'deleteManagedPod', { id: 'local-id' }, { confirmation: 'pod-name' }, NOTICE_KEYS.podDeleted, 'archived-pods'],
     ['retrySetup', 'retryProvisioning', { id: 'local-id' }, {}, NOTICE_KEYS.setupQueued, 'pods'],
     ['syncPods', 'syncProviderPods', {}, {}, NOTICE_KEYS.podsSynced, 'pods'],
@@ -126,6 +129,11 @@ describe('Runpod Pod admin mutation controller', () => {
       body: { contextTokens: '32768', reloadAcknowledged: 'acknowledged' },
       user,
     }, response());
+    await controller.reconfigureOllamaPod({
+      params: { id: 'pod-id' },
+      body: { contextTokens: '196608', reloadAcknowledged: 'acknowledged' },
+      user,
+    }, response());
     await controller.deletePod({ params: { id: 'pod-id' }, body: { confirmation: 'exact' }, user }, response());
 
     expect(service.createManagedPod).toHaveBeenCalledWith({ gpuId: 'gpu' }, user);
@@ -160,6 +168,11 @@ describe('Runpod Pod admin mutation controller', () => {
     expect(service.reconfigureManagedLlamaCppPod).toHaveBeenCalledWith(
       'pod-id',
       { contextTokens: '32768', reloadAcknowledged: 'acknowledged' },
+      user
+    );
+    expect(service.reconfigureManagedOllamaPod).toHaveBeenCalledWith(
+      'pod-id',
+      { contextTokens: '196608', reloadAcknowledged: 'acknowledged' },
       user
     );
     expect(service.deleteManagedPod).toHaveBeenCalledWith('pod-id', 'exact', user);
@@ -197,6 +210,9 @@ describe('Runpod Pod admin mutation controller', () => {
     expect(llamaCppReconfigureFailureNotice({
       code: 'RUNPOD_LLAMA_CPP_RELOAD_DEADLINE_TOO_CLOSE',
     })).toBe(NOTICE_KEYS.llamaCppReloadDeadlineTooClose);
+    expect(ollamaReconfigureFailureNotice({
+      code: 'RUNPOD_OLLAMA_RELOAD_DEADLINE_TOO_CLOSE',
+    })).toBe(NOTICE_KEYS.ollamaReloadDeadlineTooClose);
   });
 
   test('maps an unavailable original GPU start to specific fixed guidance', async () => {

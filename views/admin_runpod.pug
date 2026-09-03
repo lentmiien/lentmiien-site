@@ -19,6 +19,8 @@ block content
   - const refreshHref = `${adminPath}?bucketSize=${encodeURIComponent(filters.bucketSize)}&lastN=${encodeURIComponent(filters.lastN)}&refresh=1`;
   - const management = podManagement || { limits: {}, gateway: {}, templates: [], managedPods: [], archivedPods: [], modelDownloads: [], modelArtifactPreparations: [], modelArtifacts: [], modelArtifactPresets: [], networkVolumes: [], archivedNetworkVolumes: [], unmanagedProviderPods: [], gpuOptions: [], errors: {} };
   - const llamaCppContextTokenOptions = Array.isArray(management.limits.llamaCppContextTokenOptions) && management.limits.llamaCppContextTokenOptions.length ? management.limits.llamaCppContextTokenOptions : [16384, 32768, 65536, 98304, 131072];
+  - const qwenContextTokenOptions = Array.isArray(management.limits.qwen38ContextTokenOptions) && management.limits.qwen38ContextTokenOptions.length ? management.limits.qwen38ContextTokenOptions : [32768, 65536, 98304, 131072, 196608, 229376, 262144];
+  - const qwenContextProfiles = Array.isArray(management.limits.qwen38ContextProfiles) ? management.limits.qwen38ContextProfiles : [];
   - const ollamaTemplate = management.templates.find((entry) => entry.slug === 'ollama') || null;
   - const cloudflareTemplate = management.templates.find((entry) => entry.slug === 'ollama-cloudflare') || null;
   - const downloaderTemplate = management.templates.find((entry) => entry.slug === 'ollama-downloader') || null;
@@ -106,6 +108,17 @@ block content
             div
               dt API style
               dd Ollama · /api/*
+            div
+              dt Native context
+              dd= `${formatInteger(management.limits.qwen38NativeContextTokens || 262144)} tokens`
+          if qwenContextProfiles.length
+            .runpod-context-guide(role='note' aria-label='Qwen3.8 context recommendations by GPU VRAM')
+              strong Context guidance · one active request · f16 KV cache
+              each profile in qwenContextProfiles
+                .runpod-context-guide__row
+                  span= profile.vramLabel
+                  b= `${formatInteger(profile.recommendedContextTokens)} recommended`
+                  small= profile.practicalCeilingTokens === profile.recommendedContextTokens ? profile.note : `Up to ${formatInteger(profile.practicalCeilingTokens)} is tighter. ${profile.note}`
           .runpod-model-actions
             a.runpod-button.runpod-button--primary(href='#pod-creator') Create Qwen Pod
             a.runpod-button.runpod-button--secondary(href='#pods') Manage Pods
@@ -783,6 +796,14 @@ block content
                   if defaultNetworkVolume
                     each model in defaultNetworkVolume.cachedModels || []
                       option(value=model)
+              label.runpod-field(data-qwen-context-field)
+                span Qwen3.8 total context
+                select(name='contextTokens', data-qwen-context-select)
+                  option(value='auto', selected) Automatic for selected VRAM
+                  each contextTokens in qwenContextTokenOptions
+                    - const contextNote = contextTokens === 65536 ? ' · 24 GB recommended' : contextTokens === 196608 ? ' · 32 GB recommended · live-tested' : contextTokens === 262144 ? ' · native max · 48 GB recommended' : contextTokens === 229376 ? ' · tight on 32 GB' : '';
+                    option(value=contextTokens)= `${formatInteger(contextTokens)} tokens${contextNote}`
+                small(data-qwen-context-summary) Automatic selection follows aggregate GPU VRAM.
               label.runpod-field
                 span Auto-stop after (minutes)
                 input(type='number', name='autoStopMinutes', min='15', max=management.limits.maxRuntimeMinutes, step='1', value=management.limits.defaultAutoStopMinutes, required)
@@ -864,6 +885,7 @@ block content
         .runpod-pod-grid
           each pod in management.managedPods
             - const isLlamaCppPod = pod.podPurpose === 'llama_cpp_service';
+            - const isQwenOllamaPod = pod.podPurpose === 'ollama_service' && pod.setupModel === qwenModelTag;
             article.runpod-pod-card
               .runpod-pod-card__header
                 div
@@ -879,7 +901,7 @@ block content
                   strong= `${formatUsd(pod.costPerHour)} / hr`
                 div
                   span Setup
-                  strong= `${pod.setupStatus}${pod.setupModel ? ` · ${pod.setupModel}` : ''}${isLlamaCppPod && Number.isFinite(pod.contextTokens) ? ` · ${formatInteger(pod.contextTokens)} ctx` : ''}`
+                  strong= `${pod.setupStatus}${pod.setupModel ? ` · ${pod.setupModel}` : ''}${(isLlamaCppPod || isQwenOllamaPod) && Number.isFinite(pod.contextTokens) ? ` · ${formatInteger(pod.contextTokens)} ctx` : ''}`
                 div
                   span Access
                   strong= pod.accessMode === 'cloudflare_access' ? 'Cloudflare Access tunnel' : 'Runpod public proxy'
@@ -972,6 +994,24 @@ block content
                     label.runpod-check.runpod-check--warning
                       input(type='checkbox', name='reloadAcknowledged', value='acknowledged', required)
                       span I understand that the model will be unavailable during the reload.
+                    button.runpod-button.runpod-button--primary(type='submit') Apply context and reload
+              if pod.canReconfigureOllamaContext
+                - const currentOllamaContextTokens = Number.isFinite(pod.contextTokens) ? pod.contextTokens : pod.recommendedContextTokens || 196608;
+                - const podOllamaContextOptions = Array.from(new Set([...qwenContextTokenOptions, currentOllamaContextTokens])).sort((left, right) => left - right);
+                details.runpod-advanced
+                  summary Change Qwen context and reload Ollama
+                  form.runpod-context-control(method='post', action=`${adminPath}/pods/${pod.id}/ollama-context`)
+                    input(type='hidden', name='_csrf', value=csrfToken)
+                    label.runpod-field
+                      span Total context (prompt + thinking + answer)
+                      select(name='contextTokens', required)
+                        each contextTokens in podOllamaContextOptions
+                          - const contextNote = contextTokens === pod.recommendedContextTokens ? ` · recommended for ${formatInteger(pod.gpuMemoryGb * pod.gpuCount)} GB` : contextTokens === 262144 ? ' · native maximum' : contextTokens === 196608 ? ' · live-tested on 32 GB' : '';
+                          option(value=contextTokens, selected=contextTokens === currentOllamaContextTokens)= `${formatInteger(contextTokens)} tokens${contextNote}`
+                    p.runpod-form-help This resets the running container and interrupts active responses, then reloads the cached model with Flash Attention, one parallel request, and the high-quality f16 KV cache. The Pod, volume, GPU, and stable gateway URL stay in place. On 32 GB, 196K was live-tested with about 4.2 GiB nominal headroom; use 48 GB for the full 256K native window without tight packing.
+                    label.runpod-check.runpod-check--warning
+                      input(type='checkbox', name='reloadAcknowledged', value='acknowledged', required)
+                      span I understand that Qwen will be unavailable during the reload.
                     button.runpod-button.runpod-button--primary(type='submit') Apply context and reload
               .runpod-pod-card__actions
                 if pod.canStart

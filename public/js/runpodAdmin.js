@@ -14,6 +14,9 @@
     const persistentDiskInput = picker.querySelector('[data-persistent-disk]');
     const storageHelp = picker.querySelector('[data-storage-help]');
     const modelInput = picker.querySelector('[data-ollama-model-input]');
+    const qwenContextField = picker.querySelector('[data-qwen-context-field]');
+    const qwenContextSelect = picker.querySelector('[data-qwen-context-select]');
+    const qwenContextSummary = picker.querySelector('[data-qwen-context-summary]');
     const cachedModelList = picker.querySelector('[data-cached-model-list]');
     const estimate = picker.querySelector('[data-gpu-estimate]');
     const result = picker.querySelector('[data-gpu-filter-result]');
@@ -56,6 +59,34 @@
 
     function currentGpuOption() {
       return gpuOptions.find((option) => option.value === gpuSelect?.value) || null;
+    }
+
+    function recommendedQwenContext(vramGb) {
+      if (vramGb < 24) return 32768;
+      if (vramGb < 32) return 65536;
+      if (vramGb < 48) return 196608;
+      return 262144;
+    }
+
+    function updateQwenContext() {
+      const isQwen = modelInput?.value.trim().toLowerCase() === 'qwen3.8:27b';
+      if (qwenContextField) qwenContextField.hidden = !isQwen;
+      if (qwenContextSelect) {
+        qwenContextSelect.disabled = !isQwen;
+        qwenContextSelect.required = isQwen;
+      }
+      if (!isQwen || !qwenContextSummary) return;
+      const option = currentGpuOption();
+      const gpuCount = Math.max(1, Math.floor(number(countInput?.value, 1)));
+      const aggregateVram = (option ? optionValues(option).memory : 0) * gpuCount;
+      const recommended = recommendedQwenContext(aggregateVram);
+      const formattedVram = Number.isFinite(aggregateVram) ? aggregateVram : 0;
+      if (qwenContextSelect?.value === 'auto') {
+        qwenContextSummary.textContent = `Automatic will use ${recommended.toLocaleString('en-US')} tokens for ${formattedVram.toLocaleString('en-US')} GB aggregate VRAM.`;
+      } else {
+        const selected = number(qwenContextSelect?.value, recommended);
+        qwenContextSummary.textContent = `${selected.toLocaleString('en-US')} tokens selected; ${recommended.toLocaleString('en-US')} is the comfortable recommendation for ${formattedVram.toLocaleString('en-US')} GB aggregate VRAM.`;
+      }
     }
 
     function currentNetworkVolume() {
@@ -156,6 +187,7 @@
         if (estimate) estimate.textContent = 'No matching GPU';
         if (createButton) createButton.disabled = true;
         updateDataCenters(null);
+        updateQwenContext();
         return;
       }
       const values = optionValues(option);
@@ -178,6 +210,7 @@
           || adjustedTotal > limit;
       }
       updateDataCenters(option);
+      updateQwenContext();
     }
 
     function applyFilters() {
@@ -216,6 +249,8 @@
       .forEach((element) => element.addEventListener('input', updateEstimate));
     networkVolumeSelect?.addEventListener('input', applyFilters);
     templateSelect?.addEventListener('input', applyAccessMode);
+    modelInput?.addEventListener('input', updateQwenContext);
+    qwenContextSelect?.addEventListener('input', updateQwenContext);
 
     createForm?.addEventListener('submit', () => {
       if (createButton) {

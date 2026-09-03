@@ -241,6 +241,13 @@ router.post(
   runpodPodAdminController.reconfigureLlamaCppPod
 );
 router.post(
+  '/pods/:id/ollama-context',
+  runpodMutationLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.ollamaReconfigure),
+  runpodPodAdminController.reconfigureOllamaPod
+);
+router.post(
   '/pods/:id/setup',
   runpodMutationLimiter,
   csrf.requireToken,

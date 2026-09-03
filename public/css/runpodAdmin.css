@@ -333,6 +333,40 @@
   font-weight: 700;
 }
 
+.runpod-context-guide {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--divider));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface-3));
+}
+
+.runpod-context-guide > strong {
+  color: var(--accent);
+  font-size: 0.82rem;
+}
+
+.runpod-context-guide__row {
+  display: grid;
+  grid-template-columns: 4rem minmax(9rem, auto) 1fr;
+  gap: 0.65rem;
+  align-items: baseline;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--divider);
+}
+
+.runpod-context-guide__row span,
+.runpod-context-guide__row b {
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.runpod-context-guide__row small {
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 .runpod-model-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1249,6 +1283,11 @@
   }
 
   .runpod-provider-error dl div {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+
+  .runpod-context-guide__row {
     grid-template-columns: 1fr;
     gap: 0.2rem;
   }
