@@ -11,6 +11,19 @@ jest.mock('../../models/codex_workspace_lock', () => ({
   },
 }));
 
+jest.mock('../../models/runpod_pod', () => ({
+  find: jest.fn(),
+}));
+
+jest.mock('../../models/role', () => ({
+  findOne: jest.fn(),
+}));
+
+jest.mock('../../utils/logger', () => ({
+  error: jest.fn(),
+  warning: jest.fn(),
+}));
+
 const mockGetAppSettingValue = jest.fn();
 
 jest.mock('../../services/appSettingsService', () => ({
@@ -24,11 +37,24 @@ jest.mock('../../services/appSettingsService', () => ({
 
 const CodexEvent = require('../../models/codex_event');
 const CodexWorkspaceLock = require('../../models/codex_workspace_lock');
+const RunpodPod = require('../../models/runpod_pod');
+const Role = require('../../models/role');
 const codexToolService = require('../../services/codexToolService');
+
+function runpodPodQuery(pods) {
+  return {
+    lean: jest.fn().mockReturnThis(),
+    exec: jest.fn().mockResolvedValue(pods),
+  };
+}
 
 beforeEach(() => {
   mockGetAppSettingValue.mockReset();
   mockGetAppSettingValue.mockResolvedValue('qwen3.6:27b');
+  RunpodPod.find.mockReset();
+  RunpodPod.find.mockReturnValue(runpodPodQuery([]));
+  Role.findOne.mockReset();
+  Role.findOne.mockResolvedValue(null);
 });
 
 describe('codexToolService runtime config', () => {
@@ -36,6 +62,8 @@ describe('codexToolService runtime config', () => {
   const originalCompletionExitGraceMs = process.env.CODEX_COMPLETION_EXIT_GRACE_MS;
   const originalLocalModels = process.env.CODEX_LOCAL_MODELS;
   const originalOllamaProfile = process.env.CODEX_OLLAMA_PROFILE;
+  const originalRunpodProfileEnvFile = process.env.CODEX_RUNPOD_PROFILE_ENV_FILE;
+  const originalRunpodProfileShell = process.env.CODEX_RUNPOD_PROFILE_SHELL;
 
   afterEach(() => {
     if (originalMaxEventsPerTurn === undefined) {
@@ -57,6 +85,16 @@ describe('codexToolService runtime config', () => {
       delete process.env.CODEX_OLLAMA_PROFILE;
     } else {
       process.env.CODEX_OLLAMA_PROFILE = originalOllamaProfile;
+    }
+    if (originalRunpodProfileEnvFile === undefined) {
+      delete process.env.CODEX_RUNPOD_PROFILE_ENV_FILE;
+    } else {
+      process.env.CODEX_RUNPOD_PROFILE_ENV_FILE = originalRunpodProfileEnvFile;
+    }
+    if (originalRunpodProfileShell === undefined) {
+      delete process.env.CODEX_RUNPOD_PROFILE_SHELL;
+    } else {
+      process.env.CODEX_RUNPOD_PROFILE_SHELL = originalRunpodProfileShell;
     }
   });
 
@@ -124,6 +162,102 @@ describe('codexToolService runtime config', () => {
 
     process.env.CODEX_OLLAMA_PROFILE = 'local-qwen';
     expect(codexToolService.getRuntimeConfig().ollamaProfile).toBe('local-qwen');
+  });
+
+  test('uses the shared Runpod profile environment file and shell defaults with overrides', () => {
+    delete process.env.CODEX_RUNPOD_PROFILE_ENV_FILE;
+    delete process.env.CODEX_RUNPOD_PROFILE_SHELL;
+    expect(codexToolService.getRuntimeConfig()).toEqual(expect.objectContaining({
+      runpodProfileEnvFile: '~/.codex/lentmiien.env',
+      runpodProfileShell: '/bin/bash',
+    }));
+
+    process.env.CODEX_RUNPOD_PROFILE_ENV_FILE = '/opt/codex/runpod.env';
+    process.env.CODEX_RUNPOD_PROFILE_SHELL = '/usr/bin/bash';
+    expect(codexToolService.getRuntimeConfig()).toEqual(expect.objectContaining({
+      runpodProfileEnvFile: '/opt/codex/runpod.env',
+      runpodProfileShell: '/usr/bin/bash',
+    }));
+  });
+});
+
+describe('codexToolService Runpod model provider availability', () => {
+  const admin = { name: 'admin', type_user: 'admin' };
+
+  test('publishes only Runpod providers whose exact pods are running', async () => {
+    RunpodPod.find.mockReturnValue(runpodPodQuery([
+      { name: 'ollama-qwen' },
+    ]));
+
+    const config = await codexToolService.publicConfig({ user: admin });
+
+    expect(config.modelProviderOptions.map((provider) => provider.value)).toEqual([
+      'openai',
+      'ollama',
+      'runpod-qwen',
+    ]);
+    expect(config.modelProviderOptions).toContainEqual(expect.objectContaining({
+      value: 'runpod-qwen',
+      label: 'Qwen (Runpod)',
+      controlMode: 'fixed-profile',
+    }));
+    expect(RunpodPod.find).toHaveBeenCalledWith({
+      name: { $in: ['ollama-qwen', 'glm53-flash'] },
+      providerStatus: 'RUNNING',
+      lifecycleGroup: 'running',
+      archivedAt: null,
+    });
+  });
+
+  test('hides all Runpod providers when the pods are stopped or absent', async () => {
+    const config = await codexToolService.publicConfig({ user: admin });
+
+    expect(config.modelProviderOptions.map((provider) => provider.value)).toEqual([
+      'openai',
+      'ollama',
+    ]);
+  });
+
+  test('does not disclose Runpod providers without the semantic capability', async () => {
+    const config = await codexToolService.publicConfig({
+      user: { name: 'standard-user', type_user: 'user' },
+    });
+
+    expect(config.modelProviderOptions.map((provider) => provider.value)).toEqual([
+      'openai',
+      'ollama',
+    ]);
+    expect(RunpodPod.find).not.toHaveBeenCalled();
+  });
+
+  test('allows an explicitly capability-granted account to use a running provider', async () => {
+    Role.findOne
+      .mockResolvedValueOnce({ permissions: ['codex.run.runpod_model'] })
+      .mockResolvedValueOnce(null);
+    RunpodPod.find.mockReturnValue(runpodPodQuery([{ name: 'glm53-flash' }]));
+
+    const config = await codexToolService.publicConfig({
+      user: { name: 'model-user', type_user: 'user' },
+    });
+
+    expect(config.modelProviderOptions.map((provider) => provider.value)).toEqual([
+      'openai',
+      'ollama',
+      'runpod-glm',
+    ]);
+  });
+
+  test('fails closed without breaking the Codex page when pod state cannot be read', async () => {
+    RunpodPod.find.mockImplementation(() => {
+      throw new Error('database unavailable');
+    });
+
+    const config = await codexToolService.publicConfig({ user: admin });
+
+    expect(config.modelProviderOptions.map((provider) => provider.value)).toEqual([
+      'openai',
+      'ollama',
+    ]);
   });
 });
 
@@ -576,6 +710,57 @@ describe('codexToolService token usage helpers', () => {
     expect(serialized.costEstimate.provider).toBe('ollama');
     expect(serialized.costEstimate.total).toBeCloseTo(0.3, 8);
   });
+
+  test('groups Runpod Qwen and GLM usage into the Ollama totals and price table', () => {
+    const pricingByProvider = {
+      openai: {
+        provider: 'openai',
+        unitTokens: 1000,
+        prices: { input: 100, cached: 100, output: 100, reasoning: 100 },
+      },
+      ollama: {
+        provider: 'ollama',
+        unitTokens: 1000,
+        prices: { input: 2, cached: 2, output: 2, reasoning: 2 },
+      },
+    };
+    const turns = [
+      {
+        _id: 'qwen-turn',
+        sessionId: 'qwen-session',
+        modelProvider: 'runpod-qwen',
+        sequence: 1,
+        kind: 'question',
+        status: 'succeeded',
+        usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+      },
+      {
+        _id: 'glm-turn',
+        sessionId: 'glm-session',
+        modelProvider: 'runpod-glm',
+        sequence: 1,
+        kind: 'question',
+        status: 'succeeded',
+        usage: { input_tokens: 200, output_tokens: 100, total_tokens: 300 },
+      },
+    ];
+
+    const stats = codexToolService.buildSessionStats(turns, pricingByProvider);
+    const serialized = codexToolService.serializeTurn(turns[0], { pricingByProvider });
+
+    expect(stats.providerUsage.ollama.tokens.total).toBe(450);
+    expect(stats.providerUsage.ollama.turnCount).toBe(2);
+    expect(stats.providerUsage.openai.tokens.total).toBe(0);
+    expect(stats.ollamaCost).toBeCloseTo(0.9, 8);
+    expect(serialized).toEqual(expect.objectContaining({
+      modelProvider: 'runpod-qwen',
+      modelProviderLabel: 'Qwen (Runpod)',
+      usageProvider: 'ollama',
+      runpodBacked: true,
+    }));
+    expect(serialized.costEstimate.provider).toBe('ollama');
+    expect(serialized.costEstimate.total).toBeCloseTo(0.3, 8);
+  });
 });
 
 describe('codexToolService local model request options', () => {
@@ -617,5 +802,72 @@ describe('codexToolService local model request options', () => {
       statusCode: 400,
       message: expect.stringContaining('not configured'),
     });
+  });
+
+  test.each([
+    ['runpod-qwen', 'ollama-qwen', 'lentmiien-qwen'],
+    ['runpod-glm', 'glm53-flash', 'lentmiien-glm'],
+  ])('resolves %s to its fixed Codex profile while its pod is running', async (
+    modelProvider,
+    podName,
+    profile
+  ) => {
+    RunpodPod.find.mockReturnValue(runpodPodQuery([{ name: podName }]));
+
+    await expect(codexToolService.resolveTurnRequestOptions({
+      modelProvider,
+      model: 'client-supplied-model',
+      profile: 'client-supplied-profile',
+      reasoningEffort: 'ultra',
+    }, {}, {
+      user: { name: 'admin', type_user: 'admin' },
+    })).resolves.toEqual({
+      requestProfileId: '',
+      requestProfileName: '',
+      modelProvider,
+      model: '',
+      profile,
+      reasoningEffort: '',
+    });
+  });
+
+  test('rejects a Runpod provider when its pod is not running', async () => {
+    await expect(codexToolService.resolveTurnRequestOptions({
+      modelProvider: 'runpod-qwen',
+    }, {}, {
+      user: { name: 'admin', type_user: 'admin' },
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining('not running'),
+    });
+  });
+
+  test('returns a sanitized service error when Runpod availability cannot be verified', async () => {
+    RunpodPod.find.mockImplementation(() => {
+      throw new Error('mongodb://internal-host/provider-state');
+    });
+
+    await expect(codexToolService.resolveTurnRequestOptions({
+      modelProvider: 'runpod-glm',
+    }, {}, {
+      user: { name: 'admin', type_user: 'admin' },
+    })).rejects.toMatchObject({
+      statusCode: 503,
+      message: 'Runpod model availability could not be verified. Please try again.',
+    });
+  });
+
+  test('rejects a Runpod provider without its semantic capability', async () => {
+    RunpodPod.find.mockReturnValue(runpodPodQuery([{ name: 'ollama-qwen' }]));
+
+    await expect(codexToolService.resolveTurnRequestOptions({
+      modelProvider: 'runpod-qwen',
+    }, {}, {
+      user: { name: 'standard-user', type_user: 'user' },
+    })).rejects.toMatchObject({
+      statusCode: 403,
+      message: expect.stringContaining('permission'),
+    });
+    expect(RunpodPod.find).not.toHaveBeenCalled();
   });
 });

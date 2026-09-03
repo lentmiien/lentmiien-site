@@ -1,12 +1,19 @@
 const CodexSession = require('../../models/codex_session');
+const CodexTurn = require('../../models/codex_turn');
 
 describe('CodexSession model', () => {
   test('stores the provider and model used to resume a Codex session', () => {
     expect(CodexSession.schema.path('modelProvider').options).toEqual(expect.objectContaining({
-      enum: ['openai', 'ollama'],
+      enum: ['openai', 'ollama', 'runpod-qwen', 'runpod-glm'],
       default: 'openai',
     }));
     expect(CodexSession.schema.path('model').options.maxlength).toBe(120);
+    expect(CodexTurn.schema.path('modelProvider').options.enum).toEqual([
+      'openai',
+      'ollama',
+      'runpod-qwen',
+      'runpod-glm',
+    ]);
   });
 
   test('only enforces unique Codex thread ids for stored string values', () => {

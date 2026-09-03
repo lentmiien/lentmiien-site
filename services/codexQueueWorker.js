@@ -197,6 +197,23 @@ class CodexQueueWorker {
         continue;
       }
 
+      try {
+        await codexToolService.assertModelProviderAvailable(
+          codexToolService.getTurnModelProvider(queuedTurn)
+        );
+      } catch (error) {
+        await this.blockTurn(queuedTurn, error.message || 'The selected model provider is unavailable.');
+        logger.warning('Codex turn blocked because its model provider is unavailable', {
+          category: 'codex_tool',
+          metadata: {
+            workerId: this.workerId,
+            turnId: String(queuedTurn._id),
+            modelProvider: codexToolService.getTurnModelProvider(queuedTurn),
+          },
+        });
+        continue;
+      }
+
       let bundle;
       try {
         bundle = await codexToolService.getWorkspaceBundle(queuedTurn.workspaceId);

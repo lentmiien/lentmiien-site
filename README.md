@@ -190,6 +190,8 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `CODEX_MAX_EVENTS_PER_TURN` | Maximum number of detail events persisted for each Codex turn before a truncation warning is stored. Defaults to `2000`. |
 | `CODEX_YOLO_ENABLED` | Enables server-side acceptance of yolo Codex turns when the selected workspace also allows yolo. Defaults to `false`. |
 | `CODEX_OLLAMA_PROFILE` | Codex config profile layered onto every Ollama turn. Defaults to `ollama`, which loads `$CODEX_HOME/ollama.config.toml`. |
+| `CODEX_RUNPOD_PROFILE_ENV_FILE` | Shell environment file sourced before Runpod-backed Qwen or GLM Codex turns. Defaults to `~/.codex/lentmiien.env` on the machine executing Codex. |
+| `CODEX_RUNPOD_PROFILE_SHELL` | Shell used to source the Runpod profile environment locally and on SSH targets without an explicit target shell. Defaults to `/bin/bash`. |
 | `CODEX_OLLAMA_RESERVATION_CONTAINER` | AI Gateway container reserved before a local Codex turn. Defaults to `ollama`. |
 | `CODEX_OLLAMA_RESERVATION_SECONDS` | AI Gateway reservation idle timeout for local Codex turns. Values below six hours are raised to `21600` seconds. |
 | `CODEX_OLLAMA_RESERVATION_TIMEOUT_MS` | Maximum time to wait for AI Gateway reservation and release requests. Defaults to `630000`. |
@@ -267,7 +269,9 @@ stream_idle_timeout_ms = 900000
 stream_max_retries = 5
 ```
 
-The `900000` ms SSE idle timeout lets Ollama spend up to 15 minutes without emitting a stream event. Selecting Ollama in `/codex` starts the CLI with `--oss -p <ollama-profile> -m <local-model>`. The worker reserves the AI Gateway `ollama` container for at least six hours before each local turn and releases it once no other Ollama turn is queued or running. OpenAI and Ollama token prices and cost estimates are stored and displayed separately.
+The `900000` ms SSE idle timeout lets Ollama spend up to 15 minutes without emitting a stream event. Selecting Ollama in `/codex` starts the CLI with `--oss -p <ollama-profile> -m <local-model>`. The worker reserves the AI Gateway `ollama` container for at least six hours before each local turn and releases it once no other local Ollama turn is queued or running. OpenAI and Ollama token prices and cost estimates are stored and displayed separately.
+
+The Codex provider selector also supports two fixed Runpod-backed profiles. `Qwen (Runpod)` uses `lentmiien-qwen` and is shown only while the `/admin/runpod` record named `ollama-qwen` is `RUNNING`; `GLM-5.3 Flash (Runpod)` similarly uses `lentmiien-glm` and requires a running `glm53-flash` record. These options are restricted to administrators by default (or accounts explicitly granted `codex.run.runpod_model`). The worker checks the pod state again when accepting and claiming a turn, sources `CODEX_RUNPOD_PROFILE_ENV_FILE`, and then launches `codex exec -p <profile>`. Both providers are included in the Ollama usage and cost totals. See [documentation/codex-runpod-model-providers.md](documentation/codex-runpod-model-providers.md) for setup and security details.
 
 For SSH-backed Linux targets, make sure the worker account can run a non-interactive SSH command such as:
 ```powershell

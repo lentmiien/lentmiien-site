@@ -50,17 +50,25 @@ function renderError(req, res, error, fallbackMessage) {
   return renderPageError(req, res, error, fallbackMessage);
 }
 
+function addCsrfToken(state, res) {
+  return {
+    ...state,
+    csrfToken: String(res.locals?.csrfToken || ''),
+  };
+}
+
 exports.renderHome = async (req, res) => {
   try {
     const [state, promptTemplates] = await Promise.all([
-      codexToolService.getDashboardState(),
+      codexToolService.getDashboardState({ user: req.user }),
       codexToolService.listPromptTemplates(req.user),
     ]);
     state.promptTemplates = promptTemplates;
+    const pageState = addCsrfToken(state, res);
     return res.render('codex/index', {
       pageTitle: 'Codex Workspace Assistant',
-      codexState: state,
-      codexStateJson: stringifyForScript(state),
+      codexState: pageState,
+      codexStateJson: stringifyForScript(pageState),
     });
   } catch (error) {
     return renderPageError(req, res, error, 'Unable to load Codex workspace assistant.');
@@ -69,14 +77,15 @@ exports.renderHome = async (req, res) => {
 
 exports.renderSession = async (req, res) => {
   try {
-    const state = await codexToolService.getSessionDetail(req.params.sessionId);
+    const state = await codexToolService.getSessionDetail(req.params.sessionId, { user: req.user });
     state.promptTemplates = await codexToolService.listPromptTemplates(req.user, {
       workspaceId: state.session.workspaceId,
     });
+    const pageState = addCsrfToken(state, res);
     return res.render('codex/session', {
       pageTitle: state.session ? state.session.title : 'Codex session',
-      codexState: state,
-      codexStateJson: stringifyForScript(state),
+      codexState: pageState,
+      codexStateJson: stringifyForScript(pageState),
     });
   } catch (error) {
     return renderPageError(req, res, error, 'Unable to load Codex session.');
@@ -88,17 +97,18 @@ exports.renderPromptTemplates = async (req, res) => {
     const [templates, workspaces, config] = await Promise.all([
       codexToolService.listPromptTemplates(req.user),
       codexToolService.listWorkspaces({ includeDisabled: true }),
-      codexToolService.publicConfig(),
+      codexToolService.publicConfig({ user: req.user }),
     ]);
     const state = {
       templates,
       workspaces,
       config,
     };
+    const pageState = addCsrfToken(state, res);
     return res.render('codex/templates', {
       pageTitle: 'Codex Prompt Library',
-      codexState: state,
-      codexStateJson: stringifyForScript(state),
+      codexState: pageState,
+      codexStateJson: stringifyForScript(pageState),
     });
   } catch (error) {
     return renderPageError(req, res, error, 'Unable to load Codex prompt templates.');
@@ -107,11 +117,12 @@ exports.renderPromptTemplates = async (req, res) => {
 
 exports.renderTurn = async (req, res) => {
   try {
-    const state = await codexToolService.getTurnDetail(req.params.turnId);
+    const state = await codexToolService.getTurnDetail(req.params.turnId, { user: req.user });
+    const pageState = addCsrfToken(state, res);
     return res.render('codex/turn', {
       pageTitle: `Codex turn ${state.turn ? state.turn.sequence : ''}`,
-      codexState: state,
-      codexStateJson: stringifyForScript(state),
+      codexState: pageState,
+      codexStateJson: stringifyForScript(pageState),
     });
   } catch (error) {
     return renderPageError(req, res, error, 'Unable to load Codex turn.');
@@ -123,17 +134,18 @@ exports.renderWorkspaces = async (req, res) => {
     const [workspaces, targets, config] = await Promise.all([
       codexToolService.listWorkspaces({ includeDisabled: true }),
       codexToolService.listTargets(),
-      codexToolService.publicConfig(),
+      codexToolService.publicConfig({ user: req.user }),
     ]);
     const state = {
       workspaces,
       targets,
       config,
     };
+    const pageState = addCsrfToken(state, res);
     return res.render('codex/workspaces', {
       pageTitle: 'Codex Workspaces',
-      codexState: state,
-      codexStateJson: stringifyForScript(state),
+      codexState: pageState,
+      codexStateJson: stringifyForScript(pageState),
     });
   } catch (error) {
     return renderPageError(req, res, error, 'Unable to load Codex workspaces.');
@@ -144,16 +156,17 @@ exports.renderProfiles = async (req, res) => {
   try {
     const [profiles, config] = await Promise.all([
       codexToolService.listRequestProfiles({ includeDisabled: true }),
-      codexToolService.publicConfig(),
+      codexToolService.publicConfig({ user: req.user }),
     ]);
     const state = {
       profiles,
       config,
     };
+    const pageState = addCsrfToken(state, res);
     return res.render('codex/profiles', {
       pageTitle: 'Codex Profiles',
-      codexState: state,
-      codexStateJson: stringifyForScript(state),
+      codexState: pageState,
+      codexStateJson: stringifyForScript(pageState),
     });
   } catch (error) {
     return renderPageError(req, res, error, 'Unable to load Codex profiles.');
@@ -193,7 +206,7 @@ exports.listSessions = async (req, res) => {
 
 exports.getSession = async (req, res) => {
   try {
-    const state = await codexToolService.getSessionDetail(req.params.sessionId);
+    const state = await codexToolService.getSessionDetail(req.params.sessionId, { user: req.user });
     return res.json({ ok: true, ...state });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to load Codex session.');
@@ -211,7 +224,7 @@ exports.archiveSession = async (req, res) => {
 
 exports.getTurn = async (req, res) => {
   try {
-    const state = await codexToolService.getTurnDetail(req.params.turnId);
+    const state = await codexToolService.getTurnDetail(req.params.turnId, { user: req.user });
     return res.json({ ok: true, ...state });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to load Codex turn.');
@@ -365,7 +378,7 @@ exports.deleteRequestProfile = async (req, res) => {
 
 exports.getHealth = async (req, res) => {
   try {
-    const health = await codexToolService.getHealth(codexQueueWorker.getStatus());
+    const health = await codexToolService.getHealth(codexQueueWorker.getStatus(), { user: req.user });
     return res.json({ ok: true, health });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to load Codex health.');

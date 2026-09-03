@@ -5,11 +5,17 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 const { CodexQueueWorker } = require('../../services/codexQueueWorker');
+const CodexTurn = require('../../models/codex_turn');
+const codexToolService = require('../../services/codexToolService');
 const logger = require('../../utils/logger');
 
 describe('Codex queue worker Ollama reservation lifecycle', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
   function createWorker() {
     const ollamaReservation = {
@@ -76,5 +82,40 @@ describe('Codex queue worker Ollama reservation lifecycle', () => {
 
     expect(worker.lastTickAt).toBeNull();
     expect(worker.getConfig).toHaveBeenCalledTimes(1);
+  });
+
+  test('blocks a Runpod turn if its pod stops before the worker claims it', async () => {
+    const { worker } = createWorker();
+    const queuedTurn = {
+      _id: 'runpod-turn-1',
+      workspaceId: 'workspace-1',
+      modelProvider: 'runpod-qwen',
+    };
+    const query = {
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue([queuedTurn]),
+    };
+    jest.spyOn(CodexTurn, 'find').mockReturnValue(query);
+    jest.spyOn(codexToolService, 'assertModelProviderAvailable').mockRejectedValue(
+      new Error('Qwen (Runpod) is unavailable because its Runpod pod is not running.')
+    );
+    worker.blockTurn = jest.fn().mockResolvedValue();
+
+    await expect(worker.claimAndRunOne()).resolves.toBe(false);
+
+    expect(codexToolService.assertModelProviderAvailable).toHaveBeenCalledWith('runpod-qwen');
+    expect(worker.blockTurn).toHaveBeenCalledWith(
+      queuedTurn,
+      'Qwen (Runpod) is unavailable because its Runpod pod is not running.'
+    );
+    expect(logger.warning).toHaveBeenCalledWith(
+      'Codex turn blocked because its model provider is unavailable',
+      expect.objectContaining({
+        category: 'codex_tool',
+        metadata: expect.objectContaining({ modelProvider: 'runpod-qwen' }),
+      })
+    );
   });
 });

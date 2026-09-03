@@ -12,7 +12,14 @@ const CodexWorkspaceLock = require('../models/codex_workspace_lock');
 const CodexTokenPrice = require('../models/codex_token_price');
 const CodexRequestProfile = require('../models/codex_request_profile');
 const CodexPromptTemplate = require('../models/codex_prompt_template');
+const RunpodPod = require('../models/runpod_pod');
+const Role = require('../models/role');
 const logger = require('../utils/logger');
+const { hasCapabilities } = require('../utils/authorization');
+const {
+  CODEX_CAPABILITIES,
+  CODEX_ROLE_CAPABILITY_BUNDLES,
+} = require('../utils/codexAuthorizationPolicy');
 const {
   APP_SETTING_KEYS,
   appSettingsService,
@@ -36,10 +43,56 @@ const WORKSPACE_LOCK_TTL_INDEX_NAME = 'expiresAt_1';
 const DEFAULT_TOKEN_PRICE_ID = 'default';
 const OLLAMA_TOKEN_PRICE_ID = 'ollama';
 const TOKEN_TYPES = ['input', 'cached', 'output', 'reasoning'];
-const MODEL_PROVIDERS = {
+const MODEL_PROVIDERS = Object.freeze({
   OPENAI: 'openai',
   OLLAMA: 'ollama',
-};
+  RUNPOD_QWEN: 'runpod-qwen',
+  RUNPOD_GLM: 'runpod-glm',
+});
+const USAGE_MODEL_PROVIDERS = Object.freeze([
+  MODEL_PROVIDERS.OPENAI,
+  MODEL_PROVIDERS.OLLAMA,
+]);
+const MODEL_PROVIDER_DEFINITIONS = Object.freeze([
+  Object.freeze({
+    value: MODEL_PROVIDERS.OPENAI,
+    label: 'OpenAI',
+    description: 'OpenAI-backed Codex profiles.',
+    controlMode: 'openai-profile',
+    usageProvider: MODEL_PROVIDERS.OPENAI,
+  }),
+  Object.freeze({
+    value: MODEL_PROVIDERS.OLLAMA,
+    label: 'Ollama (local)',
+    description: 'Local Ollama models on the Codex machine; reserves the AI Gateway GPU while active.',
+    controlMode: 'local-model',
+    usageProvider: MODEL_PROVIDERS.OLLAMA,
+  }),
+  Object.freeze({
+    value: MODEL_PROVIDERS.RUNPOD_QWEN,
+    label: 'Qwen (Runpod)',
+    description: 'Runpod Qwen through the lentmiien-qwen Codex profile.',
+    controlMode: 'fixed-profile',
+    usageProvider: MODEL_PROVIDERS.OLLAMA,
+    codexProfile: 'lentmiien-qwen',
+    podName: 'ollama-qwen',
+  }),
+  Object.freeze({
+    value: MODEL_PROVIDERS.RUNPOD_GLM,
+    label: 'GLM-5.3 Flash (Runpod)',
+    description: 'Runpod GLM-5.3 Flash through the lentmiien-glm Codex profile.',
+    controlMode: 'fixed-profile',
+    usageProvider: MODEL_PROVIDERS.OLLAMA,
+    codexProfile: 'lentmiien-glm',
+    podName: 'glm53-flash',
+  }),
+]);
+const MODEL_PROVIDER_DEFINITION_BY_VALUE = new Map(
+  MODEL_PROVIDER_DEFINITIONS.map((definition) => [definition.value, definition])
+);
+const RUNPOD_MODEL_PROVIDER_DEFINITIONS = MODEL_PROVIDER_DEFINITIONS.filter(
+  (definition) => Boolean(definition.podName)
+);
 const VALID_MODEL_PROVIDERS = new Set(Object.values(MODEL_PROVIDERS));
 const CODEX_MODEL_OPTIONS = [
   {
@@ -228,9 +281,138 @@ function getBooleanEnv(name, fallback = false) {
 function normalizeModelProvider(value, fallback = MODEL_PROVIDERS.OPENAI) {
   const provider = String(value || fallback).trim().toLowerCase();
   if (!VALID_MODEL_PROVIDERS.has(provider)) {
-    throw createHttpError(400, 'Model provider must be either openai or ollama.');
+    throw createHttpError(400, 'Selected model provider is not supported.');
   }
   return provider;
+}
+
+function getModelProviderDefinition(providerInput) {
+  const provider = normalizeModelProvider(providerInput);
+  return MODEL_PROVIDER_DEFINITION_BY_VALUE.get(provider);
+}
+
+function isRunpodModelProvider(providerInput) {
+  const definition = getModelProviderDefinition(providerInput);
+  return Boolean(definition && definition.podName);
+}
+
+function getUsageModelProvider(providerInput) {
+  return getModelProviderDefinition(providerInput).usageProvider;
+}
+
+function getModelProviderLabel(providerInput) {
+  return getModelProviderDefinition(providerInput).label;
+}
+
+function getModelProviderCodexProfile(providerInput) {
+  return getModelProviderDefinition(providerInput).codexProfile || '';
+}
+
+function modelProviderNeedsProfileEnvironment(providerInput) {
+  return isRunpodModelProvider(providerInput);
+}
+
+async function canUseRunpodModelProviders(user) {
+  return hasCapabilities(user, [CODEX_CAPABILITIES.runpodModelRun], {
+    roleModel: Role,
+    roleCapabilityBundles: CODEX_ROLE_CAPABILITY_BUNDLES,
+  });
+}
+
+async function getRunningRunpodPodNames() {
+  const podNames = RUNPOD_MODEL_PROVIDER_DEFINITIONS.map((definition) => definition.podName);
+  const pods = await RunpodPod.find({
+    name: { $in: podNames },
+    providerStatus: 'RUNNING',
+    lifecycleGroup: 'running',
+    archivedAt: null,
+  }).lean().exec();
+  return new Set(pods.map((pod) => String(pod && pod.name || '').trim()));
+}
+
+function serializeModelProviderOption(definition) {
+  return {
+    value: definition.value,
+    label: definition.label,
+    description: definition.description,
+    controlMode: definition.controlMode,
+  };
+}
+
+async function getAvailableModelProviderOptions({ user, localModelOptions = [] } = {}) {
+  const options = [MODEL_PROVIDER_DEFINITION_BY_VALUE.get(MODEL_PROVIDERS.OPENAI)];
+  if (localModelOptions.length) {
+    options.push(MODEL_PROVIDER_DEFINITION_BY_VALUE.get(MODEL_PROVIDERS.OLLAMA));
+  }
+  let authorized = false;
+  try {
+    authorized = await canUseRunpodModelProviders(user);
+  } catch (error) {
+    logger.error('Codex Runpod model capability lookup failed', {
+      category: 'authorization',
+      metadata: { errorName: error?.name || 'Error' },
+    });
+  }
+  if (!authorized) {
+    return options.map(serializeModelProviderOption);
+  }
+
+  let runningPodNames;
+  try {
+    runningPodNames = await getRunningRunpodPodNames();
+  } catch (error) {
+    logger.error('Codex Runpod model availability lookup failed', {
+      category: 'codex_tool',
+      metadata: { errorName: error?.name || 'Error' },
+    });
+    return options.map(serializeModelProviderOption);
+  }
+  RUNPOD_MODEL_PROVIDER_DEFINITIONS.forEach((definition) => {
+    if (runningPodNames.has(definition.podName)) {
+      options.push(definition);
+    }
+  });
+  return options.map(serializeModelProviderOption);
+}
+
+async function assertRunpodModelProviderAuthorized(providerInput, user) {
+  if (!isRunpodModelProvider(providerInput)) {
+    return;
+  }
+  let allowed;
+  try {
+    allowed = await canUseRunpodModelProviders(user);
+  } catch (error) {
+    logger.error('Codex Runpod model authorization failed', {
+      category: 'authorization',
+      metadata: { errorName: error?.name || 'Error' },
+    });
+    throw createHttpError(503, 'Runpod model authorization is temporarily unavailable.');
+  }
+  if (!allowed) {
+    throw createHttpError(403, 'You do not have permission to use Runpod-backed Codex models.');
+  }
+}
+
+async function assertModelProviderAvailable(providerInput) {
+  const definition = getModelProviderDefinition(providerInput);
+  if (!definition.podName) {
+    return definition;
+  }
+  let runningPodNames;
+  try {
+    runningPodNames = await getRunningRunpodPodNames();
+  } catch (error) {
+    logger.error('Codex Runpod model availability verification failed', {
+      category: 'codex_tool',
+      metadata: { errorName: error?.name || 'Error' },
+    });
+    throw createHttpError(503, 'Runpod model availability could not be verified. Please try again.');
+  }
+  if (!runningPodNames.has(definition.podName)) {
+    throw createHttpError(409, `${definition.label} is unavailable because its Runpod pod is not running.`);
+  }
+  return definition;
 }
 
 function normalizeLocalModelOption(entry) {
@@ -286,7 +468,7 @@ function normalizeLocalModel(value, fallback = '', localModels = []) {
 
 function getTurnModelProvider(turn) {
   const provider = String(turn && turn.modelProvider || '').trim().toLowerCase();
-  return provider === MODEL_PROVIDERS.OLLAMA ? MODEL_PROVIDERS.OLLAMA : MODEL_PROVIDERS.OPENAI;
+  return VALID_MODEL_PROVIDERS.has(provider) ? provider : MODEL_PROVIDERS.OPENAI;
 }
 
 function getFiniteNumber(value, fallback = 0) {
@@ -487,11 +669,13 @@ function addTokenUsage(target, usage) {
 }
 
 function getTokenPriceId(provider) {
-  return provider === MODEL_PROVIDERS.OLLAMA ? OLLAMA_TOKEN_PRICE_ID : DEFAULT_TOKEN_PRICE_ID;
+  return getUsageModelProvider(provider) === MODEL_PROVIDERS.OLLAMA
+    ? OLLAMA_TOKEN_PRICE_ID
+    : DEFAULT_TOKEN_PRICE_ID;
 }
 
 function serializeTokenPricing(pricing, providerInput = MODEL_PROVIDERS.OPENAI) {
-  const provider = normalizeModelProvider(providerInput);
+  const provider = getUsageModelProvider(providerInput);
   const prices = pricing && pricing.prices ? pricing.prices : {};
   return {
     id: pricing && pricing._id ? String(pricing._id) : getTokenPriceId(provider),
@@ -528,7 +712,7 @@ function normalizeTokenPricingPayload(payload = {}) {
 function estimateTokenCost(tokensInput, pricingInput) {
   const tokens = normalizeTokenUsage(tokensInput);
   const provider = pricingInput && pricingInput.provider
-    ? normalizeModelProvider(pricingInput.provider)
+    ? getUsageModelProvider(pricingInput.provider)
     : MODEL_PROVIDERS.OPENAI;
   const pricing = serializeTokenPricing(pricingInput, provider);
   const unitTokens = pricing.unitTokens || 1000000;
@@ -567,7 +751,7 @@ function serializePricingByProvider(pricingInput = {}) {
 }
 
 function getPricingForProvider(pricingInput, providerInput) {
-  const provider = normalizeModelProvider(providerInput);
+  const provider = getUsageModelProvider(providerInput);
   return serializePricingByProvider(pricingInput)[provider];
 }
 
@@ -642,7 +826,7 @@ function calculateNumberStats(values = []) {
 }
 
 function createActivityBucket(seed = {}) {
-  const providerTotals = Object.values(MODEL_PROVIDERS).reduce((result, provider) => {
+  const providerTotals = USAGE_MODEL_PROVIDERS.reduce((result, provider) => {
     result[provider] = {
       sessionIds: new Set(),
       turnCount: 0,
@@ -684,7 +868,7 @@ function recordSessionInBucket(bucket, session) {
     bucket.sessionIds.add(sessionId);
     bucket.sessionCount += 1;
   }
-  const provider = getTurnModelProvider(session);
+  const provider = getUsageModelProvider(getTurnModelProvider(session));
   if (sessionId) {
     bucket.providerTotals[provider].sessionIds.add(sessionId);
   }
@@ -696,7 +880,7 @@ function recordTurnInBucket(bucket, turn) {
   }
   bucket.turnCount += 1;
   const tokens = getTurnTokenUsage(turn);
-  const provider = getTurnModelProvider(turn);
+  const provider = getUsageModelProvider(getTurnModelProvider(turn));
   addTokenUsage(bucket.tokenTotals, tokens);
   addTokenUsage(bucket.providerTotals[provider].tokenTotals, tokens);
   bucket.providerTotals[provider].turnCount += 1;
@@ -743,7 +927,7 @@ function finalizeActivityBucket(bucket, pricing) {
   const durationStats = calculateNumberStats(bucket.durations);
   const tokenStats = calculateNumberStats(bucket.tokenValues);
   const pricingByProvider = serializePricingByProvider(pricing);
-  const providerUsage = Object.values(MODEL_PROVIDERS).reduce((result, provider) => {
+  const providerUsage = USAGE_MODEL_PROVIDERS.reduce((result, provider) => {
     const providerTotals = bucket.providerTotals[provider];
     const tokenCost = estimateTokenCost(
       providerTotals.tokenTotals,
@@ -807,6 +991,14 @@ function getRuntimeConfig() {
   return {
     binaryPath: process.env.CODEX_BINARY_PATH || process.env.CODEX_BINARY || 'codex',
     ollamaProfile: normalizeCodexProfileName(process.env.CODEX_OLLAMA_PROFILE || 'ollama'),
+    runpodProfileEnvFile: normalizeOptionalString(
+      process.env.CODEX_RUNPOD_PROFILE_ENV_FILE,
+      500
+    ) || '~/.codex/lentmiien.env',
+    runpodProfileShell: normalizeOptionalString(
+      process.env.CODEX_RUNPOD_PROFILE_SHELL,
+      500
+    ) || '/bin/bash',
     workerEnabled: getBooleanEnv('CODEX_WORKER_ENABLED', true),
     globalConcurrency: getPositiveIntegerEnv('CODEX_GLOBAL_CONCURRENCY', 1, 1, 8),
     pollIntervalMs: getPositiveIntegerEnv('CODEX_WORKER_POLL_MS', 5000, 1000, 60000),
@@ -1575,7 +1767,19 @@ async function resolveTurnRequestOptions(payload = {}, workspace = {}, options =
   const fallbackProvider = options.requiredModelProvider || options.modelProvider || MODEL_PROVIDERS.OPENAI;
   const modelProvider = normalizeModelProvider(payload.modelProvider, fallbackProvider);
   if (options.requiredModelProvider && modelProvider !== normalizeModelProvider(options.requiredModelProvider)) {
-    throw createHttpError(409, 'A Codex session cannot switch between OpenAI and Ollama. Start a new session to change providers.');
+    throw createHttpError(409, 'A Codex session cannot switch model providers. Start a new session to change providers.');
+  }
+  await assertRunpodModelProviderAuthorized(modelProvider, options.user);
+  if (isRunpodModelProvider(modelProvider)) {
+    const definition = await assertModelProviderAvailable(modelProvider);
+    return {
+      requestProfileId: '',
+      requestProfileName: '',
+      modelProvider,
+      model: '',
+      profile: definition.codexProfile,
+      reasoningEffort: '',
+    };
   }
   if (modelProvider === MODEL_PROVIDERS.OLLAMA) {
     const localModelOptions = await getLocalModelOptions();
@@ -1631,7 +1835,7 @@ async function createSession(payload = {}, user) {
     workspace,
     confirmYolo: payload.confirmYolo,
   });
-  const requestOptions = await resolveTurnRequestOptions(payload, workspace, { mode });
+  const requestOptions = await resolveTurnRequestOptions(payload, workspace, { mode, user });
   const owner = makeOwner(user);
 
   const session = await CodexSession.create({
@@ -1712,6 +1916,7 @@ async function createFollowupTurn(sessionId, payload = {}, user) {
     mode,
     requiredModelProvider: sessionProvider,
     defaultModel: session.model,
+    user,
   });
 
   const turn = await CodexTurn.create({
@@ -2251,7 +2456,7 @@ async function getDashboardStats(options = {}) {
   };
 }
 
-async function getDashboardState() {
+async function getDashboardState(options = {}) {
   await ensureDefaultData();
   const [workspaces, queuedTurns, runningTurns, sessions, pricingByProvider, requestProfiles, config] = await Promise.all([
     listWorkspaces(),
@@ -2260,7 +2465,7 @@ async function getDashboardState() {
     listSessions({ limit: 12 }),
     getTokenPricingByProvider(),
     listRequestProfiles(),
-    publicConfig(),
+    publicConfig(options),
   ]);
   const stats = await getDashboardStats({ pricingByProvider });
   const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
@@ -2277,7 +2482,7 @@ async function getDashboardState() {
   };
 }
 
-async function getSessionDetail(sessionId) {
+async function getSessionDetail(sessionId, options = {}) {
   const session = await CodexSession.findById(sessionId).lean().exec();
   if (!session) {
     throw createHttpError(404, 'Session not found.');
@@ -2288,7 +2493,7 @@ async function getSessionDetail(sessionId) {
     CodexTurn.find({ sessionId }).sort({ sequence: 1 }).lean().exec(),
     getTokenPricingByProvider(),
     listRequestProfiles(),
-    publicConfig(),
+    publicConfig(options),
   ]);
   const turnsWithUsage = annotateTurnsWithTokenUsage(turns);
   return {
@@ -2304,7 +2509,7 @@ async function getSessionDetail(sessionId) {
   };
 }
 
-async function getTurnDetail(turnId) {
+async function getTurnDetail(turnId, options = {}) {
   const turn = await CodexTurn.findById(turnId).lean().exec();
   if (!turn) {
     throw createHttpError(404, 'Turn not found.');
@@ -2315,7 +2520,7 @@ async function getTurnDetail(turnId) {
     CodexExecutionTarget.findById(turn.targetId).lean().exec(),
     getTokenPricingByProvider(),
     CodexTurn.find({ sessionId: turn.sessionId }).sort({ sequence: 1 }).lean().exec(),
-    publicConfig(),
+    publicConfig(options),
   ]);
   const turnsWithUsage = annotateTurnsWithTokenUsage(sessionTurns.length ? sessionTurns : [turn]);
   const turnWithUsage = turnsWithUsage.find((entry) => String(entry._id) === String(turn._id)) ||
@@ -2413,6 +2618,9 @@ async function retryTurn(turnId, user) {
   }
 
   const { workspace, target } = await getWorkspaceBundle(originalTurn.workspaceId, { validateRemoteDirectory: false });
+  const originalProvider = getTurnModelProvider(originalTurn);
+  await assertRunpodModelProviderAuthorized(originalProvider, user);
+  await assertModelProviderAvailable(originalProvider);
   if (originalTurn.kind.startsWith('followup_') && !session.codexThreadId) {
     throw createHttpError(409, 'Follow-up retry is unavailable because this session has no Codex session id.');
   }
@@ -2437,7 +2645,7 @@ async function retryTurn(turnId, user) {
     yolo: permission.yolo,
     requestProfileId: originalTurn.requestProfileId || '',
     requestProfileName: originalTurn.requestProfileName || '',
-    modelProvider: getTurnModelProvider(originalTurn),
+    modelProvider: originalProvider,
     model: originalTurn.model || '',
     profile: originalTurn.profile || '',
     reasoningEffort: originalTurn.reasoningEffort || '',
@@ -2447,7 +2655,7 @@ async function retryTurn(turnId, user) {
 
   session.lastTurnId = turn._id;
   session.turnCount = Math.max(session.turnCount || 0, sequence);
-  session.modelProvider = getTurnModelProvider(originalTurn);
+  session.modelProvider = originalProvider;
   session.model = originalTurn.model || '';
   await session.save();
 
@@ -2504,7 +2712,7 @@ async function updateSessionAfterTurn(turnInput) {
   return session;
 }
 
-async function getHealth(workerStatus) {
+async function getHealth(workerStatus, options = {}) {
   await ensureDefaultData();
   const config = getRuntimeConfig();
   const [workspaceCount, queuedCount, runningCount, staleLockCount] = await Promise.all([
@@ -2536,13 +2744,17 @@ async function getHealth(workerStatus) {
     runningCount,
     staleLockCount,
     workspaceCount,
-    config: await publicConfig(),
+    config: await publicConfig(options),
   };
 }
 
-async function publicConfig() {
+async function publicConfig(options = {}) {
   const config = getRuntimeConfig();
   const localModelOptions = await getLocalModelOptions();
+  const modelProviderOptions = await getAvailableModelProviderOptions({
+    user: options.user,
+    localModelOptions,
+  });
   return {
     workerEnabled: config.workerEnabled,
     globalConcurrency: config.globalConcurrency,
@@ -2552,6 +2764,7 @@ async function publicConfig() {
     reasoningEfforts: REASONING_EFFORT_OPTIONS,
     codexModelOptions: CODEX_MODEL_OPTIONS,
     localModelOptions,
+    modelProviderOptions,
   };
 }
 
@@ -2599,13 +2812,17 @@ function serializeSession(session, extras = {}) {
   if (!session) {
     return null;
   }
+  const modelProvider = getTurnModelProvider(session);
   return {
     id: String(session._id),
     workspaceId: String(session.workspaceId || ''),
     workspace: extras.workspace ? serializeWorkspace(extras.workspace, { target: extras.target }) : null,
     targetId: String(session.targetId || ''),
     codexThreadId: session.codexThreadId || '',
-    modelProvider: getTurnModelProvider(session),
+    modelProvider,
+    modelProviderLabel: getModelProviderLabel(modelProvider),
+    usageProvider: getUsageModelProvider(modelProvider),
+    runpodBacked: isRunpodModelProvider(modelProvider),
     model: session.model || '',
     title: session.title || '',
     summary: session.summary || '',
@@ -2630,6 +2847,7 @@ function serializeTurn(turn, extras = {}) {
     : normalizeTokenUsage(turn.usage || {});
   const tokenUsage = getTurnTokenUsage(turn);
   const modelProvider = getTurnModelProvider(turn);
+  const usageProvider = getUsageModelProvider(modelProvider);
   const pricingInput = extras.pricingByProvider || extras.pricing;
   const costEstimate = pricingInput
     ? estimateTokenCost(tokenUsage, getPricingForProvider(pricingInput, modelProvider))
@@ -2651,6 +2869,9 @@ function serializeTurn(turn, extras = {}) {
     requestProfileId: turn.requestProfileId || '',
     requestProfileName: turn.requestProfileName || '',
     modelProvider,
+    modelProviderLabel: getModelProviderLabel(modelProvider),
+    usageProvider,
+    runpodBacked: isRunpodModelProvider(modelProvider),
     model: turn.model || '',
     profile: turn.profile || '',
     reasoningEffort: turn.reasoningEffort || '',
@@ -2722,10 +2943,13 @@ async function logServiceWarning(message, metadata) {
 
 module.exports = {
   ACTIVE_TURN_STATUSES,
+  MODEL_PROVIDERS,
   TERMINAL_TURN_STATUSES,
   annotateTurnsWithTokenUsage,
   archiveSession,
+  assertModelProviderAvailable,
   buildSessionStats,
+  canUseRunpodModelProviders,
   cancelTurn,
   createFollowupTurn,
   createHttpError,
@@ -2741,12 +2965,15 @@ module.exports = {
   getDashboardState,
   getDashboardStats,
   getHealth,
+  getModelProviderCodexProfile,
+  getModelProviderLabel,
   getQueueState,
   getRuntimeConfig,
   getSessionDetail,
   getTokenPricing,
   getTokenPricingByProvider,
   getTurnModelProvider,
+  getUsageModelProvider,
   getTurnDetail,
   getWorkspaceBundle,
   ensureCodexWorkspaceLockIndexes,
@@ -2758,6 +2985,7 @@ module.exports = {
   listTurnEvents,
   listWorkspaces,
   logServiceWarning,
+  modelProviderNeedsProfileEnvironment,
   normalizeTokenUsage,
   previewFromText,
   publicConfig,

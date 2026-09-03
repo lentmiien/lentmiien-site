@@ -95,10 +95,67 @@ describe('Codex request prompt controls', () => {
 
     expect(html).toContain('id="codex-model-provider"');
     expect(html).toContain('name="modelProvider"');
-    expect(html).toContain('<option value="ollama">Ollama (local)</option>');
+    expect(html).toContain('<option value="ollama"');
+    expect(html).toContain('Ollama (local)</option>');
     expect(html).toContain('id="codex-local-model"');
     expect(html).toContain('value="qwen3.6:27b"');
     expect(html).toContain('value="llama4:scout"');
+  });
+
+  test('renders only the Runpod model providers supplied by the running-pod availability check', () => {
+    const baseState = {
+      workspaces: [{ id: 'workspace-1', name: 'Workspace', rootPath: '/workspace' }],
+      runningTurns: [],
+      queuedTurns: [],
+      recentSessions: [],
+      requestProfiles: [{ id: 'default', name: 'Default' }],
+      promptTemplates: [],
+      stats: {},
+      pricing: {},
+    };
+    const providerOptions = [
+      { value: 'openai', label: 'OpenAI', controlMode: 'openai-profile', description: 'OpenAI.' },
+      { value: 'ollama', label: 'Ollama (local)', controlMode: 'local-model', description: 'Local.' },
+      { value: 'runpod-qwen', label: 'Qwen (Runpod)', controlMode: 'fixed-profile', description: 'Qwen.' },
+    ];
+
+    const html = renderCodexView('index', {
+      ...baseState,
+      config: {
+        maxPromptChars: 20000,
+        localModelOptions: [{ value: 'qwen3.6:27b', label: 'Qwen' }],
+        modelProviderOptions: providerOptions,
+      },
+    });
+
+    expect(html).toContain('<option value="runpod-qwen"');
+    expect(html).toContain('Qwen (Runpod)');
+    expect(html).not.toContain('value="runpod-glm"');
+    expect(html).not.toContain('GLM-5.3 Flash (Runpod)');
+  });
+
+  test('does not render either Runpod provider when both pods are offline', () => {
+    const html = renderCodexView('index', {
+      config: {
+        maxPromptChars: 20000,
+        localModelOptions: [{ value: 'qwen3.6:27b', label: 'Qwen' }],
+        modelProviderOptions: [
+          { value: 'openai', label: 'OpenAI', controlMode: 'openai-profile' },
+          { value: 'ollama', label: 'Ollama (local)', controlMode: 'local-model' },
+        ],
+      },
+      workspaces: [{ id: 'workspace-1', name: 'Workspace', rootPath: '/workspace' }],
+      runningTurns: [],
+      queuedTurns: [],
+      recentSessions: [],
+      requestProfiles: [],
+      promptTemplates: [],
+      stats: {},
+      pricing: {},
+    });
+
+    expect(html).not.toContain('value="runpod-qwen"');
+    expect(html).not.toContain('value="runpod-glm"');
   });
 
   test('renders independent OpenAI and Ollama pricing forms for admins', () => {
@@ -231,6 +288,68 @@ describe('Codex request prompt controls', () => {
     expect(html).toContain('id="codex-followup-local-model"');
     expect(html).toContain('value="qwen3.6:27b" selected');
     expect(html).not.toContain('id="codex-followup-profile"');
+  });
+
+  test('locks a running Runpod Qwen follow-up to its fixed provider without model controls', () => {
+    const state = {
+      config: {
+        maxPromptChars: 20000,
+        localModelOptions: [{ value: 'qwen3.6:27b', label: 'Local Qwen' }],
+        modelProviderOptions: [
+          { value: 'openai', label: 'OpenAI' },
+          { value: 'ollama', label: 'Ollama (local)' },
+          { value: 'runpod-qwen', label: 'Qwen (Runpod)' },
+        ],
+      },
+      session: {
+        id: 'session-runpod-qwen',
+        title: 'Runpod session',
+        status: 'active',
+        codexThreadId: 'thread-runpod-qwen',
+        modelProvider: 'runpod-qwen',
+        modelProviderLabel: 'Qwen (Runpod)',
+        usageProvider: 'ollama',
+        runpodBacked: true,
+      },
+      workspace: { name: 'Workspace' },
+      turns: [],
+      requestProfiles: [{ id: 'default', name: 'Default' }],
+      promptTemplates: [],
+      stats: {},
+    };
+
+    const html = renderCodexView('session', state);
+
+    expect(html).toContain('name="modelProvider" value="runpod-qwen"');
+    expect(html).toContain('Provider is locked to the Qwen (Runpod) profile');
+    expect(html).not.toContain('id="codex-followup-local-model"');
+    expect(html).not.toContain('id="codex-followup-profile"');
+  });
+
+  test('hides a Runpod follow-up form after its pod stops', () => {
+    const html = renderCodexView('session', {
+      config: {
+        maxPromptChars: 20000,
+        modelProviderOptions: [{ value: 'openai', label: 'OpenAI' }],
+      },
+      session: {
+        id: 'session-runpod-glm',
+        title: 'Runpod session',
+        status: 'active',
+        codexThreadId: 'thread-runpod-glm',
+        modelProvider: 'runpod-glm',
+        modelProviderLabel: 'GLM-5.3 Flash (Runpod)',
+        runpodBacked: true,
+      },
+      workspace: { name: 'Workspace' },
+      turns: [],
+      requestProfiles: [],
+      promptTemplates: [],
+      stats: {},
+    });
+
+    expect(html).not.toContain('id="codex-followup-form"');
+    expect(html).toContain('is currently unavailable because its Runpod pod is not running');
   });
 
   test('renders workspace choices when managing prompt templates', () => {

@@ -15,7 +15,10 @@ block content
   - const tokenLabels = { input: 'Input', cached: 'Cached', output: 'Output', reasoning: 'Reasoning' };
   - const config = state.config || {};
   - const localModelOptions = config.localModelOptions || [];
-  - const sessionProvider = session.modelProvider === 'ollama' ? 'ollama' : 'openai';
+  - const modelProviderOptions = config.modelProviderOptions || [];
+  - const sessionProvider = session.modelProvider || 'openai';
+  - const sessionProviderLabel = session.modelProviderLabel || (sessionProvider === 'ollama' ? 'Ollama' : 'OpenAI');
+  - const sessionProviderAvailable = !session.runpodBacked || modelProviderOptions.some((provider) => provider.value === sessionProvider);
   - const latestTurn = turns.length ? turns[turns.length - 1] : {};
   - const selectedLocalModel = latestTurn.model || session.model || (localModelOptions[0] && localModelOptions[0].value) || '';
   - const maxPromptChars = Number(config.maxPromptChars) > 0 ? Number(config.maxPromptChars) : 20000;
@@ -33,7 +36,7 @@ block content
           p.codex-subtitle
             span= workspace.name || 'Workspace'
             span= ' / '
-            span= sessionProvider === 'ollama' ? 'Ollama' : 'OpenAI'
+            span= sessionProviderLabel
             span= ' / '
             span= session.codexThreadId ? session.codexThreadId : 'waiting for Codex session id'
         .codex-topbar__actions
@@ -43,7 +46,7 @@ block content
 
       .codex-session-meta
         span(class=statusClass(session.status))= session.status
-        span= 'Provider: ' + (sessionProvider === 'ollama' ? 'Ollama' : 'OpenAI')
+        span= 'Provider: ' + sessionProviderLabel
         span= 'Turns: ' + (session.turnCount || turns.length)
         span= 'Updated: ' + fmt(session.updatedAt)
 
@@ -86,16 +89,16 @@ block content
               .codex-turn-meta
                 span= workspace.name || '-'
                 span= turn.permissionMode
-                if turn.requestProfileName
-                  span= 'Profile ' + turn.requestProfileName
-                span= 'Provider ' + (turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI')
+                if turn.requestProfileName || turn.profile
+                  span= 'Profile ' + (turn.requestProfileName || turn.profile)
+                span= 'Provider ' + (turn.modelProviderLabel || (turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI'))
                 if turn.model
                   span= 'Model ' + turn.model
                 if turn.reasoningEffort
                   span= 'Reasoning ' + turn.reasoningEffort
                 span= 'Queued ' + fmt(turn.queuedAt)
                 span= 'Duration ' + duration(turn.durationMs)
-                span= (turn.modelProvider === 'ollama' ? 'Ollama cost ' : 'OpenAI cost ') + money(turn.costEstimate && turn.costEstimate.total)
+                span= ((turn.usageProvider === 'ollama' ? 'Ollama' : 'OpenAI') + ' cost ') + money(turn.costEstimate && turn.costEstimate.total)
               if turn.status === 'running'
                 .codex-live-activity(data-turn-activity=turn.id, data-activity-state='live', aria-label='Live Codex process activity')
                   span.codex-live-activity__signal(aria-hidden='true')
@@ -134,7 +137,7 @@ block content
         .codex-panel__header
           h2 Follow-up
           span.codex-chip= session.codexThreadId ? 'Ready' : 'Waiting'
-        if session.codexThreadId
+        if session.codexThreadId && sessionProviderAvailable
           form#codex-followup-form.codex-form(data-session-id=session.id, data-codex-prompt-form)
             input(type='hidden', name='modelProvider', value=sessionProvider)
             .codex-mode-group(role='radiogroup', aria-label='Follow-up mode')
@@ -165,7 +168,7 @@ block content
                   each model in localModelOptions
                     option(value=model.value, selected=model.value === selectedLocalModel)= model.description ? `${model.label} - ${model.description}` : model.label
                 small.codex-field-help Provider is locked to Ollama for this session. Start a new session to return to OpenAI.
-            else
+            else if sessionProvider === 'openai'
               .codex-field
                 label(for='codex-followup-profile') OpenAI profile
                 select#codex-followup-profile(name='requestProfileId')
@@ -178,6 +181,11 @@ block content
                       option(value=profile.id, selected=profile.id === (latestTurn.requestProfileId || 'default'))= detailParts.length ? `${profile.name} - ${detailParts.join(' / ')}` : profile.name
                   else
                     option(value='') Default
+            else
+              .codex-field
+                label Runpod model provider
+                strong= sessionProviderLabel
+                small.codex-field-help= `Provider is locked to the ${sessionProviderLabel} profile for this session. Its Runpod pod must remain running.`
             .codex-field
               .codex-field-label-row
                 label(for='codex-followup-prompt') Prompt
@@ -200,6 +208,8 @@ block content
             .codex-actions
               button.codex-button(type='submit', data-codex-prompt-submit) Submit follow-up
               span#codex-followup-status.codex-form-status(aria-live='polite')
+        else if session.codexThreadId && session.runpodBacked
+          p.codex-empty= `${sessionProviderLabel} is currently unavailable because its Runpod pod is not running.`
         else
           p.codex-empty Follow-up is unavailable until the first turn starts and Codex reports a session id.
 

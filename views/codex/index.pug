@@ -13,6 +13,7 @@ block content
   - const recentSessions = state.recentSessions || [];
   - const requestProfiles = state.requestProfiles || [];
   - const localModelOptions = config.localModelOptions || [];
+  - const modelProviderOptions = Array.isArray(config.modelProviderOptions) && config.modelProviderOptions.length ? config.modelProviderOptions : [{ value: 'openai', label: 'OpenAI', description: 'OpenAI-backed Codex profiles.', controlMode: 'openai-profile' }, ...(localModelOptions.length ? [{ value: 'ollama', label: 'Ollama (local)', description: 'Local Ollama models on the Codex machine.', controlMode: 'local-model' }] : [])];
   - const promptTemplates = state.promptTemplates || [];
   - const selectedWorkspaceId = workspaces.length ? String(workspaces[0].id || '') : '';
   - const visiblePromptTemplates = promptTemplates.filter((template) => !template.workspaceId || String(template.workspaceId) === selectedWorkspaceId);
@@ -83,9 +84,14 @@ block content
             .codex-field
               label(for='codex-model-provider') Model provider
               select#codex-model-provider(name='modelProvider', data-codex-model-provider)
-                option(value='openai', selected) OpenAI
-                option(value='ollama', disabled=!localModelOptions.length) Ollama (local)
-              small.codex-field-help Ollama runs on the Codex machine and reserves the AI Gateway GPU while a turn is active.
+                each provider in modelProviderOptions
+                  option(
+                    value=provider.value,
+                    selected=provider.value === 'openai',
+                    data-control-mode=provider.controlMode,
+                    data-description=provider.description
+                  )= provider.label
+              small.codex-field-help(data-codex-model-provider-help) OpenAI-backed Codex profiles. Runpod choices appear only while their matching pod is running.
             .codex-mode-group(role='radiogroup', aria-label='Request mode')
               label.codex-mode-option
                 input(type='radio', name='mode', value='question', checked)
@@ -281,7 +287,7 @@ block content
                 form.codex-pricing-card.codex-form.codex-form--pricing(data-codex-pricing-form, data-provider=provider.value)
                   .codex-pricing-card__heading
                     h3= provider.label
-                    p= provider.value === 'openai' ? 'Used only for OpenAI-backed Codex turns.' : 'Used only for local Ollama-backed Codex turns.'
+                    p= provider.value === 'openai' ? 'Used only for OpenAI-backed Codex turns.' : 'Used for local Ollama and Runpod-backed Qwen/GLM turns.'
                   each type in tokenTypes
                     .codex-field
                       label(for=`codex-price-${provider.value}-${type}`)= tokenLabels[type]

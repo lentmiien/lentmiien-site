@@ -105,6 +105,7 @@ const routes = [
   "shoppinglist",
   "test",
   "archive",
+  "codex.run.runpod_model",
   "runpod.catalog.read",
   "runpod.billing.read",
   "runpod.billing.sync",

@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const { execFile, spawn } = require('child_process');
@@ -17,6 +18,15 @@ const {
 } = require('./codexSsh');
 
 const execFileAsync = promisify(execFile);
+const PROFILE_ENV_SHELL_SCRIPT = [
+  'set -a',
+  '. "$1"',
+  'codex_env_status=$?',
+  'set +a',
+  '[ "$codex_env_status" -eq 0 ] || exit "$codex_env_status"',
+  'shift',
+  'exec "$@"',
+].join('; ');
 
 function clipText(value, maxLength) {
   const text = String(value || '');
@@ -100,11 +110,53 @@ function createRemoteOutputPath(target, turnId) {
   return `${trimmedTempDir}/codex-last-message-${turnId}-${randomUUID()}.txt`;
 }
 
+function normalizeProfileEnvironmentFile(value) {
+  const envFile = String(value || '~/.codex/lentmiien.env').trim();
+  if (envFile === '~' || envFile.startsWith('~/') || path.posix.isAbsolute(envFile)) {
+    return envFile;
+  }
+  throw new Error('CODEX_RUNPOD_PROFILE_ENV_FILE must be an absolute path or start with ~/.');
+}
+
+function resolveLocalProfileEnvironmentFile(value) {
+  const envFile = normalizeProfileEnvironmentFile(value);
+  if (envFile === '~') {
+    return os.homedir();
+  }
+  if (envFile.startsWith('~/')) {
+    return path.join(os.homedir(), envFile.slice(2));
+  }
+  return envFile;
+}
+
+function quoteRemoteProfileEnvironmentFile(value) {
+  const envFile = normalizeProfileEnvironmentFile(value);
+  if (envFile === '~') {
+    return '"$HOME"';
+  }
+  if (envFile.startsWith('~/')) {
+    return `"$HOME"${quotePosixShellArg(`/${envFile.slice(2)}`)}`;
+  }
+  return quotePosixShellArg(envFile);
+}
+
+function buildProfileEnvironmentShellScript(commandText, environmentFileExpression) {
+  return [
+    'set -a',
+    `. ${environmentFileExpression}`,
+    'codex_env_status=$?',
+    'set +a',
+    '[ "$codex_env_status" -eq 0 ] || exit "$codex_env_status"',
+    `exec ${commandText}`,
+  ].join('; ');
+}
+
 function buildCodexArgs({ turn, session, workspace, outputPath, ollamaProfile }) {
   const modelProvider = codexToolService.getTurnModelProvider(turn);
-  const effectiveProfile = modelProvider === 'ollama'
+  const providerProfile = codexToolService.getModelProviderCodexProfile(modelProvider);
+  const effectiveProfile = providerProfile || (modelProvider === 'ollama'
     ? (ollamaProfile || turn.profile || '')
-    : (turn.profile || '');
+    : (turn.profile || ''));
   const args = [
     'exec',
     '--json',
@@ -119,13 +171,13 @@ function buildCodexArgs({ turn, session, workspace, outputPath, ollamaProfile })
   if (modelProvider === 'ollama') {
     args.push('--oss');
   }
-  if (turn.model) {
+  if (turn.model && !providerProfile) {
     args.push('-m', turn.model);
   }
   if (effectiveProfile) {
     args.push('-p', effectiveProfile);
   }
-  if (turn.reasoningEffort) {
+  if (turn.reasoningEffort && !providerProfile) {
     args.push('-c', `model_reasoning_effort="${turn.reasoningEffort}"`);
   }
   if (turn.permissionMode === 'yolo') {
@@ -159,6 +211,8 @@ class CodexLocalRunner {
   buildCommand({ turn, session, workspace, target }) {
     const config = this.getConfig();
     const remote = isRemoteSshTarget(target);
+    const modelProvider = codexToolService.getTurnModelProvider(turn);
+    const needsProfileEnvironment = codexToolService.modelProviderNeedsProfileEnvironment(modelProvider);
     const outputPath = remote ? createRemoteOutputPath(target, turn._id) : createLocalOutputPath(turn._id);
     const {
       args: codexArgs,
@@ -174,10 +228,22 @@ class CodexLocalRunner {
 
     if (remote) {
       const connection = target.connection || {};
+      const executionConnection = needsProfileEnvironment && !String(connection.shell || '').trim()
+        ? { ...connection, shell: config.runpodProfileShell }
+        : connection;
       const remoteCodexInvocation = getRemoteCodexInvocation(connection);
+      const codexCommandText = [...remoteCodexInvocation, ...codexArgs]
+        .map(quotePosixShellArg)
+        .join(' ');
+      const remoteScript = needsProfileEnvironment
+        ? buildProfileEnvironmentShellScript(
+          codexCommandText,
+          quoteRemoteProfileEnvironmentFile(config.runpodProfileEnvFile)
+        )
+        : `exec ${codexCommandText}`;
       const remoteCommand = buildRemoteShellCommand(
-        `exec ${[...remoteCodexInvocation, ...codexArgs].map(quotePosixShellArg).join(' ')}`,
-        connection
+        remoteScript,
+        executionConnection
       );
       const sshArgs = buildSshArgs(connection, remoteCommand);
       const destination = getSshDestination(connection);
@@ -209,8 +275,10 @@ class CodexLocalRunner {
           targetType: target.type,
           resume: isFollowup,
           permissionMode: turn.permissionMode,
-          modelProvider: codexToolService.getTurnModelProvider(turn),
-          oss: codexToolService.getTurnModelProvider(turn) === 'ollama',
+          modelProvider,
+          modelProviderLabel: codexToolService.getModelProviderLabel(modelProvider),
+          profileEnvironmentFile: needsProfileEnvironment ? config.runpodProfileEnvFile : '',
+          oss: modelProvider === 'ollama',
           model: turn.model || '',
           profile: effectiveProfile,
           reasoningEffort: turn.reasoningEffort || '',
@@ -218,9 +286,23 @@ class CodexLocalRunner {
       };
     }
 
+    const localLaunch = needsProfileEnvironment
+      ? {
+        binary: config.runpodProfileShell,
+        args: [
+          '-c',
+          PROFILE_ENV_SHELL_SCRIPT,
+          'codex-runpod-profile',
+          resolveLocalProfileEnvironmentFile(config.runpodProfileEnvFile),
+          config.binaryPath,
+          ...codexArgs,
+        ],
+      }
+      : { binary: config.binaryPath, args: codexArgs };
+
     return {
-      binary: config.binaryPath,
-      args: codexArgs,
+      binary: localLaunch.binary,
+      args: localLaunch.args,
       cwd: workspace.rootPath,
       outputPath,
       outputLocation: 'local',
@@ -232,8 +314,10 @@ class CodexLocalRunner {
         outputLocation: 'local',
         resume: isFollowup,
         permissionMode: turn.permissionMode,
-        modelProvider: codexToolService.getTurnModelProvider(turn),
-        oss: codexToolService.getTurnModelProvider(turn) === 'ollama',
+        modelProvider,
+        modelProviderLabel: codexToolService.getModelProviderLabel(modelProvider),
+        profileEnvironmentFile: needsProfileEnvironment ? config.runpodProfileEnvFile : '',
+        oss: modelProvider === 'ollama',
         model: turn.model || '',
         profile: effectiveProfile,
         reasoningEffort: turn.reasoningEffort || '',

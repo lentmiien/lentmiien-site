@@ -163,7 +163,12 @@
     output: 'Output',
     reasoning: 'Reasoning',
   };
-  const HEALTH_OMITTED_KEYS = new Set(['reasoningEfforts', 'codexModelOptions', 'localModelOptions']);
+  const HEALTH_OMITTED_KEYS = new Set([
+    'reasoningEfforts',
+    'codexModelOptions',
+    'localModelOptions',
+    'modelProviderOptions',
+  ]);
   const HEALTH_LABELS = {
     apiOk: 'API response',
     ok: 'Overall health',
@@ -228,6 +233,22 @@
   function formatMoney(value) {
     const number = Number(value) || 0;
     return `$${number.toFixed(4)}`;
+  }
+
+  function modelProviderLabel(turn) {
+    if (turn && turn.modelProviderLabel) return turn.modelProviderLabel;
+    const provider = String(turn && turn.modelProvider || '').trim();
+    if (provider === 'ollama') return 'Ollama';
+    if (provider === 'runpod-qwen') return 'Qwen (Runpod)';
+    if (provider === 'runpod-glm') return 'GLM-5.3 Flash (Runpod)';
+    return 'OpenAI';
+  }
+
+  function usageProviderLabel(turn) {
+    const provider = String(
+      turn && (turn.usageProvider || turn.costEstimate?.provider || turn.modelProvider) || ''
+    ).trim();
+    return provider === 'openai' ? 'OpenAI' : 'Ollama';
   }
 
   function formatPercent(value) {
@@ -299,12 +320,17 @@
   }
 
   async function requestJson(url, options) {
+    const method = String(options && options.method || 'GET').toUpperCase();
+    const csrfHeaders = !['GET', 'HEAD'].includes(method) && bootstrap.csrfToken
+      ? { 'X-CSRF-Token': bootstrap.csrfToken }
+      : {};
     const response = await fetch(url, {
       ...options,
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
         ...(options && options.headers ? options.headers : {}),
+        ...csrfHeaders,
       },
     });
     const payload = await readJsonResponse(response);
@@ -1030,23 +1056,32 @@
     if (!form) return;
     const provider = form.querySelector('[data-codex-model-provider]');
     if (!provider) return;
-    const usesOllama = provider.value === 'ollama';
+    const selectedOption = provider.options[provider.selectedIndex];
+    const controlMode = selectedOption?.dataset.controlMode || (
+      provider.value === 'ollama' ? 'local-model' : 'openai-profile'
+    );
+    const usesOpenAiProfile = controlMode === 'openai-profile';
+    const usesLocalModel = controlMode === 'local-model';
     const openaiControls = form.querySelector('[data-codex-openai-model-controls]');
     const localControls = form.querySelector('[data-codex-local-model-controls]');
+    const providerHelp = form.querySelector('[data-codex-model-provider-help]');
     if (openaiControls) {
-      openaiControls.hidden = usesOllama;
+      openaiControls.hidden = !usesOpenAiProfile;
       openaiControls.querySelectorAll('input, select, textarea').forEach((control) => {
-        control.disabled = usesOllama;
+        control.disabled = !usesOpenAiProfile;
       });
     }
     if (localControls) {
-      localControls.hidden = !usesOllama;
+      localControls.hidden = !usesLocalModel;
       localControls.querySelectorAll('input, select, textarea').forEach((control) => {
-        control.disabled = !usesOllama;
+        control.disabled = !usesLocalModel;
         if (control.name === 'model') {
-          control.required = usesOllama;
+          control.required = usesLocalModel;
         }
       });
+    }
+    if (providerHelp && selectedOption?.dataset.description) {
+      providerHelp.textContent = selectedOption.dataset.description;
     }
   }
 
@@ -1414,13 +1449,13 @@
     [
       workspace ? workspace.name : '-',
       turn.permissionMode,
-      turn.requestProfileName ? `Profile ${turn.requestProfileName}` : '',
-      `Provider ${turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI'}`,
+      turn.requestProfileName || turn.profile ? `Profile ${turn.requestProfileName || turn.profile}` : '',
+      `Provider ${modelProviderLabel(turn)}`,
       turn.model ? `Model ${turn.model}` : '',
       turn.reasoningEffort ? `Reasoning ${turn.reasoningEffort}` : '',
       `Queued ${formatDate(turn.queuedAt)}`,
       `Duration ${formatDuration(turn.durationMs)}`,
-      `${turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI'} cost ${formatMoney(turn.costEstimate && turn.costEstimate.total)}`,
+      `${usageProviderLabel(turn)} cost ${formatMoney(turn.costEstimate && turn.costEstimate.total)}`,
     ].filter(Boolean).forEach((text) => meta.appendChild(createEl('span', { text })));
     card.appendChild(meta);
     if (turn.status === 'running') {
@@ -1545,8 +1580,8 @@
         ['Workspace', workspace ? workspace.name : '-'],
         ['Mode', String(turn.kind || '').replace(/_/g, ' ') || '-'],
         ['Permission', turn.permissionMode || '-'],
-        ['Profile', turn.requestProfileName || '-'],
-        ['Provider', turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI'],
+        ['Profile', turn.requestProfileName || turn.profile || '-'],
+        ['Provider', modelProviderLabel(turn)],
         ['Model', turn.model || '-'],
         ['Reasoning', turn.reasoningEffort || '-'],
         ['Queued', formatDate(turn.queuedAt)],
@@ -1557,7 +1592,7 @@
         ['Turn Cached Tokens', formatNumber(tokens.cached)],
         ['Turn Output Tokens', formatNumber(tokens.output)],
         ['Turn Reasoning Tokens', formatNumber(tokens.reasoning)],
-        [`Turn ${turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI'} Estimated Cost`, formatMoney(turn.costEstimate && turn.costEstimate.total)],
+        [`Turn ${usageProviderLabel(turn)} Estimated Cost`, formatMoney(turn.costEstimate && turn.costEstimate.total)],
         ['Exit', turn.exitCode === null || turn.exitCode === undefined ? '-' : String(turn.exitCode)],
       ];
       detailGrid.innerHTML = '';

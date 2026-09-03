@@ -26,11 +26,12 @@ function createFakeChild() {
 }
 
 async function waitForSpawn() {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
     if (spawn.mock.calls.length > 0) {
       return;
     }
-    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 5));
   }
   throw new Error('Codex runner did not spawn its child process.');
 }
@@ -170,6 +171,92 @@ describe('CodexLocalRunner', () => {
       'local-qwen',
     ]));
     expect(command.commandSummary.profile).toBe('local-qwen');
+  });
+
+  test('sources the shared environment and launches the fixed Qwen Runpod profile locally', () => {
+    const runner = new CodexLocalRunner({
+      binaryPath: 'codex-test',
+      timeoutMs: 60000,
+      runpodProfileEnvFile: '/home/tester/.codex/lentmiien.env',
+      runpodProfileShell: '/bin/bash-test',
+    });
+
+    const command = runner.buildCommand({
+      turn: {
+        _id: 'turn-runpod-qwen',
+        kind: 'action',
+        modelProvider: 'runpod-qwen',
+        model: 'ignored-client-model',
+        profile: 'ignored-client-profile',
+        reasoningEffort: 'ultra',
+        permissionMode: 'yolo',
+      },
+      session: {},
+      workspace: { rootPath: '/workspace/project' },
+    });
+
+    expect(command.binary).toBe('/bin/bash-test');
+    expect(command.args).toEqual(expect.arrayContaining([
+      '/home/tester/.codex/lentmiien.env',
+      'codex-test',
+      'exec',
+      '-p',
+      'lentmiien-qwen',
+      '--dangerously-bypass-approvals-and-sandbox',
+    ]));
+    expect(command.args[1]).toContain('. "$1"');
+    expect(command.args).not.toContain('--oss');
+    expect(command.args).not.toContain('ignored-client-model');
+    expect(command.args).not.toContain('ignored-client-profile');
+    expect(command.commandSummary).toEqual(expect.objectContaining({
+      binary: 'codex-test',
+      modelProvider: 'runpod-qwen',
+      modelProviderLabel: 'Qwen (Runpod)',
+      profile: 'lentmiien-qwen',
+      profileEnvironmentFile: '/home/tester/.codex/lentmiien.env',
+      oss: false,
+    }));
+  });
+
+  test('sources the target user environment and launches the fixed GLM profile over SSH', () => {
+    const runner = new CodexLocalRunner({
+      binaryPath: 'codex-test',
+      timeoutMs: 60000,
+      runpodProfileEnvFile: '~/.codex/lentmiien.env',
+    });
+
+    const command = runner.buildCommand({
+      turn: {
+        _id: 'turn-runpod-glm',
+        kind: 'question',
+        modelProvider: 'runpod-glm',
+        permissionMode: 'read-only',
+      },
+      session: {},
+      workspace: { rootPath: '/home/lennart/Programming/lentmiien-site' },
+      target: {
+        type: 'remote-ssh-linux',
+        connection: {
+          destination: 'lennart@192.168.0.20',
+          sshBinaryPath: 'ssh-test',
+          codexBinaryPath: 'codex',
+        },
+      },
+    });
+
+    const remoteCommand = command.args[command.args.length - 1];
+    expect(remoteCommand).toContain("'/bin/bash' -lc");
+    expect(remoteCommand).toContain('$HOME');
+    expect(remoteCommand).toContain('.codex/lentmiien.env');
+    expect(remoteCommand).toContain('lentmiien-glm');
+    expect(remoteCommand).not.toContain('--oss');
+    expect(command.commandSummary).toEqual(expect.objectContaining({
+      modelProvider: 'runpod-glm',
+      modelProviderLabel: 'GLM-5.3 Flash (Runpod)',
+      profile: 'lentmiien-glm',
+      profileEnvironmentFile: '~/.codex/lentmiien.env',
+      oss: false,
+    }));
   });
 
   test('uses the dangerous bypass flag only for yolo mode', () => {
