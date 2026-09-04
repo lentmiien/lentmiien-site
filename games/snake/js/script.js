@@ -223,6 +223,7 @@
 
     const speedName = describeSpeed(settings.speedMs);
     const collisionName = {
+      easy: 'Easy crossings',
       brake: 'Brake collisions',
       crash: 'Crash walls',
       wrap: 'Wrap edges',
@@ -306,9 +307,10 @@
   function configurePlayScreen() {
     const matchedPreset = findMatchingPreset(currentSettings);
     elements.roundMode.textContent = `${matchedPreset ? matchedPreset.name : 'Custom'} rules`;
-    elements.roundTitle.textContent = currentSettings.collisionMode === 'brake'
-      ? 'Find a path through the glow'
-      : 'Follow the glow';
+    elements.roundTitle.textContent = {
+      easy: 'Cross any trail at your pace',
+      brake: 'Find a path through the glow',
+    }[currentSettings.collisionMode] || 'Follow the glow';
     elements.foodLegendCopy.textContent = `+${currentSettings.pointsPerFood} points · +${currentSettings.growthPerFood} length`;
     elements.legendBonus.hidden = !currentSettings.powerFoods;
     elements.legendHazard.hidden = !currentSettings.powerFoods;
@@ -434,6 +436,14 @@
         case 'rushEnded':
           showToast(`${event.missed} rush ${event.missed === 1 ? 'spark' : 'sparks'} faded`);
           break;
+        case 'boardFilled':
+          showToast('Board full · cross your trail to make room');
+          announce('Board full. Keep moving across your trail to make room for fruit.');
+          break;
+        case 'spaceReopened':
+          showToast('Space reopened · fruit returned');
+          announce('An empty space reopened and fruit returned.');
+          break;
         case 'braked':
           elements.boardPrompt.classList.remove('is-hidden');
           elements.boardPrompt.querySelector('strong').textContent = 'Path blocked';
@@ -526,11 +536,14 @@
     elements.rushMeter.hidden = !rushActive;
     if (rushActive) {
       const remaining = Math.max(0, game.rushExpiresAt - now);
-      elements.rushMeterFill.style.transform = `scaleX(${Math.min(1, remaining / 7000)})`;
+      const duration = game.rushDurationMs || 7000;
+      elements.rushMeterFill.style.transform = `scaleX(${Math.min(1, remaining / duration)})`;
       elements.rushCount.textContent = `${game.rushMotes.length} left`;
     }
 
-    if (rushActive) {
+    if (game.waitingForSpace) {
+      elements.objectiveText.textContent = 'Board full · cross your trail to reopen space';
+    } else if (rushActive) {
       elements.objectiveText.textContent = `Collect ${game.rushMotes.length} rush ${game.rushMotes.length === 1 ? 'spark' : 'sparks'}`;
     } else if (game.bonusFood) {
       elements.objectiveText.textContent = 'Golden fruit active · triple points';
@@ -936,7 +949,13 @@
     context.restore();
 
     if (type === 'bonus') {
-      drawEntityTimer(position, cellSize, game.bonusExpiresAt - now, 8000, colorTokens.accent);
+      drawEntityTimer(
+        position,
+        cellSize,
+        game.bonusExpiresAt - now,
+        game.bonusDurationMs || 8000,
+        colorTokens.accent,
+      );
     }
   }
 

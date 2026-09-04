@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0E0F13">
   <meta
     name="description"
-    content="Build your ideal Snake run—from the original Simple and Classic modes to portals, power fruit, and timed Ember Rushes."
+    content="Build your ideal Snake run—from an endless Easy mode and the original rules to portals, power fruit, and pace-aware Ember Rushes."
   >
   <title>Ember Snake · Lennart's Arcade</title>
   <link rel="preload" href="assets/ember-serpent.webp" as="image" type="image/webp">
@@ -59,7 +59,7 @@
         <div class="hero-copy">
           <p class="eyebrow"><span aria-hidden="true">✦</span> One game · your rules</p>
           <h1 id="game-title">Chase the glow.<br><em>Shape the run.</em></h1>
-          <p>Go slow and forgiving, fast and classic, or open the rifts and let the board get strange.</p>
+          <p>Cross your trail without a game over, go fast and classic, or open the rifts and let the board get strange.</p>
         </div>
         <div class="hero-features" aria-label="Available game features">
           <span><i class="mini-fruit mini-fruit--ember" aria-hidden="true"></i>Power fruit</span>
@@ -78,6 +78,13 @@
         </div>
 
         <div class="preset-grid" role="group" aria-label="Game presets">
+          <button class="preset-card" type="button" data-preset="easy" aria-pressed="false">
+            <span class="preset-card__top">
+              <strong>Easy</strong>
+              <small>endless</small>
+            </span>
+            <span>Safe · cross trails</span>
+          </button>
           <button class="preset-card" type="button" data-preset="simple" aria-pressed="false">
             <span class="preset-card__top">
               <strong>Simple</strong>
@@ -186,6 +193,16 @@
           </legend>
           <div class="segment-control">
             <label>
+              <input type="radio" name="collisionMode" value="easy">
+              <span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 12h14M12 5v14M8 8l8 8M16 8l-8 8"></path>
+                </svg>
+                <strong>Easy</strong>
+                <small>Cross trails safely</small>
+              </span>
+            </label>
+            <label>
               <input type="radio" name="collisionMode" value="brake">
               <span>
                 <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -223,7 +240,7 @@
             <span class="toggle-icon toggle-icon--fruit" aria-hidden="true"></span>
             <span>
               <strong>Power &amp; void fruit</strong>
-              <small>Rare rewards and a risky tail-shortening fruit</small>
+              <small>Rare rewards with timers paced to your movement speed</small>
             </span>
             <input id="power-foods-setting" name="powerFoods" type="checkbox" checked>
             <i aria-hidden="true"></i>
@@ -243,7 +260,7 @@
             <span class="toggle-icon toggle-icon--spark" aria-hidden="true">✦</span>
             <span>
               <strong>Ember Rush</strong>
-              <small>Every fourth fruit starts a timed spark hunt and combo</small>
+              <small>Every fourth fruit starts a spark hunt paced to your speed</small>
             </span>
             <input id="rush-setting" name="emberRush" type="checkbox" checked>
             <i aria-hidden="true"></i>
@@ -390,7 +407,7 @@
               </li>
               <li data-legend="bonus">
                 <span class="legend-symbol legend-symbol--bonus" aria-hidden="true"></span>
-                <p><strong>Golden fruit</strong><small>Triple points · extra growth</small></p>
+                <p><strong>Golden fruit</strong><small>Triple points · pace-aware timer</small></p>
               </li>
               <li data-legend="hazard">
                 <span class="legend-symbol legend-symbol--hazard" aria-hidden="true"></span>
@@ -402,7 +419,7 @@
               </li>
               <li data-legend="rush">
                 <span class="legend-symbol legend-symbol--rush" aria-hidden="true">✦</span>
-                <p><strong>Rush sparks</strong><small>Clear all five before time runs out</small></p>
+                <p><strong>Rush sparks</strong><small>Clear all five · time scales with speed</small></p>
               </li>
             </ul>
           </section>

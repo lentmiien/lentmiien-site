@@ -465,7 +465,7 @@ svg {
 
 .preset-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 9px;
   margin-top: 24px;
 }
@@ -687,7 +687,7 @@ input[type='range']::-moz-range-thumb {
 
 .segment-control {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
 
@@ -2026,7 +2026,12 @@ input[type='range']::-moz-range-thumb {
   }
 
   .preset-grid {
+    grid-template-columns: repeat(2, 1fr);
     gap: 6px;
+  }
+
+  .segment-control {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .preset-card {

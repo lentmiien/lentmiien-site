@@ -19,9 +19,30 @@
   });
 
   const ZERO_DIRECTION = Object.freeze({ x: 0, y: 0 });
-  const COLLISION_MODES = new Set(['brake', 'crash', 'wrap']);
+  const COLLISION_MODES = new Set(['easy', 'brake', 'crash', 'wrap']);
+  const REFERENCE_BOARD_SIZE = 20;
+  // Keep the original clock time for fast runs, then preserve its movement opportunities as play slows.
+  const TIMED_ITEM_RULES = Object.freeze({
+    bonus: Object.freeze({ minimumMs: 8000, moveBudget: 49 }),
+    rush: Object.freeze({ minimumMs: 7000, moveBudget: 43 }),
+  });
 
   const PRESETS = Object.freeze({
+    easy: Object.freeze({
+      id: 'easy',
+      name: 'Easy',
+      description: 'Leisurely movement, safe edges, and a trail you can cross without ending the run.',
+      speedMs: 1250,
+      boardSize: 20,
+      collisionMode: 'easy',
+      pointsPerFood: 1,
+      growthPerFood: 1,
+      powerFoods: true,
+      portals: false,
+      emberRush: true,
+      speedRamp: false,
+      sound: true,
+    }),
     simple: Object.freeze({
       id: 'simple',
       name: 'Simple',
@@ -151,12 +172,16 @@
       this.food = null;
       this.bonusFood = null;
       this.bonusExpiresAt = 0;
+      this.bonusDurationMs = 0;
       this.hazardFood = null;
       this.hazardExpiresAt = 0;
       this.portals = [];
       this.portalExpiresAt = 0;
       this.rushMotes = [];
       this.rushExpiresAt = 0;
+      this.rushDurationMs = 0;
+      this.rushPending = false;
+      this.waitingForSpace = false;
       this.nextPortalMove = 18 + this.randomInteger(0, 10);
       this.events = [];
 
@@ -196,6 +221,7 @@
       const reference = isZeroDirection(this.direction) ? this.queuedDirection : this.direction;
       if (
         this.snake.length > 1
+        && !this.isEasyMode()
         && requested.x === -reference.x
         && requested.y === -reference.y
       ) {
@@ -254,6 +280,18 @@
       return Math.max(55, Math.round(rampedSpeed));
     }
 
+    timedItemDurationMs(item) {
+      const rule = TIMED_ITEM_RULES[item];
+      if (!rule) {
+        return 0;
+      }
+
+      const boardAdjustedMoves = Math.ceil(
+        rule.moveBudget * this.settings.boardSize / REFERENCE_BOARD_SIZE,
+      );
+      return Math.max(rule.minimumMs, boardAdjustedMoves * this.currentSpeedMs());
+    }
+
     scoreMultiplier(now = Date.now()) {
       if (!this.settings.emberRush || this.combo < 1 || now > this.comboExpiresAt) {
         return 1;
@@ -263,21 +301,27 @@
     }
 
     updateTime(now = Date.now()) {
+      let spawnSpaceMayHaveChanged = false;
+
       if (this.bonusFood && now >= this.bonusExpiresAt) {
         this.bonusFood = null;
         this.bonusExpiresAt = 0;
+        this.bonusDurationMs = 0;
+        spawnSpaceMayHaveChanged = true;
         this.emit('expired', { item: 'bonus' });
       }
 
       if (this.hazardFood && now >= this.hazardExpiresAt) {
         this.hazardFood = null;
         this.hazardExpiresAt = 0;
+        spawnSpaceMayHaveChanged = true;
         this.emit('expired', { item: 'hazard' });
       }
 
       if (this.portals.length && now >= this.portalExpiresAt) {
         this.portals = [];
         this.portalExpiresAt = 0;
+        spawnSpaceMayHaveChanged = true;
         this.emit('expired', { item: 'portals' });
       }
 
@@ -285,6 +329,8 @@
         const missed = this.rushMotes.length;
         this.rushMotes = [];
         this.rushExpiresAt = 0;
+        this.rushDurationMs = 0;
+        spawnSpaceMayHaveChanged = true;
         this.emit('rushEnded', { missed });
       }
 
@@ -292,6 +338,10 @@
         this.combo = 0;
         this.comboExpiresAt = 0;
         this.emit('comboEnded');
+      }
+
+      if (this.status === 'running' && spawnSpaceMayHaveChanged) {
+        this.maintainRequiredSpawns(now);
       }
     }
 
@@ -327,7 +377,11 @@
       const enteredPortal = this.portals.findIndex(portal => samePosition(portal, nextHead));
       if (enteredPortal >= 0) {
         const destination = this.portals[enteredPortal === 0 ? 1 : 0];
-        if (destination && !this.snake.some(segment => samePosition(segment, destination))) {
+        const destinationIsOpen = destination && (
+          this.isEasyMode()
+          || !this.snake.some(segment => samePosition(segment, destination))
+        );
+        if (destinationIsOpen) {
           nextHead = { ...destination };
           this.emit('teleported', {
             from: { ...this.portals[enteredPortal] },
@@ -345,7 +399,10 @@
       const tailWillMove = this.pendingGrowth === 0 && !growingOnThisMove;
       const collisionSegments = tailWillMove ? this.snake.slice(0, -1) : this.snake;
 
-      if (collisionSegments.some(segment => samePosition(segment, nextHead))) {
+      if (
+        !this.isEasyMode()
+        && collisionSegments.some(segment => samePosition(segment, nextHead))
+      ) {
         return this.resolveCollision('self');
       }
 
@@ -375,7 +432,9 @@
       if (hazardShrink > 0) {
         for (let index = 0; index < hazardShrink; index += 1) {
           if (this.snake.length <= 1) {
-            this.finish('consumed');
+            if (!this.isEasyMode()) {
+              this.finish('consumed');
+            }
             break;
           }
           this.snake.pop();
@@ -383,8 +442,11 @@
       }
 
       if (this.status === 'running') {
-        this.maybeSpawnPowerFood(now);
-        this.maybeSpawnPortals(now);
+        this.maintainRequiredSpawns(now);
+        if (this.status === 'running' && !this.waitingForSpace) {
+          this.maybeSpawnPowerFood(now);
+          this.maybeSpawnPortals(now);
+        }
       }
 
       this.emit('moved', { head: { ...this.snake[0] } });
@@ -392,12 +454,12 @@
     }
 
     resolveCollision(kind) {
-      if (this.settings.collisionMode === 'brake') {
+      if (this.settings.collisionMode === 'brake' || this.isEasyMode()) {
         this.direction = copyDirection(ZERO_DIRECTION);
         this.queuedDirection = copyDirection(ZERO_DIRECTION);
         this.emit('braked', { kind });
 
-        if (!this.hasAvailableMove()) {
+        if (!this.isEasyMode() && !this.hasAvailableMove()) {
           this.finish('trapped');
         }
       } else {
@@ -408,11 +470,16 @@
     }
 
     finish(reason) {
+      if (this.isEasyMode()) {
+        return false;
+      }
+
       this.status = reason === 'cleared' ? 'won' : 'over';
       this.endReason = reason;
       this.direction = copyDirection(ZERO_DIRECTION);
       this.queuedDirection = copyDirection(ZERO_DIRECTION);
       this.emit(this.status === 'won' ? 'won' : 'gameOver', { reason });
+      return true;
     }
 
     consumeRegularFood(now) {
@@ -423,12 +490,7 @@
       this.emit('consumed', { item: 'food', points });
 
       if (this.settings.emberRush && this.regularFoodEaten % 4 === 0) {
-        this.spawnRush(now);
-      }
-
-      this.food = this.randomEmptyPosition();
-      if (!this.food) {
-        this.finish('cleared');
+        this.rushPending = true;
       }
     }
 
@@ -438,6 +500,7 @@
       this.bonusFoodEaten += 1;
       this.bonusFood = null;
       this.bonusExpiresAt = 0;
+      this.bonusDurationMs = 0;
       this.emit('consumed', { item: 'bonus', points });
     }
 
@@ -462,6 +525,7 @@
 
       if (!this.rushMotes.length) {
         this.rushExpiresAt = 0;
+        this.rushDurationMs = 0;
         const clearBonus = this.settings.pointsPerFood * 2 * this.scoreMultiplier(now);
         this.score += clearBonus;
         this.emit('rushCleared', { points: clearBonus });
@@ -488,8 +552,13 @@
       if (!this.bonusFood && this.random() < timeAdjustedChance) {
         this.bonusFood = this.randomEmptyPosition();
         if (this.bonusFood) {
-          this.bonusExpiresAt = now + 8000;
-          this.emit('spawned', { item: 'bonus', position: { ...this.bonusFood } });
+          this.bonusDurationMs = this.timedItemDurationMs('bonus');
+          this.bonusExpiresAt = now + this.bonusDurationMs;
+          this.emit('spawned', {
+            item: 'bonus',
+            position: { ...this.bonusFood },
+            durationMs: this.bonusDurationMs,
+          });
         }
       }
 
@@ -535,6 +604,10 @@
     }
 
     spawnRush(now) {
+      if (this.rushMotes.length) {
+        return false;
+      }
+
       const motes = [];
       for (let index = 0; index < 5; index += 1) {
         const mote = this.randomEmptyPosition(motes);
@@ -545,15 +618,59 @@
       }
 
       if (!motes.length) {
-        return;
+        return false;
       }
 
+      this.rushPending = false;
       this.rushMotes = motes;
-      this.rushExpiresAt = now + 7000;
+      this.rushDurationMs = this.timedItemDurationMs('rush');
+      this.rushExpiresAt = now + this.rushDurationMs;
       this.emit('rushStarted', {
         count: motes.length,
         expiresAt: this.rushExpiresAt,
+        durationMs: this.rushDurationMs,
       });
+      return true;
+    }
+
+    maintainRequiredSpawns(now) {
+      if (this.status !== 'running') {
+        return;
+      }
+
+      this.ensureRegularFood();
+      if (this.status === 'running' && this.rushPending && !this.waitingForSpace) {
+        this.spawnRush(now);
+      }
+    }
+
+    ensureRegularFood() {
+      if (this.food || this.status !== 'running') {
+        return Boolean(this.food);
+      }
+
+      this.food = this.randomEmptyPosition();
+      if (this.food) {
+        const spaceReopened = this.waitingForSpace;
+        this.waitingForSpace = false;
+        if (spaceReopened) {
+          this.emit('spaceReopened', { position: { ...this.food } });
+        }
+        return true;
+      }
+
+      if (this.isBoardFilledBySnake()) {
+        if (this.isEasyMode()) {
+          if (!this.waitingForSpace) {
+            this.waitingForSpace = true;
+            this.emit('boardFilled');
+          }
+        } else {
+          this.finish('cleared');
+        }
+      }
+
+      return false;
     }
 
     randomEmptyPosition(extraBlocked = [], predicate = null) {
@@ -588,6 +705,15 @@
       ].filter(Boolean);
 
       return new Set(positions.map(positionKey));
+    }
+
+    isEasyMode() {
+      return this.settings.collisionMode === 'easy';
+    }
+
+    isBoardFilledBySnake() {
+      const occupiedBySnake = new Set(this.snake.map(positionKey));
+      return occupiedBySnake.size >= this.settings.boardSize ** 2;
     }
 
     isOutsideBoard(position) {
