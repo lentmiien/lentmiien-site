@@ -34,6 +34,7 @@ const TERMINAL_TURN_STATUSES = new Set([
 const SYSTEM_USER = Object.freeze({
   _id: 'codex-log-review-workflow',
   name: 'Codex log review workflow',
+  type_user: 'codex_system',
 });
 
 const PHASE_CONFIG = Object.freeze({

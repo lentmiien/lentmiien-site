@@ -1,5 +1,8 @@
 const CODEX_CAPABILITIES = Object.freeze({
   runpodModelRun: 'codex.run.runpod_model',
+  turnCancel: 'codex.turn.cancel',
+  turnRead: 'codex.turn.read',
+  turnRetry: 'codex.turn.retry',
   turnSteer: 'codex.turn.steer',
 });
 
@@ -10,8 +13,24 @@ const CODEX_ADMIN_CAPABILITIES = Object.freeze(Object.values(CODEX_CAPABILITIES)
 // authenticated Codex roles and still requires object-level ownership.
 const CODEX_ROLE_CAPABILITY_BUNDLES = Object.freeze({
   admin: CODEX_ADMIN_CAPABILITIES,
-  family: Object.freeze([CODEX_CAPABILITIES.turnSteer]),
-  user: Object.freeze([CODEX_CAPABILITIES.turnSteer]),
+  family: Object.freeze([
+    CODEX_CAPABILITIES.turnCancel,
+    CODEX_CAPABILITIES.turnRead,
+    CODEX_CAPABILITIES.turnRetry,
+    CODEX_CAPABILITIES.turnSteer,
+  ]),
+  user: Object.freeze([
+    CODEX_CAPABILITIES.turnCancel,
+    CODEX_CAPABILITIES.turnRead,
+    CODEX_CAPABILITIES.turnRetry,
+    CODEX_CAPABILITIES.turnSteer,
+  ]),
+  codex_system: Object.freeze([
+    CODEX_CAPABILITIES.turnCancel,
+    CODEX_CAPABILITIES.turnRead,
+    CODEX_CAPABILITIES.turnRetry,
+    CODEX_CAPABILITIES.turnSteer,
+  ]),
   other: Object.freeze([]),
 });
 

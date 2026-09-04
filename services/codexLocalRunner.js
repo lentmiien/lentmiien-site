@@ -36,14 +36,28 @@ const OPTED_OUT_NOTIFICATION_METHODS = Object.freeze([
   'item/reasoning/textDelta',
   'turn/diff/updated',
 ]);
+const RETAINED_STARTED_ITEM_TYPES = new Set([
+  'collab_agent_tool_call',
+  'command_execution',
+  'dynamic_tool_call',
+  'file_change',
+  'image_generation',
+  'mcp_tool_call',
+  'sleep',
+  'sub_agent_activity',
+  'web_search',
+]);
 const ITEM_TYPE_MAP = Object.freeze({
   agentMessage: 'agent_message',
   collabAgentToolCall: 'collab_agent_tool_call',
   commandExecution: 'command_execution',
   contextCompaction: 'context_compaction',
   dynamicToolCall: 'dynamic_tool_call',
+  enteredReviewMode: 'entered_review_mode',
+  exitedReviewMode: 'exited_review_mode',
   fileChange: 'file_change',
   functionCallOutput: 'function_call_output',
+  hookPrompt: 'hook_prompt',
   imageGeneration: 'image_generation',
   imageView: 'image_view',
   mcpToolCall: 'mcp_tool_call',
@@ -192,6 +206,9 @@ function normalizePlanPayload(params) {
       type: 'todo_list',
       items: (Array.isArray(params?.plan) ? params.plan : []).map((entry) => ({
         text: String(entry?.step || ''),
+        status: ['pending', 'inProgress', 'completed'].includes(entry?.status)
+          ? entry.status
+          : 'pending',
         completed: entry?.status === 'completed',
       })),
     },
@@ -578,7 +595,14 @@ class CodexLocalRunner {
             return;
           }
         }
-        if (method === 'item/started' || OPTED_OUT_NOTIFICATION_METHODS.includes(method)) {
+        if (OPTED_OUT_NOTIFICATION_METHODS.includes(method)) {
+          return;
+        }
+        const normalizedPayload = normalizeNotificationPayload(method, params);
+        if (
+          method === 'item/started' &&
+          !RETAINED_STARTED_ITEM_TYPES.has(normalizedPayload?.item?.type)
+        ) {
           return;
         }
         if (method === 'turn/completed') {
@@ -596,11 +620,14 @@ class CodexLocalRunner {
 
         const eventType = eventTypeFromMethod(method);
         const terminalFailed = method === 'turn/completed' && params?.turn?.status === 'failed';
-        const eventIsWarning = /(?:error|failed|warning)/i.test(method);
+        const itemStatus = String(normalizedPayload?.item?.status || '');
+        const eventIsWarning = /(?:error|failed|warning)/i.test(method) ||
+          /^(?:declined|failed|interrupted)$/i.test(itemStatus) ||
+          Boolean(normalizedPayload?.item?.error || normalizedPayload?.item?.failure);
         await emit({
           stream: 'stdout-json',
           eventType,
-          payload: normalizeNotificationPayload(method, params),
+          payload: normalizedPayload,
           text: '',
           severity: terminalFailed ? 'error' : (eventIsWarning ? 'warning' : 'info'),
         });

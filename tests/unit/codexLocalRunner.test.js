@@ -363,6 +363,89 @@ describe('CodexLocalRunner', () => {
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
     });
 
+    test('retains actionable item starts and current plan states without retaining message starts', async () => {
+      const child = createFakeChild();
+      const onEvent = jest.fn().mockResolvedValue();
+      spawn.mockReturnValue(child);
+      const runner = new CodexLocalRunner({
+        binaryPath: 'codex-test',
+        timeoutMs: 60000,
+        additionalMessageTimeoutMs: 1000,
+        completionExitGraceMs: 100,
+      });
+      const input = createRunInput({ onEvent });
+      const { resultPromise } = await startAppServerTurn(runner, child, input);
+
+      notify(child, 'item/started', {
+        threadId: 'thread-123',
+        turnId: 'codex-turn-123',
+        item: {
+          id: 'command-1',
+          type: 'commandExecution',
+          command: 'npm test',
+          status: 'inProgress',
+        },
+      });
+      notify(child, 'item/started', {
+        threadId: 'thread-123',
+        turnId: 'codex-turn-123',
+        item: {
+          id: 'agent-message-1',
+          type: 'agentMessage',
+          text: '',
+        },
+      });
+      notify(child, 'turn/plan/updated', {
+        threadId: 'thread-123',
+        turnId: 'codex-turn-123',
+        plan: [
+          { step: 'Inspect', status: 'completed' },
+          { step: 'Implement', status: 'inProgress' },
+          { step: 'Verify', status: 'pending' },
+        ],
+      });
+      notify(child, 'turn/completed', {
+        threadId: 'thread-123',
+        turn: { id: 'codex-turn-123', status: 'completed', items: [] },
+      });
+
+      await expect(resultPromise).resolves.toEqual(expect.objectContaining({ status: 'succeeded' }));
+      const storedEvents = onEvent.mock.calls.map(([event]) => event);
+      expect(storedEvents).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          eventType: 'item.started',
+          payload: expect.objectContaining({
+            item: expect.objectContaining({
+              id: 'command-1',
+              type: 'command_execution',
+              status: 'inProgress',
+            }),
+          }),
+        }),
+        expect.objectContaining({
+          eventType: 'turn.plan.updated',
+          payload: expect.objectContaining({
+            item: expect.objectContaining({
+              type: 'todo_list',
+              items: [
+                { text: 'Inspect', status: 'completed', completed: true },
+                { text: 'Implement', status: 'inProgress', completed: false },
+                { text: 'Verify', status: 'pending', completed: false },
+              ],
+            }),
+          }),
+        }),
+      ]));
+      expect(storedEvents).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          eventType: 'item.started',
+          payload: expect.objectContaining({
+            item: expect.objectContaining({ id: 'agent-message-1' }),
+          }),
+        }),
+      ]));
+    });
+
     test('resumes a follow-up with history hydration disabled', async () => {
       const child = createFakeChild();
       spawn.mockReturnValue(child);

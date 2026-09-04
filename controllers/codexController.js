@@ -1,6 +1,9 @@
 const codexToolService = require('../services/codexToolService');
 const codexQueueWorker = require('../services/codexQueueWorker');
-const { addCodexEventPresentation } = require('../utils/codexEventPresentation');
+const {
+  presentCodexEvents,
+  sanitizeRawEvent,
+} = require('../utils/codexEventPresentation');
 const logger = require('../utils/logger');
 
 function stringifyForScript(data) {
@@ -13,29 +16,44 @@ function wantsJson(req) {
     String(req.originalUrl || '').includes('/api/');
 }
 
-function renderPageError(req, res, error, fallbackMessage) {
+function renderPageError(req, res, error, fallbackMessage, options = {}) {
   const status = error?.statusCode || 500;
-  const message = error?.message || fallbackMessage;
+  const message = options.sanitizeError === true && status >= 500
+    ? fallbackMessage
+    : (error?.message || fallbackMessage);
+  const metadata = {
+    path: req.originalUrl,
+    status,
+  };
+  if (options.includeErrorDetail === false) {
+    metadata.errorName = error?.name || 'Error';
+  } else {
+    metadata.error = message;
+  }
+  if (options.includeUser !== false) {
+    metadata.user = req.user?.name || null;
+  }
   logger.warning('Codex page request failed', {
     category: 'codex_tool',
-    metadata: {
-      path: req.originalUrl,
-      user: req.user?.name || null,
-      status,
-      error: message,
-    },
+    metadata,
   });
   return res.status(status).render('error_page', { error: message });
 }
 
 function renderJsonError(req, res, error, fallbackMessage, options = {}) {
   const status = error?.statusCode || 500;
-  const message = error?.message || fallbackMessage;
+  const message = options.sanitizeError === true && status >= 500
+    ? fallbackMessage
+    : (error?.message || fallbackMessage);
   const metadata = {
     path: req.originalUrl,
     status,
-    error: message,
   };
+  if (options.includeErrorDetail === false) {
+    metadata.errorName = error?.name || 'Error';
+  } else {
+    metadata.error = message;
+  }
   if (options.includeUser !== false) {
     metadata.user = req.user?.name || null;
   }
@@ -128,7 +146,13 @@ exports.renderTurn = async (req, res) => {
       codexStateJson: stringifyForScript(pageState),
     });
   } catch (error) {
-    return renderPageError(req, res, error, 'Unable to load Codex turn.');
+    return renderPageError(
+      req,
+      res,
+      error,
+      'Unable to load Codex turn.',
+      { includeErrorDetail: false, includeUser: false, sanitizeError: true }
+    );
   }
 };
 
@@ -230,23 +254,77 @@ exports.getTurn = async (req, res) => {
     const state = await codexToolService.getTurnDetail(req.params.turnId, { user: req.user });
     return res.json({ ok: true, ...state });
   } catch (error) {
-    return renderJsonError(req, res, error, 'Unable to load Codex turn.');
+    return renderJsonError(
+      req,
+      res,
+      error,
+      'Unable to load Codex turn.',
+      { includeErrorDetail: false, includeUser: false, sanitizeError: true }
+    );
   }
 };
 
 exports.getTurnEvents = async (req, res) => {
   try {
-    const events = await codexToolService.listTurnEvents(req.params.turnId, {
+    const page = await codexToolService.listTurnEventPage(req.params.turnId, {
       afterSeq: req.query.afterSeq,
       limit: req.query.limit,
       user: req.user,
     });
+    const events = presentCodexEvents(page.events, {
+      turnStartedAt: page.turnStartedAt,
+      workspaceRoot: page.workspaceRoot,
+    });
     return res.json({
       ok: true,
-      events: events.map(addCodexEventPresentation),
+      events,
+      counts: {
+        activity: events.length,
+        issues: events.filter((event) => event.isIssue).length,
+        messages: events.filter((event) => event.category === 'message').length,
+        actions: events.filter((event) => ['work', 'collaboration'].includes(event.category)).length,
+        raw: page.total,
+      },
+      lastSeq: page.events.reduce((maximum, event) => Math.max(maximum, Number(event.seq) || 0), 0),
     });
   } catch (error) {
-    return renderJsonError(req, res, error, 'Unable to load Codex events.');
+    return renderJsonError(
+      req,
+      res,
+      error,
+      'Unable to load Codex events.',
+      { includeErrorDetail: false, includeUser: false, sanitizeError: true }
+    );
+  }
+};
+
+exports.getRawTurnEvents = async (req, res) => {
+  try {
+    const page = await codexToolService.listTurnEventPage(req.params.turnId, {
+      beforeSeq: req.query.beforeSeq,
+      limit: req.query.limit || 100,
+      order: 'desc',
+      user: req.user,
+    });
+    return res.json({
+      ok: true,
+      events: page.events.map((event) => sanitizeRawEvent(event, {
+        workspaceRoot: page.workspaceRoot,
+      })),
+      page: {
+        hasMore: page.hasMore,
+        nextBeforeSeq: page.nextBeforeSeq,
+        total: page.total,
+      },
+    });
+  } catch (error) {
+    return renderJsonError(
+      req,
+      res,
+      error,
+      'Unable to load raw Codex events.',
+      { includeErrorDetail: false, includeUser: false, sanitizeError: true }
+    );
   }
 };
 
@@ -264,17 +342,23 @@ exports.addTurnMessage = async (req, res) => {
       res,
       error,
       'Unable to add the message to this Codex turn.',
-      { includeUser: false }
+      { includeErrorDetail: false, includeUser: false, sanitizeError: true }
     );
   }
 };
 
 exports.cancelTurn = async (req, res) => {
   try {
-    const turn = await codexToolService.cancelTurn(req.params.turnId);
+    const turn = await codexToolService.cancelTurn(req.params.turnId, req.user);
     return res.json({ ok: true, turn });
   } catch (error) {
-    return renderJsonError(req, res, error, 'Unable to cancel Codex turn.');
+    return renderJsonError(
+      req,
+      res,
+      error,
+      'Unable to cancel Codex turn.',
+      { includeErrorDetail: false, includeUser: false, sanitizeError: true }
+    );
   }
 };
 
@@ -283,7 +367,13 @@ exports.retryTurn = async (req, res) => {
     const result = await codexToolService.retryTurn(req.params.turnId, req.user);
     return res.status(202).json({ ok: true, ...result });
   } catch (error) {
-    return renderJsonError(req, res, error, 'Unable to retry Codex turn.');
+    return renderJsonError(
+      req,
+      res,
+      error,
+      'Unable to retry Codex turn.',
+      { includeErrorDetail: false, includeUser: false, sanitizeError: true }
+    );
   }
 };
 

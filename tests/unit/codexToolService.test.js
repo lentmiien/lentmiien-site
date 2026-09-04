@@ -38,6 +38,7 @@ jest.mock('../../services/appSettingsService', () => ({
 const CodexEvent = require('../../models/codex_event');
 const CodexTurn = require('../../models/codex_turn');
 const CodexTurnMessage = require('../../models/codex_turn_message');
+const CodexWorkspace = require('../../models/codex_workspace');
 const CodexWorkspaceLock = require('../../models/codex_workspace_lock');
 const RunpodPod = require('../../models/runpod_pod');
 const Role = require('../../models/role');
@@ -482,72 +483,226 @@ describe('codexToolService.queueAdditionalTurnMessage', () => {
   });
 });
 
-describe('codexToolService.listTurnEvents', () => {
+describe('codexToolService.listTurnEventPage', () => {
+  const owner = { _id: 'user-1', name: 'Owner', type_user: 'user' };
+  const turn = {
+    _id: 'turn-1',
+    workspaceId: 'workspace-1',
+    createdBy: { id: 'user-1' },
+    eventCount: 2001,
+    startedAt: new Date('2026-09-04T01:00:00.000Z'),
+  };
+
   beforeEach(() => {
     CodexEvent.find.mockReset();
   });
 
-  test('returns all events when no limit is requested', async () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  function mockWorkspace() {
+    const query = createLeanQuery({
+      _id: 'workspace-1',
+      rootPath: '/workspace/project',
+      pathStyle: 'posix',
+    });
+    query.select = jest.fn().mockReturnValue(query);
+    jest.spyOn(CodexWorkspace, 'findById').mockReturnValue(query);
+    return query;
+  }
+
+  test('owner-scopes reads and returns a bounded descending page', async () => {
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery(turn));
+    mockWorkspace();
     const query = createEventQuery([
-      { _id: 'event-1', turnId: 'turn-1', seq: 1, eventType: 'turn.started' },
-      { _id: 'event-2', turnId: 'turn-1', seq: 2, eventType: 'turn.completed' },
+      { _id: 'event-90', turnId: 'turn-1', seq: 90, eventType: 'item.completed' },
+      { _id: 'event-89', turnId: 'turn-1', seq: 89, eventType: 'item.completed' },
+      { _id: 'event-88', turnId: 'turn-1', seq: 88, eventType: 'item.completed' },
     ]);
     CodexEvent.find.mockReturnValue(query);
 
-    const events = await codexToolService.listTurnEvents('turn-1');
+    const page = await codexToolService.listTurnEventPage('turn-1', {
+      user: owner,
+      beforeSeq: 100,
+      limit: 2,
+      order: 'desc',
+    });
 
+    expect(CodexTurn.findOne).toHaveBeenCalledWith({
+      _id: 'turn-1',
+      'createdBy.id': 'user-1',
+    });
     expect(CodexEvent.find).toHaveBeenCalledWith({
       turnId: 'turn-1',
-      seq: { $gt: 0 },
+      seq: { $lt: 100 },
     });
-    expect(query.sort).toHaveBeenCalledWith({ seq: 1 });
-    expect(query.limit).not.toHaveBeenCalled();
-    expect(events).toHaveLength(2);
+    expect(query.sort).toHaveBeenCalledWith({ seq: -1 });
+    expect(query.limit).toHaveBeenCalledWith(3);
+    expect(page).toEqual(expect.objectContaining({
+      hasMore: true,
+      total: 2001,
+      nextBeforeSeq: 89,
+      workspaceRoot: '/workspace/project',
+    }));
+    expect(page.events.map((event) => event.seq)).toEqual([90, 89]);
   });
 
-  test('honors explicit limits for callers that request one', async () => {
+  test('supports the explicit administrator object-scope override', async () => {
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery({
+      ...turn,
+      createdBy: { id: 'another-user' },
+    }));
+    mockWorkspace();
     const query = createEventQuery([]);
     CodexEvent.find.mockReturnValue(query);
 
-    await codexToolService.listTurnEvents('turn-1', { afterSeq: 5, limit: 25 });
+    await codexToolService.listTurnEventPage('turn-1', {
+      user: { _id: 'admin-1', name: 'Admin', type_user: 'admin' },
+      afterSeq: 5,
+    });
 
+    expect(CodexTurn.findOne).toHaveBeenCalledWith({ _id: 'turn-1' });
     expect(CodexEvent.find).toHaveBeenCalledWith({
       turnId: 'turn-1',
       seq: { $gt: 5 },
     });
-    expect(query.limit).toHaveBeenCalledWith(25);
   });
 
-  test('limits user-message details to the authenticated turn owner', async () => {
+  test('caps requested raw-event pages at 250 records', async () => {
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery(turn));
+    mockWorkspace();
     const query = createEventQuery([]);
     CodexEvent.find.mockReturnValue(query);
 
-    await codexToolService.listTurnEvents('turn-1', {
-      user: { _id: 'user-1', type_user: 'user' },
+    await codexToolService.listTurnEventPage('turn-1', {
+      user: owner,
+      limit: 1000,
+      order: 'desc',
     });
 
-    expect(CodexEvent.find).toHaveBeenCalledWith({
-      turnId: 'turn-1',
-      seq: { $gt: 0 },
-      $or: [
-        { 'payload.item.type': { $ne: 'user_message' } },
-        { 'payload.ownerId': 'user-1' },
-      ],
+    expect(query.limit).toHaveBeenCalledWith(251);
+  });
+
+  test('returns not found for a foreign owner without querying event data', async () => {
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery(null));
+    const eventFindSpy = CodexEvent.find;
+
+    await expect(codexToolService.listTurnEventPage('turn-foreign', {
+      user: owner,
+    })).rejects.toMatchObject({ statusCode: 404, message: 'Turn not found.' });
+
+    expect(CodexTurn.findOne).toHaveBeenCalledWith({
+      _id: 'turn-foreign',
+      'createdBy.id': 'user-1',
+    });
+    expect(eventFindSpy).not.toHaveBeenCalled();
+  });
+
+  test('fails closed before reading a turn when the capability is absent', async () => {
+    const turnFindSpy = jest.spyOn(CodexTurn, 'findOne');
+
+    await expect(codexToolService.listTurnEventPage('turn-1', {
+      user: { _id: 'visitor-1', type_user: 'other' },
+    })).rejects.toMatchObject({ statusCode: 403 });
+
+    expect(turnFindSpy).not.toHaveBeenCalled();
+  });
+
+  test('keeps the compatibility list helper behind the same authorization boundary', async () => {
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery(turn));
+    mockWorkspace();
+    const query = createEventQuery([
+      { _id: 'event-1', turnId: 'turn-1', seq: 1, eventType: 'turn.started' },
+    ]);
+    CodexEvent.find.mockReturnValue(query);
+
+    const events = await codexToolService.listTurnEvents('turn-1', { user: owner });
+
+    expect(events).toHaveLength(1);
+    expect(CodexTurn.findOne).toHaveBeenCalledWith({
+      _id: 'turn-1',
+      'createdBy.id': 'user-1',
     });
   });
 
-  test('lets administrators read all turn details', async () => {
-    const query = createEventQuery([]);
-    CodexEvent.find.mockReturnValue(query);
-
-    await codexToolService.listTurnEvents('turn-1', {
-      user: { _id: 'admin-1', type_user: 'admin' },
+  test('can serialize turn-page session metadata without owner, root, or thread identifiers', () => {
+    const serialized = codexToolService.serializeSession({
+      _id: 'session-1',
+      workspaceId: 'workspace-1',
+      targetId: 'target-1',
+      codexThreadId: 'thread-private',
+      createdBy: { id: 'user-1', name: 'Private Account Name' },
+      title: 'Session',
+    }, {
+      workspace: {
+        _id: 'workspace-1',
+        targetId: 'target-1',
+        name: 'Workspace',
+        rootPath: '/home/private/project',
+      },
+      exposeOwner: false,
+      exposeRootPath: false,
+      exposeOperationalMetadata: false,
     });
 
-    expect(CodexEvent.find).toHaveBeenCalledWith({
-      turnId: 'turn-1',
-      seq: { $gt: 0 },
+    expect(serialized).not.toHaveProperty('createdBy');
+    expect(serialized).not.toHaveProperty('codexThreadId');
+    expect(serialized.workspace).not.toHaveProperty('rootPath');
+  });
+});
+
+describe('codexToolService.cancelTurn authorization', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('owner-scopes cancellation and conceals foreign turns', async () => {
+    const query = createLeanQuery(null);
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(query);
+
+    await expect(codexToolService.cancelTurn('turn-foreign', {
+      _id: 'user-1',
+      name: 'Owner',
+      type_user: 'user',
+    })).rejects.toMatchObject({ statusCode: 404, message: 'Turn not found.' });
+
+    expect(CodexTurn.findOne).toHaveBeenCalledWith({
+      _id: 'turn-foreign',
+      'createdBy.id': 'user-1',
     });
+  });
+
+  test('allows the declared admin override without returning owner metadata', async () => {
+    const turn = {
+      _id: 'turn-foreign',
+      status: 'running',
+      cancelRequestedAt: new Date('2026-09-04T01:00:00.000Z'),
+      createdBy: { id: 'another-user', name: 'Private Account Name' },
+    };
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery(turn));
+
+    const result = await codexToolService.cancelTurn('turn-foreign', {
+      _id: 'admin-1',
+      name: 'Admin',
+      type_user: 'admin',
+    });
+
+    expect(CodexTurn.findOne).toHaveBeenCalledWith({ _id: 'turn-foreign' });
+    expect(result).not.toHaveProperty('createdBy');
+    expect(result).not.toHaveProperty('commandSummary');
+  });
+
+  test('fails closed before resolving the target when cancellation capability is absent', async () => {
+    const findSpy = jest.spyOn(CodexTurn, 'findOne');
+
+    await expect(codexToolService.cancelTurn('turn-1', {
+      _id: 'visitor-1',
+      name: 'Visitor',
+      type_user: 'other',
+    })).rejects.toMatchObject({ statusCode: 403 });
+
+    expect(findSpy).not.toHaveBeenCalled();
   });
 });
 

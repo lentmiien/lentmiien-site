@@ -1,11 +1,14 @@
 const path = require('path');
 const pug = require('pug');
 const {
+  buildActivityRows,
   canSubmitAdditionalMessage,
   filterPromptTemplatesByWorkspace,
   getPromptLengthState,
+  mergeActivityEvents,
   selectErrorProcessEvents,
   selectFocusedProcessEvents,
+  summarizeActivityEvents,
   summarizeEditedFiles,
   unexpectedResponseMessage,
 } = require('../../public/js/codex');
@@ -481,8 +484,20 @@ describe('Codex focused process details', () => {
     ];
 
     expect(summarizeEditedFiles(events)).toEqual([
-      { path: '/workspace/app.js', kinds: ['update', 'rename'] },
-      { path: '/workspace/models/item.js', kinds: ['add'] },
+      {
+        path: '/workspace/app.js',
+        destination: '',
+        kinds: ['update', 'rename'],
+        additions: 0,
+        deletions: 0,
+      },
+      {
+        path: '/workspace/models/item.js',
+        destination: '',
+        kinds: ['add'],
+        additions: 0,
+        deletions: 0,
+      },
     ]);
     expect(summarizeEditedFiles(null)).toEqual([]);
   });
@@ -550,7 +565,7 @@ describe('Codex focused process details', () => {
     expect(selectErrorProcessEvents(null)).toEqual([]);
   });
 
-  test('renders the focused and Errors process-detail mode controls', () => {
+  test('renders Activity, Issues, and lazy Raw process-detail controls', () => {
     const html = renderCodexView('turn', {
       turn: {
         id: 'turn-1',
@@ -564,10 +579,78 @@ describe('Codex focused process details', () => {
       workspace: { id: 'workspace-1', name: 'Workspace' },
     });
 
-    expect(html).toContain('data-event-view-mode="focused" aria-pressed="true"');
-    expect(html).toContain('Messages, reasoning & todos');
-    expect(html).toContain('data-event-view-mode="errors" aria-pressed="false"');
-    expect(html).toContain('>Errors</button>');
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('data-event-view-mode="activity"');
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain('data-event-view-mode="issues"');
+    expect(html).toContain('data-event-view-mode="raw"');
+    expect(html).toContain('Raw events');
+    expect(html).toContain('Newest first');
+    expect(html).toContain('data-plan-sidebar');
+    expect(html).toContain('data-files-sidebar');
+    expect(html).toContain('Raw events load only when this tab is opened.');
+  });
+
+  test('merges a later action completion into its retained started row', () => {
+    const merged = mergeActivityEvents([
+      {
+        seq: 10,
+        itemId: 'command-1',
+        kind: 'command',
+        phase: 'started',
+        timestamp: '2026-09-04T01:00:00.000Z',
+        startedAt: '2026-09-04T01:00:00.000Z',
+        details: { command: 'npm test' },
+      },
+    ], [
+      {
+        seq: 11,
+        itemId: 'command-1',
+        kind: 'command',
+        phase: 'completed',
+        timestamp: '2026-09-04T01:00:02.000Z',
+        completedAt: '2026-09-04T01:00:02.000Z',
+        status: 'succeeded',
+        details: { output: 'PASS' },
+      },
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toEqual(expect.objectContaining({
+      seq: 11,
+      startedSeq: 10,
+      startedAt: '2026-09-04T01:00:00.000Z',
+      completedAt: '2026-09-04T01:00:02.000Z',
+      durationMs: 2000,
+      status: 'succeeded',
+    }));
+    expect(merged[0].details).toEqual({ command: 'npm test', output: 'PASS' });
+  });
+
+  test('summarizes readable activity and Issues without telemetry', () => {
+    expect(summarizeActivityEvents([
+      { category: 'message' },
+      { category: 'work' },
+      { category: 'collaboration', isIssue: true },
+    ])).toEqual({ activity: 3, messages: 1, actions: 2, issues: 1 });
+  });
+
+  test('defaults activity rows to newest-first and marks unexplained ten-second gaps', () => {
+    const events = [
+      { seq: 1, timestamp: '2026-09-04T01:00:00.000Z', summary: 'First' },
+      { seq: 2, timestamp: '2026-09-04T01:00:09.000Z', summary: 'Second' },
+      { seq: 3, timestamp: '2026-09-04T01:00:44.000Z', summary: 'Third' },
+    ];
+
+    const newest = buildActivityRows(events, 'activity', 'newest');
+    const chronological = buildActivityRows(events, 'activity', 'chronological');
+
+    expect(newest.map((row) => row.type)).toEqual(['activity', 'gap', 'activity', 'activity']);
+    expect(newest[0].event.seq).toBe(3);
+    expect(newest[1].gapMs).toBe(35000);
+    expect(chronological.map((row) => row.event?.seq || row.gapMs)).toEqual([1, 2, 35000, 3]);
+    expect(buildActivityRows(events, 'issues', 'chronological').every((row) => row.type === 'activity'))
+      .toBe(true);
   });
 
   test('renders the additional-message form only for an authorized active turn', () => {

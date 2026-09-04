@@ -43,7 +43,7 @@
   }
 
   function eventItemType(event) {
-    const presentedType = event?.presentation?.itemType;
+    const presentedType = event?.kind || event?.presentation?.kind || event?.presentation?.itemType;
     const item = extractEventItem(event);
     return String(presentedType || item?.type || '').trim().toLowerCase();
   }
@@ -54,6 +54,9 @@
   }
 
   function isFocusedProcessEvent(event) {
+    if (event?.category) {
+      return event.category !== 'telemetry';
+    }
     return ['agent_message', 'reasoning', 'todo_list', 'user_message'].includes(eventItemType(event));
   }
 
@@ -72,6 +75,9 @@
   }
 
   function hasFocusedProcessEventContent(event) {
+    if (event?.summary || event?.details) {
+      return Boolean(String(event.summary || '').trim()) || Object.keys(event.details || {}).length > 0;
+    }
     const itemType = eventItemType(event);
     const item = extractEventItem(event);
     const presentation = event?.presentation && typeof event.presentation === 'object'
@@ -121,16 +127,18 @@
     const filesByPath = new Map();
 
     (Array.isArray(events) ? events : []).forEach((event) => {
-      if (eventItemType(event) !== 'file_change') {
+      if (!['file_change', 'files'].includes(eventItemType(event))) {
         return;
       }
       const item = extractEventItem(event);
       const presentation = event?.presentation && typeof event.presentation === 'object'
         ? event.presentation
         : {};
-      const changes = Array.isArray(presentation.changes)
+      const changes = Array.isArray(event?.details?.changes)
+        ? event.details.changes
+        : (Array.isArray(presentation.changes)
         ? presentation.changes
-        : (Array.isArray(item?.changes) ? item.changes : []);
+        : (Array.isArray(item?.changes) ? item.changes : []));
 
       changes.forEach((change) => {
         const filePath = String(change?.path || '').trim();
@@ -138,13 +146,22 @@
           return;
         }
         if (!filesByPath.has(filePath)) {
-          filesByPath.set(filePath, { path: filePath, kinds: [] });
+          filesByPath.set(filePath, {
+            path: filePath,
+            destination: String(change?.destination || '').trim(),
+            kinds: [],
+            additions: 0,
+            deletions: 0,
+          });
         }
         const kind = normalizeFileChangeKind(change?.kind);
         const file = filesByPath.get(filePath);
         if (kind && !file.kinds.includes(kind)) {
           file.kinds.push(kind);
         }
+        file.destination = String(change?.destination || file.destination || '').trim();
+        file.additions += Number(change?.additions) || 0;
+        file.deletions += Number(change?.deletions) || 0;
       });
     });
 
@@ -153,6 +170,9 @@
   }
 
   function isErrorProcessEvent(event) {
+    if (event?.isIssue === true) {
+      return true;
+    }
     const eventType = String(event?.eventType || '').trim().toLowerCase();
     const stream = String(event?.stream || '').trim().toLowerCase();
     const severity = String(event?.severity || '').trim().toLowerCase();
@@ -181,6 +201,71 @@
     return (Array.isArray(events) ? events : []).filter(isErrorProcessEvent);
   }
 
+  function activityEventKey(event) {
+    const itemId = String(event?.itemId || '');
+    const kind = String(event?.kind || eventItemType(event) || 'event');
+    return itemId ? `${kind}:${itemId}` : `seq:${Number(event?.seq) || 0}`;
+  }
+
+  function mergeActivityEvents(currentEvents, incomingEvents) {
+    const merged = Array.isArray(currentEvents) ? currentEvents.map((event) => ({ ...event })) : [];
+    const bySequence = new Map(merged.map((event, index) => [Number(event.seq) || 0, index]));
+    const activeByItem = new Map();
+    merged.forEach((event, index) => {
+      if (event?.itemId && event.phase === 'started') {
+        activeByItem.set(activityEventKey(event), index);
+      }
+    });
+
+    (Array.isArray(incomingEvents) ? incomingEvents : []).forEach((event) => {
+      const sequence = Number(event?.seq) || 0;
+      if (bySequence.has(sequence)) {
+        merged[bySequence.get(sequence)] = { ...merged[bySequence.get(sequence)], ...event };
+        return;
+      }
+      const key = activityEventKey(event);
+      if (event?.itemId && event.phase !== 'started' && activeByItem.has(key)) {
+        const index = activeByItem.get(key);
+        const started = merged[index];
+        const startedAt = started.startedAt || started.timestamp || null;
+        const completedAt = event.completedAt || event.timestamp || null;
+        let durationMs = event.durationMs;
+        if ((durationMs === null || durationMs === undefined) && startedAt && completedAt) {
+          const calculated = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+          if (Number.isFinite(calculated) && calculated >= 0) durationMs = calculated;
+        }
+        merged[index] = {
+          ...started,
+          ...event,
+          startedSeq: started.seq,
+          startedAt,
+          completedAt,
+          durationMs,
+          details: { ...(started.details || {}), ...(event.details || {}) },
+        };
+        activeByItem.delete(key);
+        bySequence.set(sequence, index);
+        return;
+      }
+      const index = merged.length;
+      merged.push({ ...event });
+      bySequence.set(sequence, index);
+      if (event?.itemId && event.phase === 'started') activeByItem.set(key, index);
+    });
+
+    return merged.sort((left, right) => (Number(left.seq) || 0) - (Number(right.seq) || 0));
+  }
+
+  function summarizeActivityEvents(events) {
+    const list = Array.isArray(events) ? events : [];
+    return {
+      activity: list.length,
+      issues: list.filter((event) => event?.isIssue).length,
+      messages: list.filter((event) => event?.category === 'message').length,
+      actions: list.filter((event) => ['work', 'collaboration'].includes(event?.category)).length,
+    };
+  }
+
   function unexpectedResponseMessage(response, text) {
     const contentType = String(response?.headers?.get?.('content-type') || '').toLowerCase();
     const responseUrl = String(response?.url || '');
@@ -196,10 +281,13 @@
   if (typeof module === 'object' && module.exports && typeof document === 'undefined') {
     module.exports = {
       canSubmitAdditionalMessage,
+      buildActivityRows,
       filterPromptTemplatesByWorkspace,
       getPromptLengthState,
+      mergeActivityEvents,
       selectErrorProcessEvents,
       selectFocusedProcessEvents,
+      summarizeActivityEvents,
       summarizeEditedFiles,
       unexpectedResponseMessage,
     };
@@ -270,6 +358,8 @@
   };
   const LIVE_ACTIVITY_POLL_MS = 2000;
   const LIVE_ACTIVITY_HIGHLIGHT_MS = 1400;
+  const RAW_EVENT_PAGE_SIZE = 100;
+  const EVENT_ORDER_STORAGE_KEY = 'codex.turn.activityOrder';
   const liveActivityByTurn = new Map();
   let liveActivityTurns = [];
   let liveActivityTimer = null;
@@ -286,8 +376,13 @@
     const value = Number(ms);
     if (!Number.isFinite(value) || value <= 0) return '-';
     if (value < 1000) return `${Math.round(value)}ms`;
+    if (value < 10000) return `${(value / 1000).toFixed(1).replace(/\.0$/, '')}s`;
     if (value < 60000) return `${Math.round(value / 1000)}s`;
-    if (value < 3600000) return `${Math.round(value / 60000)}m`;
+    if (value < 3600000) {
+      const minutes = Math.floor(value / 60000);
+      const seconds = Math.floor((value % 60000) / 1000);
+      return `${minutes}m${seconds ? ` ${seconds}s` : ''}`;
+    }
     return `${(value / 3600000).toFixed(1)}h`;
   }
 
@@ -426,6 +521,16 @@
         failureCount: 0,
         errorMessage: '',
         highlightUntil: 0,
+        viewMode: 'activity',
+        order: readStoredEventOrder(),
+        paused: false,
+        pendingNewCount: 0,
+        rawEvents: [],
+        rawLoaded: false,
+        rawLoading: false,
+        rawHasMore: false,
+        rawBeforeSeq: null,
+        rawErrorMessage: '',
       });
     }
     const state = liveActivityByTurn.get(turnId);
@@ -446,6 +551,7 @@
   }
 
   function describeProcessEvent(event) {
+    if (event?.summary) return String(event.summary);
     const payload = event && event.payload && typeof event.payload === 'object' ? event.payload : {};
     const nestedPayload = payload.payload && typeof payload.payload === 'object' ? payload.payload : {};
     const item = payload.item && typeof payload.item === 'object'
@@ -471,7 +577,29 @@
   }
 
   function normalizeEventViewMode(value) {
-    return ['focused', 'errors'].includes(value) ? value : 'all';
+    const normalized = String(value || '').toLowerCase();
+    if (normalized === 'focused') return 'activity';
+    if (normalized === 'errors') return 'issues';
+    if (normalized === 'all') return 'raw';
+    return ['activity', 'issues', 'raw'].includes(normalized) ? normalized : 'activity';
+  }
+
+  function readStoredEventOrder() {
+    try {
+      return window.localStorage.getItem(EVENT_ORDER_STORAGE_KEY) === 'chronological'
+        ? 'chronological'
+        : 'newest';
+    } catch (_error) {
+      return 'newest';
+    }
+  }
+
+  function storeEventOrder(order) {
+    try {
+      window.localStorage.setItem(EVENT_ORDER_STORAGE_KEY, order);
+    } catch (_error) {
+      // A private browsing policy may disable local storage.
+    }
   }
 
   function formatActivityAge(value) {
@@ -491,13 +619,14 @@
 
   function liveActivityDisplay(state) {
     const latest = state.latestEvent;
+    const latestTimestamp = latest && (latest.timestamp || latest.completedAt || latest.startedAt);
     let heading = 'Codex is working';
     if (state.failureCount >= 2) {
       heading = 'Reconnecting to activity feed';
     } else if (state.highlightUntil > Date.now()) {
       heading = 'New process detail';
     } else if (latest) {
-      const eventTime = new Date(latest.createdAt || 0).getTime();
+      const eventTime = new Date(latestTimestamp || 0).getTime();
       heading = eventTime && Date.now() - eventTime > 30000
         ? 'Monitoring for the next detail'
         : 'Receiving process details';
@@ -514,7 +643,7 @@
 
     return {
       heading,
-      summary: `Detail #${latest.seq} · ${describeProcessEvent(latest)} · ${formatActivityAge(latest.createdAt)}`,
+      summary: `Detail #${latest.seq} · ${describeProcessEvent(latest)} · ${formatActivityAge(latestTimestamp)}`,
     };
   }
 
@@ -565,13 +694,33 @@
   function updateEventViewButtons(turnId, viewMode) {
     const selectedMode = normalizeEventViewMode(viewMode);
     root.querySelectorAll(`[data-action="set-event-view"][data-turn-id="${CSS.escape(turnId)}"]`).forEach((button) => {
-      button.setAttribute('aria-pressed', button.dataset.eventViewMode === selectedMode ? 'true' : 'false');
+      const selected = button.dataset.eventViewMode === selectedMode;
+      if (button.getAttribute('role') === 'tab') {
+        button.setAttribute('aria-selected', selected ? 'true' : 'false');
+        button.tabIndex = selected ? 0 : -1;
+      } else {
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      }
     });
   }
 
   function setEventViewMode(turnId, viewMode) {
     const selectedMode = normalizeEventViewMode(viewMode);
     const state = getLiveActivityState(turnId);
+    state.viewMode = selectedMode;
+    if (root.dataset.codexPage === 'turn') {
+      root.querySelectorAll('[data-process-panel]').forEach((panel) => {
+        panel.hidden = panel.dataset.processPanel !== selectedMode;
+      });
+      updateEventViewButtons(turnId, selectedMode);
+      if (selectedMode === 'raw') {
+        renderRawEvents(turnId);
+        if (!state.rawLoaded) loadRawTurnEvents(turnId).catch(() => {});
+      } else {
+        renderOperationalPanels(turnId, { force: true });
+      }
+      return;
+    }
     root.querySelectorAll(`[data-events-for="${CSS.escape(turnId)}"]`).forEach((container) => {
       container.dataset.eventViewMode = selectedMode;
       renderEvents(container, state.events, {
@@ -594,8 +743,11 @@
       const summary = indicator.querySelector('[data-activity-summary]');
       if (heading) heading.textContent = display.heading;
       if (summary) summary.textContent = display.summary;
-      if (state.latestEvent && state.latestEvent.createdAt) {
-        indicator.title = `Latest process detail: ${formatDate(state.latestEvent.createdAt)}`;
+      const latestTimestamp = state.latestEvent && (
+        state.latestEvent.timestamp || state.latestEvent.completedAt || state.latestEvent.startedAt
+      );
+      if (latestTimestamp) {
+        indicator.title = `Latest process detail: ${formatDate(latestTimestamp)}`;
       }
       if (options.announce && state.latestEvent) {
         const announcement = indicator.querySelector('[data-activity-announcement]');
@@ -607,6 +759,13 @@
     updateProcessDetailButtons(turnId);
 
     if (options.renderEventPanels) {
+      if (root.dataset.codexPage === 'turn') {
+        renderOperationalPanels(turnId, {
+          force: options.force,
+          newSeqs: options.newSeqs,
+        });
+        return;
+      }
       root.querySelectorAll(`[data-events-for="${CSS.escape(turnId)}"]`).forEach((container) => {
         if (container.hidden || !state.detailsOpen) return;
         renderEvents(container, state.events, {
@@ -630,30 +789,47 @@
         `/codex/api/turns/${encodeURIComponent(turnId)}/events?afterSeq=${encodeURIComponent(afterSeq)}`,
         { cache: 'no-store' }
       );
-      const knownSeqs = new Set(state.events.map((event) => Number(event.seq) || 0));
+      const knownSeqs = new Set(state.events.flatMap((event) => [
+        Number(event.seq) || 0,
+        Number(event.startedSeq) || 0,
+      ]));
       const incoming = (payload.events || [])
         .filter((event) => !knownSeqs.has(Number(event.seq) || 0))
         .sort((left, right) => Number(left.seq) - Number(right.seq));
       const newSeqs = new Set(initialLoad ? [] : incoming.map((event) => Number(event.seq) || 0));
       if (incoming.length) {
-        state.events.push(...incoming);
-        state.events.sort((left, right) => Number(left.seq) - Number(right.seq));
-        state.latestEvent = state.events[state.events.length - 1];
-        state.lastSeq = Number(state.latestEvent.seq) || state.lastSeq;
+        state.events = mergeActivityEvents(state.events, incoming);
+        state.latestEvent = state.events.reduce((latest, event) => (
+          !latest || Number(event.seq) > Number(latest.seq) ? event : latest
+        ), null);
+        state.lastSeq = Math.max(
+          state.lastSeq,
+          Number(payload.lastSeq) || 0,
+          ...incoming.map((event) => Number(event.seq) || 0)
+        );
         state.reportedCount = Math.max(state.reportedCount, state.lastSeq);
         state.highlightUntil = Date.now() + LIVE_ACTIVITY_HIGHLIGHT_MS;
+        if (!initialLoad && root.dataset.codexPage === 'turn' && turnFeedIsInspectingHistory(turnId)) {
+          state.pendingNewCount += incoming.length;
+        }
       } else if (state.events.length) {
-        state.latestEvent = state.events[state.events.length - 1];
-        state.lastSeq = Math.max(state.lastSeq, Number(state.latestEvent.seq) || 0);
+        state.latestEvent = state.events.reduce((latest, event) => (
+          !latest || Number(event.seq) > Number(latest.seq) ? event : latest
+        ), null);
+        state.lastSeq = Math.max(state.lastSeq, Number(payload.lastSeq) || 0, Number(state.latestEvent.seq) || 0);
       }
+      state.lastSeq = Math.max(state.lastSeq, Number(payload.lastSeq) || 0);
+      if (payload.counts?.raw) state.reportedCount = Math.max(state.reportedCount, Number(payload.counts.raw) || 0);
       state.loaded = true;
       state.failureCount = 0;
       state.errorMessage = '';
       updateLiveActivityIndicators(turnId, {
         announce: incoming.length > 0,
         newSeqs,
-        renderEventPanels: initialLoad || incoming.length > 0,
+        renderEventPanels: initialLoad || (incoming.length > 0 && state.pendingNewCount === 0),
+        force: initialLoad,
       });
+      updateOperationalSummary(turnId);
       if (incoming.length) {
         window.setTimeout(() => {
           updateLiveActivityIndicators(turnId);
@@ -679,7 +855,9 @@
 
   async function pollLiveActivities() {
     if (document.hidden || liveActivityTurns.length === 0) return;
-    await Promise.all(liveActivityTurns.map((turn) => loadTurnActivity(turn.id)));
+    await Promise.all(liveActivityTurns
+      .filter((turn) => !getLiveActivityState(turn.id).paused)
+      .map((turn) => loadTurnActivity(turn.id)));
   }
 
   function startLiveActivityPolling() {
@@ -726,6 +904,7 @@
       const state = getLiveActivityState(container.dataset.eventsFor);
       state.detailsOpen = !container.hidden;
       container.dataset.eventViewMode = normalizeEventViewMode(container.dataset.eventViewMode);
+      state.viewMode = container.dataset.eventViewMode;
       updateProcessDetailButtons(state.turnId);
       updateEventViewButtons(state.turnId, container.dataset.eventViewMode);
     });
@@ -1634,9 +1813,10 @@
       status.className = statusClass(turn.status);
       status.textContent = turn.status;
     }
-    const errorText = root.querySelector('.codex-error-text');
+    const errorText = root.querySelector('[data-turn-error]');
     if (errorText) {
       errorText.textContent = turn.errorMessage || '';
+      errorText.hidden = !turn.errorMessage;
     }
     if (transcript) {
       transcript.innerHTML = '';
@@ -1673,15 +1853,19 @@
         detailGrid.appendChild(cell);
       });
     }
-    root.querySelectorAll(`[data-events-for="${CSS.escape(turn.id)}"]`).forEach((eventsContainer) => {
-      if (!eventsContainer.hidden && activityState.detailsOpen) {
-        renderEvents(eventsContainer, activityState.events, {
-          errorMessage: activityState.errorMessage,
-          isRunning: turn.status === 'running',
-          loaded: activityState.loaded,
-        });
-      }
-    });
+    if (root.dataset.codexPage === 'turn') {
+      renderOperationalPanels(turn.id, { force: activityState.pendingNewCount === 0 });
+    } else {
+      root.querySelectorAll(`[data-events-for="${CSS.escape(turn.id)}"]`).forEach((eventsContainer) => {
+        if (!eventsContainer.hidden && activityState.detailsOpen) {
+          renderEvents(eventsContainer, activityState.events, {
+            errorMessage: activityState.errorMessage,
+            isRunning: turn.status === 'running',
+            loaded: activityState.loaded,
+          });
+        }
+      });
+    }
     updateProcessDetailButtons(turn.id);
   }
 
@@ -1710,6 +1894,774 @@
     if (submit) submit.disabled = !available || submitting;
     if (state) {
       state.textContent = available ? 'Running' : 'Closed';
+    }
+  }
+
+  function activityDate(event) {
+    const value = event?.timestamp || event?.completedAt || event?.startedAt;
+    const date = value ? new Date(value) : null;
+    return date && !Number.isNaN(date.getTime()) ? date : null;
+  }
+
+  function formatActivityClock(value) {
+    const date = value ? new Date(value) : null;
+    if (!date || Number.isNaN(date.getTime())) return '--:--:--';
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function formatActivityOffset(value) {
+    const startValue = bootstrap.turn?.startedAt || bootstrap.turn?.queuedAt;
+    const start = startValue ? new Date(startValue).getTime() : NaN;
+    const current = value ? new Date(value).getTime() : NaN;
+    if (!Number.isFinite(start) || !Number.isFinite(current)) return '';
+    const seconds = Math.max(0, Math.round((current - start) / 1000));
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    return `+${minutes}:${String(remainder).padStart(2, '0')}`;
+  }
+
+  function activityStatusGlyph(status) {
+    if (status === 'running') return '●';
+    if (status === 'succeeded') return '✓';
+    if (['failed', 'timed_out'].includes(status)) return '×';
+    if (['blocked', 'warning'].includes(status)) return '!';
+    if (status === 'cancelled') return '–';
+    return '·';
+  }
+
+  function activityRowKey(event) {
+    return `activity:${activityEventKey(event)}`;
+  }
+
+  function buildActivityRows(events, mode, order) {
+    const visible = (Array.isArray(events) ? events : [])
+      .filter((event) => mode !== 'issues' || event?.isIssue)
+      .sort((left, right) => {
+        const leftTime = activityDate(left)?.getTime() || 0;
+        const rightTime = activityDate(right)?.getTime() || 0;
+        return leftTime - rightTime || (Number(left.seq) || 0) - (Number(right.seq) || 0);
+      });
+    const rows = [];
+    visible.forEach((event, index) => {
+      rows.push({ type: 'activity', key: activityRowKey(event), event });
+      const next = visible[index + 1];
+      if (!next) return;
+      const currentTime = activityDate(event)?.getTime();
+      const nextTime = activityDate(next)?.getTime();
+      const gapMs = Number.isFinite(currentTime) && Number.isFinite(nextTime) ? nextTime - currentTime : 0;
+      if (mode !== 'issues' && gapMs >= 10000) {
+        rows.push({
+          type: 'gap',
+          key: `gap:${Number(event.seq) || 0}:${Number(next.seq) || 0}`,
+          gapMs,
+        });
+      }
+    });
+    return order === 'chronological' ? rows : rows.reverse();
+  }
+
+  function appendDefinitionRow(list, label, value, code) {
+    if (value === null || value === undefined || String(value) === '') return;
+    const row = createEl('div', { className: 'codex-activity-detail__row' });
+    row.appendChild(createEl('dt', { text: label }));
+    const description = createEl('dd');
+    description.appendChild(createEl(code ? 'code' : 'span', { text: String(value) }));
+    row.appendChild(description);
+    list.appendChild(row);
+  }
+
+  function safeBrowserUrl(value) {
+    try {
+      const url = new URL(String(value || ''));
+      return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function appendLinkDefinitionRow(list, label, value) {
+    const href = safeBrowserUrl(value);
+    if (!href) return;
+    const row = createEl('div', { className: 'codex-activity-detail__row' });
+    row.appendChild(createEl('dt', { text: label }));
+    const description = createEl('dd');
+    description.appendChild(createEl('a', {
+      href,
+      target: '_blank',
+      rel: 'noopener noreferrer nofollow',
+      text: href,
+    }));
+    row.appendChild(description);
+    list.appendChild(row);
+  }
+
+  function appendStructuredPre(container, label, value) {
+    if (value === null || value === undefined || value === '' ||
+      (typeof value === 'object' && Object.keys(value).length === 0)) return;
+    container.appendChild(createEl('h4', { text: label }));
+    container.appendChild(createEl('pre', {
+      text: typeof value === 'string' ? value : JSON.stringify(value, null, 2),
+    }));
+  }
+
+  function appendActivityDetails(container, event) {
+    const details = event?.details || {};
+    const metadata = createEl('dl', { className: 'codex-activity-detail__meta' });
+    appendDefinitionRow(metadata, 'Working directory', details.cwd, true);
+    appendDefinitionRow(metadata, 'Exit code', details.exitCode, false);
+    appendDefinitionRow(metadata, 'Tool', details.toolName, true);
+    appendDefinitionRow(metadata, 'Source', details.source, false);
+    appendDefinitionRow(metadata, 'Plugin', details.plugin, true);
+    appendDefinitionRow(metadata, 'Artifact', details.artifact, true);
+    appendDefinitionRow(metadata, 'Model', details.model, false);
+    appendDefinitionRow(metadata, 'Effort', details.reasoningEffort, false);
+    appendDefinitionRow(metadata, 'Agent', details.agentPath, true);
+    appendDefinitionRow(metadata, 'Delivery', details.delivery, false);
+    appendDefinitionRow(metadata, 'Access', details.readOnly === true ? 'Read-only' : '', false);
+    appendDefinitionRow(metadata, 'Query', details.query, false);
+    appendLinkDefinitionRow(metadata, 'Page', details.url);
+    appendDefinitionRow(metadata, 'Pattern', details.pattern, false);
+    if (metadata.hasChildNodes()) container.appendChild(metadata);
+
+    appendStructuredPre(container, 'Command', details.command);
+    appendStructuredPre(container, 'Output', details.output);
+    appendStructuredPre(container, 'Arguments', details.arguments);
+    appendStructuredPre(container, 'Result', details.result);
+    appendStructuredPre(container, 'Error', details.error || details.failure || details.message);
+    appendStructuredPre(container, 'Agent prompt', details.prompt);
+    appendStructuredPre(container, 'Review', details.review);
+    appendStructuredPre(container, 'Plan note', details.explanation);
+
+    if (Array.isArray(details.actions) && details.actions.length) {
+      const section = createEl('div', { className: 'codex-activity-actions' });
+      section.appendChild(createEl('h4', { text: 'Detected actions' }));
+      const list = createEl('ul');
+      details.actions.forEach((action) => {
+        list.appendChild(createEl('li', {
+          text: [action.type, action.path || action.name, action.query].filter(Boolean).join(' · '),
+        }));
+      });
+      section.appendChild(list);
+      container.appendChild(section);
+    }
+
+    if (Array.isArray(details.changes) && details.changes.length) {
+      const section = createEl('div', { className: 'codex-activity-changes' });
+      section.appendChild(createEl('h4', { text: 'Changed files' }));
+      const list = createEl('ul');
+      details.changes.forEach((change) => {
+        const row = createEl('li');
+        row.appendChild(createEl('code', { text: change.path || 'File' }));
+        const changeSummary = [
+          change.kind || 'update',
+          change.destination ? `→ ${change.destination}` : '',
+          change.additions || change.deletions ? `+${change.additions || 0} / −${change.deletions || 0}` : '',
+        ].filter(Boolean).join(' · ');
+        row.appendChild(createEl('span', { text: changeSummary }));
+        if (change.diff) {
+          const diff = createEl('details');
+          diff.appendChild(createEl('summary', { text: 'Diff' }));
+          diff.appendChild(createEl('pre', { text: change.diff }));
+          row.appendChild(diff);
+        }
+        list.appendChild(row);
+      });
+      section.appendChild(list);
+      container.appendChild(section);
+    }
+
+    if (Array.isArray(details.agents) && details.agents.length) {
+      const section = createEl('div', { className: 'codex-activity-agents' });
+      section.appendChild(createEl('h4', { text: 'Agents' }));
+      const list = createEl('ul');
+      details.agents.forEach((agent) => {
+        list.appendChild(createEl('li', {
+          text: [agent.path || 'Agent', agent.status, agent.message].filter(Boolean).join(' · '),
+        }));
+      });
+      section.appendChild(list);
+      container.appendChild(section);
+    }
+
+    if (Array.isArray(details.results) && details.results.length) {
+      const section = createEl('div', { className: 'codex-activity-results' });
+      section.appendChild(createEl('h4', { text: 'Results' }));
+      const list = createEl('ul');
+      details.results.forEach((result) => {
+        const row = createEl('li');
+        const href = safeBrowserUrl(result.url);
+        if (href) {
+          row.appendChild(createEl('a', {
+            href,
+            target: '_blank',
+            rel: 'noopener noreferrer nofollow',
+            text: result.title || result.domain || result.url,
+          }));
+        } else {
+          row.textContent = result.title || result.domain || 'Result';
+        }
+        if (result.domain) row.appendChild(createEl('small', { text: result.domain }));
+        list.appendChild(row);
+      });
+      section.appendChild(list);
+      container.appendChild(section);
+    }
+
+    if (Array.isArray(details.questions) && details.questions.length) {
+      const questionSection = createEl('div', { className: 'codex-activity-questions' });
+      questionSection.appendChild(createEl('h4', { text: 'Questions' }));
+      details.questions.forEach((question) => {
+        const card = createEl('section');
+        if (question.header) card.appendChild(createEl('strong', { text: question.header }));
+        if (question.question) card.appendChild(createEl('p', { text: question.question }));
+        if (Array.isArray(question.options) && question.options.length) {
+          const list = createEl('ul');
+          question.options.forEach((option) => {
+            list.appendChild(createEl('li', {
+              text: [option.label, option.description].filter(Boolean).join(' — '),
+            }));
+          });
+          card.appendChild(list);
+        }
+        questionSection.appendChild(card);
+      });
+      container.appendChild(questionSection);
+    }
+
+    if (Array.isArray(details.memoryCitation) && details.memoryCitation.length) {
+      const citations = createEl('div', { className: 'codex-activity-citations' });
+      citations.appendChild(createEl('h4', { text: 'Memory citations' }));
+      const list = createEl('ul');
+      details.memoryCitation.forEach((citation) => {
+        const lines = citation.lineStart === null
+          ? ''
+          : `:${citation.lineStart}${citation.lineEnd !== null && citation.lineEnd !== citation.lineStart ? `–${citation.lineEnd}` : ''}`;
+        list.appendChild(createEl('li', {
+          text: `${citation.path || 'Memory'}${lines}${citation.note ? ` — ${citation.note}` : ''}`,
+        }));
+      });
+      citations.appendChild(list);
+      container.appendChild(citations);
+    }
+  }
+
+  function hasExpandableActivityDetails(event) {
+    const details = event?.details || {};
+    return [
+      details.cwd, details.command, details.output, details.arguments, details.result, details.error,
+      details.failure, details.message, details.prompt, details.review, details.artifact, details.model,
+      details.agentPath, details.delivery, details.explanation, details.query, details.url, details.pattern,
+    ].some((value) => value !== null && value !== undefined && value !== '' &&
+      (typeof value !== 'object' || Object.keys(value).length > 0)) ||
+      ['actions', 'agents', 'changes', 'results', 'questions', 'memoryCitation']
+        .some((key) => Array.isArray(details[key]) && details[key].length);
+  }
+
+  function createActivityCard(event, isNew) {
+    const status = String(event?.status || 'info');
+    const wrapper = createEl('article', {
+      className: [
+        'codex-activity-card',
+        `codex-activity-card--${String(event?.tone || 'neutral').replace(/[^a-z0-9_-]/gi, '-')}`,
+        event?.isIssue ? 'codex-activity-card--issue' : '',
+        isNew ? 'codex-event--new' : '',
+      ].filter(Boolean).join(' '),
+      'data-activity-row-key': activityRowKey(event),
+      'data-activity-signature': JSON.stringify([
+        event.seq, event.status, event.summary, event.durationMs, event.repeatCount, event.details,
+      ]),
+    });
+    const time = createEl('div', { className: 'codex-activity-card__time' });
+    if (status === 'running') {
+      time.appendChild(createEl('strong', { text: 'NOW' }));
+    } else {
+      time.appendChild(createEl('time', {
+        datetime: event.timestamp || '',
+        title: event.timestamp ? formatDate(event.timestamp) : '',
+        text: formatActivityClock(event.timestamp),
+      }));
+    }
+    const offset = formatActivityOffset(event.timestamp);
+    if (offset) time.appendChild(createEl('small', { text: offset }));
+    wrapper.appendChild(time);
+
+    const body = createEl('div', { className: 'codex-activity-card__body' });
+    const eyebrow = createEl('div', { className: 'codex-activity-card__eyebrow' });
+    eyebrow.appendChild(createEl('span', {
+      className: `codex-activity-status codex-activity-status--${status}`,
+      'aria-label': status.replace('_', ' '),
+      text: activityStatusGlyph(status),
+    }));
+    eyebrow.appendChild(createEl('strong', { text: event.label || 'Process update' }));
+    if (event.durationMs !== null && event.durationMs !== undefined) {
+      eyebrow.appendChild(createEl('span', { text: formatDuration(event.durationMs) }));
+    }
+    if (event.repeatCount > 1) eyebrow.appendChild(createEl('span', { text: `×${event.repeatCount}` }));
+    if (event.truncated) eyebrow.appendChild(createEl('span', { className: 'codex-truncated-badge', text: 'Truncated' }));
+    body.appendChild(eyebrow);
+
+    if (event.kind === 'agent_message' || event.kind === 'reasoning') {
+      const markdown = createEl('div', { className: 'codex-event__markdown' });
+      if (event.details?.html) {
+        // This HTML is generated and allowlist-sanitized by the events API.
+        markdown.innerHTML = event.details.html;
+      } else {
+        markdown.appendChild(createEl('p', { text: event.summary || '' }));
+      }
+      body.appendChild(markdown);
+    } else if (event.kind === 'user_message') {
+      body.appendChild(createEl('p', { className: 'codex-event__user-message', text: event.details?.text || event.summary || '' }));
+    } else if (event.kind === 'file_change' && root.dataset.codexPage === 'turn') {
+      body.appendChild(createEl('a', {
+        className: 'codex-activity-card__summary codex-activity-card__summary-link',
+        href: `#codex-changed-files-${bootstrap.turn.id}`,
+        text: event.summary || 'File changes completed',
+      }));
+    } else {
+      body.appendChild(createEl('p', { className: 'codex-activity-card__summary', text: event.summary || 'Process update' }));
+    }
+
+    if (hasExpandableActivityDetails(event)) {
+      const disclosure = createEl('details', { className: 'codex-activity-detail' });
+      disclosure.appendChild(createEl('summary', { text: 'Details' }));
+      const detailsBody = createEl('div', { className: 'codex-activity-detail__body' });
+      appendActivityDetails(detailsBody, event);
+      disclosure.appendChild(detailsBody);
+      body.appendChild(disclosure);
+    }
+    wrapper.appendChild(body);
+    return wrapper;
+  }
+
+  function createGapRow(row) {
+    const seconds = Math.round(row.gapMs / 1000);
+    return createEl('div', {
+      className: `codex-activity-gap${row.gapMs >= 30000 ? ' codex-activity-gap--long' : ''}`,
+      'data-activity-row-key': row.key,
+      'data-activity-signature': String(seconds),
+    }, [createEl('span', { text: `No reported detail for ${seconds}s` })]);
+  }
+
+  function reconcileActivityRows(container, rows, newSeqs) {
+    const existing = new Map(Array.from(container.children)
+      .filter((child) => child.dataset?.activityRowKey)
+      .map((child) => [child.dataset.activityRowKey, child]));
+    const desiredNodes = rows.map((row) => {
+      const current = existing.get(row.key);
+      const signature = row.type === 'gap'
+        ? String(Math.round(row.gapMs / 1000))
+        : JSON.stringify([
+          row.event.seq, row.event.status, row.event.summary, row.event.durationMs,
+          row.event.repeatCount, row.event.details,
+        ]);
+      if (current && current.dataset.activitySignature === signature) {
+        existing.delete(row.key);
+        return current;
+      }
+      const replacement = row.type === 'gap'
+        ? createGapRow(row)
+        : createActivityCard(row.event, Boolean(newSeqs?.has(Number(row.event.seq) || 0)));
+      if (current) {
+        current.replaceWith(replacement);
+        existing.delete(row.key);
+      }
+      return replacement;
+    });
+    existing.forEach((node) => node.remove());
+    desiredNodes.forEach((node, index) => {
+      const currentAtIndex = container.children[index];
+      if (currentAtIndex !== node) container.insertBefore(node, currentAtIndex || null);
+    });
+  }
+
+  function renderActivityFeed(container, events, options = {}) {
+    const rows = buildActivityRows(events, options.mode || 'activity', options.order || 'newest');
+    Array.from(container.children).filter((child) => !child.dataset?.activityRowKey).forEach((child) => child.remove());
+    if (!rows.length) {
+      const message = !options.loaded
+        ? 'Loading activity…'
+        : (options.mode === 'issues'
+          ? 'No warnings, failures, cancellations, or truncation were reported.'
+          : (options.isRunning ? 'Waiting for the first activity update…' : 'No readable activity was stored.'));
+      container.appendChild(createEl('p', { className: 'codex-empty', text: message }));
+    } else {
+      reconcileActivityRows(container, rows, options.newSeqs);
+    }
+    if (options.errorMessage) {
+      container.appendChild(createEl('p', {
+        className: 'codex-events__notice codex-error-text',
+        text: options.isRunning ? `${options.errorMessage} Retrying automatically.` : options.errorMessage,
+      }));
+    }
+    if (options.isRunning && !options.paused) {
+      const listener = createEl('div', {
+        className: 'codex-events__live',
+        'aria-label': 'Listening for more activity',
+      });
+      listener.appendChild(createEl('span', { className: 'codex-events__live-dot', 'aria-hidden': 'true' }));
+      listener.appendChild(createEl('span', { text: 'Live · listening for work updates' }));
+      container.appendChild(listener);
+    }
+  }
+
+  function turnFeedIsInspectingHistory(turnId) {
+    const state = getLiveActivityState(turnId);
+    const container = root.querySelector(`[data-events-for="${CSS.escape(turnId)}"]`);
+    if (!container || container.clientHeight === 0 || container.scrollHeight <= container.clientHeight + 20) return false;
+    if (state.order === 'chronological') {
+      return container.scrollHeight - container.scrollTop - container.clientHeight > 80;
+    }
+    return container.scrollTop > 80;
+  }
+
+  function updateNewUpdatesButton(turnId) {
+    const state = getLiveActivityState(turnId);
+    const button = root.querySelector(`[data-action="show-new-updates"][data-turn-id="${CSS.escape(turnId)}"]`);
+    if (!button) return;
+    button.hidden = state.pendingNewCount <= 0;
+    button.textContent = `${state.pendingNewCount} new ${state.pendingNewCount === 1 ? 'update' : 'updates'}`;
+  }
+
+  function renderPlanSidebar(state) {
+    const card = root.querySelector('[data-plan-sidebar]');
+    if (!card) return;
+    const content = card.querySelector('[data-plan-content]');
+    const progress = card.querySelector('[data-plan-progress]');
+    const latest = state.events.filter((event) => event.kind === 'plan').sort((a, b) => Number(b.seq) - Number(a.seq))[0];
+    const items = latest?.details?.items || [];
+    const complete = items.filter((item) => item.status === 'completed').length;
+    progress.textContent = items.length ? `${complete} / ${items.length} complete` : 'Not reported';
+    content.innerHTML = '';
+    if (!items.length) {
+      content.appendChild(createEl('p', { className: 'codex-empty', text: 'No plan reported.' }));
+      return;
+    }
+    const list = createEl('ol', { className: 'codex-side-plan' });
+    items.forEach((item) => {
+      const row = createEl('li', { className: `codex-side-plan__item codex-side-plan__item--${item.status}` });
+      row.appendChild(createEl('span', { 'aria-hidden': 'true', text: item.status === 'completed' ? '✓' : (item.status === 'inProgress' ? '●' : '○') }));
+      row.appendChild(createEl('span', { text: item.text }));
+      list.appendChild(row);
+    });
+    content.appendChild(list);
+  }
+
+  function renderFilesSidebar(state) {
+    const card = root.querySelector('[data-files-sidebar]');
+    if (!card) return;
+    const content = card.querySelector('[data-files-content]');
+    const count = card.querySelector('[data-files-count]');
+    const files = summarizeEditedFiles(state.events);
+    count.textContent = String(files.length);
+    content.innerHTML = '';
+    if (!files.length) {
+      content.appendChild(createEl('p', { className: 'codex-empty', text: 'No file changes reported.' }));
+      return;
+    }
+    const list = createEl('ul', { className: 'codex-side-files' });
+    files.forEach((file) => {
+      const row = createEl('li');
+      const main = createEl('div');
+      main.appendChild(createEl('code', { text: file.path }));
+      if (file.destination) main.appendChild(createEl('small', { text: `→ ${file.destination}` }));
+      row.appendChild(main);
+      const meta = createEl('span', { className: 'codex-side-files__meta' });
+      meta.appendChild(createEl('strong', { text: (file.kinds[0] || 'update').toUpperCase() }));
+      if (file.additions || file.deletions) {
+        meta.appendChild(createEl('small', { text: `+${file.additions} / −${file.deletions}` }));
+      }
+      row.appendChild(meta);
+      list.appendChild(row);
+    });
+    content.appendChild(list);
+  }
+
+  function renderAgentsSidebar(state) {
+    const card = root.querySelector('[data-agents-sidebar]');
+    if (!card) return;
+    const agentsByPath = new Map();
+    state.events.filter((event) => event.kind === 'collaboration').forEach((event) => {
+      (event.details?.agents || []).forEach((agent) => agentsByPath.set(agent.path, agent));
+      if (event.details?.agentPath) {
+        agentsByPath.set(event.details.agentPath, {
+          path: event.details.agentPath,
+          status: event.status,
+        });
+      }
+    });
+    const activeAgents = Array.from(agentsByPath.values()).filter((agent) => ['pending', 'running'].includes(agent.status));
+    card.hidden = activeAgents.length === 0;
+    if (!activeAgents.length) return;
+    card.querySelector('[data-agents-count]').textContent = String(activeAgents.length);
+    const content = card.querySelector('[data-agents-content]');
+    content.innerHTML = '';
+    const list = createEl('ul', { className: 'codex-side-agents' });
+    activeAgents.forEach((agent) => {
+      list.appendChild(createEl('li', {}, [
+        createEl('code', { text: agent.path || 'Agent' }),
+        createEl('span', { text: agent.status }),
+      ]));
+    });
+    content.appendChild(list);
+  }
+
+  function renderActivityRibbon(state) {
+    const ribbon = root.querySelector('[data-activity-ribbon]');
+    const track = ribbon?.querySelector('.codex-activity-ribbon__track');
+    if (!track) return;
+    track.innerHTML = '';
+    const start = new Date(bootstrap.turn?.startedAt || bootstrap.turn?.queuedAt || Date.now()).getTime();
+    const end = new Date(bootstrap.turn?.completedAt || Date.now()).getTime();
+    const span = Math.max(1, end - start);
+    state.events.forEach((event) => {
+      if (!['message', 'work', 'collaboration', 'issue'].includes(event.category) && !event.isIssue) return;
+      let eventEnd = event.status === 'running'
+        ? Date.now()
+        : new Date(event.completedAt || event.timestamp || start).getTime();
+      let eventStart = new Date(event.startedAt || event.timestamp || eventEnd).getTime();
+      if (!event.startedAt && Number.isFinite(Number(event.durationMs)) && Number(event.durationMs) > 0) {
+        eventStart = eventEnd - Number(event.durationMs);
+      }
+      if (!Number.isFinite(eventStart) || !Number.isFinite(eventEnd)) return;
+      if (eventEnd < eventStart) eventEnd = eventStart;
+      const left = Math.max(0, Math.min(100, ((eventStart - start) / span) * 100));
+      const width = Math.max(event.category === 'message' || event.isIssue ? 0.45 : 0.8, Math.min(100 - left, ((eventEnd - eventStart) / span) * 100));
+      const type = event.isIssue ? 'issue' : (event.category === 'message' ? 'message' : 'work');
+      const marker = createEl('span', {
+        className: `codex-activity-ribbon__segment codex-activity-ribbon__segment--${type}`,
+        title: event.summary || event.label || 'Activity',
+        'aria-hidden': 'true',
+      });
+      marker.style.left = `${left}%`;
+      marker.style.width = `${width}%`;
+      track.appendChild(marker);
+    });
+  }
+
+  function updateOperationalSummary(turnId) {
+    if (root.dataset.codexPage !== 'turn') return;
+    const state = getLiveActivityState(turnId);
+    const counts = summarizeActivityEvents(state.events);
+    const setText = (selector, value) => {
+      const element = root.querySelector(selector);
+      if (element) element.textContent = value;
+    };
+    setText('[data-activity-count]', String(counts.activity));
+    setText('[data-issue-count]', String(counts.issues));
+    setText('[data-raw-count]', String(Math.max(state.reportedCount, Number(bootstrap.turn?.eventCount) || 0)));
+    setText(
+      '[data-process-count-summary]',
+      `${counts.messages} ${counts.messages === 1 ? 'message' : 'messages'} · ${counts.actions} ${counts.actions === 1 ? 'action' : 'actions'} · ${counts.issues} ${counts.issues === 1 ? 'issue' : 'issues'}`
+    );
+    const orderButton = root.querySelector(`[data-action="toggle-event-order"][data-turn-id="${CSS.escape(turnId)}"]`);
+    if (orderButton) orderButton.textContent = state.order === 'chronological' ? 'Chronological' : 'Newest first';
+    const pauseButton = root.querySelector(`[data-action="toggle-live-pause"][data-turn-id="${CSS.escape(turnId)}"]`);
+    if (pauseButton) {
+      pauseButton.hidden = state.status !== 'running';
+      pauseButton.textContent = state.paused ? 'Resume live' : 'Pause live';
+      pauseButton.setAttribute('aria-pressed', state.paused ? 'true' : 'false');
+    }
+    updateNewUpdatesButton(turnId);
+    renderPlanSidebar(state);
+    renderFilesSidebar(state);
+    renderAgentsSidebar(state);
+    renderActivityRibbon(state);
+  }
+
+  function updateTurnElapsedDisplay() {
+    if (root.dataset.codexPage !== 'turn' || !bootstrap.turn) return;
+    const element = root.querySelector('[data-process-duration]');
+    if (!element) return;
+    const liveCluster = root.querySelector('[data-process-live-cluster]');
+    if (liveCluster) liveCluster.hidden = bootstrap.turn.status !== 'running';
+    let durationMs = bootstrap.turn.durationMs === null || bootstrap.turn.durationMs === undefined
+      ? NaN
+      : Number(bootstrap.turn.durationMs);
+    if (bootstrap.turn.status === 'running' && bootstrap.turn.startedAt) {
+      durationMs = Math.max(0, Date.now() - new Date(bootstrap.turn.startedAt).getTime());
+    }
+    if (!Number.isFinite(durationMs) || durationMs < 0) {
+      element.textContent = '-';
+      return;
+    }
+    const totalSeconds = Math.floor(durationMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    element.textContent = [
+      hours ? `${hours}h` : '',
+      minutes || hours ? `${minutes}m` : '',
+      `${seconds}s`,
+    ].filter(Boolean).join(' ');
+  }
+
+  function renderOperationalPanels(turnId, options = {}) {
+    if (root.dataset.codexPage !== 'turn') return;
+    const state = getLiveActivityState(turnId);
+    if (state.pendingNewCount > 0 && !options.force) {
+      updateOperationalSummary(turnId);
+      return;
+    }
+    const common = {
+      errorMessage: state.errorMessage,
+      isRunning: state.status === 'running',
+      loaded: state.loaded,
+      newSeqs: options.newSeqs,
+      order: state.order,
+      paused: state.paused,
+    };
+    const activity = root.querySelector(`[data-events-for="${CSS.escape(turnId)}"]`);
+    const issues = root.querySelector(`[data-issues-for="${CSS.escape(turnId)}"]`);
+    if (activity) renderActivityFeed(activity, state.events, { ...common, mode: 'activity' });
+    if (issues) renderActivityFeed(issues, state.events, { ...common, mode: 'issues' });
+    updateOperationalSummary(turnId);
+  }
+
+  function rawEventMatchesFilters(event, panel) {
+    const filters = Object.fromEntries(Array.from(panel.querySelectorAll('[data-raw-filter]'))
+      .map((control) => [control.dataset.rawFilter, String(control.value || '').trim().toLowerCase()]));
+    if (filters.category && String(event.category).toLowerCase() !== filters.category) return false;
+    if (filters.stream && String(event.stream).toLowerCase() !== filters.stream) return false;
+    if (filters.severity && String(event.severity).toLowerCase() !== filters.severity) return false;
+    if (filters.eventType && !String(event.eventType).toLowerCase().includes(filters.eventType)) return false;
+    if (filters.text) {
+      const searchable = `${event.summary || ''}\n${event.text || ''}\n${JSON.stringify(event.payload || {})}`.toLowerCase();
+      if (!searchable.includes(filters.text)) return false;
+    }
+    return true;
+  }
+
+  function groupRawEvents(events) {
+    const groups = [];
+    (Array.isArray(events) ? events : []).forEach((event) => {
+      const previous = groups[groups.length - 1];
+      const canGroup = event.category === 'telemetry' || event.severity === 'warning' || event.severity === 'error';
+      if (canGroup && previous && previous.eventType === event.eventType && previous.summary === event.summary) {
+        previous.repeatCount = (previous.repeatCount || 1) + 1;
+        previous.groupedEvents.push(event);
+        return;
+      }
+      groups.push({ ...event, groupedEvents: [event], repeatCount: 1 });
+    });
+    return groups;
+  }
+
+  function populateRawEventDetails(body, event) {
+    if (body.dataset.loaded === 'true') return;
+    body.dataset.loaded = 'true';
+    if (event.text) {
+      body.appendChild(createEl('h4', { text: 'Event text' }));
+      body.appendChild(createEl('pre', { text: event.text }));
+    }
+    body.appendChild(createEl('h4', { text: 'Payload' }));
+    body.appendChild(createEl('pre', { text: JSON.stringify(event.payload || {}, null, 2) }));
+    const copy = createEl('button', { type: 'button', className: 'codex-small-button', text: 'Copy event' });
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify({
+          seq: event.seq,
+          eventType: event.eventType,
+          stream: event.stream,
+          severity: event.severity,
+          createdAt: event.createdAt,
+          text: event.text,
+          payload: event.payload,
+        }, null, 2));
+        copy.textContent = 'Copied';
+      } catch (_error) {
+        copy.textContent = 'Copy failed';
+      }
+    });
+    body.appendChild(copy);
+  }
+
+  function createRawEventRow(event) {
+    const disclosure = createEl('details', { className: 'codex-raw-event' });
+    const summary = createEl('summary');
+    const identity = createEl('span', { className: 'codex-raw-event__identity' });
+    identity.appendChild(createEl('strong', { text: `#${event.seq} ${event.eventType}` }));
+    identity.appendChild(createEl('small', { text: event.summary || 'No summary' }));
+    summary.appendChild(identity);
+    const meta = createEl('span', { className: 'codex-raw-event__meta' });
+    meta.appendChild(createEl('span', { text: [event.stream, event.severity].filter(Boolean).join(' · ') }));
+    meta.appendChild(createEl('time', { datetime: event.createdAt || '', text: formatActivityClock(event.createdAt) }));
+    if (event.repeatCount > 1) meta.appendChild(createEl('b', { text: `×${event.repeatCount}` }));
+    if (event.truncated) meta.appendChild(createEl('b', { className: 'codex-truncated-badge', text: 'Truncated' }));
+    summary.appendChild(meta);
+    disclosure.appendChild(summary);
+    const body = createEl('div', { className: 'codex-raw-event__body' });
+    disclosure.appendChild(body);
+    disclosure.addEventListener('toggle', () => {
+      if (disclosure.open) populateRawEventDetails(body, event);
+    });
+    return disclosure;
+  }
+
+  function renderRawEvents(turnId) {
+    const state = getLiveActivityState(turnId);
+    const container = root.querySelector(`[data-raw-events-for="${CSS.escape(turnId)}"]`);
+    const panel = container?.closest('[data-process-panel="raw"]');
+    if (!container || !panel) return;
+    container.innerHTML = '';
+    if (!state.rawLoaded && state.rawLoading) {
+      container.appendChild(createEl('p', { className: 'codex-empty', text: 'Loading raw events…' }));
+      return;
+    }
+    const filtered = state.rawEvents
+      .filter((event) => rawEventMatchesFilters(event, panel))
+      .sort((left, right) => state.order === 'chronological'
+        ? Number(left.seq) - Number(right.seq)
+        : Number(right.seq) - Number(left.seq));
+    const grouped = groupRawEvents(filtered);
+    if (!grouped.length) {
+      container.appendChild(createEl('p', {
+        className: 'codex-empty',
+        text: state.rawLoaded ? 'No loaded raw events match these filters.' : 'Raw events load only when this tab is opened.',
+      }));
+    } else {
+      grouped.forEach((event) => container.appendChild(createRawEventRow(event)));
+    }
+    if (state.rawErrorMessage) {
+      container.appendChild(createEl('p', {
+        className: 'codex-events__notice codex-error-text',
+        text: state.rawErrorMessage,
+      }));
+    }
+    const more = root.querySelector(`[data-action="load-more-raw-events"][data-turn-id="${CSS.escape(turnId)}"]`);
+    if (more) {
+      more.hidden = !state.rawHasMore;
+      more.disabled = state.rawLoading;
+      more.textContent = state.rawLoading ? 'Loading…' : 'Load older events';
+    }
+  }
+
+  async function loadRawTurnEvents(turnId) {
+    const state = getLiveActivityState(turnId);
+    if (state.rawLoading || (state.rawLoaded && !state.rawHasMore)) return;
+    state.rawLoading = true;
+    renderRawEvents(turnId);
+    try {
+      const before = state.rawBeforeSeq ? `&beforeSeq=${encodeURIComponent(state.rawBeforeSeq)}` : '';
+      const payload = await requestJson(
+        `/codex/api/turns/${encodeURIComponent(turnId)}/raw-events?limit=${RAW_EVENT_PAGE_SIZE}${before}`,
+        { cache: 'no-store' }
+      );
+      const known = new Set(state.rawEvents.map((event) => Number(event.seq) || 0));
+      (payload.events || []).forEach((event) => {
+        if (!known.has(Number(event.seq) || 0)) state.rawEvents.push(event);
+      });
+      state.rawEvents.sort((left, right) => Number(right.seq) - Number(left.seq));
+      state.rawLoaded = true;
+      state.rawHasMore = Boolean(payload.page?.hasMore);
+      state.rawBeforeSeq = payload.page?.nextBeforeSeq || null;
+      state.rawErrorMessage = '';
+      state.reportedCount = Math.max(state.reportedCount, Number(payload.page?.total) || 0);
+    } catch (error) {
+      state.rawErrorMessage = error.message || 'Unable to load raw events.';
+    } finally {
+      state.rawLoading = false;
+      renderRawEvents(turnId);
+      updateOperationalSummary(turnId);
     }
   }
 
@@ -1844,6 +2796,14 @@
     container.innerHTML = '';
     const eventList = Array.isArray(events) ? events : [];
     const viewMode = normalizeEventViewMode(container.dataset.eventViewMode);
+    if (eventList.some((event) => event?.category || event?.summary)) {
+      renderActivityFeed(container, eventList, {
+        ...options,
+        mode: viewMode === 'issues' ? 'issues' : 'activity',
+        order: root.dataset.codexPage === 'turn' ? getLiveActivityState(container.dataset.eventsFor).order : 'chronological',
+      });
+      return;
+    }
     const editedFiles = viewMode === 'focused' ? summarizeEditedFiles(eventList) : [];
     const visibleEvents = viewMode === 'focused'
       ? selectFocusedProcessEvents(eventList)
@@ -2003,6 +2963,28 @@
           await toggleEvents(button.dataset.turnId);
         } else if (action === 'set-event-view') {
           setEventViewMode(button.dataset.turnId, button.dataset.eventViewMode);
+        } else if (action === 'toggle-event-order') {
+          const state = getLiveActivityState(button.dataset.turnId);
+          state.order = state.order === 'newest' ? 'chronological' : 'newest';
+          state.pendingNewCount = 0;
+          storeEventOrder(state.order);
+          renderOperationalPanels(button.dataset.turnId, { force: true });
+          if (state.rawLoaded) renderRawEvents(button.dataset.turnId);
+          const feed = root.querySelector(`[data-events-for="${CSS.escape(button.dataset.turnId)}"]`);
+          if (feed) feed.scrollTop = state.order === 'newest' ? 0 : feed.scrollHeight;
+        } else if (action === 'toggle-live-pause') {
+          const state = getLiveActivityState(button.dataset.turnId);
+          state.paused = !state.paused;
+          renderOperationalPanels(button.dataset.turnId, { force: true });
+          if (!state.paused) loadTurnActivity(button.dataset.turnId).catch(() => {});
+        } else if (action === 'show-new-updates') {
+          const state = getLiveActivityState(button.dataset.turnId);
+          state.pendingNewCount = 0;
+          renderOperationalPanels(button.dataset.turnId, { force: true });
+          const feed = root.querySelector(`[data-events-for="${CSS.escape(button.dataset.turnId)}"]`);
+          if (feed) feed.scrollTop = state.order === 'newest' ? 0 : feed.scrollHeight;
+        } else if (action === 'load-more-raw-events') {
+          await loadRawTurnEvents(button.dataset.turnId);
         } else if (action === 'archive-session') {
           await requestJson(`/codex/api/sessions/${encodeURIComponent(button.dataset.sessionId)}/archive`, { method: 'POST', body: '{}' });
           window.location.href = '/codex';
@@ -2283,12 +3265,36 @@
       });
     }
 
+    root.querySelectorAll('[data-raw-filter]').forEach((control) => {
+      control.addEventListener(control.tagName === 'SELECT' ? 'change' : 'input', () => {
+        renderRawEvents(root.dataset.turnId);
+      });
+    });
+    const tabList = root.querySelector('.codex-process-tabs');
+    if (tabList) {
+      tabList.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        const tabs = Array.from(tabList.querySelectorAll('[role="tab"]'));
+        const current = tabs.indexOf(document.activeElement);
+        if (current < 0) return;
+        event.preventDefault();
+        let next = event.key === 'Home' ? 0 : (event.key === 'End' ? tabs.length - 1 : current + (event.key === 'ArrowRight' ? 1 : -1));
+        next = (next + tabs.length) % tabs.length;
+        tabs[next].focus();
+        tabs[next].click();
+      });
+    }
+
     syncPageAutoRefresh = syncAutoRefresh;
     syncLiveActivityTurns(bootstrap.turn ? [bootstrap.turn] : []);
     if (bootstrap.turn) {
       updateLiveActivityIndicators(bootstrap.turn.id, { renderEventPanels: true });
       syncAdditionalMessageForm(bootstrap.turn);
+      updateOperationalSummary(bootstrap.turn.id);
+      updateTurnElapsedDisplay();
+      loadTurnActivity(bootstrap.turn.id).catch(() => {});
     }
+    window.setInterval(updateTurnElapsedDisplay, 1000);
     syncAutoRefresh({ turn: bootstrap.turn });
   }
 

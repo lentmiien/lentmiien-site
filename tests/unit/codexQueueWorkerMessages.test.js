@@ -197,4 +197,50 @@ describe('CodexQueueWorker additional messages', () => {
       }),
     }));
   });
+
+  test('clips large command output without discarding command identity or completion fields', async () => {
+    worker.getConfig.mockReturnValue({ maxEventTextChars: 1000 });
+    const createSpy = jest.spyOn(CodexEvent, 'create').mockResolvedValue({});
+
+    await worker.recordEvent(active.turn, 8, {
+      stream: 'stdout-json',
+      eventType: 'item.completed',
+      payload: {
+        threadId: 'thread-1',
+        turnId: 'codex-turn-1',
+        item: {
+          id: 'command-42',
+          type: 'command_execution',
+          command: 'npm test -- tests/unit/codexEventPresentation.test.js',
+          status: 'completed',
+          exitCode: 0,
+          durationMs: 4321,
+          cwd: '/workspace/project',
+          aggregatedOutput: `test output\n${'x'.repeat(20000)}\nFINAL FAILURE`,
+        },
+      },
+      severity: 'info',
+      hiddenByDefault: true,
+    });
+
+    const storedPayload = createSpy.mock.calls[0][0].payload;
+    expect(storedPayload).toEqual(expect.objectContaining({
+      threadId: 'thread-1',
+      turnId: 'codex-turn-1',
+      item: expect.objectContaining({
+        id: 'command-42',
+        type: 'command_execution',
+        command: 'npm test -- tests/unit/codexEventPresentation.test.js',
+        status: 'completed',
+        exitCode: 0,
+        durationMs: 4321,
+        cwd: '/workspace/project',
+        aggregatedOutput: expect.stringContaining('[output truncated]'),
+      }),
+      truncated: true,
+    }));
+    expect(storedPayload).not.toHaveProperty('jsonPreview');
+    expect(storedPayload.item.aggregatedOutput).toContain('FINAL FAILURE');
+    expect(JSON.stringify(storedPayload).length).toBeLessThanOrEqual(1000);
+  });
 });

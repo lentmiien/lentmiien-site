@@ -34,6 +34,28 @@ describe('Codex Runpod provider security wiring', () => {
     expect(CODEX_ROLE_CAPABILITY_BUNDLES.other).not.toContain(capability);
   });
 
+  test.each(['turnRead', 'turnCancel', 'turnRetry'])(
+    'grants %s only to recognized authenticated role bundles',
+    (capabilityKey) => {
+      const capability = CODEX_CAPABILITIES[capabilityKey];
+
+      expect(CODEX_ROLE_CAPABILITY_BUNDLES.admin).toContain(capability);
+      expect(CODEX_ROLE_CAPABILITY_BUNDLES.family).toContain(capability);
+      expect(CODEX_ROLE_CAPABILITY_BUNDLES.user).toContain(capability);
+      expect(CODEX_ROLE_CAPABILITY_BUNDLES.other).not.toContain(capability);
+    }
+  );
+
+  test('keeps the log-review service identity owner-scoped and unable to run paid infrastructure', () => {
+    expect(CODEX_ROLE_CAPABILITY_BUNDLES.codex_system).toEqual(expect.arrayContaining([
+      CODEX_CAPABILITIES.turnRead,
+      CODEX_CAPABILITIES.turnRetry,
+      CODEX_CAPABILITIES.turnSteer,
+    ]));
+    expect(CODEX_ROLE_CAPABILITY_BUNDLES.codex_system)
+      .not.toContain(CODEX_CAPABILITIES.runpodModelRun);
+  });
+
   test('requires CSRF validation for every Codex mutation and sends the token from the browser', () => {
     const mutationRoutes = routeSource
       .split('\n')

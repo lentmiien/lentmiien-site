@@ -23,28 +23,158 @@ function clipText(value, maxLength) {
   return `${text.slice(0, maxLength - 18)}\n[output truncated]`;
 }
 
+function clipVerboseText(value, maxLength) {
+  const text = String(value || '');
+  if (text.length <= maxLength) return text;
+  const marker = '\n[output truncated]\n';
+  const available = Math.max(0, maxLength - marker.length);
+  const headLength = Math.ceil(available * 0.55);
+  const tailLength = available - headLength;
+  return `${text.slice(0, headLength)}${marker}${text.slice(text.length - tailLength)}`;
+}
+
+const PAYLOAD_KEY_PRIORITY = Object.freeze([
+  'type', 'id', 'status', 'threadId', 'thread_id', 'turnId', 'turn_id',
+  'deliveryStatus', 'ownerId', 'phase', 'command', 'cwd', 'exitCode', 'exit_code',
+  'durationMs', 'duration_ms', 'error', 'failure', 'server', 'tool', 'namespace', 'readOnlyHint',
+  'commandActions', 'command_actions', 'changes', 'action', 'item',
+]);
+const PAYLOAD_VERBOSE_KEY_PATTERN = /(?:aggregated.?output|content|delta|diff|error|output|prompt|result|stderr|stdout|text)$/i;
+const PAYLOAD_SECRET_KEY_PATTERN = /(?:api[_-]?key|authorization|cookie|credential|password|private[_-]?key|secret|session[_-]?token|token)$/i;
+
+function orderedPayloadKeys(value) {
+  const priority = new Map(PAYLOAD_KEY_PRIORITY.map((key, index) => [key, index]));
+  return Object.keys(value).sort((left, right) => {
+    const leftPriority = priority.has(left) ? priority.get(left) : PAYLOAD_KEY_PRIORITY.length;
+    const rightPriority = priority.has(right) ? priority.get(right) : PAYLOAD_KEY_PRIORITY.length;
+    const leftVerbose = PAYLOAD_VERBOSE_KEY_PATTERN.test(left) ? 1 : 0;
+    const rightVerbose = PAYLOAD_VERBOSE_KEY_PATTERN.test(right) ? 1 : 0;
+    return leftPriority - rightPriority || leftVerbose - rightVerbose;
+  });
+}
+
+function compactPayloadFallback(payload, maxLength) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  const nested = source.payload && typeof source.payload === 'object' ? source.payload : {};
+  const item = source.item && typeof source.item === 'object'
+    ? source.item
+    : (nested.item && typeof nested.item === 'object' ? nested.item : null);
+  const result = { truncated: true };
+  ['threadId', 'thread_id', 'turnId', 'turn_id', 'deliveryStatus', 'ownerId', 'status', 'message']
+    .forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(source, key)) result[key] = source[key];
+    });
+  if (item) {
+    result.item = {};
+    [
+      'type', 'id', 'status', 'phase', 'command', 'cwd', 'exitCode', 'exit_code',
+      'durationMs', 'duration_ms', 'server', 'tool', 'namespace', 'readOnlyHint',
+      'commandActions', 'command_actions', 'changes', 'action', 'appContext', 'source',
+      'pluginId', 'scriptPath',
+    ].forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(item, key)) result.item[key] = item[key];
+    });
+    const verboseKey = ['aggregatedOutput', 'aggregated_output', 'output', 'result', 'text', 'prompt']
+      .find((key) => Object.prototype.hasOwnProperty.call(item, key));
+    if (verboseKey) {
+      result.item[verboseKey] = clipVerboseText(
+        item[verboseKey],
+        Math.max(100, Math.floor(maxLength / 3))
+      );
+    }
+  }
+  const serialized = JSON.stringify(result);
+  if (serialized.length <= maxLength) return result;
+  if (result.item) {
+    delete result.item.commandActions;
+    delete result.item.command_actions;
+    delete result.item.changes;
+    delete result.item.result;
+    delete result.item.output;
+    delete result.item.aggregatedOutput;
+    delete result.item.aggregated_output;
+    result.item.truncated = true;
+  }
+  return result;
+}
+
 function sanitizePayload(payload, maxLength) {
   if (!payload || typeof payload !== 'object') {
     return payload || {};
   }
-  if (payload.item?.type === 'user_message') {
-    return {
-      ...payload,
-      item: {
-        ...payload.item,
-        text: clipText(payload.item.text, Math.max(100, maxLength - 500)),
-      },
-    };
-  }
-  try {
-    const serialized = JSON.stringify(payload);
-    if (serialized.length <= maxLength) {
-      return payload;
+
+  const budget = {
+    remaining: Math.max(100, maxLength - 300),
+    truncated: false,
+    truncatedFields: [],
+  };
+  const visit = (value, key = '', fieldPath = key, depth = 0) => {
+    if (PAYLOAD_SECRET_KEY_PATTERN.test(key)) {
+      return '[redacted]';
     }
-    return {
-      truncated: true,
-      jsonPreview: serialized.slice(0, maxLength),
-    };
+    if (value === null || value === undefined || typeof value === 'boolean' || typeof value === 'number') {
+      budget.remaining -= 12;
+      return value;
+    }
+    if (typeof value === 'string') {
+      const preferredLimit = PAYLOAD_VERBOSE_KEY_PATTERN.test(key)
+        ? Math.max(100, Math.min(6000, Math.floor(maxLength / 2)))
+        : Math.max(80, Math.min(2000, Math.floor(maxLength / 4)));
+      const allowed = Math.max(40, Math.min(preferredLimit, budget.remaining));
+      const clipped = PAYLOAD_VERBOSE_KEY_PATTERN.test(key)
+        ? clipVerboseText(value, allowed)
+        : clipText(value, allowed);
+      budget.remaining = Math.max(0, budget.remaining - clipped.length - key.length - 6);
+      if (clipped.length < String(value).length) {
+        budget.truncated = true;
+        budget.truncatedFields.push(fieldPath);
+      }
+      return clipped;
+    }
+    if (depth >= 10 || budget.remaining <= 40) {
+      budget.truncated = true;
+      budget.truncatedFields.push(fieldPath);
+      return '[nested data truncated]';
+    }
+    if (Array.isArray(value)) {
+      const limit = Math.min(value.length, 100);
+      const result = [];
+      for (let index = 0; index < limit && budget.remaining > 40; index += 1) {
+        result.push(visit(value[index], key, `${fieldPath}[${index}]`, depth + 1));
+      }
+      if (result.length < value.length) {
+        budget.truncated = true;
+        budget.truncatedFields.push(fieldPath);
+        result.push(`[${value.length - result.length} entries truncated]`);
+      }
+      return result;
+    }
+    const result = {};
+    const keys = orderedPayloadKeys(value);
+    for (const childKey of keys) {
+      if (budget.remaining <= 40) {
+        budget.truncated = true;
+        budget.truncatedFields.push(fieldPath || 'payload');
+        break;
+      }
+      result[childKey] = visit(
+        value[childKey],
+        childKey,
+        fieldPath ? `${fieldPath}.${childKey}` : childKey,
+        depth + 1
+      );
+    }
+    return result;
+  };
+
+  try {
+    const cloned = visit(payload, '', '', 0);
+    if (budget.truncated) {
+      cloned.truncated = true;
+      cloned.truncatedFields = Array.from(new Set(budget.truncatedFields.filter(Boolean))).slice(0, 30);
+    }
+    if (JSON.stringify(cloned).length <= maxLength) return cloned;
+    return compactPayloadFallback(cloned, maxLength);
   } catch (_error) {
     return {
       truncated: true,

@@ -327,6 +327,13 @@ async function canSteerCodexTurns(user) {
   });
 }
 
+async function hasCodexCapability(user, capability) {
+  return hasCapabilities(user, [capability], {
+    roleModel: Role,
+    roleCapabilityBundles: CODEX_ROLE_CAPABILITY_BUNDLES,
+  });
+}
+
 function getPrincipalId(user) {
   return normalizeOptionalString(user && (user._id || user.id), 160);
 }
@@ -341,6 +348,43 @@ function canAccessTurnForSteering(turn, user) {
   const principalId = getPrincipalId(user);
   const ownerId = normalizeOptionalString(turn.createdBy && turn.createdBy.id, 160);
   return Boolean(principalId && ownerId && principalId === ownerId);
+}
+
+async function assertCodexCapability(user, capability, message) {
+  let allowed = false;
+  try {
+    allowed = await hasCodexCapability(user, capability);
+  } catch (error) {
+    logger.error('Codex turn authorization failed', {
+      category: 'authorization',
+      metadata: {
+        capability,
+        errorName: error?.name || 'Error',
+      },
+    });
+    throw createHttpError(503, 'Codex authorization is temporarily unavailable.');
+  }
+  if (!allowed) {
+    throw createHttpError(403, message);
+  }
+}
+
+function buildTurnOwnerScope(turnId, user) {
+  const query = { _id: turnId };
+  if (user?.type_user === 'admin') return query;
+  const principalId = getPrincipalId(user);
+  if (!principalId) throw createHttpError(403, 'Your account cannot access Codex turns.');
+  query['createdBy.id'] = principalId;
+  return query;
+}
+
+async function findAuthorizedTurn(turnIdInput, user, capability, deniedMessage) {
+  const turnId = normalizeOptionalString(turnIdInput, 160);
+  if (!turnId) throw createHttpError(400, 'Turn id is required.');
+  await assertCodexCapability(user, capability, deniedMessage);
+  const turn = await CodexTurn.findOne(buildTurnOwnerScope(turnId, user)).lean().exec();
+  if (!turn) throw createHttpError(404, 'Turn not found.');
+  return turn;
 }
 
 async function canSteerTurn(turn, user) {
@@ -2603,10 +2647,12 @@ async function getSessionDetail(sessionId, options = {}) {
 }
 
 async function getTurnDetail(turnId, options = {}) {
-  const turn = await CodexTurn.findById(turnId).lean().exec();
-  if (!turn) {
-    throw createHttpError(404, 'Turn not found.');
-  }
+  const turn = await findAuthorizedTurn(
+    turnId,
+    options.user,
+    CODEX_CAPABILITIES.turnRead,
+    'You do not have permission to read Codex turns.'
+  );
   const canAddMessagePromise = canSteerTurn(turn, options.user).catch((error) => {
     logger.error('Codex turn message availability lookup failed', {
       category: 'authorization',
@@ -2629,12 +2675,23 @@ async function getTurnDetail(turnId, options = {}) {
   const turnsWithUsage = annotateTurnsWithTokenUsage(sessionTurns.length ? sessionTurns : [turn]);
   const turnWithUsage = turnsWithUsage.find((entry) => String(entry._id) === String(turn._id)) ||
     annotateTurnsWithTokenUsage([turn])[0];
-  const serializedTurn = serializeTurn(turnWithUsage, { workspace, pricingByProvider });
+  const serializedTurn = serializeTurn(turnWithUsage, {
+    workspace: serializeWorkspace(workspace, { target, exposeRootPath: false }),
+    pricingByProvider,
+    exposeOperationalMetadata: false,
+    exposeOwner: false,
+  });
   serializedTurn.canAddMessage = canAddMessage;
   return {
     turn: serializedTurn,
-    session: serializeSession(session, { workspace, target }),
-    workspace: serializeWorkspace(workspace, { target }),
+    session: serializeSession(session, {
+      workspace,
+      target,
+      exposeOwner: false,
+      exposeRootPath: false,
+      exposeOperationalMetadata: false,
+    }),
+    workspace: serializeWorkspace(workspace, { target, exposeRootPath: false }),
     target: serializeTarget(target),
     pricing: pricingByProvider.openai,
     pricingByProvider,
@@ -2642,35 +2699,49 @@ async function getTurnDetail(turnId, options = {}) {
   };
 }
 
-async function listTurnEvents(turnId, options = {}) {
-  const afterSeq = Math.max(Number.parseInt(options.afterSeq, 10) || 0, 0);
-  const query = {
+async function listTurnEventPage(turnId, options = {}) {
+  const turn = await findAuthorizedTurn(
     turnId,
-    seq: { $gt: afterSeq },
+    options.user,
+    CODEX_CAPABILITIES.turnRead,
+    'You do not have permission to read Codex turns.'
+  );
+  const afterSeq = Math.max(Number.parseInt(options.afterSeq, 10) || 0, 0);
+  const beforeSeq = Math.max(Number.parseInt(options.beforeSeq, 10) || 0, 0);
+  const descending = options.order === 'desc';
+  const query = { turnId: String(turn._id) };
+  if (afterSeq || beforeSeq) {
+    query.seq = {};
+    if (afterSeq) query.seq.$gt = afterSeq;
+    if (beforeSeq) query.seq.$lt = beforeSeq;
+  }
+  const config = getRuntimeConfig();
+  const hasLimit = options.limit !== undefined && options.limit !== null &&
+    String(options.limit).trim() !== '' && String(options.limit).trim().toLowerCase() !== 'all';
+  const requestedLimit = hasLimit
+    ? Math.max(1, Math.min(Number.parseInt(options.limit, 10) || 100, Math.min(config.maxEventsPerTurn, 250)))
+    : null;
+  const eventQuery = CodexEvent.find(query).sort({ seq: descending ? -1 : 1 });
+  if (requestedLimit) eventQuery.limit(requestedLimit + 1);
+  const [storedEvents, workspace] = await Promise.all([
+    eventQuery.lean().exec(),
+    CodexWorkspace.findById(turn.workspaceId).select({ rootPath: 1, pathStyle: 1 }).lean().exec(),
+  ]);
+  const hasMore = Boolean(requestedLimit && storedEvents.length > requestedLimit);
+  const events = requestedLimit ? storedEvents.slice(0, requestedLimit) : storedEvents;
+  return {
+    events: events.map(serializeEvent),
+    hasMore,
+    total: Number(turn.eventCount) || events.length,
+    nextBeforeSeq: events.length ? Math.min(...events.map((event) => Number(event.seq) || 0)) : null,
+    turnStartedAt: turn.startedAt || turn.queuedAt || turn.createdAt || null,
+    workspaceRoot: workspace?.rootPath || '',
   };
-  if (options.user && options.user.type_user !== 'admin') {
-    const principalId = getPrincipalId(options.user);
-    query.$or = [
-      { 'payload.item.type': { $ne: 'user_message' } },
-    ];
-    if (principalId) {
-      query.$or.push({ 'payload.ownerId': principalId });
-    }
-  }
-  const eventQuery = CodexEvent.find(query).sort({ seq: 1 });
-  const requestedLimit = options.limit;
-  const hasLimit = requestedLimit !== undefined &&
-    requestedLimit !== null &&
-    String(requestedLimit).trim() !== '' &&
-    String(requestedLimit).trim().toLowerCase() !== 'all';
-  if (hasLimit) {
-    const config = getRuntimeConfig();
-    const parsedLimit = Number.parseInt(requestedLimit, 10);
-    const limit = Math.max(1, Math.min(parsedLimit || 100, config.maxEventsPerTurn));
-    eventQuery.limit(limit);
-  }
-  const events = await eventQuery.lean().exec();
-  return events.map(serializeEvent);
+}
+
+async function listTurnEvents(turnId, options = {}) {
+  const page = await listTurnEventPage(turnId, options);
+  return page.events;
 }
 
 async function getQueueState() {
@@ -2793,18 +2864,23 @@ async function queueAdditionalTurnMessage(turnIdInput, payload = {}, user) {
   };
 }
 
-async function cancelTurn(turnId) {
-  const turn = await CodexTurn.findById(turnId).exec();
-  if (!turn) {
-    throw createHttpError(404, 'Turn not found.');
-  }
+async function cancelTurn(turnId, user) {
+  const normalizedTurnId = normalizeOptionalString(turnId, 160);
+  if (!normalizedTurnId) throw createHttpError(400, 'Turn id is required.');
+  await assertCodexCapability(
+    user,
+    CODEX_CAPABILITIES.turnCancel,
+    'You do not have permission to cancel Codex turns.'
+  );
+  const turn = await CodexTurn.findOne(buildTurnOwnerScope(normalizedTurnId, user)).exec();
+  if (!turn) throw createHttpError(404, 'Turn not found.');
   if (turn.status === 'queued') {
     turn.status = 'cancelled';
     turn.completedAt = new Date();
     turn.errorMessage = 'Cancelled before Codex started.';
     await turn.save();
     await updateSessionAfterTurn(turn);
-    return serializeTurn(turn);
+    return serializeTurn(turn, { exposeOperationalMetadata: false, exposeOwner: false });
   }
   if (turn.status === 'running') {
     if (!turn.cancelRequestedAt) {
@@ -2812,16 +2888,18 @@ async function cancelTurn(turnId) {
       turn.errorMessage = 'Cancellation requested.';
       await turn.save();
     }
-    return serializeTurn(turn);
+    return serializeTurn(turn, { exposeOperationalMetadata: false, exposeOwner: false });
   }
   throw createHttpError(409, 'Only queued or running turns can be cancelled.');
 }
 
 async function retryTurn(turnId, user) {
-  const originalTurn = await CodexTurn.findById(turnId).lean().exec();
-  if (!originalTurn) {
-    throw createHttpError(404, 'Turn not found.');
-  }
+  const originalTurn = await findAuthorizedTurn(
+    turnId,
+    user,
+    CODEX_CAPABILITIES.turnRetry,
+    'You do not have permission to retry Codex turns.'
+  );
   if (!TERMINAL_TURN_STATUSES.has(originalTurn.status)) {
     throw createHttpError(409, 'Only completed turns can be retried.');
   }
@@ -2878,8 +2956,17 @@ async function retryTurn(turnId, user) {
 
   return {
     accepted: true,
-    session: serializeSession(session, { workspace }),
-    turn: serializeTurn(turn, { workspace }),
+    session: serializeSession(session, {
+      workspace,
+      exposeOwner: false,
+      exposeRootPath: false,
+      exposeOperationalMetadata: false,
+    }),
+    turn: serializeTurn(turn, {
+      workspace: serializeWorkspace(workspace, { exposeRootPath: false }),
+      exposeOperationalMetadata: false,
+      exposeOwner: false,
+    }),
     statusUrl: `/codex/turns/${encodeURIComponent(turn._id)}`,
   };
 }
@@ -3010,7 +3097,7 @@ function serializeWorkspace(workspace, extras = {}) {
     targetId: String(workspace.targetId || ''),
     target: extras.target ? serializeTarget(extras.target) : null,
     name: workspace.name || '',
-    rootPath: workspace.rootPath || '',
+    ...(extras.exposeRootPath === false ? {} : { rootPath: workspace.rootPath || '' }),
     pathStyle: workspace.pathStyle || 'posix',
     enabled: Boolean(workspace.enabled),
     description: workspace.description || '',
@@ -3033,9 +3120,14 @@ function serializeSession(session, extras = {}) {
   return {
     id: String(session._id),
     workspaceId: String(session.workspaceId || ''),
-    workspace: extras.workspace ? serializeWorkspace(extras.workspace, { target: extras.target }) : null,
+    workspace: extras.workspace ? serializeWorkspace(extras.workspace, {
+      target: extras.target,
+      exposeRootPath: extras.exposeRootPath,
+    }) : null,
     targetId: String(session.targetId || ''),
-    codexThreadId: session.codexThreadId || '',
+    ...(extras.exposeOperationalMetadata === false ? {} : {
+      codexThreadId: session.codexThreadId || '',
+    }),
     modelProvider,
     modelProviderLabel: getModelProviderLabel(modelProvider),
     usageProvider: getUsageModelProvider(modelProvider),
@@ -3044,7 +3136,7 @@ function serializeSession(session, extras = {}) {
     title: session.title || '',
     summary: session.summary || '',
     status: session.status || 'pending',
-    createdBy: session.createdBy || {},
+    ...(extras.exposeOwner === false ? {} : { createdBy: session.createdBy || {} }),
     firstTurnId: session.firstTurnId || '',
     lastTurnId: session.lastTurnId || '',
     lastResponsePreview: session.lastResponsePreview || '',
@@ -3092,8 +3184,10 @@ function serializeTurn(turn, extras = {}) {
     model: turn.model || '',
     profile: turn.profile || '',
     reasoningEffort: turn.reasoningEffort || '',
-    codexThreadIdSeen: turn.codexThreadIdSeen || '',
-    commandSummary: turn.commandSummary || {},
+    ...(extras.exposeOperationalMetadata === false ? {} : {
+      codexThreadIdSeen: turn.codexThreadIdSeen || '',
+      commandSummary: turn.commandSummary || {},
+    }),
     exitCode: turn.exitCode,
     exitSignal: turn.exitSignal || '',
     errorMessage: turn.errorMessage || '',
@@ -3102,8 +3196,8 @@ function serializeTurn(turn, extras = {}) {
     tokenUsage,
     costEstimate,
     eventCount: turn.eventCount || 0,
-    artifactRefs: turn.artifactRefs || [],
-    createdBy: turn.createdBy || {},
+    ...(extras.exposeOperationalMetadata === false ? {} : { artifactRefs: turn.artifactRefs || [] }),
+    ...(extras.exposeOwner === false ? {} : { createdBy: turn.createdBy || {} }),
     queuedAt: turn.queuedAt || null,
     startedAt: turn.startedAt || null,
     completedAt: turn.completedAt || null,
@@ -3200,6 +3294,7 @@ module.exports = {
   listPromptTemplates,
   listRequestProfiles,
   listTargets,
+  listTurnEventPage,
   listTurnEvents,
   listWorkspaces,
   logServiceWarning,

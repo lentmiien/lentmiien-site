@@ -70,6 +70,7 @@ router.post('/api/turns/:turnId/cancel', csrf.requireToken, controller.cancelTur
 router.post('/api/turns/:turnId/retry', csrf.requireToken, controller.retryTurn);
 router.post('/api/turns/:turnId/messages', additionalMessageLimiter, csrf.requireToken, controller.addTurnMessage);
 router.get('/api/turns/:turnId/events', controller.getTurnEvents);
+router.get('/api/turns/:turnId/raw-events', controller.getRawTurnEvents);
 
 router.get('/api/queue', controller.getQueue);
 router.get('/api/stats', controller.getStats);
