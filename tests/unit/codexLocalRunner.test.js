@@ -401,6 +401,11 @@ describe('CodexLocalRunner', () => {
         input.target,
         expect.objectContaining({ remoteTimeoutMs: expect.any(Number) })
       );
+      const spawnedRemoteCommand = spawn.mock.calls[0][1].at(-1);
+      expect(spawnedRemoteCommand).toContain(
+        'model_catalog_json="/home/test/.codex/ollama-models.json"'
+      );
+      expect(spawnedRemoteCommand).toContain('app-server');
       expect(threadRequest.params).toEqual(expect.objectContaining({
         config: profileConfig,
         model: 'qwen3.8:27b-codex',

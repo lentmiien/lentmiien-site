@@ -137,12 +137,23 @@ function getTurnLaunchSettings(turn, ollamaProfile) {
   };
 }
 
-function buildAppServerArgs({ turn, ollamaProfile }) {
+function buildAppServerArgs({ turn, ollamaProfile, profileConfig }) {
   const settings = getTurnLaunchSettings(turn, ollamaProfile);
-  // App Server is a host process. Runtime flags such as --profile are either
-  // rejected or ignored for this subcommand, so per-turn settings are sent in
-  // thread/start or thread/resume instead. Stdio is the default transport.
-  return { args: ['app-server'], settings };
+  const args = [];
+  // App Server constructs its process-wide model manager before thread/start.
+  // Passing model_catalog_json only in the thread config is therefore a no-op,
+  // so propagate this startup-only setting separately. Other profile settings
+  // remain per-thread and are sent through the protocol below.
+  if (typeof profileConfig?.model_catalog_json === 'string') {
+    args.push(
+      '-c',
+      `model_catalog_json=${JSON.stringify(profileConfig.model_catalog_json)}`
+    );
+  }
+  // Runtime flags such as --profile are rejected for this subcommand. Stdio is
+  // the default transport.
+  args.push('app-server');
+  return { args, settings };
 }
 
 function sandboxModeForTurn(turn) {
@@ -270,7 +281,7 @@ class CodexLocalRunner {
     };
   }
 
-  buildCommand({ turn, session, workspace, target }) {
+  buildCommand({ turn, session, workspace, target, profileConfig }) {
     const config = this.getConfig();
     const remote = isRemoteSshTarget(target);
     const needsProfileEnvironment = codexToolService.modelProviderNeedsProfileEnvironment(
@@ -279,6 +290,7 @@ class CodexLocalRunner {
     const { args: codexArgs, settings } = buildAppServerArgs({
       turn,
       ollamaProfile: config.ollamaProfile,
+      profileConfig,
     });
     const isFollowup = String(turn.kind || '').startsWith('followup_');
     const summary = {
@@ -404,17 +416,17 @@ class CodexLocalRunner {
     onTurnStarted,
     isCancellationRequested,
   }) {
-    const command = this.buildCommand({ turn, session, workspace, target });
     const runnerConfig = this.getConfig();
+    const launchSettings = getTurnLaunchSettings(turn, runnerConfig.ollamaProfile);
     const completionExitGraceMs = Number.isFinite(runnerConfig.completionExitGraceMs)
       ? Math.max(1, runnerConfig.completionExitGraceMs)
       : 2000;
     const requestTimeoutMs = runnerConfig.additionalMessageTimeoutMs || 15000;
     let profileConfig = null;
-    if (command.settings.effectiveProfile) {
+    if (launchSettings.effectiveProfile) {
       try {
         profileConfig = await this.profileLoader(
-          command.settings.effectiveProfile,
+          launchSettings.effectiveProfile,
           target,
           { remoteTimeoutMs: runnerConfig.remoteValidationTimeoutMs }
         );
@@ -423,7 +435,7 @@ class CodexLocalRunner {
           category: 'codex_tool',
           metadata: {
             turnId: String(turn._id),
-            profile: command.settings.effectiveProfile,
+            profile: launchSettings.effectiveProfile,
             targetType: target?.type || 'local',
             code: error?.code || 'CODEX_PROFILE_LOAD_FAILED',
           },
@@ -431,6 +443,13 @@ class CodexLocalRunner {
         throw error;
       }
     }
+    const command = this.buildCommand({
+      turn,
+      session,
+      workspace,
+      target,
+      profileConfig,
+    });
     const threadModelProvider = modelProviderForThread(command.settings, profileConfig);
     if (typeof onCommand === 'function') {
       await onCommand(command.commandSummary);

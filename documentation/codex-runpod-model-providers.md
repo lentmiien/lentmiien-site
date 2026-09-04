@@ -27,7 +27,7 @@ set +a
 exec codex app-server
 ```
 
-`set -a` makes ordinary `NAME=value` entries available to Codex even if the file does not use `export`. Current Codex versions reject `--profile` for `app-server`, so the worker reads `$CODEX_HOME/<profile>.config.toml` on the execution target and sends the bounded config and explicit provider through `thread/start` or `thread/resume`. For SSH targets, the profile read uses the same remote environment wrapper and login account as the App Server process. Raw profile contents are not included in command summaries, events, or logs.
+`set -a` makes ordinary `NAME=value` entries available to Codex even if the file does not use `export`. Current Codex versions reject `--profile` for `app-server`, so the worker reads `$CODEX_HOME/<profile>.config.toml` on the execution target, passes the startup-only `model_catalog_json` setting when starting App Server, and sends the remaining bounded config and explicit provider through `thread/start` or `thread/resume`. For SSH targets, the profile read uses the same remote environment wrapper and login account as the App Server process. Raw profile contents are not included in command summaries, events, or logs.
 
 Restrict the environment file because it contains credentials:
 
