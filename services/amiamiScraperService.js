@@ -1,6 +1,7 @@
 const AMIAMI_SITE_URL = 'https://www.amiami.com';
 const AMIAMI_IMAGE_URL = 'https://img.amiami.com';
 const AMIAMI_API_URL = 'https://api.amiami.com';
+const AMIAMI_NEW_ITEMS_URL = `${AMIAMI_SITE_URL}/files/eng/new_items/newitem.html`;
 const API_USER_KEY = 'amiami_dev';
 
 const USER_AGENT = [
@@ -19,6 +20,24 @@ const DEFAULT_DETAIL_OPTIONS = {
 
 function buildItemUrl(gcode) {
   return `${AMIAMI_SITE_URL}/eng/detail?gcode=${encodeURIComponent(gcode)}`;
+}
+
+async function fetchNewItemsPage(requestOptions = {}) {
+  const options = {
+    ...DEFAULT_DETAIL_OPTIONS,
+    ...requestOptions,
+  };
+  const response = await curlGet(AMIAMI_NEW_ITEMS_URL, {
+    impersonate: options.impersonate,
+    headers: buildHeaders({
+      referer: `${AMIAMI_SITE_URL}/eng/c/new/`,
+      accept: 'text/html,*/*',
+    }),
+    timeout: options.requestTimeoutMs,
+  });
+
+  assertOkResponse(response, AMIAMI_NEW_ITEMS_URL);
+  return response.text || String(response.data || '');
 }
 
 async function fetchItemDetail(gcode, requestOptions = {}) {
@@ -87,8 +106,8 @@ function loadCurlRequest() {
     return require('curl-cffi').CurlRequest;
   } catch (error) {
     const dependencyError = new Error(
-      'AmiAmi fallback scraping is unavailable because curl-cffi failed to initialize. '
-      + 'Run `npm rebuild curl-cffi` and retry.',
+      'AmiAmi scraping is unavailable because curl-cffi failed to initialize. '
+      + 'Run `npm run install:curl-cffi` and retry.',
     );
     dependencyError.code = 'AMIAMI_SCRAPER_UNAVAILABLE';
     dependencyError.cause = error;
@@ -264,8 +283,10 @@ function sleep(ms) {
 }
 
 module.exports = {
+  AMIAMI_NEW_ITEMS_URL,
   AMIAMI_SITE_URL,
   buildItemUrl,
   fetchItemDetail,
+  fetchNewItemsPage,
   normalizeDetail,
 };

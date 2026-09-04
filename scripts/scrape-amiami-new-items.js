@@ -3,10 +3,12 @@ const path = require('path');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
-const { CurlRequest } = require('curl-cffi');
 const AmiAmiItem = require('../models/amiami_item');
+const { ensureCurlCffiRuntime } = require('./install-curl-cffi');
 const {
+  AMIAMI_NEW_ITEMS_URL,
   fetchItemDetail,
+  fetchNewItemsPage,
   normalizeDetail,
 } = require('../services/amiamiScraperService');
 
@@ -16,13 +18,7 @@ const DEFAULT_SUMMARY_FILE = path.join(PROJECT_ROOT, 'tmp_data', 'amiami-new-ite
 
 const AMIAMI_SITE_URL = 'https://www.amiami.com';
 const AMIAMI_IMAGE_URL = 'https://img.amiami.com';
-const NEW_ITEMS_URL = `${AMIAMI_SITE_URL}/files/eng/new_items/newitem.html`;
-
-const USER_AGENT = [
-  'Mozilla/5.0 (X11; Linux x86_64)',
-  'AppleWebKit/537.36 (KHTML, like Gecko)',
-  'Chrome/136.0.0.0 Safari/537.36',
-].join(' ');
+const NEW_ITEMS_URL = AMIAMI_NEW_ITEMS_URL;
 
 function parseArgs(argv) {
   const options = {
@@ -129,6 +125,8 @@ async function main() {
     return;
   }
 
+  await ensureCurlCffiRuntime();
+
   if (options.storage === 'db') {
     await runWithDatabase(options);
     return;
@@ -146,11 +144,7 @@ async function runWithTmpData(options) {
   const existingCount = Object.keys(store.items).length;
 
   console.log(`Fetching AmiAmi New Products list: ${NEW_ITEMS_URL}`);
-  const html = await fetchText(NEW_ITEMS_URL, {
-    options,
-    referer: `${AMIAMI_SITE_URL}/eng/c/new/`,
-    accept: 'text/html,*/*',
-  });
+  const html = await fetchNewItemsPage(options);
 
   const listedItems = extractNewItems(html);
   const limitedListedItems = listedItems.slice(0, options.maxNewItems);
@@ -274,11 +268,7 @@ async function runWithDatabase(options) {
     const existingCount = await AmiAmiItem.countDocuments();
 
     console.log(`Fetching AmiAmi New Products list: ${NEW_ITEMS_URL}`);
-    const html = await fetchText(NEW_ITEMS_URL, {
-      options,
-      referer: `${AMIAMI_SITE_URL}/eng/c/new/`,
-      accept: 'text/html,*/*',
-    });
+    const html = await fetchNewItemsPage(options);
 
     const listedItems = extractNewItems(html);
     const limitedListedItems = listedItems.slice(0, options.maxNewItems);
@@ -525,47 +515,6 @@ async function countMongoPendingDetails() {
       { detailStatus: 'error' },
     ],
   });
-}
-
-async function fetchText(url, { options, referer, accept }) {
-  const response = await curlGet(url, {
-    impersonate: options.impersonate,
-    headers: buildHeaders({ referer, accept }),
-    timeout: options.requestTimeoutMs,
-  });
-
-  assertOkResponse(response, url);
-  return response.text || String(response.data || '');
-}
-
-async function curlGet(url, requestOptions) {
-  const client = new CurlRequest({ keepAlive: false }, { maxSize: 1, idleTTL: 1 });
-  try {
-    return await client.get(url, {
-      ...requestOptions,
-      keepAlive: false,
-    });
-  } finally {
-    client.close();
-  }
-}
-
-function buildHeaders({ referer, accept, extra = {} }) {
-  return {
-    Accept: accept,
-    'Accept-Language': 'en-US,en;q=0.9',
-    Referer: referer,
-    'User-Agent': USER_AGENT,
-    ...extra,
-  };
-}
-
-function assertOkResponse(response, url) {
-  const status = response.statusCode || response.status;
-  if (status < 200 || status >= 300) {
-    const text = response.text || String(response.data || '');
-    throw new Error(`HTTP ${status} from ${url}: ${text.slice(0, 120)}`);
-  }
 }
 
 function extractNewItems(html) {

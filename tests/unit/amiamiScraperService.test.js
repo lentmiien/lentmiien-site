@@ -12,6 +12,7 @@ jest.mock('curl-cffi', () => ({
 const {
   buildItemUrl,
   fetchItemDetail,
+  fetchNewItemsPage,
   normalizeDetail,
 } = require('../../services/amiamiScraperService');
 
@@ -78,6 +79,27 @@ describe('amiamiScraperService', () => {
     })).rejects.toThrow('AmiAmi item API did not return a product for FIGURE-404');
 
     expect(mockGet).toHaveBeenCalledTimes(1);
+  });
+
+  test('fetches the New Products page through the lazy curl client', async () => {
+    mockGet.mockResolvedValue({
+      statusCode: 200,
+      text: '<html>new products</html>',
+    });
+
+    await expect(fetchNewItemsPage({ requestTimeoutMs: 4321 }))
+      .resolves.toBe('<html>new products</html>');
+    expect(mockGet).toHaveBeenCalledWith(
+      'https://www.amiami.com/files/eng/new_items/newitem.html',
+      expect.objectContaining({
+        impersonate: 'chrome136',
+        headers: expect.objectContaining({
+          Referer: 'https://www.amiami.com/eng/c/new/',
+        }),
+        timeout: 4321,
+        keepAlive: false,
+      }),
+    );
   });
 
   test('normalizes the detail payload using the scraper data shape', () => {

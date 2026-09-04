@@ -23,7 +23,7 @@ describe('amiamiScraperService startup isolation', () => {
       detailRetries: 0,
     })).rejects.toMatchObject({
       code: 'AMIAMI_SCRAPER_UNAVAILABLE',
-      message: expect.stringContaining('npm rebuild curl-cffi'),
+      message: expect.stringContaining('npm run install:curl-cffi'),
     });
   });
 });

@@ -4,6 +4,7 @@
   "description": "",
   "main": "app.js",
   "scripts": {
+    "postinstall": "node scripts/install-curl-cffi.js",
     "prestart": "node setup",
     "start": "node app",
     "git_test": "node git_test",
@@ -20,6 +21,7 @@
     "bootstrap:runpod-llm-api-secret": "node scripts/bootstrap-runpod-llm-api-secret.js",
     "sync:runpod-billing-v2": "node scripts/sync-runpod-billing-history-v2.js",
     "lint:openapi": "node scripts/validate-openapi.js",
+    "install:curl-cffi": "node scripts/install-curl-cffi.js",
     "scrape:amiami": "node scripts/scrape-amiami-new-items.js --storage=db",
     "cleanup:vector-embeddings": "node scripts/cleanup-vector-embeddings.js --days=90 --dry-run",
     "cleanup:vector-embeddings:execute": "node scripts/cleanup-vector-embeddings.js --days=90 --execute",
@@ -104,7 +106,7 @@
   },
   "allowScripts": {
     "@scarf/scarf@1.4.0": true,
-    "curl-cffi@0.1.50": true,
+    "curl-cffi@0.1.50": false,
     "sharp@0.35.3": true,
     "unrs-resolver@1.12.2": true
   }
