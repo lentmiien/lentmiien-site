@@ -154,6 +154,9 @@ const audioWorkflowService = require('./services/audioWorkflowInstance');
 const codexQueueWorker = require('./services/codexQueueWorker');
 const myLifeLogService = require('./services/myLifeLogService');
 const { seedMissingToolManagerEntries } = require('./services/toolManagerStartupService');
+const {
+  scheduleHumanToolRequestRecovery,
+} = require('./services/humanToolRequestStartupService');
 const io = socketIO(server, sessionMiddleware);
 app.set('io', io);
 
@@ -455,6 +458,7 @@ const modelPreviewerRouter = require('./routes/model_previewer');
 const legoSculptureConverterRouter = require('./routes/lego_sculpture_converter');
 const codexRouter = require('./routes/codex');
 const codexLogReviewRouter = require('./routes/codexLogReview');
+const askLennartAdminRouter = require('./routes/askLennartAdmin');
 const adminRouter = require('./routes/admin');
 const runpodAdminRouter = require('./routes/runpodAdmin');
 const tmpFilesRouter = require('./routes/tmp_files');
@@ -519,6 +523,7 @@ app.use('/lego-sculpture-converter', isAuthenticated, legoSculptureConverterRout
 app.use('/codex', isAuthenticated, codexRouter);
 app.use('/codex-log-review', isAuthenticated, isAdmin, codexLogReviewRouter);
 app.use('/tmp-files', isAuthenticated, isAdmin, tmpFilesRouter);
+app.use('/admin/ask-lennart', isAuthenticated, askLennartAdminRouter);
 app.use('/admin/runpod', isAuthenticated, isAdmin, runpodAdminRouter);
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
@@ -724,6 +729,7 @@ function startDatabaseServices() {
     ['database usage monitor', scheduleDatabaseUsageMonitor],
     ['Agent5 scheduler', scheduleAgent5Runner],
     ['OpenAI response recovery', () => scheduleOpenAIResponseRecovery(app)],
+    ['human tool request recovery', scheduleHumanToolRequestRecovery],
     ['disaster ingestion', scheduleDisasterIngestion],
     ['OCR embedding reconciliation', scheduleOcrEmbeddingReconciliation],
     ['embedding queue', scheduleEmbeddingQueue],

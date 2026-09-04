@@ -429,7 +429,7 @@ describe('ConversationService response recovery', () => {
     }));
   });
 
-  test('fetchPending returns only active pending conversation IDs', async () => {
+  test('fetchPending includes active recovery and durable human-wait conversations', async () => {
     PendingRequests.find.mockResolvedValue([
       { conversation_id: 'conv-active-1' },
       { conversation_id: null },
@@ -444,6 +444,7 @@ describe('ConversationService response recovery', () => {
         { recoveryState: 'pending' },
         { recoveryState: null },
         { recoveryState: { $exists: false } },
+        { recoveryState: 'tool_wait' },
       ],
     });
     expect(conversationIds).toEqual(['conv-active-1', 'conv-active-2']);
@@ -864,12 +865,13 @@ describe('ConversationService response recovery', () => {
       response_id: 'resp-tools',
       conversation_id: 'conv-tools',
       placeholder_id: 'ph-old',
+      initiatedBy: { id: 'admin-1', name: 'Lennart', type_user: 'admin' },
     };
     const conversation = {
       _id: { toString: () => 'conv-tools' },
       category: 'Chat5',
       tags: ['chat5'],
-      members: ['Lennart'],
+      members: ['Another member', 'Lennart'],
       metadata: { tools: ['demo_tool'] },
       messages: ['user-1', 'ph-old'],
       save: jest.fn().mockResolvedValue(),
@@ -878,6 +880,7 @@ describe('ConversationService response recovery', () => {
       _id: { toString: () => 'fc-msg' },
       contentType: 'function_call',
       content: {
+        responseId: 'resp-tools',
         toolCallId: 'fc_123',
         callId: 'call_123',
         toolName: 'demo_tool',
@@ -927,7 +930,12 @@ describe('ConversationService response recovery', () => {
 
     expect(service.toolManagerService.executeToolCall).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'demo_tool', call_id: 'call_123' }),
-      expect.objectContaining({ conversationId: 'conv-tools', userName: 'Lennart' })
+      expect.objectContaining({
+        conversationId: 'conv-tools',
+        responseId: 'resp-tools',
+        user: { id: 'admin-1', name: 'Lennart', type_user: 'admin' },
+        userName: 'Lennart',
+      })
     );
     expect(messageService.generateAIMessage).toHaveBeenCalledWith({
       conversation: expect.objectContaining({ messages: ['user-1', 'fc-msg', 'chat5-generated'] }),
@@ -937,6 +945,7 @@ describe('ConversationService response recovery', () => {
       response_id: 'resp-follow',
       conversation_id: 'conv-tools',
       placeholder_id: 'ph-next',
+      initiatedBy: { id: 'admin-1', name: 'Lennart', type_user: 'admin' },
     });
     expect(conversation.messages).toEqual(['user-1', 'fc-msg', 'chat5-generated', 'ph-next']);
     expect(result.messages.map(m => m.contentType)).toEqual(['function_call', 'function_call_output', 'text']);

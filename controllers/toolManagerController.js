@@ -84,6 +84,7 @@ exports.index = async (req, res) => {
       seedToolNames: defaultToolSeeds.map((seed) => seed.name),
       testerConfig: {
         endpoint: '/admin/tools/test',
+        csrfToken: String(res.locals?.csrfToken || ''),
         tools: tools.map((tool) => ({
           name: tool.name,
           displayName: tool.displayName,
@@ -201,7 +202,7 @@ exports.test = async (req, res) => {
         user: req.user?.name || null,
       },
     });
-    return res.status(error.status || 400).json({
+    return res.status(error.statusCode || error.status || 400).json({
       ok: false,
       error: error.message || 'Tool test failed.',
     });

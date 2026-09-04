@@ -14,6 +14,7 @@ block content
         h1.tool-manager-header__title Tool Manager
       .tool-manager-header__actions
         form(method='post', action='/admin/tools/seed')
+          input(type='hidden', name='_csrf', value=csrfToken)
           button.btn.btn-outline-primary(type='submit') Seed defaults
         if editing
           a.btn.btn-outline-secondary(href='/admin/tools') New tool
@@ -53,6 +54,7 @@ block content
           if editing
             p.tool-manager-panel__meta= `Last updated ${new Date(editTool.updatedAt).toLocaleString()}`
         form#toolManagerForm(method='post', action='/admin/tools/save', novalidate)
+          input(type='hidden', name='_csrf', value=csrfToken)
           if editing
             input(type='hidden', name='id', value=editTool._id)
           input(type='hidden', name='enabled', value='false')
@@ -144,9 +146,11 @@ block content
                     td.tool-manager-actions
                       a.btn.btn-outline-primary.btn-sm(href=`/admin/tools?edit=${tool._id}`) Edit
                       form(method='post', action=`/admin/tools/${tool._id}/toggle`)
+                        input(type='hidden', name='_csrf', value=csrfToken)
                         input(type='hidden', name='enabled', value=tool.enabled ? 'false' : 'true')
                         button.btn.btn-outline-secondary.btn-sm(type='submit')= tool.enabled ? 'Disable' : 'Enable'
                       form(method='post', action=`/admin/tools/${tool._id}/delete`, data-confirm='Delete this tool?')
+                        input(type='hidden', name='_csrf', value=csrfToken)
                         button.btn.btn-outline-danger.btn-sm(type='submit') Delete
         else
           .tool-manager-empty

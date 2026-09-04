@@ -36,6 +36,7 @@ jest.mock('../../services/appSettingsService', () => ({
 }));
 
 const CodexEvent = require('../../models/codex_event');
+const CodexSession = require('../../models/codex_session');
 const CodexTurn = require('../../models/codex_turn');
 const CodexTurnMessage = require('../../models/codex_turn_message');
 const CodexWorkspace = require('../../models/codex_workspace');
@@ -58,6 +59,86 @@ beforeEach(() => {
   RunpodPod.find.mockReturnValue(runpodPodQuery([]));
   Role.findOne.mockReset();
   Role.findOne.mockResolvedValue(null);
+});
+
+describe('codexToolService durable tool replay', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('returns an existing matching first turn without starting duplicate work', async () => {
+    const owner = { _id: 'admin-1', name: 'Admin', type_user: 'admin' };
+    const session = {
+      _id: 'tool-session-abc',
+      workspaceId: 'workspace-1',
+      targetId: 'target-1',
+      title: 'Durable request',
+      status: 'active',
+      createdBy: { id: 'admin-1', name: 'Admin' },
+      save: jest.fn().mockResolvedValue(),
+    };
+    const turn = {
+      _id: 'tool-turn-abc',
+      sessionId: session._id,
+      workspaceId: 'workspace-1',
+      targetId: 'target-1',
+      sequence: 1,
+      kind: 'action',
+      status: 'running',
+      prompt: 'Continue the durable task.',
+      createdBy: { id: 'admin-1', name: 'Admin' },
+    };
+    jest.spyOn(CodexTurn, 'findById').mockReturnValue(createLeanQuery(turn));
+    jest.spyOn(CodexSession, 'findById').mockReturnValue(createLeanQuery(session));
+    const turnCreate = jest.spyOn(CodexTurn, 'create');
+    const sessionCreate = jest.spyOn(CodexSession, 'create');
+
+    const result = await codexToolService.createSession({
+      workspaceId: 'workspace-1',
+      prompt: 'Continue the durable task.',
+      mode: 'action',
+    }, owner, {
+      sessionId: session._id,
+      turnId: turn._id,
+    });
+
+    expect(result.replayed).toBe(true);
+    expect(result.turn).toMatchObject({ id: turn._id, status: 'running' });
+    expect(session).toMatchObject({
+      firstTurnId: turn._id,
+      lastTurnId: turn._id,
+      turnCount: 1,
+    });
+    expect(session.save).toHaveBeenCalledTimes(1);
+    expect(turnCreate).not.toHaveBeenCalled();
+    expect(sessionCreate).not.toHaveBeenCalled();
+  });
+
+  test('rejects a replay when the stored prompt differs', async () => {
+    jest.spyOn(CodexTurn, 'findById').mockReturnValue(createLeanQuery({
+      _id: 'tool-turn-abc',
+      workspaceId: 'workspace-1',
+      prompt: 'Original prompt.',
+      createdBy: { id: 'admin-1', name: 'Admin' },
+    }));
+    jest.spyOn(CodexSession, 'findById').mockReturnValue(createLeanQuery({
+      _id: 'tool-session-abc',
+      createdBy: { id: 'admin-1', name: 'Admin' },
+    }));
+
+    await expect(codexToolService.createSession({
+      workspaceId: 'workspace-1',
+      prompt: 'Changed prompt.',
+      mode: 'action',
+    }, {
+      _id: 'admin-1',
+      name: 'Admin',
+      type_user: 'admin',
+    }, {
+      sessionId: 'tool-session-abc',
+      turnId: 'tool-turn-abc',
+    })).rejects.toMatchObject({ statusCode: 409 });
+  });
 });
 
 describe('codexToolService runtime config', () => {

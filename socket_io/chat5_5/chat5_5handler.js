@@ -15,7 +15,8 @@ const asrApiService = new AsrApiService();
 module.exports = async function registerChat5_5Handlers({
   io,
   socket,
-  userName
+  userName,
+  principal
 }) {
   const {
     models: {
@@ -782,6 +783,7 @@ module.exports = async function registerChat5_5Handlers({
       const { userMessage, aiMessages = [] } = await conversationService.postToConversationNew({
         conversationId,
         userId: messageUserId,
+        requestPrincipal: principal,
         messageContent,
         messageType: hasPrompt ? "text" : null,
         generateAI: generateResponse,
@@ -1146,6 +1148,7 @@ module.exports = async function registerChat5_5Handlers({
       const { userMessage } = await conversationService.postToConversationNew({
         conversationId,
         userId: userName,
+        requestPrincipal: principal,
         messageContent: hasPrompt ? {
           text: prompt,
           image: null,
@@ -1292,6 +1295,7 @@ module.exports = async function registerChat5_5Handlers({
       const { userMessage } = await conversationService.postToConversationNew({
         conversationId,
         userId: userName,
+        requestPrincipal: principal,
         messageContent: {
           text: null,
           image: uploadFile,

@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 const { getInitialRecoveryCheckAt } = require('../services/openaiResponseRecoveryPolicy');
 
+const PendingPrincipal = new mongoose.Schema({
+  id: { type: String, required: true, trim: true, maxlength: 160 },
+  name: { type: String, required: true, trim: true, maxlength: 100 },
+  type_user: { type: String, required: true, trim: true, maxlength: 20 },
+}, { _id: false });
+
 const PendingRequests = new mongoose.Schema({
   response_id: { type: String, required: true, index: true },
   provider: {
@@ -13,11 +19,12 @@ const PendingRequests = new mongoose.Schema({
   placeholder_id: { type: String, required: true },
   sourceType: { type: String, default: null, index: true },
   sourceId: { type: String, default: null, index: true },
+  initiatedBy: { type: PendingPrincipal, default: undefined },
   toolRound: { type: Number, default: 1, min: 1, max: 20 },
   processingStartedAt: { type: Date, default: null },
   recoveryState: {
     type: String,
-    enum: ['pending', 'cleanup_pending', 'abandoned'],
+    enum: ['pending', 'tool_wait', 'cleanup_pending', 'abandoned'],
     default: 'pending',
   },
   recoveryAttemptCount: { type: Number, default: 0, min: 0 },

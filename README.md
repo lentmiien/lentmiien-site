@@ -88,6 +88,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 
 - `/chat5` - Chat workspace with templates, knowledge browser, and pending queue.
 - `/codex` - Persisted Codex workspace sessions, turns, queue state, and usage accounting.
+- `/admin/ask-lennart` - Durable inbox for responding to Chat5 human-action tool calls.
 - `/codex-log-review` - Admin workflow for scheduled production-log analysis, reviewed fixes, and commit/push follow-ups.
 - `/sora` - Sora 2 Studio dashboard with job filters, polling, and ratings.
 - `/image_gen` - ComfyUI job queue, cached output browser, prompt library.
@@ -192,6 +193,9 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `CODEX_MESSAGE_POLL_MS` | How often a running worker checks for queued mid-turn messages. Defaults to `1000` ms. |
 | `CODEX_MESSAGE_TIMEOUT_MS` | Maximum time allowed for one App Server `turn/steer` request. Defaults to `15000` ms. |
 | `CODEX_YOLO_ENABLED` | Enables server-side acceptance of yolo Codex turns when the selected workspace also allows yolo. Defaults to `false`. |
+| `CODEX_CHAT_TOOL_WAIT_TIMEOUT_MS`, `CODEX_CHAT_TOOL_POLL_INTERVAL_MS` | Bound how long Chat5's Codex bridge waits for a terminal turn and how often it checks. Defaults to two hours and two seconds. |
+| `HUMAN_TOOL_RESPONSE_TIMEOUT_MS`, `HUMAN_TOOL_POLL_INTERVAL_MS`, `HUMAN_TOOL_RECOVERY_INTERVAL_MS` | Configure the durable Ask Lennart response deadline, live wait polling, and restart-recovery reconciliation. Defaults to 24 hours, two seconds, and one minute. |
+| `HUMAN_TOOL_RETENTION_DAYS`, `HUMAN_TOOL_MAX_PENDING_PER_USER` | Configure Ask Lennart history retention and the per-creator pending-request ceiling. Defaults to 90 days and 10. |
 | `CODEX_OLLAMA_PROFILE` | Codex profile-v2 config applied to every Ollama App Server thread. Defaults to `ollama`, which the worker loads from `$CODEX_HOME/ollama.config.toml` on the execution target. |
 | `CODEX_RUNPOD_PROFILE_ENV_FILE` | Shell environment file sourced before Runpod-backed Qwen or GLM Codex turns. Defaults to `~/.codex/lentmiien.env` on the machine executing Codex. |
 | `CODEX_RUNPOD_PROFILE_SHELL` | Shell used to source the Runpod profile environment locally and on SSH targets without an explicit target shell. Defaults to `/bin/bash`. |

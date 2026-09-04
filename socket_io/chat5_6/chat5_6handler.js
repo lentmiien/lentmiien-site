@@ -182,7 +182,8 @@ function cloneDeep(value) {
 module.exports = async function registerChat5_6Handlers({
   io,
   socket,
-  userName
+  userName,
+  principal
 }) {
   const {
     models: {
@@ -493,6 +494,7 @@ module.exports = async function registerChat5_6Handlers({
       const { conversation, userMessage } = await conversationService.postToConversationNew({
         conversationId,
         userId: userName,
+        requestPrincipal: principal,
         messageContent: {
           text,
           image: null,
@@ -602,6 +604,7 @@ module.exports = async function registerChat5_6Handlers({
       const { conversation, userMessage } = await conversationService.postToConversationNew({
         conversationId,
         userId: userName,
+        requestPrincipal: principal,
         messageContent: {
           text: null,
           image: uploadFile,
@@ -701,6 +704,7 @@ module.exports = async function registerChat5_6Handlers({
       const postResult = await conversationService.postToConversationNew({
         conversationId,
         userId: userName,
+        requestPrincipal: principal,
         messageContent: imageMessages,
         messageType: 'image',
         s: conversationSettings,
@@ -722,6 +726,7 @@ module.exports = async function registerChat5_6Handlers({
         const summaryResult = await conversationService.postToConversationNew({
           conversationId,
           userId: userName,
+          requestPrincipal: principal,
           messageContent: {
             text: summaryPrompt,
             image: null,
@@ -807,6 +812,7 @@ module.exports = async function registerChat5_6Handlers({
       const { conversation, aiMessages } = await conversationService.postToConversationNew({
         conversationId,
         userId: userName,
+        requestPrincipal: principal,
         messageContent: null,
         messageType: null,
         generateAI: true,
@@ -861,6 +867,7 @@ module.exports = async function registerChat5_6Handlers({
         const result = await conversationService.postToConversationNew({
           conversationId,
           userId: userName,
+          requestPrincipal: principal,
           messageContent: {
             text: prompt,
             image: null,
@@ -1325,6 +1332,7 @@ module.exports = async function registerChat5_6Handlers({
         const result = await conversationService.postToConversationNew({
           conversationId,
           userId: userName,
+          requestPrincipal: principal,
           messageContent: null,
           messageType: null,
           generateAI: true,

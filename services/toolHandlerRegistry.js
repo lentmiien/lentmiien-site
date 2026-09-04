@@ -2,6 +2,24 @@ let gptImageToolService;
 let knowledgeToolService;
 let pushoverReminderToolService;
 let scheduleTaskToolService;
+let codexChatToolService;
+let humanToolRequestService;
+
+function getCodexChatToolService() {
+  if (!codexChatToolService) {
+    const CodexChatToolService = require('./codexChatToolService');
+    codexChatToolService = new CodexChatToolService();
+  }
+  return codexChatToolService;
+}
+
+function getHumanToolRequestService() {
+  if (!humanToolRequestService) {
+    const HumanToolRequestService = require('./humanToolRequestService');
+    humanToolRequestService = new HumanToolRequestService();
+  }
+  return humanToolRequestService;
+}
 
 function getGptImageToolService() {
   if (!gptImageToolService) {
@@ -36,6 +54,27 @@ function getPushoverReminderToolService() {
 }
 
 module.exports = {
+  'codex.runAiGatewayLinux': {
+    execute: (args, context) => getCodexChatToolService().runAiGatewayLinux(args, context),
+  },
+  'codex.runLentmiienSiteLinux': {
+    execute: (args, context) => getCodexChatToolService().runLentmiienSiteLinux(args, context),
+  },
+  'codex.runLentmiienSiteProduction': {
+    execute: (args, context) => getCodexChatToolService().runLentmiienSiteProduction(args, context),
+  },
+  'codex.fetchRequestOptions': {
+    execute: (args, context) => getCodexChatToolService().fetchRequestOptions(args, context),
+  },
+  'codex.runInWorkspace': {
+    execute: (args, context) => getCodexChatToolService().runInWorkspace(args, context),
+  },
+  'humanRequest.askCodex': {
+    execute: (args, context) => getHumanToolRequestService().execute(args, context, 'codex'),
+  },
+  'humanRequest.askGeneral': {
+    execute: (args, context) => getHumanToolRequestService().execute(args, context, 'general'),
+  },
   'gptImage.generate': {
     execute: (args, context) => getGptImageToolService().execute(args, context),
   },

@@ -49,6 +49,7 @@ describe('Socket.IO connection initialization', () => {
         canUseChat5: true,
         sessionExpiresAt: Date.now() + 60_000,
         userName: 'alice',
+        principal: { _id: 'alice-id', name: 'alice', type_user: 'admin' },
       },
       disconnect: jest.fn(),
       emit: jest.fn(),
@@ -114,6 +115,7 @@ describe('Socket.IO connection initialization', () => {
       io: mockIo,
       socket,
       userName: 'alice',
+      principal: { _id: 'alice-id', name: 'alice', type_user: 'admin' },
     });
     expect(mockRegisterChat5_5Handlers).toHaveBeenCalledTimes(1);
     expect(mockRegisterChat5_6Handlers).toHaveBeenCalledTimes(1);

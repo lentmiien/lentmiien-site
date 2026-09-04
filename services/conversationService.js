@@ -100,6 +100,18 @@ function formatRecoveryAgeLimit(maxAgeMs) {
   return `${hours} hour${hours === 1 ? '' : 's'}`;
 }
 
+function normalizeInitiatingPrincipal(value) {
+  const id = value && (value._id || value.id) ? String(value._id || value.id).trim() : '';
+  const name = value?.name ? String(value.name).trim() : '';
+  const typeUser = value?.type_user ? String(value.type_user).trim() : '';
+  if (!id || !name || !typeUser) return undefined;
+  return {
+    id: id.slice(0, 160),
+    name: name.slice(0, 100),
+    type_user: typeUser.slice(0, 20),
+  };
+}
+
 // Conversation5Model.metadata
 const DEFAULT_SETTINGS = {
   contextPrompt: "",
@@ -1270,7 +1282,16 @@ class ConversationService {
     return { conversation: converted, migrated: true };
   }
 
-  async postToConversationNew({conversationId, userId, messageContent, messageType, generateAI=false, s, c}) {
+  async postToConversationNew({
+    conversationId,
+    userId,
+    requestPrincipal = null,
+    messageContent,
+    messageType,
+    generateAI = false,
+    s,
+    c,
+  }) {
     let conversation = await Conversation5Model.findById(conversationId);
 
     if (!conversation) {
@@ -1385,6 +1406,8 @@ class ConversationService {
             conversation_id: conversation._id.toString(),
             placeholder_id,
           };
+          const initiatedBy = normalizeInitiatingPrincipal(requestPrincipal);
+          if (initiatedBy) pending_req.initiatedBy = initiatedBy;
           if (String(response_provider).toLowerCase() === 'ollama') {
             pending_req.provider = OLLAMA_RESPONSE_PROVIDER;
             pending_req.toolRound = 1;
@@ -1689,7 +1712,12 @@ class ConversationService {
   }
 
   async fetchPending() {
-    const pendingItems = await PendingRequests.find(activeRecoveryCondition());
+    const pendingItems = await PendingRequests.find({
+      $or: [
+        ...activeRecoveryCondition().$or,
+        { recoveryState: 'tool_wait' },
+      ],
+    });
     return pendingItems
       .map(pending => pending?.conversation_id)
       .filter(Boolean);
@@ -2380,11 +2408,16 @@ class ConversationService {
     return message;
   }
 
-  async executeFunctionCallsForConversation(conversation, functionCallMessages = []) {
+  async executeFunctionCallsForConversation(
+    conversation,
+    functionCallMessages = [],
+    { initiatingPrincipal = null } = {}
+  ) {
     const outputMessages = [];
-    const userName = Array.isArray(conversation.members) && conversation.members.length > 0
+    const principal = normalizeInitiatingPrincipal(initiatingPrincipal);
+    const userName = principal?.name || (Array.isArray(conversation.members) && conversation.members.length > 0
       ? conversation.members[0]
-      : 'chat5';
+      : 'chat5');
     const allowedToolNames = new Set(
       Array.isArray(conversation?.metadata?.tools)
         ? conversation.metadata.tools.filter((name) => typeof name === 'string' && name.trim().length > 0)
@@ -2441,6 +2474,8 @@ class ConversationService {
           execution = await this.toolManagerService.executeToolCall(toolCall, {
             conversationId: conversation._id?.toString?.() || conversation.id?.toString?.(),
             conversation,
+            responseId,
+            user: principal || null,
             userName,
             userId: userName,
             openaiUser: userName,
@@ -2518,6 +2553,8 @@ class ConversationService {
       if (pendingContext?.sourceId) {
         pendingRequest.sourceId = pendingContext.sourceId;
       }
+      const initiatedBy = normalizeInitiatingPrincipal(pendingContext?.initiatedBy);
+      if (initiatedBy) pendingRequest.initiatedBy = initiatedBy;
       const pr = new PendingRequests(pendingRequest);
       await pr.save();
       return { messages: [msg], responseId: response_id };
@@ -2626,7 +2663,11 @@ class ConversationService {
             },
           });
         } else {
-          const functionOutputMessages = await this.executeFunctionCallsForConversation(conversation, functionCallMessages);
+          const functionOutputMessages = await this.executeFunctionCallsForConversation(
+            conversation,
+            functionCallMessages,
+            { initiatingPrincipal: pending.initiatedBy }
+          );
           for (const m of functionOutputMessages) {
             const messageId = m._id.toString();
             if (!conversationMessageIds.has(messageId)) {

@@ -326,6 +326,7 @@ describe('ConversationService', () => {
     const result = await service.postToConversationNew({
       conversationId: 'conv-background',
       userId: 'Lennart',
+      requestPrincipal: { _id: 'admin-1', name: 'Lennart', type_user: 'admin' },
       messageContent: { text: 'Background please.' },
       messageType: 'text',
       generateAI: true,
@@ -339,6 +340,7 @@ describe('ConversationService', () => {
       placeholder_id: 'placeholder-background',
       provider: 'Ollama',
       toolRound: 1,
+      initiatedBy: { id: 'admin-1', name: 'Lennart', type_user: 'admin' },
     });
     expect(mockPendingRequests.mock.instances[0].save).toHaveBeenCalledTimes(1);
   });

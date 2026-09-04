@@ -5,6 +5,7 @@ const { randomUUID } = require('crypto');
 const multer = require('multer');
 const router = express.Router();
 const logger = require('../utils/logger');
+const { createSessionCsrf } = require('../middleware/sessionCsrf');
 
 // Require controller modules.
 const controller = require('../controllers/admincontroller');
@@ -27,6 +28,7 @@ const amiamiItemsController = require('../controllers/amiamiItemsController');
 const aiGatewayDocumentationAdminController = require('../controllers/aiGatewayDocumentationAdminController');
 const modularLlmAdminController = require('../controllers/modularLlmAdminController');
 const lifeLogRouter = require('./lifeLog');
+const toolManagerCsrf = createSessionCsrf();
 
 const htmlUpload = multer({
   storage: multer.memoryStorage(),
@@ -318,12 +320,13 @@ router.get('/disasters', disasterAdminController.dashboard);
 router.get('/disasters/history', disasterAdminController.history);
 router.get('/disasters/weather-history', disasterAdminController.weatherHistory);
 router.post('/disasters/refresh', disasterAdminController.refresh);
+router.use('/tools', toolManagerCsrf.issueToken);
 router.get('/tools', toolManagerController.index);
-router.post('/tools/save', toolManagerController.save);
-router.post('/tools/seed', toolManagerController.seed);
-router.post('/tools/test', toolManagerController.test);
-router.post('/tools/:id/toggle', toolManagerController.toggle);
-router.post('/tools/:id/delete', toolManagerController.delete);
+router.post('/tools/save', toolManagerCsrf.requireToken, toolManagerController.save);
+router.post('/tools/seed', toolManagerCsrf.requireToken, toolManagerController.seed);
+router.post('/tools/test', toolManagerCsrf.requireToken, toolManagerController.test);
+router.post('/tools/:id/toggle', toolManagerCsrf.requireToken, toolManagerController.toggle);
+router.post('/tools/:id/delete', toolManagerCsrf.requireToken, toolManagerController.delete);
 
 router.get('/audio-workflow', audioWorkflowController.renderAdmin);
 router.post('/audio-workflow/jobs/:jobId/quality-rating', audioWorkflowController.rateJobQuality);

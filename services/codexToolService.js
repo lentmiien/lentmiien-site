@@ -1451,6 +1451,43 @@ function normalizePrompt(prompt) {
   return value;
 }
 
+function normalizeInternalResourceId(value, label) {
+  if (value === undefined || value === null || value === '') {
+    return '';
+  }
+  const id = String(value).trim();
+  if (!/^[A-Za-z0-9:_-]{1,160}$/.test(id)) {
+    throw createHttpError(500, `${label} is invalid.`);
+  }
+  return id;
+}
+
+function assertIdempotentSessionOwner(resource, owner) {
+  const resourceOwnerId = normalizeOptionalString(resource?.createdBy?.id, 160);
+  const expectedOwnerId = normalizeOptionalString(owner?.id, 160);
+  if (!resourceOwnerId || !expectedOwnerId || resourceOwnerId !== expectedOwnerId) {
+    throw createHttpError(409, 'The durable Codex request belongs to a different principal.');
+  }
+}
+
+async function loadModelById(model, id, { lean = false } = {}) {
+  let query = model.findById(id);
+  if (lean && query && typeof query.lean === 'function') query = query.lean();
+  if (query && typeof query.exec === 'function') return query.exec();
+  return query;
+}
+
+async function createOrLoadResource(model, payload, id) {
+  try {
+    return await model.create(payload);
+  } catch (error) {
+    if (error?.code !== 11000 || !id) throw error;
+    const existing = await loadModelById(model, id);
+    if (!existing) throw error;
+    return existing;
+  }
+}
+
 function normalizeAdditionalTurnMessagePayload(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw createHttpError(400, 'A JSON object containing a message is required.');
@@ -1962,9 +1999,63 @@ async function resolveTurnRequestOptions(payload = {}, workspace = {}, options =
   };
 }
 
-async function createSession(payload = {}, user) {
+async function createSession(payload = {}, user, internalOptions = {}) {
   const prompt = normalizePrompt(payload.prompt);
   const mode = normalizeMode(payload.mode);
+  const sessionId = normalizeInternalResourceId(internalOptions.sessionId, 'Internal session id');
+  const turnId = normalizeInternalResourceId(internalOptions.turnId, 'Internal turn id');
+  if (Boolean(sessionId) !== Boolean(turnId)) {
+    throw createHttpError(500, 'Durable Codex requests require both internal resource ids.');
+  }
+  const owner = makeOwner(user);
+
+  if (turnId) {
+    const existingTurn = await loadModelById(CodexTurn, turnId);
+    if (existingTurn) {
+      const existingSession = await loadModelById(CodexSession, sessionId);
+      if (!existingSession) {
+        throw createHttpError(500, 'The durable Codex session record is incomplete.');
+      }
+      assertIdempotentSessionOwner(existingSession, owner);
+      assertIdempotentSessionOwner(existingTurn, owner);
+      if (
+        String(existingSession.workspaceId || '') !== String(payload.workspaceId || '')
+        || String(existingTurn.sessionId || '') !== String(existingSession._id || '')
+        || String(existingTurn.workspaceId || '') !== String(payload.workspaceId || '')
+        || String(existingTurn.targetId || '') !== String(existingSession.targetId || '')
+        || existingTurn.sequence !== 1
+        || (existingSession.firstTurnId
+          && String(existingSession.firstTurnId) !== String(existingTurn._id || ''))
+        || existingTurn.prompt !== prompt
+      ) {
+        throw createHttpError(409, 'This durable Codex request was already created with different arguments.');
+      }
+      let repairSession = false;
+      if (!existingSession.firstTurnId) {
+        existingSession.firstTurnId = existingTurn._id;
+        repairSession = true;
+      }
+      if (!existingSession.lastTurnId) {
+        existingSession.lastTurnId = existingTurn._id;
+        repairSession = true;
+      }
+      if (!Number.isInteger(existingSession.turnCount) || existingSession.turnCount < 1) {
+        existingSession.turnCount = 1;
+        repairSession = true;
+      }
+      if (repairSession && typeof existingSession.save === 'function') {
+        await existingSession.save();
+      }
+      return {
+        accepted: true,
+        replayed: true,
+        session: serializeSession(existingSession),
+        turn: serializeTurn(existingTurn),
+        statusUrl: `/codex/turns/${encodeURIComponent(existingTurn._id)}`,
+      };
+    }
+  }
+
   const { workspace, target } = await getWorkspaceBundle(payload.workspaceId, { validateRemoteDirectory: false });
   const permission = resolvePermissionMode({
     mode,
@@ -1973,9 +2064,9 @@ async function createSession(payload = {}, user) {
     confirmYolo: payload.confirmYolo,
   });
   const requestOptions = await resolveTurnRequestOptions(payload, workspace, { mode, user });
-  const owner = makeOwner(user);
 
-  const session = await CodexSession.create({
+  const sessionPayload = {
+    ...(sessionId ? { _id: sessionId } : {}),
     workspaceId: workspace._id,
     targetId: target._id,
     title: titleFromPrompt(prompt),
@@ -1984,9 +2075,17 @@ async function createSession(payload = {}, user) {
     status: 'pending',
     createdBy: owner,
     turnCount: 0,
-  });
+  };
+  const session = await createOrLoadResource(CodexSession, sessionPayload, sessionId);
+  if (sessionId) {
+    assertIdempotentSessionOwner(session, owner);
+    if (String(session.workspaceId || '') !== String(workspace._id)) {
+      throw createHttpError(409, 'This durable Codex session was already created for another workspace.');
+    }
+  }
 
-  const turn = await CodexTurn.create({
+  const turnPayload = {
+    ...(turnId ? { _id: turnId } : {}),
     sessionId: session._id,
     workspaceId: workspace._id,
     targetId: target._id,
@@ -2004,7 +2103,18 @@ async function createSession(payload = {}, user) {
     reasoningEffort: requestOptions.reasoningEffort,
     createdBy: owner,
     queuedAt: new Date(),
-  });
+  };
+  const turn = await createOrLoadResource(CodexTurn, turnPayload, turnId);
+  if (turnId) {
+    assertIdempotentSessionOwner(turn, owner);
+    if (
+      String(turn.sessionId || '') !== String(session._id)
+      || String(turn.workspaceId || '') !== String(workspace._id)
+      || turn.prompt !== prompt
+    ) {
+      throw createHttpError(409, 'This durable Codex turn was already created with different arguments.');
+    }
+  }
 
   session.firstTurnId = turn._id;
   session.lastTurnId = turn._id;

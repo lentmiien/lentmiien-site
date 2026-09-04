@@ -7,6 +7,7 @@ describe('PendingRequests recovery fields', () => {
       response_id: 'resp-new',
       conversation_id: 'conv-new',
       placeholder_id: 'placeholder-new',
+      initiatedBy: { id: 'admin-1', name: 'Admin', type_user: 'admin' },
     });
     const after = Date.now();
 
@@ -18,6 +19,11 @@ describe('PendingRequests recovery fields', () => {
     expect(pending.cleanupLastError).toBeNull();
     expect(pending.cleanupPendingAt).toBeNull();
     expect(pending.cleanupOutcome).toBeNull();
+    expect(pending.initiatedBy.toObject()).toEqual({
+      id: 'admin-1',
+      name: 'Admin',
+      type_user: 'admin',
+    });
     expect(pending.nextCheckAt).toBeInstanceOf(Date);
     expect(pending.nextCheckAt.getTime()).toBeGreaterThanOrEqual(before + (60 * 1000));
     expect(pending.nextCheckAt.getTime()).toBeLessThanOrEqual(after + (60 * 1000));

@@ -27,6 +27,11 @@ async function authorizeSocketSession(session, {
   return {
     ok: true,
     userName: user.name,
+    principal: {
+      _id: String(user._id || userId),
+      name: String(user.name),
+      type_user: String(user.type_user),
+    },
     sessionExpiresAt,
     permissionGranted,
   };

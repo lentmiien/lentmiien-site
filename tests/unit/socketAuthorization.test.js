@@ -19,6 +19,7 @@ describe('authorizeSocketSession', () => {
     }, { ...dependencies, now })).resolves.toEqual({
       ok: true,
       userName: 'work',
+      principal: { _id: 'user-id', name: 'work', type_user: 'user' },
       sessionExpiresAt: future.getTime(),
       permissionGranted: true,
     });
@@ -51,6 +52,7 @@ describe('authorizeSocketSession', () => {
     )).resolves.toEqual({
       ok: true,
       userName: 'work',
+      principal: { _id: 'user-id', name: 'work', type_user: 'user' },
       sessionExpiresAt: future.getTime(),
       permissionGranted: false,
     });
@@ -63,6 +65,7 @@ describe('authorizeSocketSession', () => {
     }, { ...models({ permissions: [] }), permission: null, now })).resolves.toEqual({
       ok: true,
       userName: 'work',
+      principal: { _id: 'user-id', name: 'work', type_user: 'user' },
       sessionExpiresAt: future.getTime(),
       permissionGranted: true,
     });

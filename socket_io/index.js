@@ -42,6 +42,7 @@ module.exports = (server, sessionMiddleware, { databaseReady = isDatabaseReady }
       }
 
       socket.data.userName = authorization.userName;
+      socket.data.principal = authorization.principal;
       socket.data.sessionExpiresAt = authorization.sessionExpiresAt;
       socket.data.canUseChat5 = authorization.permissionGranted;
       return next();
@@ -57,6 +58,7 @@ module.exports = (server, sessionMiddleware, { databaseReady = isDatabaseReady }
   // Handle connections
   io.on('connection', async (socket) => {
     const userName = socket.data.userName;
+    const principal = socket.data.principal;
     let cancelExpiry = null;
 
     socket.on('disconnect', () => {
@@ -75,9 +77,9 @@ module.exports = (server, sessionMiddleware, { databaseReady = isDatabaseReady }
 
       await socket.join(roomForUser(userName));
       if (socket.data.canUseChat5) {
-        await registerChat5Handlers({ io, socket, userName });
-        await registerChat5_5Handlers({ io, socket, userName });
-        await registerChat5_6Handlers({ io, socket, userName });
+        await registerChat5Handlers({ io, socket, userName, principal });
+        await registerChat5_5Handlers({ io, socket, userName, principal });
+        await registerChat5_6Handlers({ io, socket, userName, principal });
       }
 
       socket.emit('welcome');

@@ -1,0 +1,94 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/ask_lennart.css')
+
+block content
+  - const pending = Array.isArray(pendingRequests) ? pendingRequests : [];
+  - const recent = Array.isArray(recentRequests) ? recentRequests : [];
+  - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
+  main.ask-lennart-page(data-auto-refresh-ms=autoRefreshMs || 30000)
+    header.ask-lennart-header
+      div
+        p.ask-lennart-eyebrow Human tool inbox
+        h1 Ask Lennart
+        p.ask-lennart-subtitle Answer requests from Chat5 tool calls. Pending calls continue automatically after a response, including after an app restart.
+        p.ask-lennart-caution Verify commands, targets, and deployment details before acting; request text is AI-generated.
+      .ask-lennart-header__actions
+        span.ask-lennart-count= `${pending.length} pending`
+        a.btn.btn-outline-secondary(href='/admin/ask-lennart') Refresh
+
+    if feedback
+      .alert(class=feedback.status === 'success' ? 'alert-success' : 'alert-danger', role='status')= feedback.message
+
+    section.ask-lennart-section(aria-labelledby='pending-human-requests')
+      .ask-lennart-section__header
+        div
+          h2#pending-human-requests Pending requests
+          p Oldest requests appear first. This page refreshes automatically while no response is being drafted.
+        span.ask-lennart-count= pending.length
+
+      if pending.length
+        .ask-lennart-grid
+          each request in pending
+            article.ask-lennart-card(id=`request-${request._id}`)
+              .ask-lennart-card__header
+                div
+                  span.ask-lennart-kind= request.variant === 'codex' ? 'Codex workflow' : 'General'
+                  h3= request.toolName
+                time(datetime=request.createdAt)= fmt(request.createdAt)
+              pre.ask-lennart-prompt= request.prompt
+              .ask-lennart-meta
+                span= `Request ${request._id}`
+                if request.conversationId
+                  a(href=`/chat5/chat/${encodeURIComponent(request.conversationId)}`, target='_blank', rel='noopener') Open Chat5 conversation
+              form.ask-lennart-response-form(method='post', action=`/admin/ask-lennart/${encodeURIComponent(request._id)}/respond`)
+                input(type='hidden', name='_csrf', value=csrfToken)
+                label.form-label(for=`response-${request._id}`) Response to the waiting chat
+                textarea.form-control(
+                  id=`response-${request._id}`,
+                  name='response',
+                  rows='6',
+                  maxlength=maxResponseChars,
+                  required,
+                  data-human-response-input,
+                  placeholder='Describe what you did, what happened, or what the chat should do next.'
+                )
+                .ask-lennart-form-footer
+                  small= `Maximum ${Number(maxResponseChars || 20000).toLocaleString()} characters`
+                  button.btn.btn-primary(type='submit') Send response
+      else
+        .ask-lennart-empty
+          p No requests are waiting for you.
+
+    section.ask-lennart-section(aria-labelledby='recent-human-requests')
+      .ask-lennart-section__header
+        div
+          h2#recent-human-requests Recent history
+          p Answered and timed-out requests are retained temporarily for operational review.
+        span.ask-lennart-count= recent.length
+
+      if recent.length
+        .ask-lennart-history
+          each request in recent
+            details.ask-lennart-history__item
+              summary
+                span(class=`ask-lennart-status ask-lennart-status--${request.status}`)= request.status === 'responded' ? 'Responded' : 'Timed out'
+                strong= request.toolName
+                time(datetime=request.respondedAt || request.timedOutAt || request.updatedAt)= fmt(request.respondedAt || request.timedOutAt || request.updatedAt)
+              .ask-lennart-history__body
+                h3 Request
+                pre.ask-lennart-prompt= request.prompt
+                if request.status === 'responded'
+                  h3 Response
+                  pre.ask-lennart-response= request.response
+                .ask-lennart-meta
+                  span= `Request ${request._id}`
+                  if request.conversationId
+                    a(href=`/chat5/chat/${encodeURIComponent(request.conversationId)}`, target='_blank', rel='noopener') Open Chat5 conversation
+      else
+        .ask-lennart-empty
+          p No completed requests yet.
+
+block script
+  script(src='/js/ask_lennart.js', defer)

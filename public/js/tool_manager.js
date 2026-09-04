@@ -136,6 +136,7 @@
           headers: {
             Accept: 'application/json',
             'Content-Type': 'application/json',
+            'X-CSRF-Token': pageConfig.csrfToken || '',
           },
           body: JSON.stringify({
             toolName,
