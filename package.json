@@ -46,6 +46,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
     "@google/generative-ai": "^0.24.1",
+    "@iarna/toml": "2.2.5",
     "@lmstudio/sdk": "^1.5.0",
     "archiver": "^8.0.0",
     "axios": "^1.18.1",

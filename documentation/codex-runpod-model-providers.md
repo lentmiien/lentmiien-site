@@ -24,10 +24,12 @@ For a local Linux execution target, `~` resolves to the Codex worker account's h
 set -a
 . ~/.codex/lentmiien.env
 set +a
-exec codex --profile lentmiien-qwen app-server
+exec codex app-server
 ```
 
-`set -a` makes ordinary `NAME=value` entries available to Codex even if the file does not use `export`. Restrict the file because it contains credentials:
+`set -a` makes ordinary `NAME=value` entries available to Codex even if the file does not use `export`. Current Codex versions reject `--profile` for `app-server`, so the worker reads `$CODEX_HOME/<profile>.config.toml` on the execution target and sends the bounded config and explicit provider through `thread/start` or `thread/resume`. For SSH targets, the profile read uses the same remote environment wrapper and login account as the App Server process. Raw profile contents are not included in command summaries, events, or logs.
+
+Restrict the environment file because it contains credentials:
 
 ```bash
 chmod 600 ~/.codex/lentmiien.env
@@ -48,7 +50,7 @@ Then run `sudo systemctl daemon-reload` and restart the worker unit. A systemd `
 - Principals: administrators receive `codex.run.runpod_model` through the Codex role bundle. Other complete user principals may receive that exact capability through the existing role store. Anonymous or incomplete principals cannot see or submit these providers.
 - Objects: the new provider operation follows the existing Codex session/workspace ownership model. Broader legacy Codex object-authorization gaps remain tracked in `documentation/security-audit-2026-08-28.md` and are not expanded by these providers.
 - Mutations: all `/codex` browser mutations require the shared session CSRF token and origin validation. Provider values and fixed profiles are validated server-side; a client cannot override the profile, model, or reasoning setting for these providers.
-- Secrets and outbound trust: credentials remain outside MongoDB, rendered pages, command summaries, and logs. The environment file is sourced only for the two fixed provider identifiers. Outbound endpoints and credential variable names remain controlled by the administrator-owned Codex profiles.
+- Secrets and outbound trust: credentials remain outside MongoDB, rendered pages, command summaries, events, and logs. The environment file is sourced only for the two fixed provider identifiers, while the matching profile is read on the execution target and passed to the App Server thread without being persisted by the site. Profiles must reference environment keys rather than contain inline secret values. Outbound endpoints and credential variable names remain controlled by the administrator-owned Codex profiles.
 - Availability and abuse controls: exact pod state is checked from the Runpod management mirror before enqueue and before execution. Existing prompt-size, queue-concurrency, workspace-lock, timeout, permission-mode, and yolo-confirmation controls still apply. Runpod-backed turns do not reserve the local AI Gateway Ollama container.
 - Responses and caching: Pug/JSON output uses the existing escaping/serialization path, and `/codex` responses are marked `private, no-store`.
 - Logging: failed capability lookups and turns blocked because a pod stopped are reported through the production logger without credentials or prompt content.

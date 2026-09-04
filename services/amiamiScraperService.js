@@ -1,5 +1,3 @@
-const { CurlRequest } = require('curl-cffi');
-
 const AMIAMI_SITE_URL = 'https://www.amiami.com';
 const AMIAMI_IMAGE_URL = 'https://img.amiami.com';
 const AMIAMI_API_URL = 'https://api.amiami.com';
@@ -72,6 +70,7 @@ async function fetchJson(url, { options, params, referer }) {
 }
 
 async function curlGet(url, requestOptions) {
+  const CurlRequest = loadCurlRequest();
   const client = new CurlRequest({ keepAlive: false }, { maxSize: 1, idleTTL: 1 });
   try {
     return await client.get(url, {
@@ -80,6 +79,20 @@ async function curlGet(url, requestOptions) {
     });
   } finally {
     client.close();
+  }
+}
+
+function loadCurlRequest() {
+  try {
+    return require('curl-cffi').CurlRequest;
+  } catch (error) {
+    const dependencyError = new Error(
+      'AmiAmi fallback scraping is unavailable because curl-cffi failed to initialize. '
+      + 'Run `npm rebuild curl-cffi` and retry.',
+    );
+    dependencyError.code = 'AMIAMI_SCRAPER_UNAVAILABLE';
+    dependencyError.cause = error;
+    throw dependencyError;
   }
 }
 

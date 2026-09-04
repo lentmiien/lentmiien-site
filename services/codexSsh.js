@@ -95,6 +95,7 @@ module.exports = {
   buildSshArgs,
   getRemoteCodexBinary,
   getRemoteCodexInvocation,
+  getRemoteShell,
   getRemoteTempDir,
   getSshBinary,
   getSshDestination,

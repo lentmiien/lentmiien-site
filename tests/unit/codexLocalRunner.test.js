@@ -74,7 +74,7 @@ function createRunInput(overrides = {}) {
     },
     session: overrides.session || {},
     workspace: { rootPath: '/workspace/project' },
-    target: { type: 'local-linux' },
+    target: overrides.target || { type: 'local-linux' },
     onEvent: overrides.onEvent || jest.fn().mockResolvedValue(),
     onCommand: overrides.onCommand,
     onThreadId: overrides.onThreadId,
@@ -134,19 +134,14 @@ describe('CodexLocalRunner', () => {
     });
 
     expect(command.binary).toBe('codex-test');
-    expect(command.args).toEqual(expect.arrayContaining([
-      '-m', 'gpt-5.6-terra',
-      '-p', 'local',
-      '-C', '/workspace/project',
-      '--sandbox', 'workspace-write',
-      'app-server',
-    ]));
+    expect(command.args).toEqual(['app-server']);
     expect(command.args).not.toContain('exec');
     expect(command.args).not.toContain('Answer the question.');
     expect(command.commandSummary).toEqual(expect.objectContaining({
       operation: 'app-server',
       resume: false,
       model: 'gpt-5.6-terra',
+      profile: 'local',
       reasoningEffort: 'high',
     }));
   });
@@ -168,7 +163,7 @@ describe('CodexLocalRunner', () => {
     expect(command.args).not.toContain('thread-private');
   });
 
-  test('adds the configured Ollama profile and OSS flag', () => {
+  test('keeps configured Ollama settings out of the App Server command line', () => {
     const runner = new CodexLocalRunner({
       binaryPath: 'codex-test',
       timeoutMs: 60000,
@@ -186,9 +181,7 @@ describe('CodexLocalRunner', () => {
       workspace: { rootPath: '/workspace/project' },
     });
 
-    expect(command.args).toEqual(expect.arrayContaining([
-      '--oss', '-p', 'local-qwen', '-m', 'qwen3.6:27b', 'app-server',
-    ]));
+    expect(command.args).toEqual(['app-server']);
     expect(command.commandSummary).toEqual(expect.objectContaining({
       modelProvider: 'ollama',
       model: 'qwen3.6:27b',
@@ -221,12 +214,11 @@ describe('CodexLocalRunner', () => {
     expect(command.args).toEqual(expect.arrayContaining([
       '/home/tester/.codex/lentmiien.env',
       'codex-test',
-      '-p',
-      'lentmiien-qwen',
-      '--dangerously-bypass-approvals-and-sandbox',
       'app-server',
     ]));
     expect(command.args[1]).toContain('. "$1"');
+    expect(command.args).not.toContain('-p');
+    expect(command.args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
     expect(command.args).not.toContain('ignored-model');
     expect(command.commandSummary).toEqual(expect.objectContaining({
       profile: 'lentmiien-qwen',
@@ -262,7 +254,7 @@ describe('CodexLocalRunner', () => {
     ]));
     const remoteCommand = command.args[command.args.length - 1];
     expect(remoteCommand).toContain('app-server');
-    expect(remoteCommand).toContain('/home/lennart/project');
+    expect(remoteCommand).not.toContain('/home/lennart/project');
     expect(command.commandSummary).toEqual(expect.objectContaining({
       outputLocation: 'remote',
       sshDestination: 'worker@example.test',
@@ -361,6 +353,103 @@ describe('CodexLocalRunner', () => {
       }));
       expect(child.stdin.end).toHaveBeenCalled();
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    });
+
+    test('loads an Ollama profile into thread/start with its custom provider', async () => {
+      const child = createFakeChild();
+      spawn.mockReturnValue(child);
+      const profileConfig = {
+        oss_provider: 'local_ollama',
+        model_catalog_json: '/home/test/.codex/ollama-models.json',
+        model_providers: {
+          local_ollama: {
+            name: 'Local Ollama',
+            base_url: 'http://127.0.0.1:11434/v1',
+            wire_api: 'responses',
+            stream_idle_timeout_ms: 900000,
+          },
+        },
+      };
+      const profileLoader = jest.fn().mockResolvedValue(profileConfig);
+      const runner = new CodexLocalRunner({
+        binaryPath: 'codex-test',
+        ollamaProfile: 'ollama',
+        profileLoader,
+        timeoutMs: 60000,
+        additionalMessageTimeoutMs: 1000,
+        completionExitGraceMs: 100,
+      });
+      const input = createRunInput({
+        turn: {
+          modelProvider: 'ollama',
+          model: 'qwen3.8:27b-codex',
+          permissionMode: 'yolo',
+        },
+        target: {
+          type: 'remote-ssh-linux',
+          connection: { destination: 'worker@example.test' },
+        },
+      });
+      const { resultPromise, threadRequest, turnRequest } = await startAppServerTurn(
+        runner,
+        child,
+        input
+      );
+
+      expect(profileLoader).toHaveBeenCalledWith(
+        'ollama',
+        input.target,
+        expect.objectContaining({ remoteTimeoutMs: expect.any(Number) })
+      );
+      expect(threadRequest.params).toEqual(expect.objectContaining({
+        config: profileConfig,
+        model: 'qwen3.8:27b-codex',
+        modelProvider: 'local_ollama',
+        sandbox: 'danger-full-access',
+      }));
+      expect(turnRequest.params).toEqual(expect.objectContaining({
+        model: 'qwen3.8:27b-codex',
+      }));
+
+      notify(child, 'turn/completed', {
+        threadId: 'thread-123',
+        turn: { id: 'codex-turn-123', status: 'completed', items: [] },
+      });
+      await expect(resultPromise).resolves.toEqual(expect.objectContaining({ status: 'succeeded' }));
+    });
+
+    test('reports a profile load failure without starting or exposing its cause', async () => {
+      const privateError = Object.assign(new Error('private profile diagnostic'), {
+        code: 'CODEX_PROFILE_READ_FAILED',
+      });
+      const onCommand = jest.fn().mockResolvedValue();
+      const errorSpy = jest.spyOn(logger, 'error').mockResolvedValue();
+      const runner = new CodexLocalRunner({
+        binaryPath: 'codex-test',
+        ollamaProfile: 'ollama',
+        profileLoader: jest.fn().mockRejectedValue(privateError),
+        timeoutMs: 60000,
+      });
+
+      await expect(runner.runTurn(createRunInput({
+        turn: { modelProvider: 'ollama', model: 'qwen3.8:27b-codex' },
+        onCommand,
+      }))).rejects.toBe(privateError);
+
+      expect(spawn).not.toHaveBeenCalled();
+      expect(onCommand).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        'Failed to load Codex profile for App Server turn',
+        expect.objectContaining({
+          category: 'codex_tool',
+          metadata: expect.objectContaining({
+            turnId: 'turn-lifecycle',
+            profile: 'ollama',
+            code: 'CODEX_PROFILE_READ_FAILED',
+          }),
+        })
+      );
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('private profile diagnostic');
     });
 
     test('retains actionable item starts and current plan states without retaining message starts', async () => {

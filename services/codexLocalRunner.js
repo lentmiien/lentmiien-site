@@ -3,6 +3,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const codexToolService = require('./codexToolService');
+const { loadCodexProfile } = require('./codexProfileLoader');
 const logger = require('../utils/logger');
 const {
   buildRemoteShellCommand,
@@ -136,39 +137,29 @@ function getTurnLaunchSettings(turn, ollamaProfile) {
   };
 }
 
-function buildAppServerArgs({ turn, workspace, ollamaProfile }) {
+function buildAppServerArgs({ turn, ollamaProfile }) {
   const settings = getTurnLaunchSettings(turn, ollamaProfile);
-  const args = [];
-
-  if (settings.modelProvider === 'ollama') {
-    args.push('--oss');
-  }
-  if (settings.model) {
-    args.push('-m', settings.model);
-  }
-  if (settings.effectiveProfile) {
-    args.push('-p', settings.effectiveProfile);
-  }
-  if (settings.reasoningEffort) {
-    args.push('-c', `model_reasoning_effort="${settings.reasoningEffort}"`);
-  }
-  args.push('-C', workspace.rootPath);
-  if (turn.permissionMode === 'yolo') {
-    args.push('--dangerously-bypass-approvals-and-sandbox');
-  } else {
-    args.push('--sandbox', turn.permissionMode || 'read-only');
-  }
-  // Stdio is App Server's default transport. Some Codex builds advertise
-  // --stdio in help but reject the redundant flag, so rely on the default.
-  args.push('app-server');
-
-  return { args, settings };
+  // App Server is a host process. Runtime flags such as --profile are either
+  // rejected or ignored for this subcommand, so per-turn settings are sent in
+  // thread/start or thread/resume instead. Stdio is the default transport.
+  return { args: ['app-server'], settings };
 }
 
 function sandboxModeForTurn(turn) {
   return turn.permissionMode === 'yolo'
     ? 'danger-full-access'
     : (turn.permissionMode || 'read-only');
+}
+
+function modelProviderForThread(settings, profileConfig) {
+  if (settings.modelProvider === 'ollama') {
+    return typeof profileConfig?.oss_provider === 'string' && profileConfig.oss_provider.trim()
+      ? profileConfig.oss_provider.trim()
+      : 'ollama';
+  }
+  return typeof profileConfig?.model_provider === 'string'
+    ? profileConfig.model_provider.trim()
+    : '';
 }
 
 function textFromUserContent(content) {
@@ -266,7 +257,9 @@ function createProtocolError(method, rpcError) {
 
 class CodexLocalRunner {
   constructor(config = {}) {
-    this.config = config;
+    this.profileLoader = config.profileLoader || loadCodexProfile;
+    this.config = { ...config };
+    delete this.config.profileLoader;
     this.activeRuns = new Map();
   }
 
@@ -285,7 +278,6 @@ class CodexLocalRunner {
     );
     const { args: codexArgs, settings } = buildAppServerArgs({
       turn,
-      workspace,
       ollamaProfile: config.ollamaProfile,
     });
     const isFollowup = String(turn.kind || '').startsWith('followup_');
@@ -418,6 +410,28 @@ class CodexLocalRunner {
       ? Math.max(1, runnerConfig.completionExitGraceMs)
       : 2000;
     const requestTimeoutMs = runnerConfig.additionalMessageTimeoutMs || 15000;
+    let profileConfig = null;
+    if (command.settings.effectiveProfile) {
+      try {
+        profileConfig = await this.profileLoader(
+          command.settings.effectiveProfile,
+          target,
+          { remoteTimeoutMs: runnerConfig.remoteValidationTimeoutMs }
+        );
+      } catch (error) {
+        await Promise.resolve(logger.error('Failed to load Codex profile for App Server turn', {
+          category: 'codex_tool',
+          metadata: {
+            turnId: String(turn._id),
+            profile: command.settings.effectiveProfile,
+            targetType: target?.type || 'local',
+            code: error?.code || 'CODEX_PROFILE_LOAD_FAILED',
+          },
+        })).catch(() => {});
+        throw error;
+      }
+    }
+    const threadModelProvider = modelProviderForThread(command.settings, profileConfig);
     if (typeof onCommand === 'function') {
       await onCommand(command.commandSummary);
     }
@@ -927,7 +941,9 @@ class CodexLocalRunner {
           cwd: workspace.rootPath,
           approvalPolicy: 'never',
           sandbox: sandboxModeForTurn(turn),
+          ...(profileConfig ? { config: profileConfig } : {}),
           ...(command.settings.model ? { model: command.settings.model } : {}),
+          ...(threadModelProvider ? { modelProvider: threadModelProvider } : {}),
         };
         const isFollowup = String(turn.kind || '').startsWith('followup_');
         const threadResponse = isFollowup
