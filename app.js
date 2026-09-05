@@ -146,6 +146,7 @@ const scheduleEmergencyStockMaintenance = require('./schedulers/emergencyStockMa
 const schedulePushoverReminders = require('./schedulers/pushoverReminders');
 const scheduleRunpodBillingHistory = require('./schedulers/runpodBillingHistory');
 const scheduleRunpodPodGuard = require('./schedulers/runpodPodGuard');
+const scheduleConnectivityMonitor = require('./schedulers/connectivityMonitor');
 const {
   validateBatchDefaultModelSetting,
   validateBatchSummaryModelSetting,
@@ -525,6 +526,7 @@ app.use('/codex-log-review', isAuthenticated, isAdmin, codexLogReviewRouter);
 app.use('/tmp-files', isAuthenticated, isAdmin, tmpFilesRouter);
 app.use('/admin/ask-lennart', isAuthenticated, askLennartAdminRouter);
 app.use('/admin/runpod', isAuthenticated, isAdmin, runpodAdminRouter);
+app.use('/admin/connectivity', require('./routes/connectivity').createConnectivityRouter());
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
 app.post(
@@ -717,6 +719,8 @@ server.on('error', (err) => {
 
 // Local file retention is intentionally independent of MongoDB availability.
 scheduleLogRetention();
+// Connectivity observations continue while local MongoDB is unavailable.
+scheduleConnectivityMonitor();
 
 let databaseServicesStarted = false;
 let databaseServicesNeedRecovery = false;
