@@ -1,5 +1,11 @@
 const crypto = require('crypto');
 const HumanToolRequestService = require('../../services/humanToolRequestService');
+const { sendPushoverNotification } = require('../../utils/pushover');
+
+jest.mock('../../utils/pushover', () => ({
+  ...jest.requireActual('../../utils/pushover'),
+  sendPushoverNotification: jest.fn().mockResolvedValue({ status: 1 }),
+}));
 
 function hash(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -58,7 +64,8 @@ function createHarness(overrides = {}) {
       userModel: {
         findById: jest.fn(() => query({ _id: 'admin-1', name: 'Admin', type_user: 'admin' })),
       },
-      appLogger: { error: jest.fn() },
+      appLogger: { error: jest.fn(), warning: jest.fn().mockResolvedValue() },
+      env: {},
       sleep: jest.fn().mockResolvedValue(),
       ...overrides.options,
     }),
@@ -85,7 +92,10 @@ describe('HumanToolRequestService', () => {
       options: { now: () => new Date('2026-09-05T00:00:00.000Z') },
     });
     harness.requestModel.findOne.mockReturnValue(query(null));
-    harness.requestModel.findOneAndUpdate.mockReturnValue(query(pending));
+    harness.requestModel.findOneAndUpdate.mockReturnValue(query({
+      value: pending,
+      lastErrorObject: { updatedExisting: false, upserted: pending._id },
+    }));
     harness.requestModel.findById.mockReturnValue(query(responded));
 
     const result = await harness.instance.execute(
@@ -102,17 +112,165 @@ describe('HumanToolRequestService', () => {
         responseId: 'response-1',
         createdBy: { id: 'admin-1', name: 'Admin' },
       }) },
-      expect.objectContaining({ upsert: true })
+      expect.objectContaining({ upsert: true, includeResultMetadata: true })
     );
     expect(harness.pendingModel.updateOne).toHaveBeenCalledWith(
       { response_id: 'response-1', recoveryState: 'pending' },
       { $set: { recoveryState: 'tool_wait' } }
     );
+    expect(sendPushoverNotification).toHaveBeenCalledTimes(1);
+    expect(sendPushoverNotification).toHaveBeenCalledWith({
+      title: 'New Ask Lennart request',
+      message: `Codex workflow request is pending your response. Open Ask Lennart to review and respond: https://my.lentmiien.com/admin/ask-lennart#request-${pending._id}`,
+      priority: 1,
+    });
     expect(result).toMatchObject({
       status: 'responded',
       response: 'Deployed successfully; the live check passed.',
       request_url: `/admin/ask-lennart#request-${pending._id}`,
     });
+  });
+
+  test.each(['general', 'codex'])('notifies once after saving a new %s request with safe context', async (variant) => {
+    const pending = pendingRequest({ variant, toolName: `ask_lennart${variant === 'codex' ? '_for_codex' : ''}` });
+    const harness = createHarness({ options: { env: { PUBLIC_APP_BASE_URL: 'https://example.com/base?private=value' } } });
+    let finishSave;
+    const saved = new Promise((resolve) => { finishSave = resolve; });
+    harness.requestModel.findOne.mockReturnValue(query(null));
+    harness.requestModel.findOneAndUpdate.mockReturnValue(saved);
+    const creation = harness.instance.createOrFindRequest({
+      prompt: pending.prompt, variant, toolName: pending.toolName,
+      identity: { originKey: pending.originKey }, principal: context.user,
+    });
+    await new Promise(setImmediate);
+    expect(sendPushoverNotification).not.toHaveBeenCalled();
+    finishSave({ value: pending, lastErrorObject: { updatedExisting: false, upserted: pending._id } });
+    await expect(creation).resolves.toBe(pending);
+    expect(sendPushoverNotification).toHaveBeenCalledTimes(1);
+    expect(sendPushoverNotification).toHaveBeenCalledWith({
+      title: 'New Ask Lennart request',
+      message: `${variant === 'codex' ? 'Codex workflow' : 'General'} request is pending your response. Open Ask Lennart to review and respond: https://example.com/admin/ask-lennart#request-${pending._id}`,
+      priority: 1,
+    });
+    const payload = JSON.stringify(sendPushoverNotification.mock.calls);
+    for (const privateValue of [pending.prompt, pending.conversationId, pending.responseId, pending.toolCallId, pending.createdBy.name, 'private=value']) {
+      expect(payload).not.toContain(privateValue);
+    }
+  });
+
+  test.each(['existing', 'matched upsert', 'duplicate key'])('resumes a pending wait without notifying: %s', async (scenario) => {
+    const pending = pendingRequest();
+    const harness = createHarness({ options: { now: () => pending.createdAt } });
+    harness.requestModel.findOne.mockReturnValue(query(pending));
+    if (scenario !== 'existing') {
+      harness.requestModel.findOne.mockReturnValueOnce(query(null));
+      if (scenario === 'duplicate key') {
+        harness.requestModel.findOneAndUpdate.mockRejectedValue({ code: 11000 });
+      } else {
+        harness.requestModel.findOneAndUpdate.mockReturnValue(query({
+          value: pending, lastErrorObject: { updatedExisting: true },
+        }));
+      }
+    }
+    harness.requestModel.findById
+      .mockReturnValueOnce(query(pending))
+      .mockReturnValue(query({ ...pending, status: 'responded', response: 'Done.' }));
+    await expect(harness.instance.execute({ prompt: pending.prompt }, context, 'codex'))
+      .resolves.toMatchObject({ status: 'responded', response: 'Done.' });
+    expect(harness.requestModel.updateOne).toHaveBeenCalled();
+    expect(sendPushoverNotification).not.toHaveBeenCalled();
+  });
+
+  test.each(['rejection', 'synchronous throw', 'logger failure'])('preserves saved request and answer delivery after notification %s', async (failure) => {
+    const pending = pendingRequest();
+    const notificationSender = jest.fn(() => {
+      const error = new Error('private provider payload and credentials');
+      if (failure === 'synchronous throw') throw error;
+      return Promise.reject(error);
+    });
+    const warning = failure === 'logger failure'
+      ? jest.fn().mockRejectedValue(new Error('logger unavailable'))
+      : jest.fn().mockResolvedValue();
+    const harness = createHarness({ options: {
+      now: () => pending.createdAt, notificationSender, appLogger: { warning },
+    } });
+    harness.requestModel.findOne.mockReturnValue(query(null));
+    harness.requestModel.findOneAndUpdate.mockReturnValue(query({
+      value: pending, lastErrorObject: { updatedExisting: false, upserted: pending._id },
+    }));
+    harness.requestModel.findById.mockReturnValue(query({ ...pending, status: 'responded', response: 'Done.' }));
+    await expect(harness.instance.execute({ prompt: pending.prompt }, context, 'codex'))
+      .resolves.toMatchObject({ status: 'responded', response: 'Done.' });
+    expect(harness.pendingModel.updateOne).toHaveBeenCalledWith(
+      { response_id: pending.responseId, recoveryState: 'pending' },
+      { $set: { recoveryState: 'tool_wait' } }
+    );
+    expect(warning).toHaveBeenCalledWith(
+      'Saved a human tool request but could not send its Pushover notification',
+      { category: 'human_tool_request', metadata: { requestId: pending._id, errorName: 'Error' } }
+    );
+    // Replaying the saved request after failure does not retry the notification.
+    harness.requestModel.findOne.mockReturnValue(query(pending));
+    await harness.instance.execute({ prompt: pending.prompt }, context, 'codex');
+    expect(notificationSender).toHaveBeenCalledTimes(1);
+  });
+
+  test('only the winning concurrent creator notifies', async () => {
+    const pending = pendingRequest();
+    const harness = createHarness();
+    harness.requestModel.findOne.mockReturnValue(query(null));
+    harness.requestModel.findOneAndUpdate
+      .mockReturnValueOnce(query({
+        value: pending, lastErrorObject: { updatedExisting: false, upserted: pending._id },
+      }))
+      .mockReturnValueOnce(query({
+        value: pending, lastErrorObject: { updatedExisting: true },
+      }));
+    const args = {
+      prompt: pending.prompt, variant: pending.variant, toolName: pending.toolName,
+      identity: { originKey: pending.originKey }, principal: context.user,
+    };
+    await expect(Promise.all([
+      harness.instance.createOrFindRequest(args),
+      harness.instance.createOrFindRequest(args),
+    ])).resolves.toEqual([pending, pending]);
+    expect(harness.requestModel.findOneAndUpdate).toHaveBeenCalledTimes(2);
+    expect(sendPushoverNotification).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not notify when saving fails', async () => {
+    const harness = createHarness();
+    harness.requestModel.findOne.mockReturnValue(query(null));
+    harness.requestModel.findOneAndUpdate.mockRejectedValue(new Error('database unavailable'));
+    await expect(harness.instance.execute({ prompt: 'Question' }, context, 'general'))
+      .rejects.toThrow('database unavailable');
+    expect(sendPushoverNotification).not.toHaveBeenCalled();
+    expect(harness.pendingModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  test.each(['not a URL', 'javascript:alert(1)', 'https://username:secret@example.com'])('keeps invalid link configuration out of notifications: %s', async (baseUrl) => {
+    const pending = pendingRequest();
+    const harness = createHarness({ options: { env: { PUBLIC_APP_BASE_URL: baseUrl }, now: () => pending.createdAt } });
+    harness.requestModel.findOne.mockReturnValue(query(null));
+    harness.requestModel.findOneAndUpdate.mockReturnValue(query({
+      value: pending, lastErrorObject: { updatedExisting: false, upserted: pending._id },
+    }));
+    harness.requestModel.findById.mockReturnValue(query({ ...pending, status: 'responded' }));
+    await expect(harness.instance.execute({ prompt: pending.prompt }, context, 'codex'))
+      .resolves.toMatchObject({ status: 'responded' });
+    expect(sendPushoverNotification).not.toHaveBeenCalled();
+    expect(harness.instance.logger.warning).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(harness.instance.logger.warning.mock.calls)).not.toContain(baseUrl);
+  });
+
+  test('refreshing the admin inbox does not notify', async () => {
+    const harness = createHarness();
+    harness.requestModel.find = jest.fn(() => ({
+      sort: jest.fn().mockReturnThis(), limit: jest.fn().mockReturnThis(), ...query([]),
+    }));
+    await harness.instance.listForAdmin({ user: context.user });
+    await harness.instance.listForAdmin({ user: context.user });
+    expect(sendPushoverNotification).not.toHaveBeenCalled();
   });
 
   test('replays the same durable request instead of inserting a duplicate', async () => {
@@ -129,6 +287,7 @@ describe('HumanToolRequestService', () => {
       context,
       'codex'
     )).resolves.toMatchObject({ status: 'responded', response: 'Done.' });
+    expect(sendPushoverNotification).not.toHaveBeenCalled();
     expect(harness.requestModel.countDocuments).not.toHaveBeenCalled();
     expect(harness.requestModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
@@ -178,6 +337,7 @@ describe('HumanToolRequestService', () => {
       'general'
     )).rejects.toMatchObject({ statusCode: 403 });
     expect(harness.requestModel.findOne).not.toHaveBeenCalled();
+    expect(sendPushoverNotification).not.toHaveBeenCalled();
   });
 
   test('answers only a pending UUID request and schedules restart-safe recovery', async () => {
@@ -205,6 +365,7 @@ describe('HumanToolRequestService', () => {
       }) },
       { new: true, runValidators: true }
     );
+    expect(sendPushoverNotification).not.toHaveBeenCalled();
     expect(harness.pendingModel.updateOne).toHaveBeenCalledWith(
       { response_id: 'response-1', recoveryState: 'tool_wait' },
       { $set: {
@@ -271,6 +432,7 @@ describe('HumanToolRequestService', () => {
       matchedCount: 1,
       modifiedCount: 1,
     });
+    expect(sendPushoverNotification).not.toHaveBeenCalled();
     expect(harness.requestModel.updateMany).toHaveBeenCalledWith(
       {
         status: 'pending',

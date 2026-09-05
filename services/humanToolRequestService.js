@@ -5,6 +5,7 @@ const PendingRequests = require('../models/pending_requests');
 const Role = require('../models/role');
 const Useraccount = require('../models/useraccount');
 const logger = require('../utils/logger');
+const { PUSHOVER_PRIORITIES, sendPushoverNotification } = require('../utils/pushover');
 const {
   CHAT_TOOL_CAPABILITIES,
   CHAT_TOOL_ROLE_CAPABILITY_BUNDLES,
@@ -164,6 +165,7 @@ class HumanToolRequestService {
     roleModel = Role,
     userModel = Useraccount,
     appLogger = logger,
+    notificationSender = sendPushoverNotification,
     sleep = sleepFor,
     now = () => new Date(),
     env = process.env,
@@ -173,6 +175,8 @@ class HumanToolRequestService {
     this.roleModel = roleModel;
     this.userModel = userModel;
     this.logger = appLogger;
+    this.notificationSender = notificationSender;
+    this.publicAppBaseUrl = env.PUBLIC_APP_BASE_URL || 'https://my.lentmiien.com';
     this.sleep = sleep;
     this.now = now;
     this.config = getRuntimeConfig(env);
@@ -237,12 +241,22 @@ class HumanToolRequestService {
       },
     };
 
+    let inserted = false;
     try {
-      existing = await queryResult(this.requestModel.findOneAndUpdate(
+      const result = await queryResult(this.requestModel.findOneAndUpdate(
         { originKey: identity.originKey },
         update,
-        { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
+        {
+          new: true,
+          upsert: true,
+          setDefaultsOnInsert: true,
+          runValidators: true,
+          includeResultMetadata: true,
+        }
       ));
+      existing = result?.value;
+      // Only the winning insert notifies, including when concurrent calls race.
+      inserted = result?.lastErrorObject?.updatedExisting === false;
     } catch (error) {
       if (error?.code !== 11000) throw error;
       existing = await this.findByOriginKey(identity.originKey);
@@ -256,7 +270,38 @@ class HumanToolRequestService {
     if (existing.requestHash !== requestHash) {
       throw createHttpError(409, 'This tool call was already recorded with different arguments.');
     }
+    if (inserted && existing.status === 'pending') {
+      await this.notifyNewRequest(existing);
+    }
     return existing;
+  }
+
+  async notifyNewRequest(request) {
+    try {
+      const baseUrl = new URL(this.publicAppBaseUrl);
+      if (!['https:', 'http:'].includes(baseUrl.protocol) || baseUrl.username || baseUrl.password) {
+        throw new Error('Invalid public application URL');
+      }
+      const url = new URL(requestUrl(request._id), baseUrl.origin).href;
+      const requestType = request.variant === 'codex' ? 'Codex workflow' : 'General';
+      await this.notificationSender({
+        title: 'New Ask Lennart request',
+        message: `${requestType} request is pending your response. Open Ask Lennart to review and respond: ${url}`,
+        priority: PUSHOVER_PRIORITIES.HIGH,
+      });
+    } catch (error) {
+      try {
+        await this.logger.warning('Saved a human tool request but could not send its Pushover notification', {
+          category: 'human_tool_request',
+          metadata: {
+            requestId: String(request._id),
+            errorName: error?.name || 'Error',
+          },
+        });
+      } catch {
+        // Even a logging failure must not interrupt the saved request's durable wait.
+      }
+    }
   }
 
   async markResponseAsHumanWait(responseId) {

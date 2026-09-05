@@ -15,6 +15,8 @@ Every Codex call creates an ordinary `/codex` session and waits for its first tu
 
 Ask Lennart records are shown at `/admin/ask-lennart`. A response completes the waiting tool call. The record and originating Chat5 pending response are both durable, so replay after a process restart finds the same request instead of creating a duplicate.
 
+Each newly inserted pending request (both general and Codex workflow) triggers one Pushover notification attempt at **High priority (1)** through `utils/pushover.js`. The notification contains only the request type and an absolute link to its inbox card; prompts, answers, names, and chat/session identifiers are omitted. The atomic upsert result identifies the winning insert, so repeated calls, concurrent upsert matches, inbox reloads, responses, and restart recovery do not notify again. Sending happens after persistence; a notification failure logs a warning and does not prevent the durable wait or answer delivery. Notifications are best effort: they are not retried, and a process exit between saving and sending can miss the alert while leaving the request available in the inbox.
+
 ## Security contract: Chat5 Codex tools
 
 ```text
@@ -54,14 +56,14 @@ Object scope: creation is attributed to the authenticated, database-revalidated 
 Admin override: yes, for list and response operations
 Browser mutations and CSRF control: POST only, shared session CSRF token plus same-origin checks
 Public/secret abuse controls: not applicable
-Request and upload limits: 20,000 characters per prompt/response; 10 pending requests per creator by default; 30 responses/hour; bounded form size/field count; no uploads
-Output/rendering contexts: escaped Pug text and attributes; no rich HTML
+Request and upload limits: 20,000 characters per prompt/response; 10 pending requests per creator by default; 30 responses/hour; bounded form size/field count; no uploads; one notification attempt per insert with the shared 10-second Pushover timeout
+Output/rendering contexts: escaped Pug text and attributes; no rich HTML; notification plain text contains only a fixed request-type label and opaque request-id link
 Private file/media storage and delivery: none
-Outbound hosts/services: none
+Outbound hosts/services: https://api.pushover.net/1/messages.json via the existing configured application token/user key; link origin uses PUBLIC_APP_BASE_URL (default https://my.lentmiien.com), accepts HTTP(S), rejects embedded credentials, and excludes base paths/query/fragment
 Cache policy: private, no-store
-Security-relevant logs (without personal data): failed authorization, rendering, response persistence, and restart recovery; prompt/response text is never logged
+Security-relevant logs (without personal data): failed authorization, rendering, response persistence, restart recovery, and notification delivery; notification warnings contain only request id and error name, never provider payloads or prompt/response text
 Retention/deletion behavior: records receive a TTL, 90 days by default; unanswered calls time out after 24 hours by default
-Required negative security tests: missing capability, malformed/oversized/unknown input, invalid CSRF, malformed/unknown request id, duplicate replay, foreign/untrusted principal, and escaped rendering
+Required negative security tests: missing capability, malformed/oversized/unknown input, invalid CSRF, malformed/unknown request id, duplicate replay, foreign/untrusted principal, escaped rendering, notification privacy, invalid link configuration, no notification on failed persistence, and isolated notification failures
 Legacy dependency or migration plan: adds `tool_wait` to pending Chat5 response state; old records need no migration
 ```
 
@@ -79,7 +81,7 @@ Codex tool calls also receive deterministic internal session and turn IDs derive
 
 ## Configuration and deployment
 
-All settings have safe defaults and are optional:
+The following wait/recovery settings have safe defaults and are optional:
 
 - `CODEX_CHAT_TOOL_WAIT_TIMEOUT_MS` (default 2 hours)
 - `CODEX_CHAT_TOOL_POLL_INTERVAL_MS` (default 2 seconds)
@@ -88,6 +90,10 @@ All settings have safe defaults and are optional:
 - `HUMAN_TOOL_RECOVERY_INTERVAL_MS` (default 1 minute)
 - `HUMAN_TOOL_RETENTION_DAYS` (default 90 days)
 - `HUMAN_TOOL_MAX_PENDING_PER_USER` (default 10)
+
+Notifications reuse `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY`; missing credentials produce a warning while requests remain usable. Set the existing `PUBLIC_APP_BASE_URL` to the intended HTTP(S) application origin for notification links. No dependency, database migration, new browser endpoint, or Cloudflare change is required. The linked inbox retains its capability checks, CSRF controls, and private/no-store responses.
+
+Deploy through the normal reviewed application release/restart process. In a test environment with sandbox Pushover credentials, create one request with each Ask Lennart variant and verify one High-priority alert per new request, the correct linked card after login, and no private content in the alert. Reload the inbox, replay/resume a pending tool call (including across a restart), and submit an answer: none should generate another alert, and the answer must reach the chat. Simulate a Pushover failure using sandbox configuration and verify that the request remains answerable and a `human_tool_request` warning appears without secrets. Reverting the notification change and restarting rolls back alerts without migrating or deleting existing requests.
 
 The two fixed development workspaces require global `CODEX_YOLO_ENABLED=true` and `allowYolo=true` on those workspace records. Production remains read-only regardless. Tool seeds are inserted by the normal missing-default startup seeder; existing Tool Manager edits are preserved by that startup path. The manual seed action and `setup.js` retain their existing full-default refresh behavior.
 
