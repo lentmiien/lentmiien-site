@@ -9,7 +9,10 @@ This feature adds seven Tool Manager entries for Chat5:
 - A general Codex option-discovery tool and a general any-workspace runner.
 - A general version of Ask Lennart.
 
-A copy-ready Context message for chats using the Important tool set lives in `documentation/chat5-important-tools-context.md`.
+Copy-ready Context messages are available for both tool sets:
+
+- `documentation/chat5-important-tools-context.md` describes the fixed Lentmiien development tools.
+- `documentation/chat5-general-codex-tools-context.md` describes the fetch, any-workspace Codex, and general Ask Lennart tools, including project discovery before a separate implementation session.
 
 Every Codex call creates an ordinary `/codex` session and waits for its first turn to reach a terminal state. The fixed development tools use OpenAI profile `high` with yolo permission. The production tool is deliberately forced to question/read-only mode even if a model asks it to edit production. The general runner validates every submitted choice again through the existing Codex service.
 
