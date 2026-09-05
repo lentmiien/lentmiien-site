@@ -1,5 +1,7 @@
 const { createHash } = require('crypto');
 
+const MONITOR_VERSION = '2';
+
 function getConnectivityConfig(env = process.env) {
   function number(name, fallback, min, max) {
     const value = env[name] === undefined || env[name] === '' ? fallback : Number(env[name]);
@@ -10,6 +12,7 @@ function getConnectivityConfig(env = process.env) {
   if (!['true', 'false'].includes(enabled)) throw new Error('Invalid CONNECTIVITY_MONITOR_ENABLED');
   const config = {
     enabled: enabled === 'true',
+    monitorVersion: MONITOR_VERSION,
     intervalMs: number('CONNECTIVITY_INTERVAL_MS', 120000, 60000, 600000),
     retentionDays: number('CONNECTIVITY_RETENTION_DAYS', 3, 1, 7),
     sustainedMs: number('CONNECTIVITY_SUSTAINED_MS', 600000, 600000, 86400000),
@@ -33,4 +36,4 @@ function getConnectivityConfig(env = process.env) {
   return config;
 }
 
-module.exports = { getConnectivityConfig };
+module.exports = { getConnectivityConfig, MONITOR_VERSION };

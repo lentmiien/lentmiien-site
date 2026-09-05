@@ -1,0 +1,84 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/connectivityDashboard.css')
+
+block content
+  main.connectivity-page
+    header.connectivity-header
+      div
+        p.connectivity-eyebrow SYSTEM OBSERVATIONS
+        h1 Connectivity analytics
+        p Compare outbound HTTPS, public app readiness, local health, and MongoDB ping.
+        a#performance-link(href='/admin/performance?range=24') Compare app performance
+        |  ·
+        a(href='/admin/connectivity/api') Raw history JSON
+      .connectivity-controls
+        label(for='connectivity-window') Time window
+        select#connectivity-window
+          option(value='1') Last hour
+          option(value='6') Last 6 hours
+          option(value='24', selected) Last 24 hours
+          option(value='72') Last 72 hours
+        button#connectivity-refresh(type='button') Refresh
+    p#connectivity-message(role='status', aria-live='polite') Loading stored observations…
+    noscript This dashboard needs JavaScript. The raw history JSON link remains available.
+    #connectivity-results(hidden)
+      section.connectivity-summary(aria-label='Observation summary')
+        article
+          h2 Recent external status
+          strong#recent-status
+          p#latest-at
+        article
+          h2 Sample coverage
+          strong#coverage-value
+          p#coverage-detail
+        article
+          h2 Alert attempts
+          strong#alert-value
+          p#alert-detail
+      p#config-note.connectivity-note
+      section(aria-labelledby='probe-heading')
+        h2#probe-heading Probe reliability and latency
+        p Percentages describe stored samples, never continuous uptime. Successful responses include slow successes; timeouts and failed contracts are excluded from latency percentiles.
+        #probe-cards.connectivity-cards
+      section(aria-labelledby='timeline-heading')
+        h2#timeline-heading Aligned observation timeline
+        p#timeline-range
+        p Each column covers the same time on every row. A colored cell contains observations, not proof of health throughout that time. Mixed cells show the worst observed state; empty cells are unknown.
+        #timeline-legend.connectivity-legend
+        #timeline.connectivity-timeline
+        p#timeline-selection(role='status', aria-live='polite') Select a timeline cell to inspect its counts. A detailed history table is below.
+      section(aria-labelledby='latency-heading')
+        h2#latency-heading Successful-response latency
+        p Bin p95 in milliseconds, aligned to the timeline above. Missing successes break the line. Failure duration is only shown in history.
+        #latency-chart.connectivity-timeline
+      section(aria-labelledby='incidents-heading')
+        h2#incidents-heading Observed degraded stretches
+        p Successive slow or failing observations of one probe, ending at recovery, a gap, a configuration change, or the window boundary. Durations between samples are inferred; a single observation has no measured duration.
+        #incidents.connectivity-table-wrap
+      section(aria-labelledby='gaps-heading')
+        h2#gaps-heading Observation gaps
+        p Gaps exceed 1.5 sampling intervals, including window boundaries. They may reflect downtime, database write loss, a disabled collector, or retention. Missing observations never mean healthy.
+        #gaps.connectivity-table-wrap
+      section(aria-labelledby='alerts-heading')
+        h2#alerts-heading Alert activity
+        p Only the external probes drive alerts. Attempted means delivery is unknown; failed attempts consume cooldown. Local health and DB ping never trigger Pushover.
+        #alerts.connectivity-table-wrap
+      section(aria-labelledby='history-heading')
+        h2#history-heading Recent observation details
+        p#history-caption
+        #history.connectivity-table-wrap
+        .connectivity-controls
+          button#history-previous(type='button') Newer
+          button#history-next(type='button') Older
+          a#history-raw-older(href='/admin/connectivity/api', hidden) Older raw details (paginated JSON)
+      section.connectivity-note(aria-labelledby='limits-heading')
+        h2#limits-heading What these measurements can tell us
+        p Cloudflare edge connectivity does not test the Docker tunnel. HTTP 404/502 or a contract error proves an HTTP response arrived; it does not mean internet loss. The internet probe only measures one independent provider.
+        p LOCAL health calls the existing unauthenticated /apphealth over loopback on this process’s actual listener. It checks MongoDB readiness only. DB ping is a separate real command with a maximum two-second budget, including driver selection and pool wait. Neither measures a typical application query.
+        p External DNS, TCP, TLS, first-byte and total timings are cumulative monotonic milestones from request start. Missing phases are unknown or inapplicable. These small IPv4 requests use fresh connections and no retries; they do not reproduce your browser, bandwidth, Wi-Fi, IPv6, or all application routes.
+        p Healthy local checks alongside external failures support investigating the outbound/public path, but cannot identify DNS, ISP, Cloudflare or tunnel as the cause. Event-loop stalls can delay timers too. Compare app performance timestamps and capture a slow browser request and Docker tunnel observations when needed.
+
+block script
+  script(src='/js/connectivityDashboard.js', defer)

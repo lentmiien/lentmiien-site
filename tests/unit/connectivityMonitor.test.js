@@ -18,7 +18,7 @@ function harness() {
   const send = jest.fn(async () => {});
   const runProbe = jest.fn(async (target) => result(true, target.name));
   const log = { warning: jest.fn() };
-  const options = { config, store, send, runProbe, log, clock: () => new Date(time) };
+  const options = { config, store, send, runProbe, runDiagnostics: jest.fn(async () => []), log, clock: () => new Date(time) };
   const monitor = createConnectivityMonitor(options);
   return { ...options, saved, monitor, options, setTime: (ms) => { time = +start + ms; },
     tickAt: async (ms) => { time = +start + ms; return monitor.tick(); } };
@@ -132,6 +132,7 @@ test('overlap is skipped and unexpected probe failure releases lock and breaks c
     .mockResolvedValueOnce(result());
   const tick = h.monitor.tick();
   await Promise.resolve();
+  await Promise.resolve();
   expect(await h.monitor.tick()).toEqual({ skipped: true });
   finish(result());
   await tick;
@@ -149,4 +150,53 @@ test('repository uses retention, fixed projection, pagination and bounded databa
   expect(query.setOptions).toHaveBeenCalledWith(DB_OPTIONS);
   expect(query.limit).toHaveBeenCalledWith(360);
   spy.mockRestore();
+});
+
+test('versioned contract resets legacy Cloudflare streak and preserves failed attempt cooldown', async () => {
+  const h = harness();
+  const legacy = { ...advance(null, [result(true, 'cloudflare')], start, config), signature: 'old-head-contract',
+    lastAttemptAt: start, notification: 'failed' };
+  h.saved.push(legacy);
+  const sample = await h.tickAt(120000);
+  expect(sample.monitorVersion).toBe('2');
+  expect(sample.probes.find((p) => p.name === 'cloudflare').degradedSince).toEqual(sample.sampledAt);
+  for (let minute = 4; minute <= 14; minute += 2) await h.tickAt(minute * 60000);
+  expect(h.send).not.toHaveBeenCalled();
+  expect(sample.lastAttemptAt).toEqual(start);
+});
+
+test('local degradation never creates external alerts; runs include process identity and scheduling metadata', async () => {
+  const h = harness();
+  h.runProbe.mockImplementation(async (target) => result(false, target.name));
+  h.options.runDiagnostics.mockResolvedValue([result(true, 'localHealth'), result(true, 'database')]);
+  for (let minute = 0; minute <= 12; minute += 2) await h.tickAt(minute * 60000);
+  expect(h.send).not.toHaveBeenCalled();
+  const sample = await h.monitor.tick({ scheduledAt: start, schedulerLatenessMs: 50 });
+  expect(sample).toMatchObject({ processId: expect.any(String), runId: expect.any(String),
+    processStartedAt: expect.any(Date), startedAt: expect.any(Date), endedAt: expect.any(Date),
+    schedulerLatenessMs: 50, scheduledAt: start, runDurationMs: expect.any(Number) });
+  expect(sample.diagnostics).toHaveLength(2);
+  expect(h.log.warning).toHaveBeenCalledTimes(1);
+});
+
+test('incomplete legacy state cannot carry an invented degraded streak', () => {
+  const previous = { signature: config.signature, sampledAt: start };
+  const sample = advance(previous, [result()], new Date(+start + 120000), config);
+  expect(sample.probes[0].degradedSince).toEqual(sample.sampledAt);
+});
+
+
+test('unexpected rejection does not release the overlap lock while another probe is pending', async () => {
+  const h = harness();
+  let resolvePending;
+  h.runProbe.mockRejectedValueOnce(new Error('dependency failure'))
+    .mockImplementationOnce(() => new Promise((resolve) => { resolvePending = resolve; }));
+  const tick = h.monitor.tick();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(await h.monitor.tick()).toEqual({ skipped: true });
+  resolvePending(result());
+  expect(await tick).toEqual({ failed: true });
+  expect(h.store.save).not.toHaveBeenCalled();
 });

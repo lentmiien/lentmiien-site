@@ -1,0 +1,50 @@
+.connectivity-page { max-width: 1440px; margin: 2rem auto; padding: 0 1.25rem 3rem; color: var(--text); }
+.connectivity-page h1 { font-size: clamp(1.9rem, 4vw, 2.8rem); }
+.connectivity-page h2 { font-size: 1.25rem; }
+.connectivity-page p { color: var(--text-secondary); line-height: 1.6; }
+.connectivity-page a { color: var(--accent); }
+.connectivity-header, .connectivity-controls { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.connectivity-header { justify-content: space-between; margin-bottom: 1.5rem; }
+.connectivity-eyebrow { letter-spacing: .14em; font-size: .75rem; color: var(--accent) !important; }
+.connectivity-page button, .connectivity-page select { border: 1px solid var(--border); border-radius: .5rem; padding: .6rem .85rem; background: var(--surface-2); color: var(--text); }
+.connectivity-page button { cursor: pointer; }
+#connectivity-refresh { background: var(--brand); color: var(--text-inverse); font-weight: 700; }
+.connectivity-page button:disabled { opacity: .5; cursor: default; }
+.connectivity-page :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.connectivity-page section { margin: 1.8rem 0; }
+.connectivity-summary, .connectivity-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr)); gap: 1rem; }
+.connectivity-summary article, .connectivity-card { padding: 1.2rem; border: 1px solid var(--border); border-radius: .8rem; background: var(--surface-1); }
+.connectivity-summary strong { font-size: 1.7rem; }
+.connectivity-card h3 { font-size: 1.1rem; }
+.connectivity-card dl { display: grid; grid-template-columns: 1fr auto; gap: .45rem; margin: 1rem 0; font-size: .88rem; }
+.connectivity-card dt { color: var(--text-muted); font-weight: 400; }
+.connectivity-card dd { margin: 0; text-align: right; }
+.connectivity-note { padding: 1rem 1.2rem; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: .3rem; }
+.connectivity-legend { display: flex; flex-wrap: wrap; gap: .8rem; margin: 1rem 0; font-size: .85rem; }
+.connectivity-legend span::before { content: ''; display: inline-block; width: .7rem; height: .7rem; margin-right: .35rem; background: var(--state-color); }
+.connectivity-page .state-ok { --state-color: var(--success); }
+.connectivity-page .state-slow { --state-color: var(--warning); }
+.connectivity-page .state-http_error { --state-color: var(--accent); }
+.connectivity-page .state-contract_error { --state-color: var(--info); }
+.connectivity-page .state-timeout { --state-color: var(--danger); }
+.connectivity-page .state-connection_error { --state-color: var(--brand); }
+.connectivity-page .state-unknown { --state-color: var(--text-muted); }
+.connectivity-state { color: var(--state-color); font-weight: 700; }
+.connectivity-timeline { overflow-x: auto; background: var(--surface-1); border: 1px solid var(--border); border-radius: .7rem; padding: 1rem .5rem; }
+.connectivity-timeline svg { display: block; width: 100%; min-width: 720px; }
+.connectivity-timeline text { fill: var(--text-secondary); font: 12px system-ui, sans-serif; }
+.connectivity-timeline rect { fill: var(--state-color, var(--surface-3)); cursor: pointer; }
+.connectivity-timeline rect.state-unknown { opacity: .28; }
+.connectivity-timeline path { fill: none; stroke: var(--accent); stroke-width: 2; }
+.connectivity-timeline circle { fill: var(--accent); }
+.connectivity-timeline line { stroke: var(--divider); }
+.connectivity-table-wrap { overflow-x: auto; margin: 1rem 0; border: 1px solid var(--border); border-radius: .6rem; }
+.connectivity-table-wrap:has(> p) { padding: 1rem; }
+.connectivity-table-wrap table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.connectivity-table-wrap th { text-align: left; color: var(--text-muted); background: var(--surface-3); }
+.connectivity-table-wrap th, .connectivity-table-wrap td { padding: .75rem; border-bottom: 1px solid var(--divider); vertical-align: top; min-width: 105px; }
+.connectivity-table-wrap td { background: var(--surface-1); }
+.connectivity-table-wrap summary { cursor: pointer; color: var(--accent); }
+.connectivity-table-wrap small { display: block; margin-top: .35rem; color: var(--text-muted); }
+#connectivity-message { border-left: 3px solid var(--accent); padding: .75rem 1rem; background: var(--surface-2); }
+@media (max-width: 600px) { .connectivity-page { padding: 0 .75rem 2rem; } .connectivity-controls { gap: .5rem; } }

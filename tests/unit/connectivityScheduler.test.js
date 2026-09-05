@@ -36,3 +36,24 @@ test('invalid configuration disables scheduler with a safe actionable error', ()
   expect(log.error).toHaveBeenCalledWith(expect.stringContaining('invalid CONNECTIVITY'), { category: 'connectivity_monitor' });
   expect(JSON.stringify(log.error.mock.calls)).not.toContain('invalid secret');
 });
+
+
+test('scheduler records monotonic lateness separately from wall-clock labels and passes actual listener supplier', async () => {
+  jest.useFakeTimers();
+  jest.resetModules();
+  let monotonic = 0;
+  jest.doMock('perf_hooks', () => ({ performance: { now: () => monotonic } }));
+  try {
+    const schedule = require('../../schedulers/connectivityMonitor');
+    const { createConnectivityMonitor } = require('../../services/connectivityMonitorService');
+    const localPort = () => 8080;
+    const handle = schedule({ localPort });
+    expect(createConnectivityMonitor).toHaveBeenCalledWith(expect.objectContaining({ localPort }));
+    const monitor = createConnectivityMonitor.mock.results[0].value;
+    monotonic = 120075;
+    await jest.advanceTimersByTimeAsync(120000);
+    expect(monitor.tick.mock.calls[1][0]).toMatchObject({ schedulerLatenessMs: 75, scheduledAt: expect.any(Date) });
+    expect(+monitor.tick.mock.calls[1][0].scheduledAt).toBe(Date.now() - 75);
+    clearInterval(handle);
+  } finally { jest.dontMock('perf_hooks'); }
+});

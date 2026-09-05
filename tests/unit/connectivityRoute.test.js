@@ -9,11 +9,13 @@ let principal;
 let authenticated;
 let store;
 let roleModel;
+let routeConfig;
 beforeEach(async () => {
   principal = { name: 'admin', type_user: 'admin' };
   authenticated = true;
   store = { history: jest.fn(async () => []) };
   roleModel = { findOne: jest.fn(async () => null) };
+  routeConfig = getConnectivityConfig({});
   const app = express();
   app.use((req, res, next) => {
     req.user = principal;
@@ -22,7 +24,7 @@ beforeEach(async () => {
     next();
   });
   app.use('/admin/connectivity', createConnectivityRouter({ store, roleModel,
-    configReader: () => getConnectivityConfig({}) }));
+    configReader: () => routeConfig }));
   await new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
   base = `http://127.0.0.1:${server.address().port}/admin/connectivity`;
 });
@@ -43,7 +45,7 @@ test.each(['admin', 'grant'])('allows %s to read bounded history with no mutatio
     roleModel.findOne.mockResolvedValue({ permissions: [CAPABILITY] });
   }
   store.history.mockResolvedValue([{ sampledAt: new Date(), signature: getConnectivityConfig({}).signature,
-    probes: [{ name: 'internet', degraded: false }] }]);
+    probes: ['internet', 'cloudflare'].map((name) => ({ name, outcome: 'ok', degraded: false })) }]);
   const response = await fetch(base);
   expect(response.status).toBe(200);
   expect(response.headers.get('cache-control')).toContain('private, no-store');
@@ -83,4 +85,78 @@ test('database and capability lookup failures fail closed without leaking diagno
   response = await fetch(base);
   expect(response.status).toBe(503);
   expect(await response.text()).not.toContain('secret');
+});
+
+test.each(['/api', '/analytics?hours=1', '/analytics?hours=6', '/analytics?hours=24', '/analytics?hours=72'])('explicit route %s is bounded and private', async (path) => {
+  const response = await fetch(base + path);
+  expect(response.status).toBe(200);
+  expect(response.headers.get('cache-control')).toContain('private, no-store');
+  const [since, limit, until] = store.history.mock.calls[0];
+  expect(limit).toBe(path === '/api' ? 360 : 5001);
+  if (path !== '/api') expect(+until - since).toBe(Number(path.split('=')[1]) * 3600000);
+  expect(JSON.stringify(await response.json())).not.toContain('signature');
+});
+
+test.each(['/analytics?hours=1000000', '/analytics?hours[]=1', '/analytics?hours=1&hours=6', '/analytics?url=https://private',
+  '/analytics?hours=-1', '/analytics?hours=1.0', '/api?limit=5000'])('rejects invalid analytics/API bounds %s before querying', async (path) => {
+  expect((await fetch(base + path)).status).toBe(400);
+  expect(store.history).not.toHaveBeenCalled();
+});
+
+test.each(['/api', '/analytics?hours=24', '/'])('all representations require the semantic capability: %s', async (path) => {
+  principal = { name: 'reader', type_user: 'family' };
+  expect((await fetch(base + path, { headers: { Accept: 'text/html' } })).status).toBe(403);
+  expect(store.history).not.toHaveBeenCalled();
+  principal = null; authenticated = false;
+  expect((await fetch(base + path)).status).toBe(401);
+});
+
+test('browser navigation renders UI without DB work, while explicit JSON and pagination remain JSON', async () => {
+  const browser = await fetch(base, { headers: { Accept: 'text/html,application/xhtml+xml' } });
+  expect(browser.status).toBe(200);
+  expect(store.history).not.toHaveBeenCalled();
+  expect((await fetch(base, { headers: { Accept: 'application/json' } })).status).toBe(200);
+  expect(store.history).toHaveBeenCalledTimes(1);
+  expect((await fetch(base + '/api?before=2026-09-05T00:00:00.000Z', { headers: { Accept: 'text/html' } })).status).toBe(200);
+  expect(store.history).toHaveBeenCalledTimes(2);
+});
+
+test('analytics signals truncation and generic database failure', async () => {
+  store.history.mockResolvedValue(Array.from({ length: 5001 }, () => ({ sampledAt: new Date(Date.now() - 1000), probes: [] })));
+  const response = await fetch(base + '/analytics?hours=72');
+  expect(await response.json()).toMatchObject({ truncated: true, sampleCount: 5000 });
+  store.history.mockRejectedValue(new Error('mongodb://secret'));
+  const failure = await fetch(base + '/analytics');
+  expect(failure.status).toBe(503);
+  expect(await failure.text()).not.toContain('secret');
+});
+
+
+test('dashboard Pug renders themed, accessible shell without analytics or embedded operational data', () => {
+  const html = require('pug').renderFile(require('path').join(__dirname, '../../views/connectivity_dashboard.pug'), {
+    gtag: false, loggedIn: true, admin: true, permissions: [],
+  });
+  expect(html).toContain('/css/color-theme.css');
+  expect(html).toContain('/css/connectivityDashboard.css');
+  expect(html).toContain('/js/connectivityDashboard.js');
+  expect(html).toContain('aria-live="polite"');
+  expect(html).toContain('Connectivity analytics');
+  expect(html).not.toContain('googletagmanager');
+});
+
+
+test('analytics respects shorter retention without shrinking the requested coverage window', async () => {
+  routeConfig = getConnectivityConfig({ CONNECTIVITY_RETENTION_DAYS: '1' });
+  const response = await fetch(base + '/analytics?hours=72');
+  const [since, , until] = store.history.mock.calls[0];
+  expect(+until - since).toBe(86400000);
+  const body = await response.json();
+  expect(new Date(body.until) - new Date(body.since)).toBe(72 * 3600000);
+  expect(body.coverage.percent).toBe(0);
+  expect(body.retentionDays).toBe(1);
+});
+
+test('invalid calendar dates cannot silently normalize the pagination cursor', async () => {
+  expect((await fetch(base + '/api?before=2026-02-30T00:00:00.000Z')).status).toBe(400);
+  expect(store.history).not.toHaveBeenCalled();
 });

@@ -720,7 +720,7 @@ server.on('error', (err) => {
 // Local file retention is intentionally independent of MongoDB availability.
 scheduleLogRetention();
 // Connectivity observations continue while local MongoDB is unavailable.
-scheduleConnectivityMonitor();
+scheduleConnectivityMonitor({ localPort: () => server.address()?.port });
 
 let databaseServicesStarted = false;
 let databaseServicesNeedRecovery = false;

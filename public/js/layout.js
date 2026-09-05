@@ -1,5 +1,5 @@
 const quickNoteForm = document.getElementById('quickNoteForm');
-quickNoteForm.addEventListener('submit', async (e) => {
+quickNoteForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const content = document.getElementById('quickNoteInput').value;
   if (navigator.geolocation) {
@@ -19,7 +19,7 @@ quickNoteForm.addEventListener('submit', async (e) => {
 });
 
 const locationForm = document.getElementById('locationForm');
-locationForm.addEventListener('submit', async (e) => {
+locationForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = document.getElementById('locationInput').value;
   if (navigator.geolocation) {

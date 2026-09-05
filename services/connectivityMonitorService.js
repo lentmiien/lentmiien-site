@@ -1,4 +1,9 @@
 const mongoose = require('mongoose');
+const { randomUUID } = require('crypto');
+const { performance } = require('perf_hooks');
+const { runDiagnostics: defaultDiagnostics } = require('./connectivityDiagnostics');
+const PROCESS_ID = randomUUID();
+const PROCESS_STARTED_AT = new Date(Date.now() - process.uptime() * 1000);
 const Sample = require('../models/connectivity_sample');
 const logger = require('../utils/logger');
 const { sendPushoverNotification } = require('../utils/pushover');
@@ -20,19 +25,22 @@ function advance(previous, results, sampledAt, config) {
   return {
     sampledAt, expiresAt: new Date(+sampledAt + config.retentionDays * 86400000),
     signature: config.signature,
+    monitorVersion: config.monitorVersion, intervalMs: config.intervalMs,
+    slowMs: config.slowMs, timeoutMs: config.timeoutMs,
     lastAttemptAt: previous?.lastAttemptAt || null,
     notification: 'none',
     probes: results.map((result) => ({
       ...result,
       degradedSince: result.degraded
-        ? (continuous && previous.probes.find((item) => item.name === result.name)?.degradedSince) || sampledAt
+        ? (continuous && (previous.probes || []).find((item) => item.name === result.name)?.degradedSince) || sampledAt
         : null,
     })),
   };
 }
 
 function createConnectivityMonitor({ config, store = repository, runProbe = probe,
-  send = sendPushoverNotification, log = logger, clock = () => new Date() }) {
+  send = sendPushoverNotification, log = logger, clock = () => new Date(),
+  runDiagnostics = defaultDiagnostics, localPort = () => null, monotonic = () => performance.now() }) {
   let running = false;
   let previous = null;
   let restored = false;
@@ -43,9 +51,11 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
     warnings.set(key, now);
     Promise.resolve(log.warning(message, { category: 'connectivity_monitor' })).catch(() => {});
   }
-  async function tick() {
+  async function tick({ scheduledAt = clock(), schedulerLatenessMs = 0 } = {}) {
     if (running) return { skipped: true };
     running = true;
+    const startedAt = clock();
+    const started = monotonic();
     try {
       if (!restored && store.ready()) {
         try {
@@ -59,8 +69,21 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
         } catch { warn('db', 'Connectivity monitor cannot restore MongoDB state; alerts deferred'); }
       }
       const sampledAt = clock();
-      const results = await Promise.all(probeTargets(config).map((target) => runProbe(target, config)));
+      // Retain the overlap lock until every task settles, even if a dependency unexpectedly rejects.
+      const tasks = await Promise.allSettled([
+        ...probeTargets(config).map((target) => Promise.resolve().then(() => runProbe(target, config))),
+        Promise.resolve().then(() => runDiagnostics(config, localPort())),
+      ]);
+      if (tasks.some((task) => task.status === 'rejected')) throw new Error('Probe task failed');
+      const diagnostics = tasks.at(-1).value;
+      const results = tasks.slice(0, -1).map((task) => task.value);
       const sample = advance(previous, results, sampledAt, config);
+      Object.assign(sample, { diagnostics, runId: randomUUID(), processId: PROCESS_ID,
+        processStartedAt: PROCESS_STARTED_AT, scheduledAt, startedAt, endedAt: clock(),
+        runDurationMs: Math.max(0, monotonic() - started), schedulerLatenessMs });
+      if (diagnostics.some((item) => item.degraded)) {
+        warn('diagnostics', 'Connectivity local diagnostics degraded; compare local health and DB ping in analytics');
+      }
       const sustained = sample.probes.filter((item) => item.degradedSince
         && sampledAt - new Date(item.degradedSince) >= config.sustainedMs);
       const due = sustained.length > 0 && (!sample.lastAttemptAt
@@ -91,7 +114,7 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
       if (due && persisted && restored) {
         try {
           await send({ title: 'Lentmiien Site connectivity degraded',
-            message: `Repeated slow or failed small HTTPS probes for at least ${Math.floor(config.sustainedMs / 60000)} minutes: ${sustained.map((item) => item.name).join(', ')}. Check connectivity history. This does not identify Wi-Fi, ISP or tunnel as the cause.` });
+            message: `Repeated slow or failed small HTTPS probes for at least ${Math.floor(config.sustainedMs / 60000)} minutes: ${sustained.map((item) => `${item.name} (${item.outcome}${item.statusCode ? ` HTTP ${item.statusCode}` : ''})`).join(', ')}. HTTP errors still mean an HTTP response arrived. Check connectivity analytics. This does not identify Wi-Fi, ISP or tunnel as the cause.` });
           sample.notification = 'sent';
         } catch {
           sample.notification = 'failed';
