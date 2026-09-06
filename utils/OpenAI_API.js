@@ -26,6 +26,7 @@ const toolManagerService = new ToolManagerService();
 const VIDEO_OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'video');
 
 const reasoningModels = new Set([
+  "gpt-6-astra",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",
