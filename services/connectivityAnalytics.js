@@ -17,6 +17,51 @@ const NOTIFICATIONS = new Set(['none', 'attempted', 'sent', 'failed', 'deferred'
 const finite = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const date = (value) => value && Number.isFinite(+new Date(value)) ? new Date(value).toISOString() : null;
 const safeId = (value) => typeof value === 'string' && /^[a-zA-Z0-9-]{1,64}$/.test(value) ? value : null;
+const DURATION_KEYS = ['dnsMs', 'postDnsMs', 'tcpMs', 'tlsMs', 'headersMs', 'bodyMs'];
+const EXTERNAL_NAMES = new Set(PROBES.filter(({ scope }) => scope === 'external').map(({ name }) => name));
+
+function timingBreakdown(name, timings, outcome, failurePhase) {
+  const external = EXTERNAL_NAMES.has(name);
+  const local = name === 'localHealth';
+  const { dnsMs, tcpMs, tlsMs, ttfbMs, totalMs } = timings;
+  const milestones = [dnsMs, tcpMs, tlsMs, ttfbMs, totalMs].filter((value) => value !== null);
+  const ordered = milestones.every((value, index) => index === 0 || value >= milestones[index - 1]);
+  const difference = (end, start) => ordered && end !== null && start !== null && end >= start
+    ? Math.round((end - start) * 100) / 100 : null;
+  const phaseDurations = {
+    dnsMs: external ? difference(dnsMs, 0) : null,
+    postDnsMs: external ? difference(totalMs, dnsMs) : null,
+    tcpMs: external || local ? difference(tcpMs, local ? 0 : dnsMs) : null,
+    tlsMs: external ? difference(tlsMs, tcpMs) : null,
+    headersMs: external || local ? difference(ttfbMs, local ? tcpMs : tlsMs) : null,
+    bodyMs: external || local ? difference(totalMs, ttfbMs) : null,
+  };
+  // Only known phase boundaries support a timeout remainder. Contract start is not stored.
+  const boundaries = external ? { dns: 0, tcp: dnsMs, tls: tcpMs, headers: tlsMs, body: ttfbMs }
+    : local ? { tcp: 0, headers: tcpMs, body: ttfbMs } : { database: 0 };
+  const completed = { dns: dnsMs, tcp: tcpMs, tls: tlsMs, headers: ttfbMs };
+  const timeout = outcome === 'timeout' ? { phase: failurePhase,
+    elapsedMs: Object.hasOwn(boundaries, failurePhase) && completed[failurePhase] == null
+      ? difference(totalMs, boundaries[failurePhase]) : null } : null;
+  return { phaseDurations, timeout };
+}
+
+function durationValues(keys = DURATION_KEYS) {
+  return Object.fromEntries(keys.map((key) => [key, []]));
+}
+
+function collectDurations(values, probe) {
+  if (probe.outcome !== 'ok') return;
+  for (const key of Object.keys(values)) {
+    if (probe.phaseDurations[key] !== null) values[key].push(probe.phaseDurations[key]);
+  }
+}
+
+function summarizeDurations(values) {
+  return Object.fromEntries(Object.entries(values).map(([key, observations]) => [key, {
+    observations: observations.length, p50Ms: percentile(observations, 0.5), p95Ms: percentile(observations, 0.95),
+  }]));
+}
 
 function percentile(values, quantile) {
   if (!values.length) return null;
@@ -31,15 +76,17 @@ function normalizeProbe(probe, slowMs) {
   const statusCode = Number.isInteger(probe.statusCode) && probe.statusCode >= 100 && probe.statusCode <= 599 ? probe.statusCode : null;
   const slow = typeof probe.slow === 'boolean' ? probe.slow
     : latencyMs !== null && slowMs !== null ? latencyMs >= slowMs : outcome === 'ok' && probe.degraded === true;
+  const timings = Object.fromEntries(['dnsMs', 'tcpMs', 'tlsMs', 'ttfbMs', 'totalMs'].map((key) => [key, finite(probe.timings?.[key])]));
+  const failurePhase = PHASES.has(probe.failurePhase) ? probe.failurePhase : null;
   return { name: probe.name, outcome, statusCode, latencyMs, slow,
     state: outcome === 'unknown' || outcome === 'unavailable' ? 'unknown' : outcome === 'ok' ? slow ? 'slow' : 'ok'
       : outcome === 'http_status' ? 'http_error' : ['unexpected_response', 'oversized'].includes(outcome) ? 'contract_error'
         : outcome === 'timeout' ? 'timeout' : 'connection_error',
     httpReachable: typeof probe.httpReachable === 'boolean' ? probe.httpReachable : statusCode !== null ? true : null,
-    failurePhase: PHASES.has(probe.failurePhase) ? probe.failurePhase : null,
+    failurePhase,
     // Codes are fixed by our writer; redact unrecognized legacy text rather than returning raw errors.
     errorCode: typeof probe.errorCode === 'string' && /^[A-Z][A-Z0-9_]{0,47}$/.test(probe.errorCode) ? probe.errorCode : null,
-    timings: Object.fromEntries(['dnsMs', 'tcpMs', 'tlsMs', 'ttfbMs', 'totalMs'].map((key) => [key, finite(probe.timings?.[key])])),
+    timings, ...timingBreakdown(probe.name, timings, outcome, failurePhase),
   };
 }
 
@@ -99,6 +146,10 @@ function aggregateConnectivity(input, config, { since, until, truncated = false 
       const item = bin.probes[probe.name] ||= { counts: {}, successes: [] };
       item.counts[probe.state] = (item.counts[probe.state] || 0) + 1;
       if (probe.outcome === 'ok' && probe.latencyMs !== null) item.successes.push(probe.latencyMs);
+      if (EXTERNAL_NAMES.has(probe.name)) {
+        item.durationValues ||= durationValues(['dnsMs', 'postDnsMs']);
+        collectDurations(item.durationValues, probe);
+      }
     }
   }
   if (+until - previousAt > previousInterval * 1.5) gaps.push({ start: new Date(previousAt).toISOString(),
@@ -108,6 +159,10 @@ function aggregateConnectivity(input, config, { since, until, truncated = false 
       item.p50Ms = percentile(item.successes, 0.5);
       item.p95Ms = percentile(item.successes, 0.95);
       delete item.successes;
+      if (item.durationValues) {
+        item.successDurations = summarizeDurations(item.durationValues);
+        delete item.durationValues;
+      }
     }
   }
   const incidents = [];
@@ -116,6 +171,7 @@ function aggregateConnectivity(input, config, { since, until, truncated = false 
     const counts = {};
     const codes = {};
     const latencies = [];
+    const durations = durationValues();
     let httpReachable = 0;
     let observed = 0;
     let streak = null;
@@ -137,6 +193,7 @@ function aggregateConnectivity(input, config, { since, until, truncated = false 
       counts[probe.state] = (counts[probe.state] || 0) + 1;
       if (probe.httpReachable) httpReachable += 1;
       if (probe.outcome === 'ok' && probe.latencyMs !== null) latencies.push(probe.latencyMs);
+      collectDurations(durations, probe);
       if (probe.state !== 'ok' && probe.state !== 'slow') {
         const code = [probe.outcome, probe.statusCode, probe.errorCode, probe.failurePhase].filter(Boolean).join(' · ');
         codes[code] = (codes[code] || 0) + 1;
@@ -158,6 +215,7 @@ function aggregateConnectivity(input, config, { since, until, truncated = false 
       missingInStoredRounds: samples.length - observed, counts, httpReachable, successCount,
       sampledSuccessPercent: observed ? successCount / observed * 100 : null,
       p50Ms: percentile(latencies, 0.5), p95Ms: percentile(latencies, 0.95), latencyObservations: latencies.length,
+      successDurations: summarizeDurations(durations),
       latest: fresh && latestProbe ? latestProbe.state : 'unknown', latestProbe: latestProbe || null,
       codes: Object.entries(codes).map(([code, count]) => ({ code, count })) };
   });

@@ -53,6 +53,19 @@ block content
         h2#latency-heading Successful-response latency
         p Bin p95 in milliseconds, aligned to the timeline above. Missing successes break the line. Failure duration is only shown in history.
         #latency-chart.connectivity-timeline
+      section(aria-labelledby='dns-heading')
+        h2#dns-heading DNS vs post-DNS latency
+        p Successful-response bin p95 in milliseconds, using the same time columns above. Each target has its own scale, shared by its two lines. Select an observation timeline cell for exact values and sample counts.
+        .connectivity-timing-legend(aria-label='Timing series')
+          span.timing-dnsMs DNS · solid amber
+          span.timing-postDnsMs Post-DNS · dashed aqua
+        #dns-chart.connectivity-timeline
+        p DNS is elapsed time from probe start to completed IPv4 A-record resolution. Post-DNS is stored total minus DNS for each successful sample, including connection, TLS, headers, body and validation. Percentiles are then calculated from those individual durations; the two p95 lines must not be added together.
+        p Missing, invalid or inapplicable timings are unknown, never zero; missing values break each line independently. Cards show p50 / p95 and n (usable successful samples) for each duration. Older records may have total latency without a DNS breakdown. Failures and timeouts appear only in observation details, not these percentiles.
+        details
+          summary How connection and response durations are calculated
+          p All values are milliseconds. Stored DNS, TCP, TLS and response-header (ttfbMs) values are cumulative monotonic milestones from probe start. TCP duration = TCP − DNS; TLS = TLS − TCP; wait for headers = response headers − TLS; body / validation = total − response headers. These approximate intervals include scheduling overhead and are not isolated server processing times. Each duration needs its recorded boundaries; per-phase sample counts may differ.
+          p Timeout details use the recorded failure phase and, when its boundary is known, total elapsed minus that boundary. This is time spent up to failure, not a completed phase or proof of its root cause. Contract-validation start is not recorded, so its timeout duration is unknown. Event-loop stalls may delay milestones and deadlines.
       section(aria-labelledby='incidents-heading')
         h2#incidents-heading Observed degraded stretches
         p Successive slow or failing observations of one probe, ending at recovery, a gap, a configuration change, or the window boundary. Durations between samples are inferred; a single observation has no measured duration.

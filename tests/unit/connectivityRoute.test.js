@@ -160,3 +160,19 @@ test('invalid calendar dates cannot silently normalize the pagination cursor', a
   expect((await fetch(base + '/api?before=2026-02-30T00:00:00.000Z')).status).toBe(400);
   expect(store.history).not.toHaveBeenCalled();
 });
+
+test('authorized analytics exposes stored DNS breakdown and safe timeout details without extra history work', async () => {
+  store.history.mockResolvedValue([{ sampledAt: new Date(Date.now() - 1000), signature: routeConfig.signature,
+    probes: [{ name: 'internet', outcome: 'ok', latencyMs: 2008,
+      timings: { dnsMs: 1911, tcpMs: 1920, tlsMs: 1940, ttfbMs: 2000, totalMs: 2008 } },
+    { name: 'cloudflare', outcome: 'timeout', latencyMs: 5000, failurePhase: '<script>private</script>',
+      errorCode: 'https://secret.example', timings: { totalMs: 5000 } }] }]);
+  const response = await fetch(base + '/analytics?hours=1');
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body.probes[0].successDurations.postDnsMs).toEqual({ observations: 1, p50Ms: 97, p95Ms: 97 });
+  expect(body.samples[0].probes[1].timeout).toEqual({ phase: null, elapsedMs: null });
+  expect(JSON.stringify(body)).not.toMatch(/script|private|secret|signature/);
+  expect(store.history).toHaveBeenCalledTimes(1);
+  expect(store.history).toHaveBeenCalledWith(expect.any(Date), 5001, expect.any(Date));
+});

@@ -8,6 +8,10 @@
   const formatTime = (value) => value ? new Date(value).toLocaleString(undefined, { timeZoneName: 'short' }) : 'No observation';
   const ms = (value) => value == null ? '—' : `${Math.round(value * 100) / 100} ms`;
   const pct = (value) => value == null ? '—' : `${value.toFixed(1)}%`;
+  const timingMs = (value) => value == null ? 'Unknown' : ms(value);
+  const durationLabels = { dnsMs: 'DNS', postDnsMs: 'Post-DNS', tcpMs: 'TCP connection',
+    tlsMs: 'TLS handshake', headersMs: 'Wait for headers', bodyMs: 'Body / validation' };
+  const durationStats = (stats) => `${timingMs(stats?.p50Ms)} / ${timingMs(stats?.p95Ms)} · n=${stats?.observations || 0}`;
   let data;
   let page = 0;
   let generation = 0;
@@ -57,7 +61,8 @@
       data.bins.forEach((bin, index) => {
         const item = bin.probes[probe.name];
         const state = severity.filter((key) => item?.counts[key]).at(-1) || 'unknown';
-        const label = `${probe.label}, ${formatTime(bin.start)} to ${formatTime(bin.end)}: ${item ? Object.entries(item.counts).map(([key, count]) => `${names[key]} ${count}`).join(', ') : 'no observation'}; configurations ${bin.configIds.join(', ') || 'none'}`;
+        const timingLabel = probe.scope === 'external' ? `; success DNS p95 ${timingMs(item?.successDurations?.dnsMs?.p95Ms)} (n=${item?.successDurations?.dnsMs?.observations || 0}), post-DNS p95 ${timingMs(item?.successDurations?.postDnsMs?.p95Ms)} (n=${item?.successDurations?.postDnsMs?.observations || 0})` : '';
+        const label = `${probe.label}, ${formatTime(bin.start)} to ${formatTime(bin.end)}: ${item ? Object.entries(item.counts).map(([key, count]) => `${names[key]} ${count}`).join(', ') : 'no observation'}; configurations ${bin.configIds.join(', ') || 'none'}${timingLabel}`;
         const rect = svgNode('rect', { x: 160 + index * width, y: row * 42 + 12, width: Math.max(.5, width - .5), height: 26,
           class: `state-${state}`, role: 'button', tabindex: index === 0 ? 0 : -1, 'aria-label': label });
         rect.append(svgNode('title', {}, label));
@@ -93,6 +98,39 @@
     });
     $('timeline').replaceChildren(svg); $('latency-chart').replaceChildren(latency);
   }
+  function dnsChart() {
+    const probes = data.probes.filter(({ scope }) => scope === 'external');
+    const height = probes.length * 72 + 45;
+    const svg = svgNode('svg', { viewBox: `0 0 1120 ${height}`, role: 'img',
+      'aria-label': 'Successful DNS and post-DNS p95 by external target, aligned to the observation timeline. Select timeline cells for exact values and sample counts.' });
+    const width = 950 / data.bins.length;
+    probes.forEach((probe, row) => {
+      const keys = ['dnsMs', 'postDnsMs'];
+      const max = Math.max(1, ...data.bins.flatMap((bin) => keys.map((key) => bin.probes[probe.name]?.successDurations?.[key]?.p95Ms || 0)));
+      svg.append(svgNode('text', { x: 5, y: row * 72 + 25 }, probe.label));
+      svg.append(svgNode('text', { x: 5, y: row * 72 + 44 }, `0–${Math.ceil(max)} ms`));
+      svg.append(svgNode('line', { x1: 160, x2: 1110, y1: row * 72 + 64, y2: row * 72 + 64 }));
+      keys.forEach((key) => {
+        let path = '';
+        let connected = false;
+        data.bins.forEach((bin, index) => {
+          const stats = bin.probes[probe.name]?.successDurations?.[key];
+          if (stats?.p95Ms == null) { connected = false; return; }
+          const x = 160 + (index + .5) * width;
+          const y = row * 72 + 64 - stats.p95Ms / max * 50;
+          path += `${connected ? 'L' : 'M'}${x},${y} `;
+          connected = true;
+          const point = svgNode('circle', { cx: x, cy: y, r: 2, class: `timing-${key}` });
+          point.append(svgNode('title', {}, `${probe.label} · ${durationLabels[key]} p95 ${ms(stats.p95Ms)} · n=${stats.observations} · ${formatTime(bin.start)} – ${formatTime(bin.end)}`));
+          svg.append(point);
+        });
+        svg.append(svgNode('path', { d: path, class: `timing-${key}` }));
+      });
+    });
+    svg.append(svgNode('text', { x: 160, y: height - 10 }, formatTime(data.since)));
+    svg.append(svgNode('text', { x: 1110, y: height - 10, 'text-anchor': 'end' }, formatTime(data.until)));
+    $('dns-chart').replaceChildren(svg);
+  }
   function history() {
     const slice = data.samples.slice(page * 30, (page + 1) * 30);
     $('history-caption').textContent = `${data.samples.length ? page * 30 + 1 : 0}–${Math.min((page + 1) * 30, data.samples.length)} of ${data.samples.length} detailed rounds${data.detailsTruncated ? ` (newest ${data.detailLimit} of ${data.sampleCount}; charts and statistics cover all included rounds)` : ''}. Times use ${zone}. Expand a result for cumulative phase timings and safe error codes.`;
@@ -111,7 +149,12 @@
         if (!probe) return 'No observation';
         const detail = element('details'); const summary = element('summary'); summary.append(stateNode(probe.state)); detail.append(summary);
         detail.append(element('small', `${probe.outcome}; HTTP ${probe.statusCode || '—'}; elapsed ${ms(probe.latencyMs)}; phase ${probe.failurePhase || '—'}; code ${probe.errorCode || '—'}`));
-        detail.append(element('small', `DNS ${ms(probe.timings.dnsMs)} / TCP ${ms(probe.timings.tcpMs)} / TLS ${ms(probe.timings.tlsMs)} / first byte ${ms(probe.timings.ttfbMs)} / total ${ms(probe.timings.totalMs)}`));
+        if (name !== 'database') {
+          const keys = name === 'localHealth' ? ['tcpMs', 'headersMs', 'bodyMs'] : Object.keys(durationLabels);
+          detail.append(element('small', `Derived durations (ms; ${probe.outcome === 'ok' ? 'success' : 'failed attempt, excluded from success statistics'}): ${keys.map((key) => `${durationLabels[key]} ${timingMs(probe.phaseDurations?.[key])}`).join(' / ')}`));
+        }
+        if (probe.timeout) detail.append(element('small', `Timeout phase: ${probe.timeout.phase || 'Unknown'}; elapsed since phase boundary: ${timingMs(probe.timeout.elapsedMs)} (approximate, not a completed phase).`));
+        detail.append(element('small', `Cumulative milestones from start: DNS ${timingMs(probe.timings.dnsMs)} / TCP ${timingMs(probe.timings.tcpMs)} / TLS ${timingMs(probe.timings.tlsMs)} / response headers ${timingMs(probe.timings.ttfbMs)} / total ${timingMs(probe.timings.totalMs)}. Unknown may be inapplicable.`));
         return detail;
       })];
     }), 'No stored observations in this window. Check whether the collector is enabled, MongoDB is writable, and retention covers this range.');
@@ -142,10 +185,21 @@
         ...Object.entries(names).map(([key, label]) => [label, probe.counts[key] || 0])];
       pairs.forEach(([key, value]) => dl.append(element('dt', key), element('dd', String(value))));
       card.append(dl);
+      if (probe.scope === 'external') {
+        const timings = element('dl', null, 'connectivity-timing-stats');
+        ['dnsMs', 'postDnsMs'].forEach((key) => timings.append(element('dt', `${durationLabels[key]} p50 / p95`), element('dd', durationStats(probe.successDurations?.[key]))));
+        card.append(timings);
+        const details = element('details'); details.append(element('summary', 'Connection and response breakdown'));
+        details.append(element('p', 'Successful phase durations · p50 / p95 · n = samples with both boundaries. Unknown means no usable timing.'));
+        const phases = element('dl', null, 'connectivity-timing-stats');
+        ['tcpMs', 'tlsMs', 'headersMs', 'bodyMs'].forEach((key) => phases.append(element('dt', durationLabels[key]), element('dd', durationStats(probe.successDurations?.[key]))));
+        details.append(phases); card.append(details);
+      }
       if (probe.codes.length) card.append(element('p', probe.codes.map(({ code, count }) => `${code}: ${count}`).join(' · ')));
       return card;
     }));
     charts();
+    dnsChart();
     table('incidents', ['Probe / config', 'First observed', 'Last observed', 'Observed span / samples', 'States / end boundary'],
       data.incidents.map((item) => [`${item.probe} · ${item.configId}`, formatTime(item.start), formatTime(item.end),
         `${((new Date(item.end) - new Date(item.start)) / 60000).toFixed(1)} min · ${item.observations}`, `${item.states.map((s) => names[s]).join(', ')} · ${item.endReason}`]),

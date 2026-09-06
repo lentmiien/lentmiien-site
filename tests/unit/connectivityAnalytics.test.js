@@ -76,3 +76,99 @@ test('large windows retain full statistics but bound detailed JSON and alert met
   expect(result.alertAttempts[0]).not.toHaveProperty('probes');
   expect(result.notifications.attempted).toBe(700);
 });
+
+const timed = (dnsMs, totalMs, name = 'publicApp', extra = {}) => ({
+  ...ok(totalMs, name), timings: { dnsMs, totalMs }, ...extra,
+});
+const summaryFor = (rows, name = 'publicApp') => aggregateConnectivity(rows, config, { since, until })
+  .probes.find((probe) => probe.name === name);
+
+test('derives post-DNS per sample before nearest-rank percentiles in summaries and aligned bins', () => {
+  // p95(total) - p95(DNS) = 100; actual p95(post-DNS) = 900.
+  const rows = [sample(0, [timed(1000, 1100)]), sample(0.1, [timed(10, 910)]),
+    sample(0.2, [timed(20, 30, 'cloudflare')]), sample(0.21, [timed(2, 7, 'internet')])];
+  const result = aggregateConnectivity(rows, config, { since, until });
+  expect(result.probes.find((p) => p.name === 'publicApp')).toMatchObject({
+    p95Ms: 1100, successDurations: {
+      dnsMs: { observations: 2, p50Ms: 10, p95Ms: 1000 },
+      postDnsMs: { observations: 2, p50Ms: 100, p95Ms: 900 },
+    },
+  });
+  expect(result.bins[0].probes.publicApp.successDurations.postDnsMs).toEqual({ observations: 2, p50Ms: 100, p95Ms: 900 });
+  expect(result.bins[0].probes.cloudflare.successDurations.postDnsMs.p95Ms).toBe(10);
+  expect(result.bins[0].probes.internet.successDurations.postDnsMs.p95Ms).toBe(5);
+  expect(result.bins[1].probes).toEqual({});
+});
+
+test('legacy totals and missing boundaries remain unknown with independent observation counts', () => {
+  const result = summaryFor([sample(0, [ok(800, 'publicApp')]), sample(2, [timed(50, undefined)]),
+    sample(4, [timed(null, 400)]), sample(6, [timed(0, 0)])]);
+  expect(result).toMatchObject({ successCount: 4, latencyObservations: 3, successDurations: {
+    dnsMs: { observations: 2, p50Ms: 0, p95Ms: 50 },
+    postDnsMs: { observations: 1, p50Ms: 0, p95Ms: 0 },
+    tcpMs: { observations: 0, p50Ms: null, p95Ms: null },
+  } });
+});
+
+test.each([null, undefined, '100', NaN, Infinity, -1])('invalid/missing DNS %s cannot become zero or post-DNS latency', (dnsMs) => {
+  const result = summaryFor([sample(0, [timed(dnsMs, 500)])]);
+  expect(result.successDurations.dnsMs).toEqual({ observations: 0, p50Ms: null, p95Ms: null });
+  expect(result.successDurations.postDnsMs.observations).toBe(0);
+});
+
+test.each([
+  { dnsMs: 501, totalMs: 500 },
+  { dnsMs: 50, tcpMs: 40, totalMs: 500 },
+  { dnsMs: 50, tcpMs: 80, tlsMs: 100, ttfbMs: 90, totalMs: 500 },
+])('nonmonotonic milestones do not produce misleading derived timings: %j', (timings) => {
+  const result = summaryFor([sample(0, [{ ...ok(500, 'publicApp'), timings }])]);
+  expect(Object.values(result.successDurations).every((metric) => metric.observations === 0)).toBe(true);
+  expect(result.p95Ms).toBe(500);
+});
+
+test('connection/TLS/response durations use adjacent milestones, with honest local/DB applicability', () => {
+  const probes = [{ ...ok(200, 'publicApp'), timings: { dnsMs: 20, tcpMs: 50, tlsMs: 90, ttfbMs: 170, totalMs: 200 } }];
+  const diagnostics = [{ ...ok(8, 'localHealth'), timings: { tcpMs: 2, ttfbMs: 7, totalMs: 8 } },
+    { ...ok(4, 'database'), timings: { totalMs: 4 } }];
+  const result = aggregateConnectivity([sample(0, probes, { diagnostics })], config, { since, until });
+  expect(result.samples[0].probes[0].phaseDurations).toEqual({ dnsMs: 20, postDnsMs: 180, tcpMs: 30, tlsMs: 40, headersMs: 80, bodyMs: 30 });
+  expect(result.samples[0].probes[1].phaseDurations).toEqual({ dnsMs: null, postDnsMs: null, tcpMs: 2, tlsMs: null, headersMs: 5, bodyMs: 1 });
+  expect(Object.values(result.samples[0].probes[2].phaseDurations).every((value) => value === null)).toBe(true);
+});
+
+test.each(['timeout', 'http_status', 'unexpected_response', 'oversized', 'dns_error', 'connection_error', 'unsafe_address', 'unavailable'])('excludes %s durations from every success metric, retaining partial details', (outcome) => {
+  const result = aggregateConnectivity([sample(0, [timed(1900, 5000, 'publicApp', { outcome, failurePhase: 'headers',
+    timings: { dnsMs: 1900, tcpMs: 1910, tlsMs: 1930, totalMs: 5000 } })])], config, { since, until });
+  const probe = result.probes.find((p) => p.name === 'publicApp');
+  expect(probe.p95Ms).toBeNull();
+  expect(Object.values(probe.successDurations).every((metric) => metric.observations === 0 && metric.p95Ms === null)).toBe(true);
+  expect(result.bins[0].probes.publicApp.successDurations.postDnsMs.p95Ms).toBeNull();
+  expect(result.samples[0].probes[0].phaseDurations.postDnsMs).toBe(3100);
+});
+
+test.each([
+  ['dns', { totalMs: 5000 }, 5000],
+  ['tcp', { dnsMs: 1900, totalMs: 5000 }, 3100],
+  ['tls', { dnsMs: 1900, tcpMs: 1910, totalMs: 5000 }, 3090],
+  ['headers', { tlsMs: 1930, totalMs: 5000 }, 3070],
+  ['body', { ttfbMs: 2000, totalMs: 5000 }, 3000],
+  ['contract', { ttfbMs: 2000, totalMs: 5000 }, null],
+  ['tls', { dnsMs: 1900, totalMs: 5000 }, null],
+  ['dns', {}, null],
+  ['dns', { dnsMs: 1900, totalMs: 5000 }, null],
+  ['tls', { tcpMs: 6000, totalMs: 5000 }, null],
+  ['untrusted phase', { totalMs: 5000 }, null],
+  [undefined, { totalMs: 5000 }, null],
+])('timeout phase %s uses only recorded, valid boundaries (%j)', (failurePhase, timings, elapsedMs) => {
+  const result = summaryFor([sample(0, [timed(null, 5000, 'publicApp', { outcome: 'timeout', failurePhase, timings })])]);
+  expect(result.latestProbe.timeout).toEqual({ phase: ['untrusted phase', undefined].includes(failurePhase) ? null : failurePhase, elapsedMs });
+});
+
+test('full-window phase statistics survive detail truncation, without changing inputs', () => {
+  const rows = Array.from({ length: 400 }, (_, i) => sample(i / 10, [timed(i, i + 100)]));
+  const before = JSON.stringify(rows);
+  const result = aggregateConnectivity(rows, config, { since, until });
+  expect(result.samples).toHaveLength(360);
+  expect(result.probes.find((p) => p.name === 'publicApp').successDurations.postDnsMs).toEqual({ observations: 400, p50Ms: 100, p95Ms: 100 });
+  expect(JSON.stringify(rows)).toBe(before);
+});

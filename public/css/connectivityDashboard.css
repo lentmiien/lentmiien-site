@@ -19,6 +19,14 @@
 .connectivity-card dl { display: grid; grid-template-columns: 1fr auto; gap: .45rem; margin: 1rem 0; font-size: .88rem; }
 .connectivity-card dt { color: var(--text-muted); font-weight: 400; }
 .connectivity-card dd { margin: 0; text-align: right; }
+.connectivity-card .connectivity-timing-stats { grid-template-columns: 1fr; gap: .25rem; }
+.connectivity-card .connectivity-timing-stats dd { text-align: left; margin-bottom: .5rem; overflow-wrap: anywhere; }
+.connectivity-page details > summary { cursor: pointer; color: var(--accent); }
+.connectivity-timing-legend { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; }
+.connectivity-timing-legend span::before { content: ''; display: inline-block; width: 1.5rem; margin-right: .4rem; vertical-align: middle; border-top: 2px solid var(--accent); }
+.connectivity-timing-legend .timing-postDnsMs::before { border-top: 2px dashed var(--info); }
+.connectivity-timeline path.timing-postDnsMs { stroke: var(--info); stroke-dasharray: 5 3; }
+.connectivity-timeline circle.timing-postDnsMs { fill: var(--info); }
 .connectivity-note { padding: 1rem 1.2rem; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: .3rem; }
 .connectivity-legend { display: flex; flex-wrap: wrap; gap: .8rem; margin: 1rem 0; font-size: .85rem; }
 .connectivity-legend span::before { content: ''; display: inline-block; width: .7rem; height: .7rem; margin-right: .35rem; background: var(--state-color); }

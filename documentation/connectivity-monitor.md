@@ -13,6 +13,76 @@
 - Negative tests: principal/capability denial on every representation, malformed bounds, missing observations, DB failures, unsafe DNS/URLs, redirects, certificate verification, bad/oversized contracts, deadlines/disposal, legacy/config continuity, alert failure cooldown, local/DB isolation and index conflicts.
 - Legacy plan: preserve public `/apphealth` readiness contract and raw JSON access; retain and label historical samples. Version 2 resets previous probe-contract streaks while retaining the global attempt cooldown. No stored sample migration or security exception.
 
+## DNS dashboard extension (2026-09-06)
+
+The existing security contract above applies: this is a read-only extension of `monitoring.connectivity.read` over the admin-managed dataset. It introduces no routes, probes, permissions, dependencies, environment variables, stored fields, migrations or index changes. The writer, monitor version/signature, alert policy, query/response limits, expiry filters and TTL behavior stay intact.
+
+- Each external target has aligned DNS and post-DNS successful-response bin p95 lines, with a shared scale for its two series. Cards show full-window p50/p95 and usable sample counts. TCP, TLS, wait-for-headers and body/validation summaries are expandable. Local/DB latency and all existing timeline/history controls remain available.
+- Analytics derives `phaseDurations` from each record's sanitized cumulative milestones: DNS = `dnsMs`; post-DNS = `totalMs - dnsMs`; TCP = `tcpMs - dnsMs`; TLS = `tlsMs - tcpMs`; headers = `ttfbMs - tlsMs`; body/validation = `totalMs - ttfbMs`. Local HTTP uses start-to-TCP and TCP-to-headers, with DNS/TLS inapplicable. DB has only total latency.
+- All durations are milliseconds. Each metric requires its own recorded boundaries. Missing/non-numeric/non-finite/negative boundaries yield unknown; out-of-order recorded milestones invalidate the derived breakdown. Zero is valid only when actually recorded/derived. `latencyMs` alone does not supply a missing `timings.totalMs`. Legacy success latency therefore remains visible even when phase timings are unknown.
+- Only `outcome: ok` contributes to `successDurations`, including slow successes. Each metric contains `observations`, `p50Ms`, `p95Ms`. Per-sample differences precede nearest-rank percentiles, both in bins and full-window summaries. For example totals 1100/910 and DNS 1000/10 produce post-DNS 100/900: post-DNS p95 is 900, not 1100 − 1000 = 100. Independent phase percentiles need not sum to total p95, and per-phase counts can differ. Empty bins/metrics break chart lines independently.
+- Failure durations are confined to details. `timeout.phase` is the allowlisted recorded failure phase, never inferred from absent milestones. `timeout.elapsedMs` is total minus a known phase boundary, an approximate incomplete interval. DNS starts at zero; TCP at DNS (zero locally); TLS at TCP; headers at TLS (TCP locally); body at headers; DB at zero. Missing boundaries, contradictory completed phases and contract-validation start yield unknown. Raw cumulative milestones remain separately labeled. Scheduler/event-loop delays are included, so these intervals do not prove a resolver or server root cause.
+
+Release and verification for this extension:
+
+1. Pull the released commit and restart the existing single production app process through its normal process manager, using Node 24.20.0. Avoid `npm start` as a smoke test because prestart performs maintenance. No new packages or configuration are required.
+2. Log in at `/admin/connectivity`, hard-refresh assets, and inspect 1/6/24/72-hour windows. Check all three external rows (an unconfigured public app remains unknown), exact counts via keyboard/click timeline selection, expandable phase summaries, local/DB rows and paged history. Existing stored timings should appear immediately; no backfill or new probe is needed.
+3. Compare a successful sample's raw `timings.totalMs - timings.dnsMs` with its derived post-DNS detail. Check that timeout-only bins have no successful timing points and older samples show unknown phases. Mixed monitor configurations and truncated windows retain their existing disclosures. The earlier production p95 figures are investigation context, not reverified by this release.
+4. Run `node scripts/setup-connectivity-indexes.js --verify` only if checking production retention readiness. This extension needs no index writes; see the existing operator-owned index procedure below if verification finds missing indexes. Observe normal `connectivity_monitor` logs for history failures. No live production checks were performed during implementation.
+5. Roll back the code release through the normal workflow if needed; no data migration must be undone. Existing TTL expiry continues independently.
+
+Validation: all 240 Jest suites / 1,799 tests passed on Node 24.20.0 with repository coverage thresholds. Synthetic Chromium desktop/mobile checks passed for DNS series, phase summaries, 1,200 aligned cells, keyboard selection, range refresh, history paging, loading/empty/error states, no JavaScript errors and no page-wide mobile overflow. No production database, probes, notifications or DNS settings were changed.
+
+## Read-only Windows DNS investigation
+
+The repository previously documented the explicit A-record resolver and phase semantics above, but had no Windows DNS command runbook. Run these manually on the **web-app PC**, ideally using the same Node executable and service account as the app. They inspect configuration or issue a few DNS queries; they do not change DNS settings, clear caches, restart adapters or launch the application. Replace the example hostname with the public app hostname only (no URL path or credentials). Keep adapter/server details private.
+
+```powershell
+Get-DnsClientServerAddress | Select-Object InterfaceAlias, AddressFamily, ServerAddresses
+node --version
+
+$dnsTarget = 'your-public-app.example'
+1..3 | ForEach-Object {
+  $dnsWatch = [System.Diagnostics.Stopwatch]::StartNew()
+  $dnsOutcome = 'ok'
+  try {
+    Resolve-DnsName -Name $dnsTarget -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop | Out-Null
+  } catch { $dnsOutcome = 'failed' }
+  $dnsWatch.Stop()
+  [pscustomobject]@{ At = (Get-Date).ToString('o'); Outcome = $dnsOutcome; Ms = $dnsWatch.Elapsed.TotalMilliseconds }
+}
+```
+
+Repeat for `www.google.com` and `www.cloudflare.com`. To compare an individual configured DNS server, add `-Server '<configured-server-IP>'` to `Resolve-DnsName`; this selects the server for that query, without changing adapter settings. `-QuickTimeout` is a shorter diagnostic timeout, not the monitor's absolute deadline. Parameters and configuration inspection are documented by Microsoft: [Resolve-DnsName](https://learn.microsoft.com/en-us/powershell/module/dnsclient/resolve-dnsname?view=windowsserver2025-ps), [Get-DnsClientServerAddress](https://learn.microsoft.com/en-us/powershell/module/dnsclient/get-dnsclientserveraddress?view=windowsserver2025-ps).
+
+For a closer match to the collector's `Resolver.resolve4()` path, run this bounded Node-only DNS check from PowerShell. It first lists the Node resolver servers, then cancels each query at five seconds, prints no resolved addresses and makes three sequential queries per hostname. The deadline is approximate if the process is stalled. These are optional manual diagnostics, not additions to the collector.
+
+```powershell
+@'
+const { Resolver } = require('node:dns').promises;
+const { performance } = require('node:perf_hooks');
+console.log(JSON.stringify({ node: process.version, cares: process.versions.ares,
+  servers: require('node:dns').getServers() }));
+(async () => {
+  for (const hostname of ['www.google.com', 'www.cloudflare.com', 'your-public-app.example']) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const resolver = new Resolver();
+      const started = performance.now();
+      const timer = setTimeout(() => resolver.cancel(), 5000);
+      let outcome = 'ok';
+      try { await resolver.resolve4(hostname); }
+      catch (error) { outcome = error.code || 'failed'; }
+      finally { clearTimeout(timer); }
+      console.log(JSON.stringify({ at: new Date().toISOString(), hostname, attempt,
+        outcome, ms: Math.round((performance.now() - started) * 100) / 100 }));
+    }
+  }
+})();
+'@ | node
+```
+
+Node's DNS protocol resolver differs from the OS lookup path and does not use the hosts file. Compare Node server selection and timings with PowerShell results; browser/OS caches and resolver implementations can differ. Correlate timestamps with the new DNS chart and app performance, without treating one fast lookup as proof of recovery. See [Node 24 DNS documentation](https://nodejs.org/docs/latest-v24.x/api/dns.html).
+
 ## Probe contracts and diagnostic meaning
 
 Each run starts its HTTP probes and DB diagnostic concurrently. External probes:
