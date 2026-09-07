@@ -4,6 +4,36 @@ const {
 } = require('../../services/mypageIconService');
 
 describe('mypageIconService', () => {
+  test('new admin tiles append to saved layouts and support ordering and hiding', () => {
+    const previousOrder = buildMypageTiles({ isAdmin: true })
+      .map((tile) => tile.id)
+      .filter((id) => !['ask_lennart', 'runpod'].includes(id));
+    const tiles = buildMypageTiles({ isAdmin: true, settings: { order: previousOrder } });
+    expect(tiles.map((tile) => tile.id)).toEqual([...previousOrder, 'ask_lennart', 'runpod']);
+    expect(tiles.slice(-2).every((tile) => !tile.hidden)).toBe(true);
+
+    const settings = sanitizeMypageIconSettings(
+      { order: ['runpod', 'ask_lennart'], hidden: ['ask_lennart'] },
+      { order: previousOrder },
+      [],
+      { isAdmin: true }
+    );
+    const customized = buildMypageTiles({ isAdmin: true, settings });
+    expect(customized.slice(0, 2)).toEqual([
+      expect.objectContaining({ id: 'runpod', hidden: false }),
+      expect.objectContaining({ id: 'ask_lennart', hidden: true }),
+    ]);
+  });
+
+  test('saved settings and permission strings cannot expose admin tiles to non-admins', () => {
+    const tiles = buildMypageTiles({
+      isAdmin: false,
+      permissions: ['ask_lennart', 'runpod', 'human.request.manage', 'runpod.catalog.read', 'runpod.billing.read', 'runpod.pod.read', 'runpod.network_volume.read'],
+      settings: { order: ['runpod', 'ask_lennart'], hidden: [] },
+    });
+    expect(tiles.some((tile) => ['ask_lennart', 'runpod'].includes(tile.id))).toBe(false);
+  });
+
   test('buildMypageTiles keeps saved order and appends omitted allowed icons', () => {
     const tiles = buildMypageTiles({
       permissions: ['chat5'],

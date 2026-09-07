@@ -300,6 +300,22 @@ const MYPAGE_ICON_DEFINITIONS = [
     label: 'AI Gateway',
     adminOnly: true,
   },
+  {
+    id: 'ask_lennart',
+    href: '/admin/ask-lennart',
+    src: '/i/ask_lennart.svg',
+    alt: 'Ask Lennart human request inbox',
+    label: 'Ask Lennart',
+    adminOnly: true,
+  },
+  {
+    id: 'runpod',
+    href: '/admin/runpod',
+    src: '/i/runpod.svg',
+    alt: 'Runpod GPU management dashboard',
+    label: 'Runpod',
+    adminOnly: true,
+  },
 ];
 
 const DEFINITION_IDS = MYPAGE_ICON_DEFINITIONS.map((definition) => definition.id);

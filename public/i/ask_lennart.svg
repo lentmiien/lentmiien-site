@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Ask Lennart tile illustration</title>
+  <desc id="desc">An amber question bubble and an ember reply beside a person in a graphite inbox.</desc>
+  <defs>
+    <linearGradient id="askLennartBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0E0F13"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#askLennartBg)"/>
+  <circle cx="104" cy="84" r="94" fill="#FFC247" fill-opacity="0.1"/>
+  <circle cx="542" cy="324" r="122" fill="#FF6A1F" fill-opacity="0.11"/>
+  <rect x="96" y="68" width="448" height="264" rx="30" fill="#171A20" stroke="#262B34" stroke-width="4"/>
+  <rect x="120" y="94" width="400" height="212" rx="20" fill="#1B2026" stroke="#2B313C" stroke-width="2"/>
+
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M164 116h156a20 20 0 0 1 20 20v82a20 20 0 0 1-20 20h-92l-40 30v-30h-24a20 20 0 0 1-20-20v-82a20 20 0 0 1 20-20Z" fill="#20242A" stroke="#FFC247" stroke-width="5"/>
+    <path d="M222 156c0-24 40-26 40 0 0 16-20 18-20 32" fill="none" stroke="#FFC247" stroke-width="9"/>
+    <circle cx="242" cy="210" r="5" fill="#FFC247"/>
+
+    <circle cx="420" cy="144" r="27" fill="#20242A" stroke="#E8ECF2" stroke-width="5"/>
+    <path d="M376 212v-8c0-20 20-32 44-32s44 12 44 32v8" fill="#20242A" stroke="#E8ECF2" stroke-width="5"/>
+    <path d="M324 230h152a18 18 0 0 1 18 18v30a18 18 0 0 1-18 18h-20v22l-30-22H324a18 18 0 0 1-18-18v-30a18 18 0 0 1 18-18Z" fill="#20242A" stroke="#FF6A1F" stroke-width="5"/>
+    <path d="M334 263l10 10 20-22" fill="none" stroke="#FFC247" stroke-width="7"/>
+    <path d="M386 256h78M386 274h52" stroke="#C1C7D3" stroke-width="7"/>
+  </g>
+</svg>
