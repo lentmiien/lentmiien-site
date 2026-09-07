@@ -12,6 +12,7 @@ const upload = multer({
 
 // Require controller modules.
 const controller = require('../controllers/mypagecontroller');
+const { router: mypageTasks, prepareTaskShortcut } = require('./mypageTasks');
 
 const requireAdminLifeLog = (req, res, next) => {
   if (req.user && req.user.type_user === 'admin') {
@@ -31,7 +32,8 @@ const redirectLegacyLifeLog = (req, res) => {
 };
 
 /* GET home page. */
-router.get('/', controller.mypage);
+router.use('/api/tasks', mypageTasks);
+router.get('/', prepareTaskShortcut, controller.mypage);
 router.post('/icon-settings', controller.update_icon_settings);
 
 router.get('/embedding-search', controller.embedding_search_page);

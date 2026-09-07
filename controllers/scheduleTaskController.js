@@ -199,14 +199,47 @@ exports.toggleDoneApi = async function(req, res, next) {
     if(!task) return res.status(404).json({ message: 'Not found' });
     let done = req.body.done;
     if (done === undefined) done = true;
-    task.done = done;
-    const deletedReminders = task.done
-      ? await deletePendingTaskReminders(task, 'mark-completed')
-      : 0;
-    await task.save();
+    const deletedReminders = await saveTaskCompletion(task, done);
     res.json({ ok: true, done: task.done, deletedReminders });
   } catch(err) {
     next(err);
+  }
+};
+
+// Shared with the My Page shortcut so reminder and document semantics stay aligned.
+async function saveTaskCompletion(task, done, { skipUnchangedSave = false } = {}) {
+  const unchanged = task.done === done;
+  task.done = done;
+  const deletedReminders = task.done
+    ? await deletePendingTaskReminders(task, 'mark-completed')
+    : 0;
+  if (!skipUnchangedSave || !unchanged) await task.save();
+  return deletedReminders;
+}
+
+exports.completeMypageTaskApi = async function(req, res) {
+  if (!/^[a-f\d]{24}$/i.test(req.params.id)
+    || Object.keys(req.query || {}).length
+    || !req.body || Array.isArray(req.body)
+    || Object.keys(req.body).length !== 1 || req.body.done !== true) {
+    return res.status(400).json({ ok: false, error: 'Invalid task completion request.' });
+  }
+  try {
+    const task = await Task.findOne({
+      _id: req.params.id,
+      userId: req.user.name,
+      type: { $in: ['todo', 'tobuy'] },
+    });
+    if (!task) return res.status(404).json({ ok: false, error: 'Task not found.' });
+    // Repeating an acknowledged completion must not change its completion timestamp.
+    const deletedReminders = await saveTaskCompletion(task, true, { skipUnchangedSave: true });
+    return res.json({ ok: true, done: true, deletedReminders });
+  } catch (error) {
+    logger.error('Failed to complete a task from My Page', {
+      category: 'schedule_task',
+      metadata: { errorName: error?.name || 'Error' },
+    });
+    return res.status(500).json({ ok: false, error: 'Unable to complete task. Reload and try again.' });
   }
 };
 
