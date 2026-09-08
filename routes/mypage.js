@@ -11,20 +11,26 @@ const upload = multer({
 });
 
 // Require controller modules.
-const controller = require('../controllers/mypagecontroller');
-const { router: mypageTasks, prepareTaskShortcut } = require('./mypageTasks');
+// Legacy controllers initialize integrations; load only for legacy operations.
+const controller = new Proxy({}, { get: (_, key) => (req, res, next) => require('../controllers/mypagecontroller')[key](req, res, next) });
+const { createAccountDashboard } = require('./accountDashboard');
+const { router: mypageTasks } = require('./mypageTasks');
 
-const requireAdminLifeLog = (req, res, next) => {
-  if (req.user && req.user.type_user === 'admin') {
-    return next();
+const { resolvePolicy, allows, SECTIONS } = require('../services/accountSurfacePolicy');
+const { createSessionCsrf } = require('../middleware/sessionCsrf');
+const legacyLifeCsrf = createSessionCsrf();
+const requireAdminLifeLog = async (req, res, next) => {
+  res.set('Cache-Control', 'private, no-store');
+  const policy = await resolvePolicy(req.user, require('../models/role'));
+  if (!allows(policy, SECTIONS.find(s => s.id === 'life'))) return res.status(403).json({ error: 'Life log unavailable.' });
+  if (!['GET', 'HEAD'].includes(req.method)) {
+    if (!policy.capabilities.includes('dashboard.personal.write')) return res.status(403).json({ error: 'Life log unavailable.' });
+    return legacyLifeCsrf.requireToken(req, res, next);
   }
-  const wantsJson = String(req.headers?.accept || '').includes('application/json')
-    || String(req.headers?.['content-type'] || '').includes('application/json');
-  if (wantsJson) {
-    return res.status(403).json({ error: 'Admin access required.' });
-  }
-  return res.redirect('/');
+  next();
 };
+
+const dashboard = createAccountDashboard();
 
 const redirectLegacyLifeLog = (req, res) => {
   const suffix = req.url === '/' ? '' : req.url;
@@ -33,11 +39,12 @@ const redirectLegacyLifeLog = (req, res) => {
 
 /* GET home page. */
 router.use('/api/tasks', mypageTasks);
-router.get('/', prepareTaskShortcut, controller.mypage);
-router.post('/icon-settings', controller.update_icon_settings);
+router.use((req, res, next) => {
+  if (req.path === '/' || req.path === '/icon-settings' || req.path.startsWith('/api/')) return dashboard(req, res, next);
+  next();
+});
 
-router.get('/embedding-search', controller.embedding_search_page);
-router.post('/embedding-search', controller.embedding_search);
+router.use('/embedding-search', require('./accountEmbedding'));
 
 // Blogpost
 router.get('/blogpost', controller.blogpost);

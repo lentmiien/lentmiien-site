@@ -368,3 +368,17 @@ describe('accountingBusinessService', () => {
     });
   });
 });
+
+test('dashboard expense calculation matches existing accounting fee/type semantics', async () => {
+  const { spendingByCurrency } = require('../../services/accountDashboardData');
+  const rows = [
+    { _id: objectId('one'), from_account: 'account', to_account: 'EXT', amount: 100, from_fee: 3, to_fee: 2, date: 20260908, type: 'expense', transaction_business: 'Synthetic' },
+    { _id: objectId('two'), from_account: 'account', to_account: 'EXT', amount: 25, from_fee: 0, to_fee: 0, date: 20260908, type: 'saving', transaction_business: 'Transfer' },
+  ];
+  mockMappingModel.find.mockReturnValue(chainResolved([{ name: 'Synthetic', normalizedName: 'synthetic', groupName: 'Fixture' }]));
+  mockTransactionDbModel.find.mockReturnValue(chainResolved(rows));
+  mockCreditCardTransaction.find.mockReturnValue(chainResolved([]));
+  const analytics = await service.getAnalytics({ scope: 'group', value: 'Fixture' });
+  const dashboard = spendingByCurrency(rows, [{ _id: 'account', currency: 'JPY' }], 20260901);
+  expect(dashboard[0].current).toBe(analytics.summary.totalSpend);
+});

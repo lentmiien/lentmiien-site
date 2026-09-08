@@ -107,7 +107,7 @@ describe('Modular LLM admin UI', () => {
   test('registers the authenticated admin routes and navigation entry', () => {
     const routeSource = fs.readFileSync(projectFile('routes', 'admin.js'), 'utf8');
     const appSource = fs.readFileSync(projectFile('app.js'), 'utf8');
-    const layoutSource = fs.readFileSync(projectFile('views', 'layout.pug'), 'utf8');
+    const { NAVIGATION } = require('../../services/accountSurfacePolicy');
     const gatewayViewSource = fs.readFileSync(projectFile('views', 'admin_ai_gateway.pug'), 'utf8');
 
     expect(routeSource).toContain(
@@ -120,9 +120,7 @@ describe('Modular LLM admin UI', () => {
       "router.get('/ai-gateway/modular-llm/gateway-runs/:runId', modularLlmAdminController.showGatewayRun);",
     );
     expect(appSource).toContain("app.use('/admin', isAuthenticated, isAdmin, adminRouter);");
-    expect(layoutSource).toContain(
-      "+navLink('/admin/ai-gateway/modular-llm', 'Modular LLM', 'secondary')",
-    );
+    expect(NAVIGATION).toEqual(expect.arrayContaining([expect.objectContaining({ href: '/admin/ai-gateway/modular-llm', adminOnly: true })]));
     expect(gatewayViewSource).toContain("href='/admin/ai-gateway/modular-llm'");
   });
 

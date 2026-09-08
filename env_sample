@@ -213,3 +213,11 @@ CONNECTIVITY_TIMEOUT_MS=5000
 CONNECTIVITY_SLOW_MS=1500
 # Optional trusted HTTPS origin only, no path, credentials or query. Probes /apphealth.
 CONNECTIVITY_PUBLIC_ORIGIN=
+
+# My Account / navbar personal surface owner. Set to Lennart's validated Useraccount
+# MongoDB _id in deployment configuration; blank/invalid disables personal surfaces.
+# Never use a name/email/admin fallback. No real account ID belongs in this file.
+DASHBOARD_PERSONAL_OWNER_USER_ID=
+# Server-selected Minute Logger deviceId (never sent to the browser). Blank disables
+# this summary. The owner binding above is also required.
+DASHBOARD_MINUTE_LOGGER_DEVICE_ID=

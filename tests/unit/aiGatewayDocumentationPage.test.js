@@ -80,7 +80,7 @@ describe('AI Gateway documentation admin page', () => {
   test('registers the pages inside the authenticated admin router', () => {
     const routeSource = fs.readFileSync(projectFile('routes', 'admin.js'), 'utf8');
     const appSource = fs.readFileSync(projectFile('app.js'), 'utf8');
-    const layoutSource = fs.readFileSync(projectFile('views', 'layout.pug'), 'utf8');
+    const { NAVIGATION } = require('../../services/accountSurfacePolicy');
 
     expect(routeSource).toContain(
       "router.get('/ai-gateway/documentation', aiGatewayDocumentationAdminController.index);",
@@ -89,8 +89,6 @@ describe('AI Gateway documentation admin page', () => {
       "router.get('/ai-gateway/documentation/:filename', aiGatewayDocumentationAdminController.show);",
     );
     expect(appSource).toContain("app.use('/admin', isAuthenticated, isAdmin, adminRouter);");
-    expect(layoutSource).toContain(
-      "+navLink('/admin/ai-gateway/documentation', 'Gateway documentation', 'secondary')",
-    );
+    expect(NAVIGATION).toEqual(expect.arrayContaining([expect.objectContaining({ href: '/admin/ai-gateway/documentation', adminOnly: true })]));
   });
 });

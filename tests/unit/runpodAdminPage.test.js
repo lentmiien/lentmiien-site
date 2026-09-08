@@ -572,11 +572,11 @@ describe('Runpod admin page', () => {
   });
 
   test('links the page from admin navigation and uses the theme stylesheet', () => {
-    const layoutSource = fs.readFileSync(projectFile('views', 'layout.pug'), 'utf8');
+    const { NAVIGATION } = require('../../services/accountSurfacePolicy');
     const viewSource = fs.readFileSync(projectFile('views', 'admin_runpod.pug'), 'utf8');
     const cssSource = fs.readFileSync(projectFile('public', 'css', 'runpodAdmin.css'), 'utf8');
 
-    expect(layoutSource).toContain("+navLink('/admin/runpod', 'Runpod API v2')");
+    expect(NAVIGATION).toEqual(expect.arrayContaining([expect.objectContaining({ href: '/admin/runpod', adminOnly: true })]));
     expect(viewSource).toContain("link(rel='stylesheet', href='/css/runpodAdmin.css')");
     expect(cssSource).toContain('var(--bg)');
     expect(cssSource).toContain('var(--surface-1)');

@@ -4,17 +4,18 @@ block content
   .row
     .col-lg-8
       h1.mb-3 Embedding Search
-      p.text-muted.mb-4 Search stored embeddings and jump to the source entries. Defaults to the latest 50 matches.
+      p.text-muted.mb-4 Search your mixed personal corpus. Searches consider the newest 500 vectors matching the date filters, per index, and return up to 50 matches. Combined mode sends candidate previews to your configured high-quality embedding service.
 
       if searchError
         .alert.alert-danger(role='alert')= searchError
 
       form.card.mb-4(method='post', action='/mypage/embedding-search')
+        input(type='hidden', name='_csrf', value=csrfToken)
         .card-body
           h5.mb-3 Search stored embeddings
           .mb-3
             label.form-label(for='search_text') Query text
-            textarea#search_text.form-control(name='search_text', rows='3', required, placeholder='Enter text to search stored embeddings')= searchForm && searchForm.query
+            textarea#search_text.form-control(name='search_text', rows='3', maxlength='2000', required, placeholder='Enter text to search stored embeddings')= searchForm && searchForm.query
           .row
             .col-md-6.mb-3
               label.form-label(for='search_type') Search type
@@ -104,38 +105,38 @@ block content
                         strong Parent:
                         |  #{row.source.parentCollection || 'n/a'} · #{row.source.parentId || 'n/a'}
                     if isOcrFile && ocrJobId
-                      - const ocrHref = ocrFileId ? `/ocr/jobs/${ocrJobId}/view/${ocrFileId}` : `/ocr/jobs/${ocrJobId}/view`;
+                      - const ocrHref = ocrFileId ? `/ocr/jobs/${encodeURIComponent(ocrJobId)}/view/${encodeURIComponent(ocrFileId)}` : `/ocr/jobs/${encodeURIComponent(ocrJobId)}/view`;
                       li
                         strong OCR job:
                         |  
                         a(href=ocrHref, target='_blank', rel='noreferrer') View job page
                     if isKnowledge && knowledgeId
-                      - const knowledgeHref = `/chat4/viewknowledge/${knowledgeId}`;
+                      - const knowledgeHref = `/chat4/viewknowledge/${encodeURIComponent(knowledgeId)}`;
                       li
                         strong Knowledge:
                         |  
                         a(href=knowledgeHref, target='_blank', rel='noreferrer') View knowledge
                     if isChat && conversationId
-                      - const chatHref = `/chat5/chat/${conversationId}`;
+                      - const chatHref = `/chat5/chat/${encodeURIComponent(conversationId)}`;
                       li
                         strong Chat:
                         |  
                         a(href=chatHref, target='_blank', rel='noreferrer') View chat
                     if isASR && asrId
-                      - const asrHref = `/asr/job/${asrId}`;
+                      - const asrHref = `/asr/job/${encodeURIComponent(asrId)}`;
                       li
                         strong ASR job:
                         |  
                         a(href=asrHref, target='_blank', rel='noreferrer') View job
                     if isImagePrompt && imageId
-                      - const imageHref = `/image_gen/good?image=${imageId}`;
+                      - const imageHref = `/image_gen/good?image=${encodeURIComponent(imageId)}`;
                       li
                         strong Image job:
                         |  
                         a(href=imageHref, target='_blank', rel='noreferrer') View job
                     if isMessage && messageId
-                      - const messageHref = `/admin/message-inbox/${messageId}`;
-                      - const threadHref = `/admin/message-thread/${threadId}`;
+                      - const messageHref = `/admin/message-inbox/${encodeURIComponent(messageId)}`;
+                      - const threadHref = `/admin/message-thread/${encodeURIComponent(threadId)}`;
                       li
                         strong Message:
                         |  

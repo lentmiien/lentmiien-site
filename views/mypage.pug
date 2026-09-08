@@ -1,785 +1,115 @@
 extends layout
 
-mixin tile(tile)
-  .mypage-tile-shell(class=[tile.hidden ? 'is-hidden' : '', tile.meta ? 'has-meta' : ''], data-tile-id=tile.id)
-    a.mypage-tile(href=tile.href)
-      .img-card
-        .img-card__inner
-          img.mypage-img(src=tile.src, alt=tile.alt)
-          if tile.meta
-            span.img-card__meta= tile.meta
-          span.img-card__label= tile.label
-          span.mypage-hidden-badge Hidden
-    .mypage-tile-controls(aria-label=`${tile.label} controls`)
-      button.mypage-tile-control.mypage-tile-drag(type="button", title="Drag to reorder", aria-label=`Drag ${tile.label}`) Drag
-      button.mypage-tile-control.mypage-tile-up(type="button", title="Move up", aria-label=`Move ${tile.label} up`) Up
-      button.mypage-tile-control.mypage-tile-down(type="button", title="Move down", aria-label=`Move ${tile.label} down`) Down
-      button.mypage-tile-control.mypage-tile-hide(type="button", aria-pressed=tile.hidden ? 'true' : 'false', aria-label=`Toggle ${tile.label}`)= tile.hidden ? 'Show' : 'Hide'
-
-mixin taskPill(task, pillClass, timingLabel)
-  a.badge.schedule-task-pill(href='/scheduleTask/upcoming', class=pillClass, data-task-id=canCompleteMypageTask ? task._id : undefined, aria-describedby=canCompleteMypageTask ? 'mypage-task-hint' : undefined, title=timingLabel ? `${task.title} · ${timingLabel}` : task.title, draggable='false')
-    span.schedule-task-pill__title= task.title
-    if timingLabel
-      span.schedule-task-pill__separator(aria-hidden="true") ·
-      span.schedule-task-pill__timing= timingLabel
-    if canCompleteMypageTask
-      span.mypage-task-progress(aria-hidden='true')
-        span.mypage-task-progress__fill
-
 block styles
+  link(rel='stylesheet', href='/css/account_dashboard.css')
   link(rel='stylesheet', href='/css/mypage_tasks.css')
-  link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap")
-  style.
-    :root {
-      --life-log-ink: var(--text);
-      --life-log-muted: var(--text-secondary);
-      --life-log-accent: var(--brand);
-      --life-log-accent-2: var(--accent);
-      --life-log-surface: var(--surface-1);
-      --life-log-surface-strong: var(--surface-2);
-      --life-log-border: var(--border);
-      --life-log-chip: var(--surface-2);
-    }
-
-    .life-log-shell {
-      font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
-      background: radial-gradient(circle at top right, var(--accent-tint), transparent 40%),
-        radial-gradient(circle at 20% 10%, var(--brand-tint), transparent 45%),
-        var(--life-log-surface);
-      border: 1px solid var(--life-log-border);
-      border-radius: 20px;
-      padding: 1.5rem;
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
-      color: var(--life-log-ink);
-      animation: life-log-shell-in 0.5s ease both;
-    }
-
-    .life-log-details {
-      font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
-    }
-
-    .life-log-toggle {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      width: 100%;
-      padding: 0.85rem 1.1rem;
-      border: 1px solid var(--life-log-border);
-      border-radius: 18px;
-      background: var(--life-log-surface);
-      color: var(--life-log-ink);
-      cursor: pointer;
-      list-style: none;
-      user-select: none;
-      box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
-      font-weight: 600;
-    }
-
-    .life-log-toggle::-webkit-details-marker {
-      display: none;
-    }
-
-    .life-log-toggle::marker {
-      content: '';
-    }
-
-    .life-log-toggle-title {
-      align-items: center;
-      display: inline-flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      font-size: 1.05rem;
-      letter-spacing: -0.01em;
-    }
-
-    .life-log-reminder-badge {
-      background: var(--life-log-accent);
-      border-radius: 999px;
-      color: var(--text-inverse);
-      display: inline-flex;
-      font-size: 0.78rem;
-      font-weight: 700;
-      line-height: 1;
-      padding: 0.32rem 0.6rem;
-      white-space: nowrap;
-    }
-
-    .life-log-toggle-hint {
-      font-size: 0.85rem;
-      color: var(--life-log-muted);
-      font-weight: 500;
-      white-space: nowrap;
-    }
-
-    .life-log-toggle-hint::before {
-      content: 'Expand';
-    }
-
-    .life-log-details[open] .life-log-toggle-hint::before {
-      content: 'Collapse';
-    }
-
-    .life-log-toggle::after {
-      content: '+';
-      border: 1px solid var(--life-log-border);
-      border-radius: 999px;
-      width: 1.6rem;
-      height: 1.6rem;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: var(--life-log-surface-strong);
-      color: var(--life-log-accent);
-      font-weight: 600;
-      flex-shrink: 0;
-    }
-
-    .life-log-details[open] .life-log-toggle::after {
-      content: '-';
-    }
-
-    .life-log-details[open] .life-log-toggle {
-      border-bottom-left-radius: 0;
-      border-bottom-right-radius: 0;
-      border-bottom: none;
-    }
-
-    .life-log-details[open] .life-log-shell {
-      border-top-left-radius: 0;
-      border-top-right-radius: 0;
-      border-top: none;
-    }
-
-    .life-log-header h2 {
-      margin-bottom: 0.2rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-    }
-
-    .life-log-header p {
-      margin-bottom: 0;
-      color: var(--life-log-muted);
-      max-width: 720px;
-    }
-
-    .life-log-panel {
-      background: rgba(27, 32, 38, 0.9);
-      border: 1px solid var(--life-log-border);
-      border-radius: 16px;
-      padding: 1.25rem;
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
-    }
-
-    .life-log-panel + .life-log-panel {
-      margin-top: 1rem;
-    }
-
-    .life-log-reminder-section {
-      background: var(--life-log-surface-strong);
-      border: 1px solid var(--life-log-border);
-      border-radius: 14px;
-      padding: 1rem;
-    }
-
-    .life-log-reminder-section-header {
-      align-items: flex-start;
-      display: flex;
-      gap: 1rem;
-      justify-content: space-between;
-      margin-bottom: 0.85rem;
-    }
-
-    .life-log-reminder-section-title {
-      font-size: 1rem;
-      font-weight: 700;
-      margin: 0;
-    }
-
-    .life-log-reminder-list {
-      display: grid;
-      gap: 0.65rem;
-    }
-
-    .life-log-reminder-item {
-      align-items: flex-start;
-      background: var(--life-log-surface);
-      border: 1px solid var(--life-log-border);
-      border-radius: 12px;
-      color: var(--life-log-ink);
-      cursor: pointer;
-      display: flex;
-      gap: 0.8rem;
-      padding: 0.85rem;
-      text-align: left;
-      width: 100%;
-    }
-
-    .life-log-reminder-item:hover,
-    .life-log-reminder-item:focus {
-      border-color: rgba(255, 106, 31, 0.7);
-      box-shadow: 0 8px 20px rgba(255, 106, 31, 0.12);
-    }
-
-    .life-log-reminder-item.is-late {
-      border-color: var(--divider);
-    }
-
-    .life-log-reminder-status {
-      background: var(--life-log-accent);
-      border-radius: 999px;
-      color: var(--text-inverse);
-      flex-shrink: 0;
-      font-size: 0.75rem;
-      font-weight: 800;
-      line-height: 1;
-      padding: 0.35rem 0.58rem;
-      white-space: nowrap;
-    }
-
-    .life-log-reminder-item.is-late .life-log-reminder-status {
-      background: var(--life-log-ink);
-    }
-
-    .life-log-reminder-body {
-      display: flex;
-      flex: 1;
-      flex-direction: column;
-      gap: 0.15rem;
-      min-width: 0;
-    }
-
-    .life-log-reminder-name {
-      font-weight: 700;
-      line-height: 1.2;
-    }
-
-    .life-log-reminder-meta {
-      color: var(--life-log-muted);
-      font-size: 0.84rem;
-    }
-
-    .life-log-label {
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--life-log-muted);
-      font-weight: 600;
-    }
-
-    .life-log-input,
-    .life-log-panel textarea,
-    .life-log-panel select {
-      border-radius: 10px;
-      border: 1px solid var(--life-log-border);
-      padding: 0.55rem 0.7rem;
-      font-size: 0.95rem;
-      background: var(--life-log-surface);
-      color: var(--life-log-ink);
-      width: 100%;
-    }
-
-    .life-log-input:focus,
-    .life-log-panel textarea:focus,
-    .life-log-panel select:focus {
-      border-color: var(--life-log-accent);
-      box-shadow: 0 0 0 0.15rem rgba(255, 194, 71, 0.18);
-    }
-
-    .life-log-chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.4rem;
-    }
-
-    .life-log-chip {
-      border: 1px solid var(--life-log-border);
-      background: var(--life-log-chip);
-      color: var(--life-log-ink);
-      padding: 0.3rem 0.65rem;
-      border-radius: 999px;
-      font-size: 0.85rem;
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
-    }
-
-    .life-log-chip:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 6px 14px rgba(0, 0, 0, 0.22);
-    }
-
-    .life-log-actions .btn {
-      border-radius: 999px;
-      font-weight: 600;
-    }
-
-    .life-log-followups {
-      background: var(--life-log-surface-strong);
-      border: 1px solid var(--life-log-border);
-      border-radius: 14px;
-      padding: 1rem;
-    }
-
-    .life-log-followups-list {
-      display: grid;
-      gap: 0.75rem;
-    }
-
-    .life-log-followup-item {
-      border: 1px solid var(--life-log-border);
-      border-radius: 10px;
-      padding: 0.85rem;
-      background: var(--life-log-surface);
-    }
-
-    .life-log-followup-item.is-followup-window {
-      border-color: rgba(255, 106, 31, 0.75);
-      box-shadow: 0 8px 20px rgba(255, 106, 31, 0.16);
-    }
-
-    .life-log-followup-item.is-late {
-      border-color: var(--divider);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
-    }
-
-    .life-log-followup-header-row {
-      align-items: flex-start;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.6rem;
-      justify-content: space-between;
-    }
-
-    .life-log-followup-meta {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      color: var(--life-log-muted);
-      font-size: 0.84rem;
-    }
-
-    .life-log-followup-title {
-      display: flex;
-      align-items: center;
-      gap: 0.55rem;
-      color: var(--life-log-ink);
-      font-weight: 700;
-      line-height: 1.25;
-    }
-
-    .life-log-followup-age {
-      background: var(--life-log-surface-strong);
-      border: 1px solid var(--life-log-border);
-      border-radius: 999px;
-      color: var(--life-log-muted);
-      font-size: 0.8rem;
-      font-weight: 800;
-      line-height: 1;
-      padding: 0.28rem 0.6rem;
-      white-space: nowrap;
-    }
-
-    .life-log-followup-age.is-followup-window {
-      background: var(--life-log-accent);
-      border-color: var(--life-log-accent);
-      box-shadow: 0 5px 14px rgba(255, 106, 31, 0.28);
-      color: var(--text-inverse);
-    }
-
-    .life-log-followup-age.is-late {
-      background: var(--life-log-ink);
-      border-color: var(--life-log-ink);
-      color: var(--text-inverse);
-    }
-
-    .life-log-followup-preview {
-      background:
-        linear-gradient(90deg, rgba(255, 194, 71, 0.08) 1px, transparent 1px),
-        linear-gradient(0deg, rgba(255, 194, 71, 0.08) 1px, transparent 1px),
-        var(--life-log-surface-strong);
-      background-size: 25% 25%;
-      border: 1px solid var(--life-log-border);
-      border-radius: 8px;
-      height: 48px;
-      margin-bottom: 0.85rem;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .life-log-followup-preview-point {
-      border: 2px solid var(--life-log-surface);
-      border-radius: 50%;
-      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.28);
-      position: absolute;
-      transform: translate(-50%, -50%);
-    }
-
-    .life-log-followup-slider-label {
-      align-items: center;
-      color: var(--life-log-muted);
-      display: flex;
-      font-size: 0.82rem;
-      font-weight: 700;
-      justify-content: space-between;
-      text-transform: uppercase;
-    }
-
-    .life-log-visual {
-      background: var(--life-log-surface);
-      border-radius: 16px;
-      border: 1px solid var(--life-log-border);
-      padding: 1rem;
-    }
-
-    .life-log-visual-canvas {
-      position: relative;
-      width: 100%;
-      max-width: 420px;
-      aspect-ratio: 3 / 2;
-      margin: 0 auto;
-      background: var(--life-log-surface-strong);
-      border-radius: 14px;
-      overflow: hidden;
-      border: 1px solid var(--life-log-border);
-    }
-
-    .life-log-visual-canvas img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      filter: contrast(1.05) saturate(0.95);
-      user-select: none;
-      pointer-events: none;
-    }
-
-    .life-log-visual-overlay {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 2;
-    }
-
-    .life-log-visual-overlay .point {
-      position: absolute;
-      border-radius: 50%;
-      border-style: solid;
-      transform: translate(-50%, -50%);
-      box-sizing: border-box;
-    }
-
-    .life-log-visual-overlay .point.selected {
-      box-shadow: 0 0 0 2px rgba(255, 106, 31, 0.35);
-    }
-
-    .life-log-point-list {
-      border: 1px solid var(--life-log-border);
-      border-radius: 12px;
-      max-height: 180px;
-      overflow: auto;
-      background: var(--life-log-surface-strong);
-    }
-
-    .life-log-point-list .point-item,
-    .life-log-point-list .point-item-add {
-      padding: 0.45rem 0.75rem;
-      display: flex;
-      gap: 0.5rem;
-      cursor: pointer;
-      border-bottom: 1px solid var(--life-log-border);
-      font-size: 0.88rem;
-    }
-
-    .life-log-point-list .point-item:last-child {
-      border-bottom: none;
-    }
-
-    .life-log-point-list .point-item.selected,
-    .life-log-point-list .point-item-add.selected {
-      background: var(--brand-tint);
-    }
-
-    .life-log-point-list .point-item-add {
-      font-weight: 600;
-      color: var(--life-log-accent-2);
-    }
-
-    .cat-dot {
-      width: 1rem;
-      height: 1rem;
-      border-radius: 50%;
-      border: 2px solid rgba(14, 15, 19, 0.35);
-      display: inline-block;
-      flex-shrink: 0;
-    }
-
-    .life-log-status {
-      font-size: 0.85rem;
-      color: var(--life-log-muted);
-    }
-
-    @media (max-width: 992px) {
-      .life-log-shell {
-        padding: 1rem;
-      }
-    }
-
-    @keyframes life-log-shell-in {
-      from {
-        opacity: 0;
-        transform: translateY(12px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
+  link(rel='stylesheet', href='/css/account_life_log.css')
 
 block content
-  -
-    const nowMs = Date.now();
-    const minuteMs = 60 * 1000;
-    const hourMs = 60 * minuteMs;
-    const dayMs = 24 * hourMs;
-    function getFutureTaskTime(value) {
-      if (!value) return null;
-      const time = value instanceof Date ? value.getTime() : new Date(value).getTime();
-      return Number.isFinite(time) && time > nowMs ? time : null;
-    }
-    function formatTaskTime(targetMs) {
-      const diffMs = targetMs - nowMs;
-      if (diffMs < hourMs) {
-        return `${Math.max(1, Math.ceil(diffMs / minuteMs))}m`;
-      }
-      const totalHours = Math.max(1, Math.ceil(diffMs / hourMs));
-      if (diffMs > dayMs) {
-        const days = Math.floor(totalHours / 24);
-        const hours = totalHours % 24;
-        return hours ? `${days}d ${hours}h` : `${days}d`;
-      }
-      return `${totalHours}h`;
-    }
-    function getTaskTimingLabel(task) {
-      const startMs = getFutureTaskTime(task.start);
-      if (startMs) return `starts in ${formatTaskTime(startMs)}`;
-      const deadlineMs = getFutureTaskTime(task.end);
-      if (deadlineMs) return `deadline in ${formatTaskTime(deadlineMs)}`;
-      return '';
-    }
-  .row.mypage-task-row
-    .col
-      .mypage-task-link#mypage-tasks(data-csrf-token=canCompleteMypageTask ? csrfToken : undefined)
-        a.mypage-task-background(href='/scheduleTask/upcoming', aria-label='Show all tasks', tabindex='-1')
-        - let noTasks = true
-        each t in tasks 
-          if !t.done && t.type === "todo"
-            - noTasks = false
-            - const timingLabel = getTaskTimingLabel(t);
-            +taskPill(t, 'schedule-task-pill--todo', timingLabel)
-        each t in tasks 
-          if !t.done && t.type === "tobuy"
-            - noTasks = false
-            +taskPill(t, 'schedule-task-pill--tobuy', '')
-        a.badge.schedule-task-pill.schedule-task-pill--empty(href='/scheduleTask/upcoming', hidden=!noTasks) Show all tasks
-      if canCompleteMypageTask
-        p#mypage-task-hint.mypage-task-hint Click to open tasks. Hold a task for 0.9 seconds to complete it.
-        p#mypage-task-status.mypage-task-status(role='status', aria-live='polite', aria-atomic='true')
-  .row.mb-4
-    .col
-      form.card.card-body(action="/mypage/embedding-search", method="get")
-        .d-flex.flex-column.flex-md-row.align-items-md-center.gap-3
-          .flex-grow-1.w-100
-            label.form-label(for="mypage_search_query") Search stored embeddings
-            input#mypage_search_query.form-control(type="text", name="query", placeholder="Search OCR, chat, knowledge, and more", required)
-            input(type="hidden", name="top_k", value="50")
-            small.form-text.text-muted Opens the embedding search page with up to 50 results.
-          .d-flex.flex-column.flex-md-row.align-items-md-center.gap-2
-            label.form-label.mb-0(for="mypage_search_type") Mode
-            select#mypage_search_type.form-select(name="search_type", style="min-width:180px;")
-              if embeddingSearchTypes && embeddingSearchTypes.length
-                each option in embeddingSearchTypes
-                  option(value=option.value, selected=(embeddingSearchDefaultType && embeddingSearchDefaultType === option.value))= option.label
-              else
-                option(value="default" selected) Fast (default)
-                option(value="high_quality") High-quality model
-                option(value="combined") Combined (rerank with high-quality)
-            button.btn.btn-primary(type="submit") Search
-  if admin
-    - const lifeLogPath = lifeLogBasePath || '/admin/life_log';
-    .row.mb-4
-      .col
-        - const lifeLogReminderCount = lifeLogReminders && lifeLogReminders.length ? lifeLogReminders.length : 0;
-        details#life-log-details.life-log-details
-          summary.life-log-toggle
-            span.life-log-toggle-title
-              | My Life Log
-              if lifeLogReminderCount
-                span.life-log-reminder-badge(data-life-log-reminder-count=lifeLogReminderCount)= `${lifeLogReminderCount} reminder${lifeLogReminderCount === 1 ? '' : 's'}`
-            span.life-log-toggle-hint
-          .life-log-shell
-            - const lifeLog = lifeLogSuggestions || {};
-            - const lifeLogLabels = lifeLog.all || [];
-            .d-flex.flex-column.flex-lg-row.justify-content-between.gap-3.align-items-start.life-log-header.mb-3
-              div
-                h2.mb-1 My Life Log
-                p.mb-0 Quick entries, diary notes, and body-map visual logs. View the timeline anytime.
-              .d-flex.flex-wrap.gap-2
-                a.btn.btn-outline-dark.btn-sm.mt-1(href=`${lifeLogPath}/reminders`) Manage reminders
-                a.btn.btn-outline-dark.btn-sm.mt-1(href=lifeLogPath) View timeline
-            .life-log-reminder-section.mb-3
-              .life-log-reminder-section-header
-                div
-                  h3.life-log-reminder-section-title Reminders
-                  .life-log-status(data-life-log-reminder-empty=lifeLogReminderCount ? 'false' : 'true')= lifeLogReminderCount ? 'Click a reminder to fill the entry type and label.' : 'No due reminders.'
-                a.btn.btn-outline-dark.btn-sm(href=`${lifeLogPath}/reminders`) Triggers
-              if lifeLogReminderCount
-                .life-log-reminder-list(data-life-log-reminder-list)
-                  each reminder in lifeLogReminders
-                    button.life-log-reminder-item(type="button", class=reminder.daysLate > 0 ? 'is-late' : '', data-reminder-key=reminder.reminderKey, data-type=reminder.type, data-label=reminder.label)
-                      span.life-log-reminder-status= reminder.statusLabel
-                      span.life-log-reminder-body
-                        span.life-log-reminder-name= `${reminder.typeLabel}: ${reminder.label}`
-                        span.life-log-reminder-meta= `${reminder.scheduleLabel} - ${reminder.detailLabel} - due ${reminder.dueDate}`
-            .row.g-4
-              .col-lg-5
-                .life-log-panel
-                  form#life-log-form
-                    .d-flex.flex-column.gap-3
-                      .d-flex.flex-column
-                        span.life-log-label Type
-                        select#life-log-type.life-log-input(name="type")
-                          option(value="basic") Basic
-                          option(value="medical") Medical
-                          option(value="diary") Diary
-                      .d-flex.flex-column
-                        span.life-log-label Label
-                        input#life-log-label.life-log-input(type="text", name="label", list="life-log-labels", placeholder="e.g. Vitamin C, Mood, Work")
-                        datalist#life-log-labels
-                          each label in lifeLogLabels
-                            option(value=label)
-                      .d-flex.flex-column#life-log-value-row
-                        span.life-log-label Value
-                        input#life-log-value.life-log-input(type="text", name="value", placeholder="e.g. 1, yes, 20 min")
-                      .d-flex.flex-column#life-log-text-row(style="display:none;")
-                        span.life-log-label Diary text
-                        textarea#life-log-text.life-log-input(rows="5", placeholder="Add a short note...")
-                        .d-flex.flex-column.gap-2.mt-2
-                          label.life-log-label(for="life-log-audio") Transcribe audio
-                          input#life-log-audio.form-control(type="file", accept="audio/*")
-                          button#life-log-transcribe.btn.btn-outline-secondary.btn-sm(type="button") Transcribe audio
-                          button#life-log-format.btn.btn-outline-dark.btn-sm(type="button") Polish text with AI
-                      .d-flex.flex-column
-                        span.life-log-label Timestamp
-                        input#life-log-timestamp.life-log-input(type="datetime-local", name="timestamp")
-                      .life-log-actions.d-flex.flex-wrap.gap-2
-                        button#life-log-save.btn.btn-dark(type="submit") Save entry
-                      .life-log-status#life-log-status Ready.
-                  if lifeLog.top && lifeLog.top.length
-                    .mt-4
-                      .life-log-label.mb-2 Top labels
-                      .life-log-chips
-                        each label in lifeLog.top
-                          button.life-log-chip(type="button", data-label=label)= label
-                  if lifeLog.timeOfDay && lifeLog.timeOfDay.length
-                    .mt-3
-                      .life-log-label.mb-2 Suggested for now
-                      .life-log-chips
-                        each label in lifeLog.timeOfDay
-                          button.life-log-chip(type="button", data-label=label)= label
-                  if lifeLog.recent && lifeLog.recent.length
-                    .mt-3
-                      .life-log-label.mb-2 Recently used
-                      .life-log-chips
-                        each label in lifeLog.recent
-                          button.life-log-chip(type="button", data-label=label)= label
-              .col-lg-7
-                .life-log-panel
-                  .d-flex.justify-content-between.align-items-start.mb-3
-                    div
-                      h4.mb-1 Visual log
-                      p.text-muted.mb-0 Tap the body map to place points for pain or discomfort.
-                    span.life-log-label Visual log entry
-                  .life-log-followups.mb-3
-                    .d-flex.justify-content-between.align-items-start.gap-3.mb-3
-                      div
-                        h5.mb-1 Follow up
-                        span.life-log-label Last 48 hours
-                      button#llv-followups-refresh.btn.btn-outline-secondary.btn-sm(type="button") Refresh
-                    #llv-followups-list.life-log-followups-list
-                    .life-log-status.mt-2#llv-followups-status Loading recent visual logs...
-                  .life-log-visual
-                    #llv-img-wrap.life-log-visual-canvas
-                      img#llv-img(src="/i/img_select.jpg", alt="Body map", draggable="false")
-                      #llv-points-overlay.life-log-visual-overlay
-                      #llv-img-hitbox(style="position:absolute;inset:0;z-index:5;cursor:crosshair;")
-                    .row.mt-3.g-3
-                      .col-md-6
-                        .d-flex.flex-column.gap-2
-                          label.life-log-label(for="llv-radius") Point radius
-                          input#llv-radius.form-range(type="range", min="2", max="28", value="8")
-                          div#llv-radius-val.life-log-status 8 px
-                      .col-md-6
-                        .d-flex.flex-column.gap-2
-                          label.life-log-label(for="llv-opacity") Intensity
-                          input#llv-opacity.form-range(type="range", min="25", max="100", value="80")
-                          div#llv-opacity-val.life-log-status 80%
-                    .row.mt-3.g-3
-                      .col-md-6
-                        .d-flex.flex-column.gap-2
-                          label.life-log-label(for="llv-category") Category
-                          select#llv-category.form-select
-                      .col-md-6
-                        .d-flex.flex-column.gap-2
-                          label.life-log-label(for="llv-timestamp") Timestamp
-                          input#llv-timestamp.form-control(type="datetime-local")
-                    #llv-point-list.life-log-point-list.mt-3
-                    .d-flex.flex-wrap.gap-2.mt-3
-                      button#llv-save.btn.btn-dark(type="button") Save visual log
-                      button#llv-clear.btn.btn-outline-secondary(type="button") Clear
-                      button#llv-delete.btn.btn-outline-danger(type="button" disabled) Delete point
-                    .life-log-status.mt-2#llv-status Ready.
-  .row 
-    .col 
-      .mypage-icon-toolbar
-        .mypage-icon-toolbar__actions
-          button#mypage-icons-customize.btn.btn-outline-secondary.btn-sm(type="button") Customize icons
-          button#mypage-icons-save.btn.btn-primary.btn-sm(type="button" hidden) Save
-          button#mypage-icons-cancel.btn.btn-outline-secondary.btn-sm(type="button" hidden) Cancel
-          button#mypage-icons-reset.btn.btn-outline-danger.btn-sm(type="button" hidden) Reset
-        span#mypage-icons-status.mypage-icon-status(aria-live="polite")
-      .mypage-grid(data-mypage-icon-grid)
-        each pageTile in (mypageTiles || [])
-          +tile(pageTile)
-  if admin && new_openai_models.length > 0
-    .row 
-      .col
-        h3.mypage-section-title New OpenAI models (last 30 days)
-        each m in new_openai_models
-          - const openaiCreatedDate = (new Date(m.created*1000)).toDateString()
-          span.model-tag.model-tag--openai
-            if m.existsInDb
-              span= `${m.model} (${openaiCreatedDate})`
-              span.model-tag__status(title="Already saved in AI model cards")= ' - saved'
-            else
-              a(href=m.manageUrl)= `${m.model} (${openaiCreatedDate})`
-              span.model-tag__status(title="Not saved in AI model cards - click to add")= ' - missing'
-  if admin && new_anthropic_models.length > 0
-    .row 
-      .col
-        h3.mypage-section-title New Anthropic models (last 30 days)
-        each m in new_anthropic_models
-          - const anthropicCreatedDate = (new Date(m.created*1000)).toDateString()
-          span.model-tag.model-tag--anthropic
-            if m.existsInDb
-              span= `${m.model} (${anthropicCreatedDate})`
-              span.model-tag__status(title="Already saved in AI model cards")= ' - saved'
-            else
-              a(href=m.manageUrl)= `${m.model} (${anthropicCreatedDate})`
-              span.model-tag__status(title="Not saved in AI model cards - click to add")= ' - missing'
+  - const settings = typeof dashboard !== 'undefined' ? dashboard : { sections: [], hiddenSections: [], collapsedSections: [], jobs: {} };
+  main#account-dashboard.account-dashboard(data-csrf-token=csrfToken)
+    header.account-heading
+      div
+        p.account-eyebrow= typeof accountContext !== 'undefined' ? accountContext : 'Your account'
+        h1 Welcome back
+        p.account-date
+          span= typeof accountDate !== 'undefined' ? accountDate : ''
+          |  · Asia/Tokyo
+      button#account-customize.account-primary(type='button', aria-haspopup='dialog', aria-controls='account-customizer') Customize account
+    p.account-intro A little space for your day. Open Tools above to find everything else.
+    #account-status(role='status', aria-live='polite')
+    .account-grid
+      each section in settings.sections
+        section.account-card(data-section=section.id, hidden=settings.hiddenSections.includes(section.id), class=section.id === 'life' ? 'account-card-wide' : '')
+          header.account-card-heading
+            div
+              p.account-eyebrow= section.scope
+              h2
+                button.account-collapse(type='button', aria-expanded=!settings.collapsedSections.includes(section.id), aria-controls=`card-${section.id}`)= section.title
+            button.account-refresh(type='button', aria-label=`Refresh ${section.title}`) ↻
+          .account-card-content(id=`card-${section.id}`, hidden=settings.collapsedSections.includes(section.id))
+            .account-card-state(role='status') Loading…
+            .account-card-data
+            if section.id === 'tasks'
+              #mypage-tasks(data-csrf-token=csrfToken)
+                p#mypage-task-hint.account-note Hold a task for 0.9 seconds to complete, or use its Complete button.
+                .account-task-list
+                a.schedule-task-pill--empty(href='/scheduleTask/upcoming') Show all tasks
+                p#mypage-task-status(role='status', aria-live='polite')
+            if section.id === 'embedding'
+              form.account-search-form(method='post', action='/mypage/embedding-search')
+                input(type='hidden', name='_csrf', value=csrfToken)
+                label(for='account-search-query') Search text
+                input#account-search-query(type='search', name='search_text', maxlength='2000', required, placeholder='Search your saved knowledge…')
+                label(for='account-search-type') Search mode
+                select#account-search-type(name='search_type')
+                  option(value='default') Fast
+                  option(value='high_quality') High quality
+                  option(value='combined') Combined
+                button.account-primary(type='submit') Search
+            if section.id === 'jobs'
+              button.account-filter-open(type='button') Edit activity filters
+            p.account-card-note.account-note
+            if section.href !== '/mypage'
+              a.account-card-link(href=section.href) Open #{section.title} →
+    if !settings.sections.length
+      p No dashboard sections are currently available for this account.
+    noscript
+      p Enable JavaScript to load account summaries. Tools navigation and the section links remain available.
+    dialog#account-customizer(aria-labelledby='customize-title')
+      .account-dialog-heading
+        h2#customize-title Make this space yours
+        button#account-customize-close(type='button') Close
+      p Choose sections, their starting state and their order. Hidden sections do not load.
+      ol#section-preferences
+        each section in settings.sections
+          li(data-setting-id=section.id)
+            label
+              input(type='checkbox', data-visible, checked=!settings.hiddenSections.includes(section.id))
+              |  #{section.title}
+            label.account-note
+              input(type='checkbox', data-collapsed, checked=settings.collapsedSections.includes(section.id))
+              |  Start collapsed
+            .account-order-buttons
+              button(type='button', data-move='up', aria-label=`Move ${section.title} up`) ↑
+              button(type='button', data-move='down', aria-label=`Move ${section.title} down`) ↓
+      fieldset.account-job-settings
+        legend Recent activity filters
+        label(for='job-scope') Scope
+        select#job-scope
+          option(value='mine', selected=settings.jobs.scope === 'mine') Mine
+          option(value='shared', selected=settings.jobs.scope === 'shared') Shared libraries / operations
+        label(for='job-status') Status
+        select#job-status
+          each status in ['all', 'queued', 'running', 'completed', 'failed', 'cancelled']
+            option(value=status, selected=settings.jobs.status === status)= status
+        label(for='job-window') Created within
+        select#job-window
+          each days in [7, 30, 90]
+            option(value=days, selected=settings.jobs.dateWindow === days) #{days} days
+        p.account-note Sources without ownership appear only under Shared. Saved-history sources cannot report running jobs.
+        #job-types
+      p#account-save-status(role='status', aria-live='polite')
+      .account-dialog-actions
+        button#account-save.account-primary(type='button') Save dashboard
+        button#account-reset(type='button') Reset dashboard
+      details#customize-shortcuts
+        summary Navbar shortcuts
+        p Hidden shortcuts remain discoverable in the full Tools catalog. The first eight visible tools become shortcuts.
+        ol#nav-preferences
+          each item in (typeof navChoices !== 'undefined' ? navChoices : []).filter(n => !n.public)
+            li(data-nav-id=item.id)
+              label
+                input(type='checkbox', checked=!item.hidden)
+                |  #{item.label}
+              .account-order-buttons
+                button(type='button', data-move='up', aria-label=`Move ${item.label} up`) ↑
+                button(type='button', data-move='down', aria-label=`Move ${item.label} down`) ↓
+        button#nav-save.account-primary(type='button') Save shortcuts
+        button#nav-reset(type='button') Reset shortcuts
+        p#nav-save-status(role='status', aria-live='polite')
+  script#account-settings(type='application/json')!= safeJson(settings)
 
 block script
-  if canCompleteMypageTask
-    script(src='/js/mypage_tasks.js', defer)
-  if admin
-    script.
-      window.LIFE_LOG_BASE_PATH = !{safeJson(lifeLogBasePath || '/admin/life_log')};
-    script(src="/js/my_life_log.js")
-  script(src="/js/mypage_icons.js")
+  script(src='/js/mypage_tasks.js', defer)
+  script(src='/js/account_dashboard.js', defer)

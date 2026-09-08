@@ -3,6 +3,7 @@
   if (!lifeLogForm) return;
 
   const lifeLogBasePath = window.LIFE_LOG_BASE_PATH || '/admin/life_log';
+  const csrfToken = document.getElementById('account-dashboard')?.dataset.csrfToken;
   const lifeLogUrl = (path = '') => `${lifeLogBasePath}${path}`;
 
   const typeSelect = document.getElementById('life-log-type');
@@ -25,7 +26,7 @@
   const setStatus = (message, isError = false) => {
     if (!statusEl) return;
     statusEl.textContent = message;
-    statusEl.style.color = isError ? '#b02a37' : '';
+    statusEl.style.color = isError ? 'var(--danger)' : '';
   };
 
   const getReminderKey = (type, label) => `${type}::${String(label || '').trim().toLowerCase()}`;
@@ -76,7 +77,7 @@
       label: labelInput.value.trim(),
       value: valueInput.value.trim(),
       text: textInput.value.trim(),
-      timestamp: timestampInput.value,
+      timestamp: csrfToken && timestampInput.value ? new Date(timestampInput.value).toISOString() : timestampInput.value,
     };
     if (!payload.timestamp) {
       delete payload.timestamp;
@@ -131,6 +132,7 @@
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
           'Accept': 'application/json',
         },
         body: JSON.stringify(payload),
@@ -160,6 +162,7 @@
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
             'Accept': 'application/json',
           },
           body: JSON.stringify({ text }),
@@ -251,13 +254,13 @@
     const setVisualStatus = (message, isError = false) => {
       if (!visualStatus) return;
       visualStatus.textContent = message;
-      visualStatus.style.color = isError ? '#b02a37' : '';
+      visualStatus.style.color = isError ? 'var(--danger)' : '';
     };
 
     const setVisualFollowupsStatus = (message, isError = false) => {
       if (!visualFollowupsStatus) return;
       visualFollowupsStatus.textContent = message;
-      visualFollowupsStatus.style.color = isError ? '#b02a37' : '';
+      visualFollowupsStatus.style.color = isError ? 'var(--danger)' : '';
     };
 
     const clampNumber = (value, min, max, fallback) => {
@@ -414,6 +417,7 @@
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
             'Accept': 'application/json',
           },
           body: JSON.stringify(payload),
@@ -810,13 +814,14 @@
           canvas: { ...visualLogState.canvas },
           points: visualLogState.points,
         }),
-        timestamp: visualTimestamp.value,
+        timestamp: csrfToken && visualTimestamp.value ? new Date(visualTimestamp.value).toISOString() : visualTimestamp.value,
       };
       try {
         const resp = await fetch(lifeLogUrl('/entry'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
             'Accept': 'application/json',
           },
           body: JSON.stringify(payload),

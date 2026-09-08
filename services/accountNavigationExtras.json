@@ -1,0 +1,856 @@
+[
+  {
+    "href": "/blog",
+    "label": "Blog",
+    "permissions": [],
+    "adminOnly": false,
+    "public": true,
+    "subgroup": "Content"
+  },
+  {
+    "href": "/blog/Personal/list",
+    "label": "Personal",
+    "permissions": [],
+    "adminOnly": false,
+    "public": true,
+    "subgroup": "Content"
+  },
+  {
+    "href": "/blog/Programming/list",
+    "label": "Programming",
+    "permissions": [],
+    "adminOnly": false,
+    "public": true,
+    "subgroup": "Content"
+  },
+  {
+    "href": "/blog/Food/list",
+    "label": "Food",
+    "permissions": [],
+    "adminOnly": false,
+    "public": true,
+    "subgroup": "Content"
+  },
+  {
+    "href": "/learning",
+    "label": "Learning Lab",
+    "permissions": [],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Content"
+  },
+  {
+    "href": "/mypage/blogpost",
+    "label": "Write blog",
+    "permissions": [],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Content"
+  },
+  {
+    "href": "/cookingp",
+    "label": "Cooking public page",
+    "permissions": [],
+    "adminOnly": false,
+    "public": true,
+    "subgroup": "Content"
+  },
+  {
+    "href": "/games",
+    "label": "Games",
+    "permissions": [],
+    "adminOnly": false,
+    "public": true,
+    "subgroup": "Content"
+  },
+  {
+    "href": "/yaml-viewer",
+    "label": "YAML viewer",
+    "permissions": [],
+    "adminOnly": false,
+    "public": true,
+    "subgroup": "Tools"
+  },
+  {
+    "href": "/exchange-rates",
+    "label": "Exchange rates",
+    "permissions": [],
+    "adminOnly": false,
+    "public": true,
+    "subgroup": "Tools"
+  },
+  {
+    "href": "/reminders",
+    "label": "Pushover reminders",
+    "permissions": [],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Tools"
+  },
+  {
+    "href": "/chat5/top",
+    "label": "ChatGPT",
+    "permissions": [
+      "chat5"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Chat & Knowledge"
+  },
+  {
+    "href": "/chat5/quick-settings",
+    "label": "Quick settings",
+    "permissions": [
+      "chat5"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Chat & Knowledge"
+  },
+  {
+    "href": "/chat5/drafting-presets",
+    "label": "Drafting presets",
+    "permissions": [
+      "chat5"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Chat & Knowledge"
+  },
+  {
+    "href": "/chat4/knowledgelist",
+    "label": "Knowledge",
+    "permissions": [
+      "chat5",
+      "chat4"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Chat & Knowledge"
+  },
+  {
+    "href": "/chat4/templates",
+    "label": "Templates",
+    "permissions": [
+      "chat5",
+      "chat4"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Chat & Knowledge"
+  },
+  {
+    "href": "/chat5",
+    "label": "Chat5 classic",
+    "permissions": [
+      "chat5"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Chat & Knowledge"
+  },
+  {
+    "href": "/chat5/ai_model_cards",
+    "label": "AI model cards",
+    "permissions": [
+      "chat5"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Chat & Knowledge"
+  },
+  {
+    "href": "/gpt-image",
+    "label": "GPT Image 2",
+    "permissions": [],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/image_gen",
+    "label": "ComfyUI",
+    "permissions": [
+      "image_gen"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/image_gen/bulk",
+    "label": "ComfyUI bulk",
+    "permissions": [
+      "image_gen"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/ocr",
+    "label": "OCR tool",
+    "permissions": [
+      "ocr"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/ocr-tts",
+    "label": "OCR to TTS",
+    "permissions": [
+      "ocr"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/sora",
+    "label": "Sora",
+    "permissions": [
+      "sora"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/ai-cluster-planner",
+    "label": "AI cluster planner",
+    "permissions": [
+      "test"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/asr",
+    "label": "Audio transcription",
+    "permissions": [
+      "asr"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/music",
+    "label": "Music library",
+    "permissions": [
+      "music"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/qwen3-lora",
+    "label": "Qwen3 LoRA",
+    "permissions": [],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/trellis2",
+    "label": "Image to 3D",
+    "permissions": [],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/lego-sculpture-converter",
+    "label": "Lego sculpture converter",
+    "permissions": [],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/codex",
+    "label": "Codex",
+    "permissions": [],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/admin/ask-lennart",
+    "label": "Ask Lennart",
+    "permissions": [
+      "human.request.manage"
+    ],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/codex-log-review",
+    "label": "Production log review",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI & Media"
+  },
+  {
+    "href": "/box",
+    "label": "Box packer",
+    "permissions": [
+      "box"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Utilities"
+  },
+  {
+    "href": "/binpacking",
+    "label": "3D Bin Packing",
+    "permissions": [
+      "binpacking"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Utilities"
+  },
+  {
+    "href": "/mypage/pdf_to_jpg",
+    "label": "PDF to JPG",
+    "permissions": [
+      "test"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Utilities"
+  },
+  {
+    "href": "/quicknote",
+    "label": "Quick note",
+    "permissions": [
+      "quicknote"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Utilities"
+  },
+  {
+    "href": "/product",
+    "label": "Product details",
+    "permissions": [
+      "product"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Utilities"
+  },
+  {
+    "href": "/diff",
+    "label": "JSON diff",
+    "permissions": [
+      "test"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Utilities"
+  },
+  {
+    "href": "/csv-diff",
+    "label": "CSV diff",
+    "permissions": [
+      "test"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Utilities"
+  },
+  {
+    "href": "/gallery",
+    "label": "Gallery",
+    "permissions": [
+      "gallery"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Utilities"
+  },
+  {
+    "href": "/mypage/github",
+    "label": "GitHub (lentmiien)",
+    "permissions": [
+      "test"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Utilities"
+  },
+  {
+    "href": "/accounting",
+    "label": "Accounting hub",
+    "permissions": [
+      "accounting"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Life Admin"
+  },
+  {
+    "href": "/accounting/external-assets",
+    "label": "External assets",
+    "permissions": [
+      "accounting"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Life Admin"
+  },
+  {
+    "href": "/accounting/legacy",
+    "label": "Legacy budget view",
+    "permissions": [
+      "accounting"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Life Admin"
+  },
+  {
+    "href": "/budget",
+    "label": "Accounting (new)",
+    "permissions": [
+      "budget"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Life Admin"
+  },
+  {
+    "href": "/budget/review",
+    "label": "Budget review",
+    "permissions": [
+      "budget"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Life Admin"
+  },
+  {
+    "href": "/budget/cards",
+    "label": "Credit cards",
+    "permissions": [
+      "budget"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Life Admin"
+  },
+  {
+    "href": "/receipt",
+    "label": "Upload receipt",
+    "permissions": [
+      "receipt"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Life Admin"
+  },
+  {
+    "href": "/payroll",
+    "label": "Payroll",
+    "permissions": [
+      "payroll"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Life Admin"
+  },
+  {
+    "href": "/scheduleTask/calendar",
+    "label": "Schedule",
+    "permissions": [
+      "scheduletask"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Life Admin"
+  },
+  {
+    "href": "/es/es_dashboard",
+    "label": "Emergency Stock",
+    "permissions": [
+      "emergencystock"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Life Admin"
+  },
+  {
+    "href": "/shopping-list",
+    "label": "Shopping list",
+    "permissions": [
+      "shoppinglist"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Life Admin"
+  },
+  {
+    "href": "/cooking",
+    "label": "Cooking calendar",
+    "permissions": [
+      "cooking"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Cooking"
+  },
+  {
+    "href": "/cooking/cookbook",
+    "label": "Cookbook",
+    "permissions": [
+      "cooking"
+    ],
+    "adminOnly": false,
+    "public": false,
+    "subgroup": "Cooking"
+  },
+  {
+    "href": "/admin",
+    "label": "Admin page",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "Admin"
+  },
+  {
+    "href": "/admin/learning",
+    "label": "Learning CMS",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "Admin"
+  },
+  {
+    "href": "/admin/html-pages",
+    "label": "HTML content",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "Admin"
+  },
+  {
+    "href": "/admin/project-docs",
+    "label": "Project docs",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "Admin"
+  },
+  {
+    "href": "/admin/life_log",
+    "label": "My Life Log",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "Admin"
+  },
+  {
+    "href": "/admin/app_logs",
+    "label": "App logs",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "Admin"
+  },
+  {
+    "href": "/admin/message-inbox",
+    "label": "Message inbox",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "Admin"
+  },
+  {
+    "href": "/admin/message-filters",
+    "label": "Message filters",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "Admin"
+  },
+  {
+    "href": "/tmp-files",
+    "label": "Temp files",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "Admin"
+  },
+  {
+    "href": "/admin/performance",
+    "label": "App Performance",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/connectivity",
+    "label": "Connectivity analytics",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/request-counter",
+    "label": "Request Counter",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/app-settings",
+    "label": "App Settings",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/device-usage",
+    "label": "Device Usage",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/minute-logger",
+    "label": "Minute Logger",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/database_usage",
+    "label": "Database Usage",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/database-viewer",
+    "label": "Database Viewer",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/amiami-items",
+    "label": "AmiAmi Items",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/disasters",
+    "label": "Disaster Dashboard",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/disasters/history",
+    "label": "Disaster History",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/disasters/weather-history",
+    "label": "Weather History",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/tapo",
+    "label": "Tapo Energy",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/tools",
+    "label": "Tool Manager",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/audio-workflow",
+    "label": "Audio workflow",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/api-debug-logs",
+    "label": "API Debug Logs",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/dummy-api-requests",
+    "label": "Dummy API Requests",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "System Admin"
+  },
+  {
+    "href": "/admin/openai_usage",
+    "label": "OpenAI Usage",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/runpod",
+    "label": "Runpod API v2",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/ai-gateway",
+    "label": "AI Gateway",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/ai-gateway/modular-llm",
+    "label": "Modular LLM",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/ai-gateway/documentation",
+    "label": "Gateway documentation",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/locateanything",
+    "label": "LocateAnything",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/qwen3-lora",
+    "label": "Qwen3 LoRA",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/qwen3-qlora",
+    "label": "Qwen3 QLoRA",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/qwen3-lora/training-groups",
+    "label": "Adapter training groups",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/agent5",
+    "label": "Agent5",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/embedding-test",
+    "label": "Embedding Management",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/tts-test",
+    "label": "TTS Test",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/music-test",
+    "label": "Music generator",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/asr-test",
+    "label": "Audio transcription",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/admin/rag-memory",
+    "label": "RAG recall test",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
+    "href": "/login",
+    "label": "Log in",
+    "permissions": [],
+    "adminOnly": false,
+    "public": true,
+    "subgroup": "Account"
+  }
+]

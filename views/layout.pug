@@ -52,11 +52,63 @@ html(lang=pageLang || 'en')
     block styles
   body(class=bodyClass)
     .nav-placeholder
-    .navbar-icon(onclick="toggleNavbar()") ☰
-    a#goTopPageBtn.nav-action-btn(href=`${loggedIn ? "/mypage" : "/"}`) ⌂
-    button#actionBtn.nav-action-btn(disabled) ---
-    #navbar.navbar
-      - const hasPermission = (permission) => Array.isArray(permissions) && permissions.indexOf(permission) >= 0;
+    header.account-topbar
+      a#goTopPageBtn.nav-action-btn(href=loggedIn ? '/mypage' : '/', aria-label=loggedIn ? 'My Account' : 'Home')
+        span(aria-hidden='true') ⌂
+        span= loggedIn ? 'My Account' : 'Home'
+      button#actionBtn.nav-action-btn(type='button', disabled) ---
+      button#tools-toggle.navbar-icon(type='button', aria-controls='navbar', aria-expanded='false', aria-haspopup='dialog')
+        span(aria-hidden='true') ☰
+        |  Tools
+    dialog#navbar.account-tools(aria-labelledby='tools-title')
+      .tools-header
+        div
+          h2#tools-title Tools & navigation
+          p Your shortcuts and the full catalog available to your account.
+        button#tools-close(type='button', aria-label='Close tools') Close
+      label.tools-search-label(for='tools-search') Find a tool
+      input#tools-search(type='search', placeholder='Search tools, pages and groups…', autocomplete='off')
+      p#tools-search-status(role='status')
+      - const catalog = typeof accountNavigation !== 'undefined' ? accountNavigation : [];
+      - const groups = typeof navigationGroups !== 'undefined' ? navigationGroups : [];
+      - const hasPermission = permission => Array.isArray(permissions) && permissions.includes(permission);
+      if loggedIn
+        section.tools-shortcuts(aria-labelledby='shortcuts-title')
+          .tools-section-heading
+            h3#shortcuts-title Shortcuts
+            a(href='/mypage#customize-shortcuts') Customize
+          .tools-icon-grid
+            each item in catalog.filter(n => !n.hidden && !n.public).slice(0, 8)
+              a.tool-link(href=item.href, data-tool-search=`${item.label} ${item.group}`)
+                img(src=item.src, alt='', width='32', height='32', loading='lazy')
+                span= item.label
+      .tools-groups
+        each group in groups
+          - const items = catalog.filter(n => n.group === group);
+          if items.length
+            details.tools-group(open)
+              summary= group
+              each subgroup in [...new Set(items.map(n => n.subgroup))]
+                details.tools-subgroup(open=items.length < 10)
+                  summary= subgroup
+                  .tools-icon-grid
+                    each item in items.filter(n => n.subgroup === subgroup)
+                      a.tool-link(href=item.href, data-tool-id=item.id, data-tool-search=`${item.label} ${group} ${subgroup}`)
+                        img(src=item.src, alt='', width='32', height='32', loading='lazy')
+                        span
+                          span= item.label
+                          if item.meta
+                            small= item.meta
+      if loggedIn && chatmode
+        section.navbar-column
+          h3 Chat history
+          a(href='/chat3') New chat
+          ul
+            li#history_list
+              button(type='button', onclick='showHModalPopup()') Show all
+          h3 Select head
+          ul
+            li#head_list
       if loggedIn === true && hasPermission("quicknote")
         +navColumn('Quick Add')
           form#quickNoteForm
@@ -69,162 +121,7 @@ html(lang=pageLang || 'en')
               input#locationInput.form-control(type='text' placeholder='Location name...')
               .input-group-append
                 button.btn.btn-primary(type='submit') Add location
-      +navColumn('Content')
-        +navLink('/blog', 'Blog')
-        +navLink('/blog/Personal/list', 'Personal', 'secondary')
-        +navLink('/blog/Programming/list', 'Programming', 'secondary')
-        +navLink('/blog/Food/list', 'Food', 'secondary')
-        if loggedIn == true
-          +navLink('/learning', 'Learning Lab')
-          +navLink('/mypage/blogpost', 'Write blog', 'secondary')
-        +navLink('/cookingp', 'Cooking public page')
-        +navLink('/games', 'Games')
-      +navColumn('Tools')
-        +navLink('/yaml-viewer', 'YAML viewer')
-        +navLink('/exchange-rates', 'Exchange rates')
-        if loggedIn == true
-          +navLink('/reminders', 'Pushover reminders')
-      if loggedIn == true
-        - const canUseTestLinks = hasPermission("test");
-        - const showUtilityLinks = canUseTestLinks || hasPermission("box") || hasPermission("binpacking") || hasPermission("quicknote") || hasPermission("product") || hasPermission("gallery");
-        - const showLifeAdmin = hasPermission("accounting") || hasPermission("budget") || hasPermission("receipt") || hasPermission("payroll") || hasPermission("scheduletask") || hasPermission("emergencystock") || hasPermission("shoppinglist") || canUseTestLinks;
-        if chatmode
-          +navColumn('Chat History')
-            +navLink('/chat3', 'New chat')
-            li.nav-item.dropdown
-              a.nav-link.dropdown-toggle(href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false") History
-              ul.dropdown-menu
-                li#history_list
-                  button.dropdown-item(onclick="showHModalPopup()") Show all
-                  hr
-            li.nav-item.dropdown
-              a.nav-link.dropdown-toggle(href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false") Select head
-              ul.dropdown-menu
-                li#head_list
-        if hasPermission("chat5")
-          +navColumn('Chat & Knowledge')
-            +navLink('/chat5/top', 'ChatGPT')
-            +navLink('/chat5/quick-settings', 'Quick settings', 'secondary')
-            +navLink('/chat5/drafting-presets', 'Drafting presets', 'secondary')
-            if hasPermission("chat4")
-              +navLink('/chat4/knowledgelist', 'Knowledge', 'secondary')
-              +navLink('/chat4/templates', 'Templates', 'secondary')
-            +navLink('/chat5', 'Chat5 classic', 'secondary')
-            +navLink('/chat5/ai_model_cards', 'AI model cards', 'secondary')
-        +navColumn('AI & Media')
-          +navLink('/gpt-image', 'GPT Image 2')
-          if hasPermission("image_gen")
-            +navLink('/image_gen', 'ComfyUI')
-            +navLink('/image_gen/bulk', 'ComfyUI bulk', 'secondary')
-          if hasPermission("ocr")
-            +navLink('/ocr', 'OCR tool')
-            +navLink('/ocr-tts', 'OCR to TTS', 'secondary')
-          if hasPermission("sora")
-            +navLink('/sora', 'Sora')
-          if canUseTestLinks
-            +navLink('/ai-cluster-planner', 'AI cluster planner', 'secondary')
-          if hasPermission("asr")
-            +navLink('/asr', 'Audio transcription')
-          if hasPermission("music")
-            +navLink('/music', 'Music library')
-          +navLink('/qwen3-lora', 'Qwen3 LoRA')
-          +navLink('/trellis2', 'Image to 3D')
-          +navLink('/lego-sculpture-converter', 'Lego sculpture converter', 'secondary')
-          +navLink('/codex', 'Codex')
-          if admin || hasPermission("human.request.manage")
-            +navLink('/admin/ask-lennart', 'Ask Lennart', 'secondary')
-          if admin
-            +navLink('/codex-log-review', 'Production log review', 'secondary')
-        if showUtilityLinks
-          +navColumn('Utilities')
-            if hasPermission("box")
-              +navLink('/box', 'Box packer')
-            if hasPermission("binpacking")
-              +navLink('/binpacking', '3D Bin Packing')
-            if canUseTestLinks
-              +navLink('/mypage/pdf_to_jpg', 'PDF to JPG')
-            if hasPermission("quicknote")
-              +navLink('/quicknote', 'Quick note')
-            if hasPermission("product")
-              +navLink('/product', 'Product details')
-            if canUseTestLinks
-              +navLink('/diff', 'JSON diff')
-              +navLink('/csv-diff', 'CSV diff', 'secondary')
-            if hasPermission("gallery")
-              +navLink('/gallery', 'Gallery')
-            if canUseTestLinks
-              +navLink('/mypage/github', 'GitHub (lentmiien)', 'secondary')
-        if showLifeAdmin
-          +navColumn('Life Admin')
-            if hasPermission("accounting")
-              +navLink('/accounting', 'Accounting hub')
-              +navLink('/accounting/external-assets', 'External assets', 'secondary')
-              +navLink('/accounting/legacy', 'Legacy budget view', 'secondary')
-            if hasPermission("budget")
-              +navLink('/budget', 'Accounting (new)')
-              +navLink('/budget/review', 'Budget review', 'secondary')
-              +navLink('/budget/cards', 'Credit cards', 'secondary')
-            if hasPermission("receipt")
-              +navLink('/receipt', 'Upload receipt')
-            if hasPermission("payroll")
-              +navLink('/payroll', 'Payroll')
-            if hasPermission("scheduletask")
-              +navLink('/scheduleTask/calendar', 'Schedule')
-            if hasPermission("emergencystock")
-              +navLink('/es/es_dashboard', 'Emergency Stock')
-            if hasPermission("shoppinglist")
-              +navLink('/shopping-list', 'Shopping list')
-        if hasPermission("cooking")
-          +navColumn('Cooking')
-            +navLink('/cooking', 'Cooking calendar')
-            +navLink('/cooking/cookbook', 'Cookbook', 'secondary')
-            +navLink('/cookingp?uid=nzz8gXilQBZ8nxS78b0UjhpPtnXqUMFW', 'Maiko cooking request page', 'secondary')
-            +navLink('/cookingp?uid=JSqngWDQyGoIVohdrG96dxU6XYSDv98G', 'Mizuki cooking request page', 'secondary')
-        if admin
-          +navColumn('Admin')
-            +navLink('/admin', 'Admin page')
-            +navLink('/admin/learning', 'Learning CMS')
-            +navLink('/admin/html-pages', 'HTML content')
-            +navLink('/admin/project-docs', 'Project docs')
-            +navLink('/admin/life_log', 'My Life Log')
-            +navLink('/admin/app_logs', 'App logs')
-            +navLink('/admin/message-inbox', 'Message inbox')
-            +navLink('/admin/message-filters', 'Message filters', 'secondary')
-            +navLink('/tmp-files', 'Temp files')
-          +navColumn('System Admin')
-            +navLink('/admin/performance', 'App Performance')
-            +navLink('/admin/connectivity', 'Connectivity analytics')
-            +navLink('/admin/request-counter', 'Request Counter')
-            +navLink('/admin/app-settings', 'App Settings')
-            +navLink('/admin/device-usage', 'Device Usage')
-            +navLink('/admin/minute-logger', 'Minute Logger')
-            +navLink('/admin/database_usage', 'Database Usage')
-            +navLink('/admin/database-viewer', 'Database Viewer')
-            +navLink('/admin/amiami-items', 'AmiAmi Items')
-            +navLink('/admin/disasters', 'Disaster Dashboard')
-            +navLink('/admin/disasters/history', 'Disaster History', 'secondary')
-            +navLink('/admin/disasters/weather-history', 'Weather History', 'secondary')
-            +navLink('/admin/tapo', 'Tapo Energy')
-            +navLink('/admin/tools', 'Tool Manager')
-            +navLink('/admin/audio-workflow', 'Audio workflow')
-            +navLink('/admin/api-debug-logs', 'API Debug Logs')
-            +navLink('/admin/dummy-api-requests', 'Dummy API Requests')
-          +navColumn('AI Admin')
-            +navLink('/admin/openai_usage', 'OpenAI Usage')
-            +navLink('/admin/runpod', 'Runpod API v2')
-            +navLink('/admin/ai-gateway', 'AI Gateway')
-            +navLink('/admin/ai-gateway/modular-llm', 'Modular LLM', 'secondary')
-            +navLink('/admin/ai-gateway/documentation', 'Gateway documentation', 'secondary')
-            +navLink('/admin/locateanything', 'LocateAnything')
-            +navLink('/admin/qwen3-lora', 'Qwen3 LoRA')
-            +navLink('/admin/qwen3-qlora', 'Qwen3 QLoRA')
-            +navLink('/admin/qwen3-lora/training-groups', 'Adapter training groups', 'secondary')
-            +navLink('/admin/agent5', 'Agent5')
-            +navLink('/admin/embedding-test', 'Embedding Management')
-            +navLink('/admin/tts-test', 'TTS Test')
-            +navLink('/admin/music-test', 'Music generator')
-            +navLink('/admin/asr-test', 'Audio transcription')
-            +navLink('/admin/rag-memory', 'RAG recall test')
+      if loggedIn
         +navColumn('Bookmarks')
           +navLink('/bookmarks', 'Manage bookmarks')
           form.navbar-bookmark-form(method='post', action='/bookmarks/add')
@@ -240,11 +137,7 @@ html(lang=pageLang || 'en')
             each bookmark in bookmarks
               - const bookmarkLabel = `[${bookmark.importance}] ${bookmark.title}`;
               +navLink(bookmark.url, bookmarkLabel, 'secondary')(target='_blank', rel='noopener noreferrer')
-          else
-            small.navbar-html-empty No bookmarks yet.
-      else
-        +navColumn('Account')
-          +navLink('/login', 'Log in')
+
       +navColumn('Samples & Demos')
         if htmlPaths && htmlPaths.length
           each l in htmlPaths
@@ -269,8 +162,8 @@ html(lang=pageLang || 'en')
     unless hideLayoutFooterSpacer
       div(style="height:50px;")
     script(src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous")
-    script(src="/js/nav.js", defer) 
-    script(src="/js/layout.js", defer) 
+    script(src="/js/nav.js", defer)
+    script(src="/js/layout.js", defer)
     if loggedIn === true
       script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
       script(src="/js/notifications.js", defer)

@@ -24,7 +24,11 @@ function element(parent = null, dataset = {}) {
       return event;
     },
     contains(other) { return Boolean(other && (other === this || this.contains(other.parent))); },
-    closest() { return this.dataset.taskId ? this : this.parent?.closest(); },
+    closest(selector) {
+      if (selector === '[data-task-id]' && this.dataset.taskId) return this;
+      if (selector === '[data-complete-task]' && this.dataset.completeTask) return this;
+      return this.parent?.closest(selector);
+    },
     setAttribute: jest.fn(), removeAttribute: jest.fn(),
     getBoundingClientRect: () => ({ left: 0, top: 0, right: 200, bottom: 60 }),
     remove() { this.removed = true; },
@@ -57,6 +61,7 @@ beforeEach(() => {
   status = element(doc);
   section.querySelector = (selector) => selector === '[data-task-id]'
     ? [first, second].find((item) => !item.removed) : empty;
+  section.querySelectorAll = () => [first, second].filter(item => !item.removed);
   doc.getElementById = (id) => id === 'mypage-tasks' ? section : status;
   Object.assign(win, {
     PointerEvent: function PointerEvent() {}, AbortController,
@@ -211,4 +216,15 @@ test('suppresses touch callouts only during hold, retaining ordinary context men
   expect(section.emit('contextmenu').preventDefault).toHaveBeenCalled();
   up();
   expect(section.emit('contextmenu').preventDefault).not.toHaveBeenCalled();
+});
+
+test('visible keyboard completion button sends one request and waits for server acknowledgement', async () => {
+  const button = element(section, { completeTask: 'todo-id' });
+  section.emit('click', { target: button, detail: 0 });
+  expect(win.fetch).toHaveBeenCalledTimes(1);
+  expect(first.removed).not.toBe(true);
+  section.emit('click', { target: button, detail: 0 });
+  expect(win.fetch).toHaveBeenCalledTimes(1);
+  success(); await flush();
+  expect(first.removed).toBe(true);
 });

@@ -176,6 +176,7 @@ app.use('/webhook', webhook);
 
 // Body parsers
 const DEFAULT_BODY_LIMIT = '5mb';
+app.use(require('./middleware/accountSurfaceBody'));
 app.use(bodyParser.urlencoded({ extended: false, limit: DEFAULT_BODY_LIMIT }));
 app.use(express.json({ limit: DEFAULT_BODY_LIMIT }));
 
@@ -252,6 +253,8 @@ const htmlSamplesCache = new HtmlSamplesCacheService({
   ttlMs: getPositiveIntegerEnv('HTML_SAMPLES_CACHE_TTL_MS', 5 * 60 * 1000),
 });
 
+require('./services/accountSurfacePolicy').reportPersonalConfiguration();
+
 // Middleware to set res.locals
 app.use(async (req, res, next) => {
   res.locals.loggedIn = req.isAuthenticated();
@@ -263,21 +266,12 @@ app.use(async (req, res, next) => {
   res.locals.gtag = !res.locals.loggedIn
     && !(process.env.HIDE_GTAG && process.env.HIDE_GTAG === 'YES');
 
-  // Load permissions
-  const permissions = [];
-  if (req.isAuthenticated()) {
-    const roles = await RoleModel.find({
-      name: [req.user.name, req.user.type_user],
-    });
-    roles.forEach((d) => {
-      d.permissions.forEach((permission) => {
-        if (!permissions.includes(permission)) {
-          permissions.push(permission);
-        }
-      });
-    });
-  }
-  res.locals.permissions = permissions;
+  // Navigation uses typed group/user grants; tool authorization remains in its routes.
+  const { resolvePolicy, navigationFor, bookmarkAllowed, GROUPS } = require('./services/accountSurfacePolicy');
+  const surfacePolicy = await resolvePolicy(req.isAuthenticated() ? req.user : null, RoleModel);
+  res.locals.permissions = surfacePolicy.capabilities;
+  res.locals.accountNavigation = navigationFor(surfacePolicy, req.user?.navbar_settings || req.user?.mypage_icon_settings);
+  res.locals.navigationGroups = GROUPS;
 
   // Load bookmark links
   const bookmarks = [];
@@ -292,6 +286,7 @@ app.use(async (req, res, next) => {
         if (!entry || !entry.title || !entry.url) {
           return;
         }
+        if (!bookmarkAllowed(surfacePolicy, entry.url)) return;
         bookmarks.push({
           title: entry.title,
           url: entry.url,
@@ -480,7 +475,12 @@ app.use('/webapi/servlet', dummyapiRouter);
 app.use('/blog', blogRouter);
 app.use('/cookingp', cookingPublicRouter);
 app.use('/yaml-viewer', yamlRouter);
-app.use('/mypage', isAuthenticated, mypageRouter);
+app.use('/mypage', (req, res, next) => {
+  if (!req.isAuthenticated?.() && (req.path.startsWith('/api/') || req.path === '/icon-settings')) {
+    return res.status(401).set('Cache-Control', 'private, no-store').json({ ok: false, error: 'Login required.' });
+  }
+  return isAuthenticated(req, res, next);
+}, mypageRouter);
 app.use('/learning', isAuthenticated, learningRouter);
 app.use('/chat', isAuthenticated, authorize("chat"), chatRouter);
 app.use('/chat2', isAuthenticated, authorize("chat2"), chat2Router);

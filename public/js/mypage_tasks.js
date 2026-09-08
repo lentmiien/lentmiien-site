@@ -6,7 +6,7 @@
     const section = doc.getElementById('mypage-tasks');
     const status = doc.getElementById('mypage-task-status');
     const token = section?.dataset.csrfToken;
-    if (!token || !status || !win.PointerEvent) return;
+    if (!token || !status) return;
 
     let gesture = null;
     let pending = null;
@@ -54,8 +54,9 @@
         if (!response.ok || response.redirected) throw new Error('Request failed');
         const result = await response.json();
         if (result.ok !== true || result.done !== true) throw new Error('Completion not confirmed');
-        const hadFocus = doc.activeElement === item;
-        item.remove();
+        const wrapper = item.closest?.('.account-task-row');
+        const hadFocus = doc.activeElement === item || Boolean(wrapper?.contains(doc.activeElement));
+        (wrapper || item).remove();
         const nextTask = section.querySelector('[data-task-id]');
         const emptyLink = section.querySelector('.schedule-task-pill--empty');
         emptyLink.hidden = Boolean(nextTask);
@@ -71,6 +72,13 @@
         pending = null;
       }
     }
+
+    section.addEventListener('click', (event) => {
+      const button = event.target.closest?.('[data-complete-task]');
+      if (!button || pending) return;
+      const item = [...section.querySelectorAll('[data-task-id]')].find(el => el.dataset.taskId === button.dataset.completeTask);
+      if (item) { cancel(false); void complete(item); }
+    });
 
     function tick(now) {
       if (!gesture || gesture.committed) return;
@@ -94,6 +102,7 @@
         return;
       }
       suppressClick = false;
+      if (event.target.closest?.('[data-complete-task]')) return;
       const item = event.target.closest?.('[data-task-id]');
       if (!item || !section.contains(item)) return;
       if (pending) {

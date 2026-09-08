@@ -3,7 +3,7 @@ const Role = require('../models/role');
 const { createRequireCapabilities } = require('../middleware/requireCapabilities');
 const { createSessionCsrf, PRIVATE_NO_STORE } = require('../middleware/sessionCsrf');
 const { hasCapabilities } = require('../utils/authorization');
-const { completeMypageTaskApi } = require('../controllers/scheduleTaskController');
+const completeMypageTaskApi = (req, res, next) => require('../controllers/scheduleTaskController').completeMypageTaskApi(req, res, next);
 
 const CAPABILITY = 'schedule.task.complete';
 const capabilityPolicy = {

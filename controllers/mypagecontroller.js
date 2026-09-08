@@ -3,22 +3,13 @@ const path = require('path');
 const logger = require('../utils/logger');
 const SoundDataFolder = './public/mp3';
 const ImageDataFolder = './public/img';
-const { ArticleModel, Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, AIModelCards, UseraccountModel } = require('../database');
-const { tts, ig, GetOpenAIModels } = require('../utils/ChatGPT');
-const { GetAnthropicModels } = require('../utils/anthropic');
-const ScheduleTaskService = require('../services/scheduleTaskService');
+const { ArticleModel, Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel } = require('../database');
+const { tts, ig } = require('../utils/ChatGPT');
 const pdfUtils = require('../utils/pdf');
 const EmbeddingApiService = require('../services/embeddingApiService');
-const { getSoraLifecycle } = require('../utils/soraLifecycle');
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
-const myLifeLogService = require('../services/myLifeLogService');
-const myLifeLogReminderService = require('../services/myLifeLogReminderService');
-const {
-  buildMypageTiles,
-  sanitizeMypageIconSettings,
-} = require('../services/mypageIconService');
 const { blogContentForEditing, prepareBlogContent } = require('../utils/blogContent');
 
 const messageService = new MessageService(Chat4Model, FileMetaModel);
@@ -232,117 +223,7 @@ async function handleEmbeddingSearch(req, res, formInput = {}, { requireQuery = 
   }
 }
 
-exports.mypage = async (req, res) => {
-  // Do something fun here, to show om mypage!
-  const ts = Math.round((Date.now() - (1000 * 60 * 60 * 24 * 30)) / 1000);
-  const OpenAI_models = GetOpenAIModels();
-  const new_openai_models = OpenAI_models.filter(d => d.created > ts);
-  const Anthropic_models = GetAnthropicModels();
-  const new_anthropic_models = Anthropic_models.filter(d => d.created > ts);
-
-  const modelCards = await AIModelCards.find({}, { provider: 1, api_model: 1 }).lean();
-  const knownModels = new Set();
-  modelCards.forEach((card) => {
-    if (card.provider && card.api_model) {
-      knownModels.add(`${card.provider.toLowerCase()}|${card.api_model.toLowerCase()}`);
-    }
-  });
-
-  const decorateNewModels = (list, provider) => list.map((model) => {
-    const modelName = typeof model.model === 'string' ? model.model : String(model.model || '');
-    const key = `${provider.toLowerCase()}|${modelName.toLowerCase()}`;
-    const existsInDb = knownModels.has(key);
-    const manageUrl = existsInDb ? null : `/chat5/ai_model_cards?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(modelName)}`;
-    return {
-      ...model,
-      model: modelName,
-      provider,
-      existsInDb,
-      manageUrl,
-    };
-  });
-
-  const decoratedOpenAIModels = decorateNewModels(new_openai_models, 'OpenAI');
-  const decoratedAnthropicModels = decorateNewModels(new_anthropic_models, 'Anthropic');
-  const soraLifecycle = getSoraLifecycle();
-  const permissions = Array.isArray(res.locals.permissions) ? res.locals.permissions : [];
-  const isAdmin = res.locals.admin === true || req.user.type_user === 'admin';
-  const mypageTiles = buildMypageTiles({
-    permissions,
-    isAdmin,
-    settings: req.user.mypage_icon_settings || {},
-    metaById: {
-      sora: soraLifecycle
-        ? (soraLifecycle.generationDisabled ? 'Generation stopped' : `${soraLifecycle.daysUntilGenerationStop} days left`)
-        : null,
-    },
-  });
-
-  const userId = req.user.name;
-  const today = ScheduleTaskService.roundToSlot(new Date());
-  const from = today;
-  const to = new Date(from.getTime() + 24 * 60 * 60 * 1000);
-  const { presences, tasks } = await ScheduleTaskService.getTasksForWindow(userId, from, to);
-  const lifeLogSuggestions = isAdmin ? myLifeLogService.getLabelSuggestions(new Date()) : null;
-  let lifeLogReminders = [];
-  if (isAdmin) {
-    try {
-      lifeLogReminders = await myLifeLogReminderService.getDueReminders(new Date());
-    } catch (error) {
-      logger.error('Failed to load life log reminders', {
-        category: 'life_log_reminders',
-        metadata: { message: error?.message || error },
-      });
-    }
-  }
-
-  res.render('mypage', {
-    new_openai_models: decoratedOpenAIModels,
-    new_anthropic_models: decoratedAnthropicModels,
-    tasks: tasks.filter((t) => !t.done && ((t.start && t.start < to) || !t.start)),
-    embeddingSearchTypes: EMBEDDING_SEARCH_TYPES,
-    embeddingSearchDefaultType: EMBEDDING_DEFAULT_SEARCH_TYPE,
-    lifeLogSuggestions,
-    lifeLogReminders,
-    lifeLogBasePath: '/admin/life_log',
-    soraLifecycle,
-    mypageTiles,
-  });
-};
-
-exports.update_icon_settings = async (req, res) => {
-  const userId = req.user && req.user._id ? req.user._id : null;
-  if (!userId) {
-    return res.status(401).json({ ok: false, message: 'Login required.' });
-  }
-
-  const nextSettings = req.body && req.body.reset
-    ? { order: [], hidden: [], updatedAt: new Date() }
-    : sanitizeMypageIconSettings(
-      req.body || {},
-      req.user.mypage_icon_settings || {},
-      Array.isArray(res.locals.permissions) ? res.locals.permissions : [],
-      { isAdmin: res.locals.admin === true || req.user.type_user === 'admin' }
-    );
-
-  try {
-    await UseraccountModel.updateOne(
-      { _id: userId },
-      { $set: { mypage_icon_settings: nextSettings } }
-    );
-    req.user.mypage_icon_settings = nextSettings;
-    return res.json({ ok: true, settings: nextSettings });
-  } catch (error) {
-    logger.error('Failed to save mypage icon settings', {
-      category: 'mypage',
-      metadata: {
-        user: req.user.name,
-        error: error.message,
-      },
-    });
-    return res.status(500).json({ ok: false, message: 'Unable to save icon settings.' });
-  }
-};
+// Account shell/preferences now live in routes/accountDashboard.js.
 
 exports.embedding_search_page = async (req, res) => handleEmbeddingSearch(req, res, req.query || {}, { requireQuery: false });
 

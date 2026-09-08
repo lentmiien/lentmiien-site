@@ -1,0 +1,502 @@
+:root {
+  --life-log-ink: var(--text);
+  --life-log-muted: var(--text-secondary);
+  --life-log-accent: var(--brand);
+  --life-log-accent-2: var(--accent);
+  --life-log-surface: var(--surface-1);
+  --life-log-surface-strong: var(--surface-2);
+  --life-log-border: var(--border);
+  --life-log-chip: var(--surface-2);
+}
+
+.life-log-shell {
+  font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+  background: radial-gradient(circle at top right, var(--accent-tint), transparent 40%),
+    radial-gradient(circle at 20% 10%, var(--brand-tint), transparent 45%),
+    var(--life-log-surface);
+  border: 1px solid var(--life-log-border);
+  border-radius: 20px;
+  padding: 1.5rem;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+  color: var(--life-log-ink);
+  animation: life-log-shell-in 0.5s ease both;
+}
+
+.life-log-details {
+  font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+}
+
+.life-log-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--life-log-border);
+  border-radius: 18px;
+  background: var(--life-log-surface);
+  color: var(--life-log-ink);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
+  font-weight: 600;
+}
+
+.life-log-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.life-log-toggle::marker {
+  content: '';
+}
+
+.life-log-toggle-title {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.life-log-reminder-badge {
+  background: var(--life-log-accent);
+  border-radius: 999px;
+  color: var(--text-inverse);
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.32rem 0.6rem;
+  white-space: nowrap;
+}
+
+.life-log-toggle-hint {
+  font-size: 0.85rem;
+  color: var(--life-log-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.life-log-toggle-hint::before {
+  content: 'Expand';
+}
+
+.life-log-details[open] .life-log-toggle-hint::before {
+  content: 'Collapse';
+}
+
+.life-log-toggle::after {
+  content: '+';
+  border: 1px solid var(--life-log-border);
+  border-radius: 999px;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--life-log-surface-strong);
+  color: var(--life-log-accent);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.life-log-details[open] .life-log-toggle::after {
+  content: '-';
+}
+
+.life-log-details[open] .life-log-toggle {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom: none;
+}
+
+.life-log-details[open] .life-log-shell {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top: none;
+}
+
+.life-log-header h2 {
+  margin-bottom: 0.2rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.life-log-header p {
+  margin-bottom: 0;
+  color: var(--life-log-muted);
+  max-width: 720px;
+}
+
+.life-log-panel {
+  background: rgba(27, 32, 38, 0.9);
+  border: 1px solid var(--life-log-border);
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.life-log-panel + .life-log-panel {
+  margin-top: 1rem;
+}
+
+.life-log-reminder-section {
+  background: var(--life-log-surface-strong);
+  border: 1px solid var(--life-log-border);
+  border-radius: 14px;
+  padding: 1rem;
+}
+
+.life-log-reminder-section-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 0.85rem;
+}
+
+.life-log-reminder-section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.life-log-reminder-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.life-log-reminder-item {
+  align-items: flex-start;
+  background: var(--life-log-surface);
+  border: 1px solid var(--life-log-border);
+  border-radius: 12px;
+  color: var(--life-log-ink);
+  cursor: pointer;
+  display: flex;
+  gap: 0.8rem;
+  padding: 0.85rem;
+  text-align: left;
+  width: 100%;
+}
+
+.life-log-reminder-item:hover,
+.life-log-reminder-item:focus {
+  border-color: rgba(255, 106, 31, 0.7);
+  box-shadow: 0 8px 20px rgba(255, 106, 31, 0.12);
+}
+
+.life-log-reminder-item.is-late {
+  border-color: var(--divider);
+}
+
+.life-log-reminder-status {
+  background: var(--life-log-accent);
+  border-radius: 999px;
+  color: var(--text-inverse);
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.35rem 0.58rem;
+  white-space: nowrap;
+}
+
+.life-log-reminder-item.is-late .life-log-reminder-status {
+  background: var(--life-log-ink);
+}
+
+.life-log-reminder-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.life-log-reminder-name {
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.life-log-reminder-meta {
+  color: var(--life-log-muted);
+  font-size: 0.84rem;
+}
+
+.life-log-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--life-log-muted);
+  font-weight: 600;
+}
+
+.life-log-input,
+.life-log-panel textarea,
+.life-log-panel select {
+  border-radius: 10px;
+  border: 1px solid var(--life-log-border);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.95rem;
+  background: var(--life-log-surface);
+  color: var(--life-log-ink);
+  width: 100%;
+}
+
+.life-log-input:focus,
+.life-log-panel textarea:focus,
+.life-log-panel select:focus {
+  border-color: var(--life-log-accent);
+  box-shadow: 0 0 0 0.15rem rgba(255, 194, 71, 0.18);
+}
+
+.life-log-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.life-log-chip {
+  border: 1px solid var(--life-log-border);
+  background: var(--life-log-chip);
+  color: var(--life-log-ink);
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.life-log-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.22);
+}
+
+.life-log-actions .btn {
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.life-log-followups {
+  background: var(--life-log-surface-strong);
+  border: 1px solid var(--life-log-border);
+  border-radius: 14px;
+  padding: 1rem;
+}
+
+.life-log-followups-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.life-log-followup-item {
+  border: 1px solid var(--life-log-border);
+  border-radius: 10px;
+  padding: 0.85rem;
+  background: var(--life-log-surface);
+}
+
+.life-log-followup-item.is-followup-window {
+  border-color: rgba(255, 106, 31, 0.75);
+  box-shadow: 0 8px 20px rgba(255, 106, 31, 0.16);
+}
+
+.life-log-followup-item.is-late {
+  border-color: var(--divider);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.life-log-followup-header-row {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: space-between;
+}
+
+.life-log-followup-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--life-log-muted);
+  font-size: 0.84rem;
+}
+
+.life-log-followup-title {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--life-log-ink);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.life-log-followup-age {
+  background: var(--life-log-surface-strong);
+  border: 1px solid var(--life-log-border);
+  border-radius: 999px;
+  color: var(--life-log-muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.28rem 0.6rem;
+  white-space: nowrap;
+}
+
+.life-log-followup-age.is-followup-window {
+  background: var(--life-log-accent);
+  border-color: var(--life-log-accent);
+  box-shadow: 0 5px 14px rgba(255, 106, 31, 0.28);
+  color: var(--text-inverse);
+}
+
+.life-log-followup-age.is-late {
+  background: var(--life-log-ink);
+  border-color: var(--life-log-ink);
+  color: var(--text-inverse);
+}
+
+.life-log-followup-preview {
+  background:
+    linear-gradient(90deg, rgba(255, 194, 71, 0.08) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255, 194, 71, 0.08) 1px, transparent 1px),
+    var(--life-log-surface-strong);
+  background-size: 25% 25%;
+  border: 1px solid var(--life-log-border);
+  border-radius: 8px;
+  height: 48px;
+  margin-bottom: 0.85rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.life-log-followup-preview-point {
+  border: 2px solid var(--life-log-surface);
+  border-radius: 50%;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.28);
+  position: absolute;
+  transform: translate(-50%, -50%);
+}
+
+.life-log-followup-slider-label {
+  align-items: center;
+  color: var(--life-log-muted);
+  display: flex;
+  font-size: 0.82rem;
+  font-weight: 700;
+  justify-content: space-between;
+  text-transform: uppercase;
+}
+
+.life-log-visual {
+  background: var(--life-log-surface);
+  border-radius: 16px;
+  border: 1px solid var(--life-log-border);
+  padding: 1rem;
+}
+
+.life-log-visual-canvas {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  aspect-ratio: 3 / 2;
+  margin: 0 auto;
+  background: var(--life-log-surface-strong);
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--life-log-border);
+}
+
+.life-log-visual-canvas img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: contrast(1.05) saturate(0.95);
+  user-select: none;
+  pointer-events: none;
+}
+
+.life-log-visual-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.life-log-visual-overlay .point {
+  position: absolute;
+  border-radius: 50%;
+  border-style: solid;
+  transform: translate(-50%, -50%);
+  box-sizing: border-box;
+}
+
+.life-log-visual-overlay .point.selected {
+  box-shadow: 0 0 0 2px rgba(255, 106, 31, 0.35);
+}
+
+.life-log-point-list {
+  border: 1px solid var(--life-log-border);
+  border-radius: 12px;
+  max-height: 180px;
+  overflow: auto;
+  background: var(--life-log-surface-strong);
+}
+
+.life-log-point-list .point-item,
+.life-log-point-list .point-item-add {
+  padding: 0.45rem 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--life-log-border);
+  font-size: 0.88rem;
+}
+
+.life-log-point-list .point-item:last-child {
+  border-bottom: none;
+}
+
+.life-log-point-list .point-item.selected,
+.life-log-point-list .point-item-add.selected {
+  background: var(--brand-tint);
+}
+
+.life-log-point-list .point-item-add {
+  font-weight: 600;
+  color: var(--life-log-accent-2);
+}
+
+.cat-dot {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 2px solid rgba(14, 15, 19, 0.35);
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.life-log-status {
+  font-size: 0.85rem;
+  color: var(--life-log-muted);
+}
+
+@media (max-width: 992px) {
+  .life-log-shell {
+    padding: 1rem;
+  }
+}
+
+@keyframes life-log-shell-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

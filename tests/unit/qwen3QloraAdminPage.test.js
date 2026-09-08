@@ -79,13 +79,13 @@ describe('Qwen3 QLoRA admin page', () => {
   test('registers the tool inside the authenticated admin router and navigation', () => {
     const routeSource = fs.readFileSync(projectFile('routes', 'admin.js'), 'utf8');
     const appSource = fs.readFileSync(projectFile('app.js'), 'utf8');
-    const layoutSource = fs.readFileSync(projectFile('views', 'layout.pug'), 'utf8');
+    const { NAVIGATION } = require('../../services/accountSurfacePolicy');
 
     expect(routeSource).toContain("router.get('/qwen3-qlora', qwen3QloraAdminController.render);");
     expect(routeSource).toContain("router.post('/qwen3-qlora/train/jobs', qwen3QloraAdminController.createTrainingJob);");
     expect(routeSource).toContain("router.post('/qwen3-qlora/generate', qwen3QloraAdminController.generate);");
     expect(routeSource).toContain("router.delete('/qwen3-qlora/reservation', qwen3QloraAdminController.releaseReservation);");
     expect(appSource).toContain("app.use('/admin', isAuthenticated, isAdmin, adminRouter);");
-    expect(layoutSource).toContain("+navLink('/admin/qwen3-qlora', 'Qwen3 QLoRA')");
+    expect(NAVIGATION).toEqual(expect.arrayContaining([expect.objectContaining({ href: '/admin/qwen3-qlora', adminOnly: true })]));
   });
 });
