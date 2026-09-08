@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "assetVersion": "miien-2.1",
+  "clipStatus": "not-produced",
+  "policy": {
+    "loop": true,
+    "crossfadeMs": 0
+  },
+  "stills": [
+    {
+      "mood": "neutral",
+      "src": "/i/miien/neutral.webp",
+      "width": 768,
+      "height": 1024,
+      "sha256": "a96d921b3afea4022ffab1c3b2292b35ac6c62db78367f2f1c980997936d9978",
+      "provenance": "/i/miien/provenance.json"
+    },
+    {
+      "mood": "happy",
+      "src": "/i/miien/happy.webp",
+      "width": 768,
+      "height": 1024,
+      "sha256": "6f7a06334755a2fa00f18953b59a7b4eb41b9aa93205f3a8ec08ba80256819e4",
+      "provenance": "/i/miien/provenance.json"
+    },
+    {
+      "mood": "thoughtful",
+      "src": "/i/miien/thoughtful.webp",
+      "width": 768,
+      "height": 1024,
+      "sha256": "9cba193a5a0c47e71b5d663e652fd45f8a7f3a5cd70cb2bc8ae1b9e235afa6c1",
+      "provenance": "/i/miien/provenance.json"
+    },
+    {
+      "mood": "concerned",
+      "src": "/i/miien/concerned.webp",
+      "width": 768,
+      "height": 1024,
+      "sha256": "fb43fa1ec98302f923b3be36522627d231996b03453d45ba71f480525e6a34cd",
+      "provenance": "/i/miien/provenance.json"
+    },
+    {
+      "mood": "surprised",
+      "src": "/i/miien/surprised.webp",
+      "width": 768,
+      "height": 1024,
+      "sha256": "c272f483daeefa41bc1cc5679103c14b48e004ace9dc777af9f3242d315d6a0b",
+      "provenance": "/i/miien/provenance.json"
+    }
+  ],
+  "clips": []
+}

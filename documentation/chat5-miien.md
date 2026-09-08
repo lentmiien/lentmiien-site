@@ -1,4 +1,131 @@
-# Miien character chat — phase 1
+# Miien character chat — phase 2, first increment
+
+This is a bounded first increment, built on phase-1 commit `17f531b`. It adds the viewport room, a shared activity controller, a versioned motion adapter with **no produced video clips**, and an explicit private asynchronous `anny_en` preview. It does not complete phase 2, generate media, change Gateway, or deploy/restart the application. The phase-1 implementation and verification record below remains useful historical context; this section supersedes its room-layout and TTS deferral statements.
+
+## Current security contract
+
+- **Zone/principals:** logged-in; admin defaults, family/user only through explicit semantic grants; no machine principals and no admin object override. Data is private saved assistant text and sensitive generated audio.
+- **Capabilities:** all Miien routes require `chat.conversation.read`. Speech submission, status and delivery additionally require new `chat.audio.synthesize`. The admin bundle includes it; family/user bundles are empty. Speech does not imply conversation write or transcription, nor vice versa. Existing `chat.conversation.write` and `chat.audio.transcribe` behavior is preserved.
+- **Object scope:** the validated principal's immutable `_id` owns a speech handle. The existing Chat5 single-member-name scope authorizes its parent conversation. Load only a saved child with `user_id: 'bot'`, `contentType: 'text'`, `hideFromBot != true`, and nonempty bounded text. Never accept browser-supplied speech text, paths, URLs, owners, formats or provider parameters. Hidden reasoning is neither rendered nor spoken.
+- **Revalidation:** saved-message membership on submission, immediately before upstream dispatch, after completion and on every status/audio request. Before dispatch and retention, reload the principal's identity/role from UseraccountModel and evaluate capabilities again. Every HTTP poll/download traverses current session/capability middleware. Session expiry stops retrieval; it cannot cancel accepted upstream work. There is no queued authority beyond this one immediate task.
+- **Browser safety:** POST submission with the shared CSRF token and Origin/Fetch Metadata checks; per-principal 4 speech submissions/minute plus the subtree's 100 requests/minute. The 16 KiB body parser and explicit field allowlist apply. GETs never submit synthesis. All responses are private/no-store, nosniff and no-referrer. No analytics. Miien CSP permits only local scripts/styles/images/connections and same-origin/blob media, with no frames, inline script, remote resources or arbitrary destinations.
+- **Work bounds:** exact supported voice `anny_en`, maximum 600 Unicode code points of saved visible assistant text; a 20-minute absolute application deadline, explicit remaining `timeout_sec`, no retries or redirects; at most 8 MiB validated RIFF PCM WAV, mono/stereo, 8–48 kHz, 16/24/32-bit, internally consistent chunks/byte counts. One active synthesis per process and **one durable global admission slot** across processes, which also enforces at most one per principal. No queue or general job framework. Up to eight retained memory jobs, at most 64 MiB retained audio; provider/client in-flight buffers are additional bounded memory.
+- **Storage/retention:** audio is memory-only, never public or on disk. Job status/audio expire 15 minutes after terminal completion. Opportunistic and scheduled cleanup release buffers. A new `miien_speech_slot` Mongoose model stores only a singleton `_id`, opaque job/principal/conversation IDs and start time for admission; no text, audio, credentials or error payload. It is normally deleted after proven settlement and is deliberately retained for ambiguous work. Browser sessionStorage holds tab-local preferences and one opaque handle/deadline per room, never transcript/audio. Stop/new turn discards the local handle/result; page leave/hiding preserves only the handle for status recovery.
+- **Outbound/logs:** existing server-only `TTS_API_BASE` origin (same default as legacy TTS); bounded 15-second/256 KiB catalog GET, locally cached for 60 seconds; only `/tts/voices` and `/tts`. The configuration is operator-controlled, not request-controlled. A dedicated bounded catalog reader avoids the legacy reader's debug payload/redirect behavior. Speech never calls `TtsService.synthesize`, filesystem output, or `apiDebugLogger`. Stable warning/error logs use `chat5_miien_speech`, terminal outcome and upstream-uncertainty only. No prompts, audio, provider response/error body or personal data.
+- **Legacy boundary/tests:** Chat5 persistence, LLM pending/recovery, ASR, ordinary Chat5 and legacy TTS contracts are unchanged. Negative tests cover missing capability/session, CSRF/Origin, foreign/hidden/user/reasoning message scope, input/path limits, dedupe/capacity, revocation, timeout/late result, catalog failure, memory expiry/restart, no payload logging, WAV and private headers.
+
+## Viewport room and activity
+
+The character stage owns the viewport, with compact translucent caption/composer panels. Navigation, full model/context settings, expression overrides, microphone, history and Stop remain reachable. Captions default on; history and room settings default closed. Caption and motion preferences persist in sessionStorage. Text remains editable while Anny prepares; sending a new turn stops local audio/ASR and discards pending local playback without cancelling the saved LLM request. History keeps the full plain-text response and scroll position, including text beyond the speech preview cap. Ctrl/Command+Enter and IME behavior are preserved.
+
+Portraits use a contained foreground over a Graphite stage, never aggressive landscape cropping. Mobile reserves room above the ears; short landscape puts art beside the composer. A landscape master image is still needed for a more immersive wide composition. `dvh`, safe-area insets, viewport-fit and visualViewport resize/scroll handling keep controls within the available viewport. A short focused keyboard viewport temporarily hides captions/title; they return on blur. Physical mobile keyboard and pinch-zoom behavior still need device review. True fullscreen is an optional support-checked gesture button under Settings; failure leaves the viewport room usable.
+
+`public/js/miien_activity.js` is the testable activity controller, independent of expression/mood:
+
+| Signal | Visual activity | Accurate status |
+| --- | --- | --- |
+| Recorder actually recording | listening | Listening / recording microphone |
+| ASR processing | thinking | Transcribing microphone |
+| Saved Chat5 turn pending | thinking | Waiting for Chat5 reply |
+| TTS submission/poll/fetch/browser startup or audio buffering | thinking | Preparing voice / buffering |
+| HTML audio `playing` or browser utterance `onstart` | speaking | Audio playing |
+| End, stop, blocked playback or error | idle, unless other actual work remains | Separate explanatory speech/mic status |
+
+Permission dialogs are not listening. Accepted synthesis is not speaking. Mood continues to follow the existing classifier/manual override in all states. Generation counters guard stale image/video/ASR/submission/fetch/playback callbacks; new/pending turns interrupt locally, duplicate/history/background replies do not autoplay. Explicit Stop also suppresses the late pending reply's automatic voice until another local text turn. Restored speech handles resume **status only**, never speak old history. No CSS still-image movement or simulated lip sync is included.
+
+## Speech lifecycle and Anny tradeoffs
+
+1. Choose **Off**, **Browser voice**, or **Anny English · slow preview** in Settings. Off is the new-user default; prior browser-voice enabled/voice choices migrate without opting anyone into Gateway. Automatic new-reply playback is a separate opt-in checkbox. Replay is a user gesture; Off remains off until a voice is chosen.
+2. POST `/:id/speech` under `/chat5/miien` with `{ "messageId": "<saved assistant ObjectId>", "voiceId": "anny_en" }`. Scoped saved-message validation precedes a short HTTP 202 response `{ id, messageId, voiceId, status, truncated, spokenCharacters, deadlineAt, expiresAt, error }`. The browser does not hold a minutes-long submission request.
+3. The background task atomically inserts the fixed admission document (`_id: 'miien-anny-en'`, MongoDB's existing unique `_id` index). It checks the catalog and fresh principal/message authorization, then makes exactly one binary Gateway POST. A second process cannot admit synthesis while that document exists. Identical principal/conversation/message submissions reuse a retained handle, including failed jobs; there is no automatic retry.
+4. GET `/:id/speech/:jobId` every five seconds, with 15-second per-request bounds and a total deadline of the submitted deadline plus 15 seconds. Status is `preparing`, `ready`, `failed` or `timeout`. A transient poll error, lost session, missing job or deadline terminates polling with readable fallback. The browser never polls Gateway directly.
+5. Once ready, GET `/:id/speech/:jobId/audio` rechecks membership and returns private `audio/wav`. Only the current generation creates a blob URL/Audio object. The `playing` event drives speaking. A delayed autoplay rejection retains ready audio so Replay can call `play()` immediately from its click without resynthesis or another asynchronous download. Object URLs, audio handlers, timers, fetches and microphone tracks are cleaned on Stop/leave/new turn; playback has a three-minute watchdog. Browser speech retains its 3,000-character/three-minute cap.
+6. Reload can recover the tab's handle while the same process retains it; ready restored jobs show “Press Replay” without automatically playing. Restart/expiry or routing to another worker returns HTTP 410 and terminates recoverably. Full replies remain saved. Use one application worker or sticky routing for status/audio affinity in this increment; the durable admission lock is global, but buffers/handles are deliberately not distributed.
+
+The supplied Gateway investigation confirmed that **`anny_en` is OpenAudio S1-mini on a healthy CPU backend**, distinct from **`qwen_anny_en`** and **`omni_anny_en`**, which were stopped GPU backends. This slice exposes only `anny_en`; no silent substitution and no additional backend startup. The deployment returns full WAV (configured 44,100 Hz), not streaming audio, job IDs, word timing, phonemes or real cancellation. Historical observations were **36.4 seconds for 0.84 seconds of audio** and **76 seconds for 1.9 seconds of audio**. These are observations, not a latency promise. A 600-character preview may still exceed 20 minutes or 8 MiB and fail; preview/truncation is explicitly visible while the complete text remains in captions/history. No real Anny synthesis was performed in this implementation.
+
+**Timeout and restart admission behavior:** browser Stop/abort cannot cancel an accepted synthesis. The process holds its active reservation until its outbound promise settles, even after browser departure or the UI deadline. Complete successful HTTP responses and explicit Gateway validation 400/404/422 responses allow releasing the durable slot. Transport errors, redirects, oversized responses, deadline aborts and 502 are treated as ambiguous: the durable slot remains, blocking further Anny dispatch. A process crash similarly leaves the slot. No TTL or timed automatic unlock pretends that backend cancellation occurred.
+
+If Anny remains blocked, an operator must first inspect the configured Gateway/backend and establish that the admitted work has finished or has been deliberately stopped. Then inspect the **single `miien_speech_slots` document** and remove only `{ _id: 'miien-anny-en', jobId: '<the inspected job ID>' }` through the normal authorized database maintenance process. Do not clear it merely because 20 minutes passed, and do not use a blanket collection drop. This is an operational recovery procedure, not a new UI operation or an action performed this turn. Ambiguous slots retain opaque metadata until that intervention. Logs identify the admission/cleanup issue without revealing conversational content. A future durable Gateway job/cancellation contract should replace this conservative quarantine.
+
+## Motion manifest and asset production (future, no generation this slice)
+
+`public/i/miien/motion-v1.json` is schema version 1 / asset version `miien-2.1`. Five approved 768×1024 still mappings carry SHA-256/provenance references. `clipStatus: "not-produced"` and `clips: []` explicitly reserve later per-state/per-mood video slots. The adapter requires all five moods, valid local `/i/miien/` namespace paths without traversal/encoding/query/remote URLs, bounded metadata and at most 20 clips. The fetched manifest is capped at 32 KiB. Invalid/absent manifest or absent/failed/stale clip falls back to the appropriate still. A video stays hidden until actually playing, is always muted/playsinline, and has a ten-second readiness timeout. There is no automatic per-message asset generation.
+
+The initial policy is **loop true, crossfade 0 ms**: switch through a decoded still while loading a new clip. Crossfades are explicitly not implemented. Reduced-motion in both JavaScript and CSS forces stills; the manual motion toggle can disable motion independently. Background/page-hide suspends video. Clip hashes are build/review provenance, not runtime integrity enforcement; approved static files must be immutable per asset version.
+
+Example **future reviewed** slot (illustrative only, paths/hashes must come from the actual reviewed derivative; do not paste this into production):
+
+```json
+{
+  "state": "idle", "mood": "neutral",
+  "src": "/i/miien/v2-2/idle-neutral.mp4",
+  "poster": "/i/miien/v2-2/idle-neutral.webp",
+  "provenance": "/i/miien/v2-2/provenance.json",
+  "sha256": "<64 lowercase hex characters from sanitized MP4>",
+  "posterSha256": "<64 lowercase hex characters from poster>",
+  "width": 1280, "height": 704, "fps": 25,
+  "durationSeconds": 4.84, "silent": true
+}
+```
+
+Exact production/export/review procedure for a later authorized media task:
+
+1. Create or select a reviewed landscape master consistent with `README-Prompts.md`: adult Miien, cat ears, twin tails, amber eyes, Graphite/Ember hoodie. Preserve ears, hair, identity, outfit and stable composition. Start with **one subtle neutral idle breathing/blinking loop**, then review it before multiplying moods/states. Keep raw references, prompts, workflow graphs and generation provenance outside public assets.
+2. Fetch the **current complete Gateway ComfyUI graph** for the chosen catalog workflow before editing. Node IDs in documentation have drifted; inspect actual node classes, inputs, checkpoint names, output and reference connections. Do not construct edits from historical IDs. No graph is fetched or submitted by the application or this implementation.
+3. Known investigation facts: `video_ltx2_i2v_distilled.json` uses `ltx-2-19b-distilled-fp8`, 121 frames at 25 fps; existing 1280×704 outputs are about 4.84 s. `video_minimax_h3_i2v.json` uses `minimax_h3_fl2va`, currently 640×640, 124 frames at 24 fps (~5.17 s). H3's optional `last_frame` is unconnected; matching first/last frames is an experiment, not guaranteed seamless motion. R2V exists but has less visual validation. Prefer one validated idle clip over many speculative transitions.
+4. Upload the approved reference with `POST /comfy/input/upload`, update the fetched graph with the returned reference, and submit **the complete prompt graph** via `POST /comfy/submit`. Submission itself may wait up to 900 s in the GPU queue. Track only the returned known `prompt_id` through `/comfy/status/{prompt_id}` for at most 7,200 s, then download the returned `gateway_view_url` into private staging. Do not poll invented IDs (that can wake a service), blindly retry an ambiguous submission, or claim normal per-job cancellation.
+5. Raw outputs may contain H.264 **and AAC audio** plus workflow metadata. Export a sanitized derivative with FFmpeg, stripping all audio and metadata; never copy the raw output into `public`. Example for a confirmed 1280×704/25 fps source, with paths chosen inside private staging and an explicitly reviewed publish directory:
+
+   ```bash
+   ffmpeg -i private-raw.mp4 -map 0:v:0 -an -sn -dn -map_metadata -1 -map_chapters -1 -vf "scale=1280:704:force_original_aspect_ratio=decrease,pad=1280:704:(ow-iw)/2:(oh-ih)/2,fps=25" -c:v libx264 -crf 22 -pix_fmt yuv420p -movflags +faststart sanitized-idle-neutral.mp4
+   ffprobe -v error -show_streams -show_format -of json sanitized-idle-neutral.mp4
+   ffmpeg -i sanitized-idle-neutral.mp4 -frames:v 1 -map_metadata -1 idle-neutral.webp
+   sha256sum sanitized-idle-neutral.mp4 idle-neutral.webp
+   ```
+
+   Adapt the explicit dimensions/fps to the **reviewed actual graph/output**, keeping aspect ratio contained. Inspect ffprobe JSON: exactly one video stream, **zero audio/subtitle/data streams**, correct dimensions/fps/duration, no prompt/workflow/reference/user metadata. Limit each derivative to ≤10 s, ≤1920×1920, ≤60 fps and a practical small transfer budget (target ≤5 MiB). Container-required encoder fields may remain; private workflow metadata must not.
+6. Visually inspect first/middle/last frames and several repeated loops on desktop/mobile: face/ears, identity/outfit, blinking/breath amplitude, hands/artifacts, camera stability, loop seams, low-motion comfort and dark UI framing. Verify mute is not merely concealing an audio stream. Capture review evidence; do not publish a clip until approved. Speaking loops only indicate activity: they are **not phoneme-aligned or lip-synced**.
+7. Publish only the sanitized derivative/poster and a **public-safe** provenance summary containing hashes, dimensions, fps, duration, source workflow/model version and a private review reference ID (no raw prompts/paths/identity-sensitive references). Use a new immutable `/i/miien/<asset-version>/` namespace, update the manifest's asset version, hashes, slots and `clipStatus: "reviewed"`, then run manifest/path/hash tests and the browser fallback/reduced-motion checks. Keep old assets during the normal cache/rollback window.
+
+## Validation, deployment handoff and next decisions
+
+Local validation uses mock database/Gateway boundaries and synthetic browser content. It does not establish real voice quality/latency, upstream cancellation, actual generated-video quality or physical microphone/OS behavior. No expensive Anny/ComfyUI calls, production startup, production data mutation, deployment or restart are part of this increment.
+
+Browser acceptance checklist for Lennart's chosen review environment:
+
+- Desktop and narrow/short/mobile landscape: stage fills viewport; ears/face remain contained; captions readable/toggleable; long text scrolls; history/settings expand and close with Escape; model/context settings and normal Chat5/account navigation work.
+- Keyboard, IME, Ctrl/Command+Enter, 200% zoom, mobile safe areas, actual virtual keyboard show/hide/scroll and optional fullscreen gesture/rejection. Verify text controls and Stop remain reachable. Check screen-reader announcements and focus order with long captions.
+- Existing conversations/history never speak on load; preserved browser voice preference remains browser voice; Off never sends TTS. Enable automatic playback explicitly, then verify exactly one new reply plays. Use Replay after autoplay denial.
+- In an explicitly authorized review session only, test one **short English Anny reply** first. Confirm visible preparing/preview cap and full text retention, actual-playback speaking, Stop during preparing/playback, new text while Anny is slow, ready/reload status without autoplay, and fail/timeout fallback. Do not test repeated expensive synthesis to measure a throughput promise.
+- Microphone recording is listening only when capture starts; review/edit transcript before Send. Test denied/late permissions, recording error, Stop, page hiding, ASR failure and edits during transcription.
+- Revoke conversation membership or speech capability while a job is preparing/ready; status/audio must deny. Lost/restarted audio must stop polling, and ambiguous admission must require operator verification rather than another generation.
+- Present manifest has no videos. With a synthetic/local reviewed test clip, test absent/failed/slow clips, rapid mood/activity changes, autoplay rejection, reduced-motion toggling, manual motion off and background suspension. No speaking animation/lip-sync claim is accepted without future appropriate assets/timing.
+
+Release through the normal reviewed application process only. There are no new dependencies, environment variables or data migrations/backfills. MongoDB lazily creates the small admission collection using its built-in unique `_id` index; allow the app's normal model write permission. Confirm `TTS_API_BASE`, `anny_en` catalog availability and single-worker/sticky routing; grant `chat.audio.synthesize` only as intended. Preserve private/no-store for **all** `/chat5/miien` responses at Cloudflare; no broad cache/WAF/Access exemption. Refresh local JS/CSS/manifest with the release. Do not clear an outstanding speech slot as part of routine restart. Rollback may restore phase 1 while preserving saved conversations and any uncertain admission slot for operator recovery.
+
+Next focused goal decisions after this slice (coordinator to ask later): acceptable Anny latency/preview length versus a separately explicit faster voice; first landscape master and one approved idle loop; caption density/mobile layout preference; whether durable distributed audio/recovery is warranted. Additional qwen/omni controls, GPU startup, streaming, generated videos, mood classifier changes, lip sync, WebSocket status, pagination, shared rooms and rigs remain pending. Phase 3 should measure device GPU/memory/bandwidth, choose a 2D/3D rig if needed, and use a dedicated workflow/viseme or audio-timing contract for true lip sync; current Gateway TTS provides no timings.
+
+## Increment validation (2026-09-09)
+
+- Pinned Node `24.20.0`. Focused Miien plus existing ASR/Chat5/legacy TTS regressions: **11 suites, 236 tests passed**. Subsequent server/voice/route review checks: **3 suites, 58 tests passed**.
+- Full `volta run --node 24.20.0 npm test -- --runInBand`: **267 suites, 2,226 tests passed**, including all configured coverage thresholds (67.35% statements, 43.72% branches). After the final client-only stale-restored-reply guard, the voice/client suites were rerun: **2 suites, 29 tests passed**. The only suite warning was the existing experimental VM Modules warning.
+- All **17 changed/new JavaScript files** passed `node --check`; room/settings/error Pug templates compiled; `git diff --check` passed. No curated OpenAPI YAML or dependencies changed, so no OpenAPI/dependency validation was required.
+- The connected Browser runtime returned `No browser is available` and `[]`. A cached standalone headless Chromium was therefore used against a temporary localhost Express/Pug/static fixture with synthetic text and mocked speech handles, without application/database imports or real Gateway requests. No packages were installed. The fixture used the room's restrictive CSP.
+- Screenshots inspected at **1440×900, 390×844, 390×560, 844×390, 320×568, and 390×320** (simulated keyboard). No page errors or document overflow; captions/history/settings/Escape and text controls worked. Mobile ear overlap and a landscape fallback-label leak found during inspection were corrected. Short focused keyboard mode prioritizes text and hides the portrait/captions temporarily. Slow-Anny fixture checks cover editable drafts and Stop preserving text. Physical keyboards/safe-area behavior, real OS audio/microphone, voice quality/latency and actual video remain outstanding.
+- Local review artifacts: `/tmp/miien-{desktop,mobile,short,landscape,narrow,keyboard}.png`, corresponding `-settings.png` captures, and mobile/keyboard `-preparing.png`; fixture `/tmp/miien-visual.cjs`. These contain synthetic content and are not production/public assets. Logs: `/tmp/miien-focused.log`, `/tmp/miien-full-final.log`, `/tmp/miien-stale-tests.log`, `/tmp/miien-visual-final.log`.
+
+Changed paths (22):
+
+- Server/policy: `controllers/miienController.js`, `routes/miien.js`, `services/miienChatService.js`, new `services/miienSpeechService.js`, new `models/miien_speech_slot.js`, `utils/miienAudio.js`, `utils/miienAuthorizationPolicy.js`.
+- Room/assets: `views/miien_base.pug`, `views/miien_room.pug`, `public/css/miien.css`, `public/js/miien.js`, `public/js/miien_voice.js`, new `public/js/miien_activity.js`, new `public/js/miien_motion.js`, new `public/i/miien/motion-v1.json`.
+- Verification/docs: `tests/unit/miienChatService.test.js`, `tests/unit/miienClient.test.js`, `tests/unit/miienRoutes.test.js`, new `tests/unit/miienSpeechService.test.js`, new `tests/unit/miienMotion.test.js`, new `tests/unit/miienVoice.test.js`, `documentation/chat5-miien.md`.
+
+Investigation references supplied for this increment: [phase-1 inspection](/codex/sessions/tool-session-6faa3a279a1735def3aec107ded4092ffa593df448f028e8acac8cce22e8e954), [Gateway/Anny investigation](/codex/sessions/tool-session-cd8e6daaac7ae338d03edbe832346e65807c2f601b7987049faac6f41c8412dc). These are prior-session evidence, not generation jobs run during implementation.
+
+---
+
+## Phase-1 implementation and validation record (historical)
 
 ## Security contract (implementation design)
 

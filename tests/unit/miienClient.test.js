@@ -3,6 +3,8 @@ const vm = require('vm');
 const pug = require('pug');
 let JSDOM;
 beforeAll(async () => { ({ JSDOM } = await import('jsdom')); });
+const activitySource = fs.readFileSync('public/js/miien_activity.js', 'utf8');
+const motionSource = fs.readFileSync('public/js/miien_motion.js', 'utf8');
 const source = fs.readFileSync('public/js/miien.js', 'utf8');
 const { MOODS, classifyMood } = require('../../utils/miienMood');
 const voiceSource = fs.readFileSync('public/js/miien_voice.js', 'utf8');
@@ -28,6 +30,8 @@ function setup({ timers = false, initial = { messages: [], pending: false }, dec
   w.OfflineAudioContext=class {};
   w.MediaRecorder=class {};
   Object.defineProperty(w.navigator,'mediaDevices',{value:{getUserMedia:jest.fn()}});
+  vm.runInContext(activitySource,dom.getInternalVMContext());
+  vm.runInContext(motionSource,dom.getInternalVMContext());
   vm.runInContext(source,dom.getInternalVMContext());
   return w;
 }
@@ -40,6 +44,8 @@ test('text works with unsupported microphone, renders hostile responses inertly'
   dom=new JSDOM(html,{url:'https://fixture.invalid',runScripts:'outside-only'});
   const x=dom.window;x.Image=class{decode(){return Promise.resolve();}};
   x.fetch=jest.fn().mockResolvedValue(response({messages:[{id:'1',role:'assistant',text:'<img src=x onerror=alert(1)>',mood:'neutral'}],pending:false}));
+  vm.runInContext(activitySource,dom.getInternalVMContext());
+  vm.runInContext(motionSource,dom.getInternalVMContext());
   vm.runInContext(source,dom.getInternalVMContext());await settle();
   expect(x.document.querySelector('#history img')).toBeNull();
   expect(x.document.getElementById('latest-reply').textContent).toContain('<img');
@@ -81,6 +87,7 @@ test('voice failure is separate from text and stale callbacks cannot replace sto
   w.SpeechSynthesisUtterance=class {constructor(text){this.text=text;}};
   w.speechSynthesis={cancel:jest.fn(),getVoices:()=>[],addEventListener:jest.fn(),speak:jest.fn(value=>{utterance=value;})};
   vm.runInContext(voiceSource,dom.getInternalVMContext());
+  w.document.getElementById('speech-mode').value = 'browser';
   w.MiienVoice.speak('hello',true);utterance.onerror();
   expect(w.document.getElementById('speech-status').textContent).toContain('blocked');
   w.MiienVoice.stop();utterance.onstart();
@@ -166,7 +173,7 @@ test('manual neutral overrides later replies, then automatic restores the newest
   preview(w, 'auto'); await settle();
   expect(element(w, 'character').src).toContain('/thoughtful.webp');
   expect(element(w, 'mood-label').textContent).not.toContain('preview');
-  expect(w.fetch.mock.calls.every(([url]) => url.endsWith('/state'))).toBe(true);
+  expect(w.fetch.mock.calls.every(([url]) => url.endsWith('/state') || url.endsWith('/motion-v1.json'))).toBe(true);
 });
 test('late decode cannot replace a newer selection; failed art keeps text and current portrait', async () => {
   let resolveHappy;
@@ -191,7 +198,7 @@ test('unknown moods and empty history safely restore neutral and clear stale rep
   await tick(w, { messages: [], pending: false });
   expect(element(w, 'latest-reply').textContent).toContain('Say hello');
   element(w, 'replay').click();
-  expect(w.MiienVoice.speak).toHaveBeenLastCalledWith('', true);
+  expect(w.MiienVoice.speak).toHaveBeenLastCalledWith('', true, '');
 });
 test('history, pending-at-open, background replies and older rows never autoplay on later polls', async () => {
   const first = assistant('1', 'You made it!');
@@ -214,7 +221,7 @@ test('history, pending-at-open, background replies and older rows never autoplay
   await tick(w, { messages: [first, second, third, fourth], pending: false });
   await tick(w, { messages: [first, second, third, fourth], pending: false });
   expect(w.MiienVoice.speak).toHaveBeenCalledTimes(1);
-  expect(w.MiienVoice.speak).toHaveBeenCalledWith(fourth.text);
+  expect(w.MiienVoice.speak).toHaveBeenCalledWith(fourth.text, false, fourth.id);
 });
 test('a user-ended snapshot never speaks a preceding assistant; keyboard sends and IME stays editable', async () => {
   const w = setup({ timers: true }); await settle();
@@ -236,4 +243,41 @@ test('room exposes long text, a focusable latest reply and history collapsed by 
   expect(w.document.querySelector('details.transcript').open).toBe(false);
   expect(element(w, 'history').textContent).toContain(text);
   expect(element(w, 'message-form').closest('.stage')).not.toBeNull();
+});
+
+test('activity follows actual recording, voice and ASR signals; explicit Stop suppresses a late reply', async () => {
+  const w = setup({ timers: true }); await settle();
+  Object.defineProperty(w.document, 'hidden', { value: false, configurable: true });
+  const stage = w.document.querySelector('.stage');
+  w.dispatchEvent(new w.CustomEvent('miien:voice', { detail: { phase: 'preparing' } }));
+  expect(stage.dataset.activity).toBe('thinking');
+  w.dispatchEvent(new w.CustomEvent('miien:voice', { detail: { phase: 'playing' } }));
+  expect(stage.dataset.activity).toBe('speaking');
+  w.dispatchEvent(new w.CustomEvent('miien:voice', { detail: { phase: 'idle' } }));
+  expect(stage.dataset.activity).toBe('idle');
+  let permission;
+  w.navigator.mediaDevices.getUserMedia.mockImplementation(() => new Promise(resolve => { permission = resolve; }));
+  element(w, 'mic').click(); expect(stage.dataset.activity).toBe('idle');
+  w.MediaRecorder = class { constructor() { this.state = 'inactive'; } start() { this.state = 'recording'; this.onstart?.(); } stop() { this.state = 'inactive'; this.onstop?.(); } };
+  permission({ getTracks: () => [{ stop: jest.fn() }] }); await settle();
+  expect(stage.dataset.activity).toBe('listening');
+  element(w, 'mic').click(); expect(stage.dataset.activity).toBe('thinking');
+  expect(element(w, 'presence').textContent).toContain('Transcribing');
+  await settle(); expect(stage.dataset.activity).toBe('idle'); // Fixture has no audio decoder.
+  await tick(w, { messages: [], pending: true });
+  element(w, 'stop').click();
+  await tick(w, { messages: [assistant('late', 'Hello!')], pending: false });
+  expect(w.MiienVoice.speak).not.toHaveBeenCalled();
+});
+test('display preferences, caption toggle, Escape and viewport keyboard keep controls reachable', async () => {
+  const w = setup(); await settle();
+  expect(element(w, 'captions').hidden).toBe(false);
+  element(w, 'captions-toggle').click(); expect(element(w, 'captions').hidden).toBe(true);
+  expect(element(w, 'captions-toggle').getAttribute('aria-pressed')).toBe('false');
+  const settings = w.document.querySelector('.voice-options'); settings.open = true;
+  element(w, 'miien-room').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  expect(settings.open).toBe(false); expect(w.document.activeElement).toBe(settings.querySelector('summary'));
+  expect(element(w, 'fullscreen').hidden).toBe(true);
+  Object.defineProperty(w, 'innerHeight', { value: 320 });
+  element(w, 'message').focus(); expect(element(w, 'miien-room').classList.contains('keyboard-open')).toBe(true);
 });

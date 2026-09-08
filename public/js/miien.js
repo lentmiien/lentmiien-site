@@ -16,30 +16,49 @@
   let pollTimer;
   const seenAssistants = new Set();
   let latestText = '';
+  let latestId = '';
+  let suppressAutoVoice = false;
+  let activityState = 'idle';
   let lastSubmission = null;
   let sendError = '';
   let transcriptSignature = '';
   let autoMood = 'neutral';
-  let artVersion = 0;
   let audioVersion = 0;
   let recording = null;
   let gettingMic = false;
   let transcribing = false;
   let asrController = null;
   let pollController = null;
-  const images = new Map();
-  ['neutral', 'happy', 'thoughtful', 'concerned', 'surprised'].forEach(mood => {
-    const image = new Image();
-    image.src = `/i/miien/${mood}.webp`;
-    images.set(mood, image);
+  const moods = window.MiienMotion.moods;
+  const motion = window.MiienMotion.create({ document, still: byId('character'), status: byId('art-status'), Image,
+    mediaQuery: window.matchMedia?.('(prefers-reduced-motion: reduce)') || { matches: false } });
+  const activity = window.MiienActivity.create(({ state, status }) => {
+    activityState = state;
+    room.querySelector('.stage').dataset.activity = state;
+    byId('presence').textContent = status;
+    const requested = byId('mood-override').value;
+    motion.show(requested === 'auto' ? autoMood : requested, state);
   });
+  window.addEventListener('miien:voice', event => activity.update({ voice: event.detail?.phase }));
+  activity.update({ voice: voice?.phase || 'idle' });
+  const manifestController = new AbortController();
+  const manifestTimeout = setTimeout(() => manifestController.abort(), 10000);
+  fetch('/i/miien/motion-v1.json', { signal: manifestController.signal }).then(async response => {
+    if (!response.ok) throw new Error('Manifest unavailable');
+    const text = await response.text();
+    if (text.length > 32768) throw new Error('Manifest too large');
+    const manifest = window.MiienMotion.validate(JSON.parse(text));
+    if (!manifest) throw new Error('Invalid manifest');
+    if (!disposed) await motion.setManifest(manifest);
+  }).catch(() => { if (!disposed) byId('art-status').textContent = 'Motion manifest unavailable; expression portraits remain available.'; })
+    .finally(() => clearTimeout(manifestTimeout));
   const chatStatus = text => { byId('chat-status').textContent = text; };
-  const micStatus = text => { byId('mic-status').textContent = text; };
+  const micStatus = text => { byId('mic-status').textContent = text; byId('mic-status').classList.add('active-status'); };
   function controls() {
     byId('send').disabled = !canWrite || sending || pending || !initialized;
     mic.disabled = mic.dataset.allowed !== 'true' || disposed || gettingMic || transcribing || sending || pending;
     mic.textContent = recording ? 'Stop & transcribe' : gettingMic ? 'Requesting microphone…' : transcribing ? 'Transcribing…' : 'Microphone';
-    byId('presence').textContent = pending || sending ? 'Thinking…' : 'Ready to talk';
+    activity.update({ recording: recording?.recorder.state === 'recording', asr: transcribing, chat: pending || sending });
   }
   async function api(path, options = {}) {
     const response = await fetch(base + path, { credentials: 'same-origin', ...options,
@@ -49,23 +68,12 @@
     if (!response.ok) throw new Error(data.error || 'Request failed. Please try again.');
     return data;
   }
-  async function mood() {
-    const version = ++artVersion;
+  function mood() {
     const requested = byId('mood-override').value;
     const candidate = requested === 'auto' ? autoMood : requested;
-    const selected = images.has(candidate) ? candidate : 'neutral';
-    const image = images.get(selected);
-    try {
-      await image.decode();
-      if (version !== artVersion || disposed) return;
-      byId('character').src = image.src;
-      byId('character').hidden = false;
-      byId('character').alt = `Miien with a ${selected} expression`;
-      byId('mood-label').textContent = `Expression: ${selected}${requested === 'auto' ? '' : ' · preview'}`;
-      byId('art-status').textContent = '';
-    } catch (_) {
-      if (version === artVersion) byId('art-status').textContent = 'Expression image unavailable; keeping the current portrait.';
-    }
+    const selected = moods.includes(candidate) ? candidate : 'neutral';
+    byId('mood-label').textContent = `Expression: ${selected}${requested === 'auto' ? '' : ' · preview'}`;
+    return motion.show(selected, activityState);
   }
   byId('character').addEventListener('error', () => { byId('character').hidden = true; });
   function render(data) {
@@ -94,13 +102,17 @@
     const assistant = [...data.messages].reverse().find(row => row.role === 'assistant');
     if (assistant) {
       latestText = assistant.text;
+      latestId = assistant.id;
+      voice?.setLatestMessage?.(latestId);
       if (byId('latest-reply').textContent !== latestText) byId('latest-reply').textContent = latestText;
-      const nextMood = images.has(assistant.mood) ? assistant.mood : 'neutral';
+      const nextMood = moods.includes(assistant.mood) ? assistant.mood : 'neutral';
       if (!initialized || nextMood !== autoMood) { autoMood = nextMood; mood(); }
-      if (initialized && !seenAssistants.has(assistant.id) && !data.pending && !document.hidden
-        && data.messages.at(-1)?.id === assistant.id) voice?.speak(latestText);
+      if (initialized && !suppressAutoVoice && !seenAssistants.has(assistant.id) && !data.pending && !document.hidden
+        && data.messages.at(-1)?.id === assistant.id) voice?.speak(latestText, false, latestId);
     } else {
       latestText = '';
+      latestId = '';
+      voice?.setLatestMessage?.('');
       byId('latest-reply').textContent = 'Say hello. I’m ready when you are.';
       if (autoMood !== 'neutral') { autoMood = 'neutral'; mood(); }
     }
@@ -124,7 +136,7 @@
     catch (error) { if (!disposed && !sending) { stopAudio(); chatStatus(`Could not refresh history. ${error.message}`); } }
     finally { clearTimeout(timeout); polling = false; if (!disposed) pollTimer = setTimeout(poll, pending ? 2500 : 12000); }
   }
-  function stopAudio() {
+  function stopAudio({ preserveVoice = false, keepVoice = false } = {}) {
     audioVersion += 1;
     gettingMic = false;
     transcribing = false;
@@ -138,7 +150,7 @@
       if (current.recorder.state !== 'inactive') current.recorder.stop();
       current.chunks.length = 0;
     }
-    voice?.stop();
+    if (!keepVoice) voice?.stop({ preserve: preserveVoice });
     micStatus('Audio stopped. Your typed message is unchanged.');
     controls();
   }
@@ -188,6 +200,7 @@
         if (current.bytes > 4 * 1024 * 1024) { stopAudio(); micStatus('Recording exceeded the audio limit. Please try a shorter message.'); return; }
         current.chunks.push(event.data);
       };
+      recorder.onstart = () => { if (version === audioVersion) controls(); };
       recorder.onerror = () => { stopAudio(); micStatus('Recording failed. Please type your message.'); };
       recorder.onstop = async () => {
         clearTimeout(current.timer);
@@ -220,7 +233,7 @@
       recorder.start(250);
       current.timer = setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 59000);
       micStatus('Recording… Press Stop & transcribe when finished (60 seconds maximum).');
-    } catch (_) { stream?.getTracks().forEach(track => track.stop()); if (version === audioVersion) micStatus('Microphone permission or recording unavailable. Check browser permissions, or type instead.'); }
+    } catch (_) { stream?.getTracks().forEach(track => track.stop()); if (version === audioVersion) recording = null; if (version === audioVersion) micStatus('Microphone permission or recording unavailable. Check browser permissions, or type instead.'); }
     finally { if (version === audioVersion) { gettingMic = false; controls(); } }
   }
   function newRequestId() {
@@ -238,6 +251,7 @@
     const text = message.value.trim();
     if (!lastSubmission || lastSubmission.text !== text) lastSubmission = { text, requestId: newRequestId() };
     stopAudio();
+    suppressAutoVoice = false;
     sending = true;
     sendError = '';
     controls();
@@ -258,16 +272,57 @@
   });
   message.addEventListener('keydown', event => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); byId('message-form').requestSubmit(); } });
   mic.addEventListener('click', startMic);
-  byId('stop').addEventListener('click', stopAudio);
-  byId('replay').addEventListener('click', () => { stopAudio(); voice?.speak(latestText, true); });
+  byId('stop').addEventListener('click', () => { suppressAutoVoice = true; stopAudio(); });
+  byId('replay').addEventListener('click', () => { stopAudio({ keepVoice: true }); voice?.speak(latestText, true, latestId); });
   byId('mood-override').addEventListener('change', mood);
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder || !window.AudioContext || !window.OfflineAudioContext) {
     mic.dataset.allowed = 'false';
     micStatus('Microphone input requires a supported browser over HTTPS. Text input is ready.');
   }
-  window.addEventListener('pagehide', () => { disposed = true; clearTimeout(pollTimer); pollController?.abort(); stopAudio(); });
-  window.addEventListener('pageshow', event => { if (event.persisted) { disposed = false; poll(); } });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) stopAudio(); });
+  window.addEventListener('pagehide', () => { disposed = true; clearTimeout(pollTimer); pollController?.abort(); manifestController.abort(); motion.suspend(true); stopAudio({ preserveVoice: true }); });
+  window.addEventListener('pageshow', event => { if (event.persisted) { disposed = false; motion.suspend(false); poll(); } });
+  document.addEventListener('visibilitychange', () => { motion.suspend(document.hidden); if (document.hidden) stopAudio({ preserveVoice: true }); else voice?.resume(); });
+  const captions = byId('captions-toggle');
+  const motionToggle = byId('motion-enabled');
+  function saveDisplay() {
+    try { sessionStorage.setItem('miienDisplay', JSON.stringify({ captions: !byId('captions').hidden, motion: motionToggle.checked })); } catch (_) { /* Optional preferences. */ }
+  }
+  try {
+    const saved = JSON.parse(sessionStorage.getItem('miienDisplay') || '{}');
+    byId('captions').hidden = saved.captions === false;
+    captions.setAttribute('aria-pressed', String(!byId('captions').hidden));
+    motionToggle.checked = saved.motion !== false;
+    motion.enable(motionToggle.checked);
+  } catch (_) { /* Safe defaults: captions on, reduced-motion respected. */ }
+  captions.addEventListener('click', () => {
+    byId('captions').hidden = !byId('captions').hidden;
+    captions.setAttribute('aria-pressed', String(!byId('captions').hidden)); saveDisplay();
+  });
+  motionToggle.addEventListener('change', () => { motion.enable(motionToggle.checked); saveDisplay(); });
+  const fullscreen = byId('fullscreen');
+  fullscreen.hidden = !document.fullscreenEnabled || !room.requestFullscreen;
+  fullscreen.addEventListener('click', async () => {
+    try { if (document.fullscreenElement) await document.exitFullscreen(); else await room.requestFullscreen(); }
+    catch (_) { chatStatus('Fullscreen unavailable. The viewport room remains usable.'); }
+  });
+  document.addEventListener('fullscreenchange', () => { fullscreen.textContent = document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'; });
+  const drawers = [...room.querySelectorAll('.call-tools details')];
+  drawers.forEach(drawer => drawer.addEventListener('toggle', () => { if (drawer.open) drawers.forEach(other => { if (other !== drawer) other.open = false; }); }));
+  room.addEventListener('keydown', event => { if (event.key === 'Escape') drawers.forEach(drawer => { if (drawer.open) { drawer.open = false; drawer.querySelector('summary').focus(); } }); });
+  function viewport() {
+    // visualViewport follows the virtual keyboard; CSS dvh handles browsers without it.
+    const view = window.visualViewport;
+    room.classList.toggle('keyboard-open', document.activeElement === message && (view?.height || window.innerHeight) < 500);
+    if (view && view.scale === 1) {
+      room.style.setProperty('--call-height', `${view.height}px`);
+      room.style.setProperty('--call-top', `${view.offsetTop}px`);
+    }
+  }
+  window.visualViewport?.addEventListener('resize', viewport);
+  window.visualViewport?.addEventListener('scroll', viewport);
+  message.addEventListener('focus', viewport);
+  message.addEventListener('blur', viewport);
+  viewport();
   controls();
   poll();
 })();

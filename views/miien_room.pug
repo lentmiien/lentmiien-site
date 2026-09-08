@@ -1,53 +1,69 @@
 extends miien_base
+block variables
+  - var roomViewport = true
 block content
-  .room-heading
-    div
-      span.eyebrow Character chat · Phase 1
-      h1= conversation.title
-    a.secondary(href=`/chat5/miien/${conversation._id}/settings`) Settings
-  #miien-room.room(data-id=conversation._id, data-csrf=csrfToken)
-    section.stage(aria-label='Miien character')
+  #miien-room.room(data-id=conversation._id, data-csrf=csrfToken, data-speech-allowed=canSynthesize ? 'true' : 'false')
+    section.stage(aria-label='Miien character', data-activity='idle')
       .art-fallback Miien is here.<br>Artwork is unavailable; you can still chat.
       img#character(src='/i/miien/neutral.webp', alt='Miien with a neutral expression', width='768', height='1024')
-      .stage-top
-        span#presence.pill Ready to connect
-        span#mood-label.pill Expression: neutral
-      form#message-form.composer
-        label(for='message') Your message
-        textarea#message(rows='3', maxlength='4000', placeholder='What’s on your mind?', required, disabled=!canWrite)
-        .button-row
-          button#send.primary(type='submit', disabled=!canWrite) Send
-          button#mic(type='button', disabled=!canTranscribe, data-allowed=canTranscribe ? 'true' : 'false') Microphone
-        p#mic-status.hint(role='status')= canTranscribe ? 'Record up to 60 seconds. Review and edit before sending.' : 'Microphone unavailable for this account.'
-        p#chat-status(role='status', aria-live='polite') Loading saved conversation…
-        p.hint Ctrl/⌘ + Enter to send. Text remains available if voice fails.
-    aside.conversation-panel
-      .dialogue-panel
-        span.eyebrow Miien
-        p#latest-reply(tabindex='0', role='region', aria-label='Latest Miien reply') Say hello. I’m ready when you are.
-        p#art-status.hint(role='status')
-      details.voice-options
-        summary Voice & expression
-        label.check
-          input#speech-enabled(type='checkbox')
-          | Speak new replies
-        label(for='speech-voice') Browser voice (placeholder)
-        select#speech-voice
-          option(value='') Browser default
-        p#speech-status.hint(role='status') Playback is optional. Press Replay to enable audio if your browser blocks it.
-        .button-row
-          button#replay(type='button') Replay latest
-          button#stop(type='button') Stop voice / recording
-        label(for='mood-override') Expression preview
-        select#mood-override
-          option(value='auto') Automatic from conversation
-          each mood in moods
-            option(value=mood)= mood
-        p.hint Expressions follow conversation cues, not an assessment of your feelings.
-      details.transcript
-        summary Conversation history
-        #history(role='log', aria-label='Conversation transcript', tabindex='0')
-
+      .call-toolbar
+        .call-title
+          h1= conversation.title
+          span#presence.pill(role='status') Ready to connect
+        .call-tools
+          button#captions-toggle(type='button', aria-pressed='true', aria-controls='captions') Captions
+          details.transcript
+            summary History
+            .drawer
+              h2 Conversation history
+              #history(role='log', aria-label='Conversation transcript', tabindex='0')
+          details.voice-options
+            summary Settings
+            .drawer
+              h2 Room settings
+              a.secondary(href=`/chat5/miien/${conversation._id}/settings`) Model & conversation settings
+              label(for='speech-mode') Voice output
+              select#speech-mode
+                option(value='off') Off
+                option(value='browser') Browser voice
+                option(value='anny_en', disabled=!canSynthesize) Anny English · slow preview
+              label.check
+                input#speech-enabled(type='checkbox')
+                | Speak new replies automatically
+              label(for='speech-voice') Browser voice
+              select#speech-voice
+                option(value='') Browser default
+              p.hint Voice is optional. Browser/OS voices may process text online. Anny sends up to 600 characters to the configured Gateway and can take minutes. Full replies stay saved.
+              label(for='mood-override') Expression preview
+              select#mood-override
+                option(value='auto') Automatic from conversation
+                each mood in moods
+                  option(value=mood)= mood
+              span#mood-label.hint Expression: neutral
+              p.hint Expressions follow conversation cues, not an assessment of your feelings.
+              label.check
+                input#motion-enabled(type='checkbox', checked)
+                | Enable approved motion clips
+              p.hint No motion clips produced yet. Reduced-motion always uses portraits.
+              button#fullscreen(type='button', hidden) Enter fullscreen
+      .call-bottom
+        #captions.dialogue-panel
+          span.eyebrow Miien
+          p#latest-reply(tabindex='0', role='region', aria-label='Latest Miien reply') Say hello. I’m ready when you are.
+        form#message-form.composer
+          label(for='message') Your message
+          textarea#message(rows='2', maxlength='4000', placeholder='What’s on your mind?', required, disabled=!canWrite)
+          .button-row
+            button#send.primary(type='submit', disabled=!canWrite) Send
+            button#mic(type='button', disabled=!canTranscribe, data-allowed=canTranscribe ? 'true' : 'false') Microphone
+            button#replay(type='button', title='Replay latest reply') Replay
+            button#stop(type='button') Stop audio
+          p#mic-status.hint(role='status')= canTranscribe ? 'Record, review, then send. Ctrl/⌘ + Enter to send text.' : 'Microphone unavailable for this account.'
+          p#chat-status(role='status', aria-live='polite') Loading saved conversation…
+          p#speech-status.hint(role='status') Voice is off by default. Choose a voice in Settings, then Replay.
+          p#art-status.hint(role='status')
 block scripts
+  script(src='/js/miien_activity.js', defer)
+  script(src='/js/miien_motion.js', defer)
   script(src='/js/miien_voice.js', defer)
   script(src='/js/miien.js', defer)

@@ -1,13 +1,14 @@
+block variables
 doctype html
 html(lang='en')
   head
     meta(charset='utf-8')
-    meta(name='viewport', content='width=device-width, initial-scale=1')
+    meta(name='viewport', content='width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content')
     meta(name='referrer', content='no-referrer')
     title Miien · Chat5
     link(rel='stylesheet', href='/css/color-theme.css')
     link(rel='stylesheet', href='/css/miien.css')
-  body
+  body(class=roomViewport ? 'miien-call' : '')
     a.skip-link(href='#main') Skip to content
     header.miien-nav
       a.wordmark(href='/chat5/miien') Miien

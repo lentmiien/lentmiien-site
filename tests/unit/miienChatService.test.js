@@ -144,3 +144,20 @@ test('settings cannot race a pending reply or active submission lease', async ()
     { miienBusyUntil: null }, { miienBusyUntil: { $lte: expect.any(Date) } },
   ]);
 });
+
+test('speech loads only a saved visible assistant child of the scoped conversation', async () => {
+  const f = fixture(); const messageId = 'c'.repeat(24);
+  f.conversation.messages = [messageId];
+  const lean = jest.fn().mockResolvedValue({ content: { text: 'Visible reply' } });
+  f.messages.findOne = jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean }) });
+  await expect(f.service.speechText(user, id, messageId)).resolves.toBe('Visible reply');
+  expect(f.messages.findOne).toHaveBeenCalledWith({ _id: messageId, user_id: 'bot', contentType: 'text', hideFromBot: { $ne: true } });
+  expect(f.conversations.findOne).toHaveBeenCalledWith({ _id: id, members: { $all: ['owner'], $size: 1 } });
+  f.messages.findOne.mockClear();
+  await expect(f.service.speechText(user, id, 'd'.repeat(24))).rejects.toHaveProperty('status', 404);
+  expect(f.messages.findOne).not.toHaveBeenCalled();
+  lean.mockResolvedValue(null); // Predicate excludes user, reasoning and hidden rows.
+  await expect(f.service.speechText(user, id, messageId)).rejects.toHaveProperty('status', 404);
+  f.conversations.findOne.mockResolvedValue(null);
+  await expect(f.service.speechText(user, id, messageId)).rejects.toHaveProperty('status', 404);
+});

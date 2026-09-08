@@ -54,3 +54,81 @@ details { border-top: 1px solid var(--divider); padding: 1rem 0; } summary { cur
 .skip-link { position: absolute; left: 1rem; top: -100px; z-index: 10; background: var(--bg); padding: 1rem; } .skip-link:focus { top: 0; }
 @media (max-width: 900px) { main { padding: 1rem; } .miien-nav { padding: 1rem; } .miien-nav nav { gap: .8rem; font-size: .75rem; } .miien-start, .room { grid-template-columns: 1fr; gap: 1rem; } .intro-art { position: relative; top: 0; height: 420px; } .intro-art img { object-position: center 25%; } .stage { height: auto; min-height: 0; } #character { display: block; height: 65svh; min-height: 360px; max-height: 600px; object-fit: contain; } #character[hidden] { display: block; visibility: hidden; } .stage .composer { position: relative; inset: auto; margin: 0 .6rem .6rem; } #latest-reply { max-height: 300px; } .conversation-panel { max-height: none; } .transcript[open] { max-height: 350px; } .art-caption { padding: 2rem 1.3rem .5rem; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* Viewport call room. Portraits remain contained; landscape masters are pending. */
+.miien-call { overflow: hidden; }
+.miien-call .miien-nav { position: absolute; inset: 0 0 auto; z-index: 20; max-width: none; padding: max(.5rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) .5rem max(1rem, env(safe-area-inset-left)); background: color-mix(in srgb, var(--bg) 80%, transparent); }
+.miien-call .wordmark { font-size: 1.1rem; }
+.miien-call main { padding: 0; max-width: none; }
+.miien-call .room { position: absolute; top: var(--call-top, 0); inset-inline: 0; height: var(--call-height, 100dvh); display: block; }
+.miien-call .stage { height: 100%; min-height: 0; width: 100%; border: 0; border-radius: 0; background: radial-gradient(ellipse at 50% 35%, var(--surface-3), var(--bg) 75%); }
+.miien-call #character, .character-motion { position: absolute; inset: 3rem 0 0; width: 100%; height: calc(100% - 3rem); min-height: 0; max-height: none; object-fit: contain; object-position: center top; }
+.miien-call #character[hidden], .character-motion[hidden], [hidden] { display: none !important; }
+.call-toolbar { position: absolute; inset: 3.5rem max(1rem, env(safe-area-inset-right)) auto max(1rem, env(safe-area-inset-left)); display: flex; align-items: start; justify-content: space-between; gap: 1rem; z-index: 30; }
+.call-title { min-width: 0; max-width: 45%; }
+.call-title h1 { font-size: 1rem; margin: 0 0 .4rem; overflow-wrap: anywhere; max-height: 3rem; overflow: auto; }
+.call-title .pill { display: inline-block; color: var(--text-secondary); }
+.stage[data-activity='listening'] #presence { color: var(--info); }
+.stage[data-activity='thinking'] #presence { color: var(--accent); }
+.stage[data-activity='speaking'] #presence { color: var(--success); }
+.call-tools { display: flex; gap: .5rem; align-items: start; }
+.call-tools button, .call-tools summary { padding: .5rem .7rem; font-size: .85rem; border-radius: .65rem; background: color-mix(in srgb, var(--surface-1) 90%, transparent); border: 1px solid var(--border); color: var(--text); }
+.call-tools details { padding: 0; border: 0; overflow: visible; }
+.call-tools details[open] { max-height: none; }
+.call-tools .drawer { position: absolute; right: 0; top: 3.2rem; width: min(440px, calc(100vw - 2rem)); max-height: calc(var(--call-height, 100dvh) - 12rem); overflow: auto; overscroll-behavior: contain; padding: 1rem; border: 1px solid var(--border); border-radius: 1rem; background: color-mix(in srgb, var(--surface-1) 97%, transparent); box-shadow: 0 1rem 3rem var(--bg); }
+.drawer h2 { font-size: 1.1rem; }
+.call-bottom { position: absolute; inset: auto max(1rem, env(safe-area-inset-right)) max(.6rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); max-width: 760px; margin-inline: auto; }
+.miien-call .dialogue-panel { margin-bottom: .5rem; padding: .65rem 1rem; background: color-mix(in srgb, var(--bg) 88%, transparent); }
+.miien-call #latest-reply { max-height: min(20dvh, 180px); font-size: .95rem; margin: .15rem 0 0; }
+.miien-call .stage .composer { position: static; margin: 0; padding: .65rem .85rem; background: color-mix(in srgb, var(--surface-1) 90%, transparent); }
+.miien-call .composer textarea { resize: none; height: 3.5rem; max-height: 5rem; padding: .45rem .65rem; }
+.miien-call .composer label { font-size: .8rem; margin-bottom: .25rem; }
+.miien-call .composer .button-row { margin-top: .5rem; gap: .4rem; }
+.miien-call .composer button { padding: .45rem .7rem; font-size: .85rem; }
+.miien-call .composer p { font-size: .75rem; margin: .3rem 0 0; }
+.miien-call .composer p:empty { display: none; }
+.room:fullscreen .call-toolbar { top: max(1rem, env(safe-area-inset-top)); }
+.room:fullscreen #character, .room:fullscreen .character-motion { inset: 0; height: 100%; }
+@media (max-width: 600px) {
+  .miien-call .miien-nav nav { gap: .7rem; font-size: .7rem; }
+  .miien-call .wordmark span { display: none; }
+  .call-toolbar { inset-inline: .6rem; gap: .4rem; }
+  .call-title { max-width: 40%; }
+  .call-title .pill { font-size: .65rem; padding: .25rem .4rem; }
+  .call-tools { gap: .25rem; }
+  .call-tools button, .call-tools summary { font-size: .75rem; padding: .45rem .5rem; }
+  .call-bottom { inset-inline: .5rem; }
+  .miien-call #latest-reply { max-height: 16dvh; font-size: .85rem; }
+}
+@media (max-height: 570px) {
+  .call-title h1 { display: none; }
+  .call-bottom { max-width: 900px; }
+  .miien-call .composer label, .miien-call #mic-status:not(.active-status) { display: none; }
+  .miien-call .composer textarea { height: 2.6rem; }
+  .miien-call #latest-reply { max-height: 12dvh; }
+  .miien-call .dialogue-panel { padding-block: .3rem; }
+  .miien-call .dialogue-panel .eyebrow { display: none; }
+}
+@media (max-width: 600px) {
+  .miien-call #character, .miien-call .character-motion { top: 7rem; height: max(150px, calc(100% - 23rem)); }
+  .call-tools summary { white-space: nowrap; }
+  .miien-call .composer .button-row { flex-wrap: nowrap; }
+  .miien-call .composer button { padding-inline: .5rem; font-size: .78rem; }
+}
+@media (max-height: 570px) and (min-width: 700px) {
+  .miien-call #character, .miien-call .character-motion { width: 40%; top: 5.5rem; height: calc(100% - 5.5rem); }
+  .call-bottom { left: 41%; right: 1rem; }
+}
+.miien-call .stage:has(#character:not([hidden])) .art-fallback { visibility: hidden; }
+/* On a short keyboard viewport, keep editing and Stop reachable. Captions return on blur. */
+.keyboard-open .dialogue-panel, .keyboard-open .call-title { display: none; }
+.keyboard-open .call-toolbar { top: .4rem; justify-content: end; }
+.keyboard-open .call-bottom { z-index: 21; }
+@media (max-height: 350px) {
+  .miien-call .miien-nav { display: none; }
+  .call-toolbar { top: .4rem; }
+  .call-tools .drawer { max-height: calc(var(--call-height, 100dvh) - 5rem); }
+}
+@media (prefers-reduced-motion: reduce) { .character-motion { display: none !important; } }
+.keyboard-open #character, .keyboard-open .character-motion { visibility: hidden; }
+.miien-call .stage .composer { max-height: calc(var(--call-height, 100dvh) - 7rem); overflow: auto; overscroll-behavior: contain; }

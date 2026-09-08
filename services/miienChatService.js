@@ -95,6 +95,18 @@ class MiienChatService {
     return { id: String(conversation._id), title: conversation.title, model: conversation.metadata.model,
       messages, pending: await this.pendingFor(id) || new Date(conversation.miienBusyUntil || 0).getTime() > Date.now() };
   }
+  async speechText(user, id, messageId) {
+    if (typeof messageId !== 'string' || !ID.test(messageId)) throw new MiienError(404, 'Assistant reply not found.');
+    const conversation = await this.owned(user, id);
+    await this.compatible(conversation);
+    if (!conversation.messages.some(value => String(value) === messageId)) throw new MiienError(404, 'Assistant reply not found.');
+    const row = await this.messages.findOne({ _id: messageId, user_id: 'bot', contentType: 'text', hideFromBot: { $ne: true } })
+      .select('content.text').lean();
+    if (typeof row?.content?.text !== 'string' || !row.content.text.trim() || row.content.text.length > 64000) {
+      throw new MiienError(404, 'Assistant reply not found.');
+    }
+    return row.content.text.trim();
+  }
   async update(user, id, body) {
     const settings = await this.settings(body);
     const conversation = await this.owned(user, id);

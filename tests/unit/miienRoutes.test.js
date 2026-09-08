@@ -4,7 +4,7 @@ const { createMiienRouter } = require('../../routes/miien');
 const { MiienError } = require('../../services/miienChatService');
 const id = 'a'.repeat(24);
 const token = 'A'.repeat(43);
-let server, origin, service, asr, logger, roleModel;
+let server, origin, service, asr, speech, logger, roleModel;
 const principal = { _id:'b'.repeat(24), name:'owner', type_user:'admin' };
 beforeEach(async () => {
   service = { models:jest.fn().mockResolvedValue([{id:'model',name:'Model',provider:'OpenAI'}]), list:jest.fn().mockResolvedValue([]),
@@ -12,6 +12,7 @@ beforeEach(async () => {
     create:jest.fn().mockResolvedValue({_id:id}),update:jest.fn().mockResolvedValue(),
     snapshot:jest.fn().mockResolvedValue({messages:[],pending:false}),send:jest.fn().mockResolvedValue({accepted:true}) };
   asr={transcribeBuffer:jest.fn().mockResolvedValue({data:{text:'Hello from the microphone'}})};
+  speech={submit:jest.fn().mockResolvedValue({id:'job',status:'preparing'}),get:jest.fn().mockResolvedValue({status:'ready'})};
   logger={warning:jest.fn(),error:jest.fn()};
   roleModel={findOne:jest.fn().mockResolvedValue(null)};
   const app=express();app.set('views',path.join(__dirname,'../../views'));app.set('view engine','pug');
@@ -19,7 +20,7 @@ beforeEach(async () => {
     req.user=req.get('x-anonymous')?null:{...principal,type_user:req.get('x-role')||'admin'};
     req.isAuthenticated=()=>Boolean(req.user);req.session={csrfToken:token};next();
   });
-  app.use('/chat5/miien',createMiienRouter({service,asr,logger,roleModel}));
+  app.use('/chat5/miien',createMiienRouter({service,asr,speech,logger,roleModel}));
   await new Promise(resolve=>{server=app.listen(0,'127.0.0.1',resolve);});origin=`http://127.0.0.1:${server.address().port}`;
 });
 afterEach(async()=>{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));});
@@ -89,4 +90,34 @@ test('valid microphone WAV uses the existing private ASR contract and returns ed
   expect(r.status).toBe(200);expect(await r.json()).toEqual({text:'Hello from the microphone'});
   expect(asr.transcribeBuffer).toHaveBeenCalledWith(expect.objectContaining({buffer:b,privateRequest:true,mimetype:'audio/wav',options:{model:'whisper-api',language:'auto'}}));
   expect(service.send).not.toHaveBeenCalled();
+});
+
+test('speech submission requires its own capability and CSRF/Origin', async () => {
+  roleModel.findOne.mockResolvedValue({ permissions: ['chat.conversation.read', 'chat.conversation.write', 'chat.audio.transcribe'] });
+  expect((await post(`/${id}/speech`, {}, { 'x-role': 'user' })).status).toBe(403);
+  expect((await post(`/${id}/speech`, {}, { 'X-CSRF-Token': '' })).status).toBe(403);
+  expect((await post(`/${id}/speech`, {}, { Origin: 'https://evil.invalid' })).status).toBe(403);
+  expect(speech.submit).not.toHaveBeenCalled();
+  expect((await post(`/${id}/speech`, { messageId: id, voiceId: 'anny_en' })).status).toBe(202);
+  expect(speech.submit).toHaveBeenCalledWith(principal, id, { messageId: id, voiceId: 'anny_en' });
+});
+test('private speech reads reauthorize capabilities and deliver nosniff WAV', async () => {
+  expect((await request(`/${id}/speech/job`, { headers: { 'x-anonymous': '1' } })).status).toBe(401);
+  expect((await request(`/${id}/speech/job/audio`, { headers: { 'x-role': 'user' } })).status).toBe(403);
+  expect(speech.get).not.toHaveBeenCalled();
+  speech.get.mockResolvedValue(Buffer.from('fixture'));
+  const response = await request(`/${id}/speech/job/audio`);
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toBe('audio/wav');
+  expect(response.headers.get('cache-control')).toContain('private, no-store');
+  expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+  expect(speech.get).toHaveBeenCalledWith(principal, id, 'job', true);
+  speech.get.mockRejectedValue(new MiienError(404, 'Conversation not found.'));
+  expect((await request(`/${id}/speech/job/audio`)).status).toBe(404);
+});
+test('speech cannot mutate through GET and submission rate limit bounds jobs', async () => {
+  expect((await request(`/${id}/speech`)).status).toBe(404);
+  for (let n = 0; n < 4; n++) expect((await post(`/${id}/speech`)).status).toBe(202);
+  expect((await post(`/${id}/speech`)).status).toBe(429);
+  expect(speech.submit).toHaveBeenCalledTimes(4);
 });

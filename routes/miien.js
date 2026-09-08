@@ -3,19 +3,20 @@ const { rateLimit } = require('express-rate-limit');
 const { createRequireCapabilities } = require('../middleware/requireCapabilities');
 const { createSessionCsrf } = require('../middleware/sessionCsrf');
 const { hasCapabilities } = require('../utils/authorization');
-const { READ, WRITE, TRANSCRIBE, MIIEN_ROLE_CAPABILITY_BUNDLES } = require('../utils/miienAuthorizationPolicy');
+const { READ, WRITE, TRANSCRIBE, SYNTHESIZE, MIIEN_ROLE_CAPABILITY_BUNDLES } = require('../utils/miienAuthorizationPolicy');
 const { MAX_AUDIO_BYTES, validMiienWav } = require('../utils/miienAudio');
 const { MiienError, DEFAULT_CONTEXT } = require('../services/miienChatService');
 const { MOODS } = require('../utils/miienMood');
 
-function createMiienRouter({ service, asr, roleModel, logger }) {
+function createMiienRouter({ service, asr, speech, roleModel, logger }) {
   const router = express.Router();
   const csrf = createSessionCsrf({ appLogger: logger });
   const authorization = { roleModel, roleCapabilityBundles: MIIEN_ROLE_CAPABILITY_BUNDLES, logger };
   const requireCap = (...capabilities) => createRequireCapabilities({ ...authorization, capabilities });
   const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
   router.use((req, res, next) => {
-    res.set({ 'Cache-Control': 'private, no-store, max-age=0', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow' });
+    res.set({ 'Cache-Control': 'private, no-store, max-age=0', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow', 'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self' blob:; connect-src 'self'; font-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" });
     res.locals.gtag = false;
     if (!req.isAuthenticated?.() || !req.user?._id) return res.status(401).json({ error: 'Sign in to use Miien.' });
     next();
@@ -50,12 +51,24 @@ function createMiienRouter({ service, asr, roleModel, logger }) {
     const conversation = await service.owned(req.user, req.params.id);
     await service.compatible(conversation);
     res.render('miien_room', { conversation, moods: MOODS,
+      canSynthesize: await hasCapabilities(req.user, [SYNTHESIZE], authorization),
       canWrite: await hasCapabilities(req.user, [WRITE], authorization),
       canTranscribe: await hasCapabilities(req.user, [WRITE, TRANSCRIBE], authorization) });
   }));
   router.get('/:id/state', wrap(async (req, res) => res.json(await service.snapshot(req.user, req.params.id))));
   router.post('/:id/messages', requireCap(WRITE), csrf.requireToken, mutations, wrap(async (req, res) => {
     res.status(202).json(await service.send(req.user, req.params.id, req.body));
+  }));
+  const speechSubmissions = rateLimit({ windowMs: 60000, limit: 4, keyGenerator: req => String(req.user._id), standardHeaders: 'draft-8', legacyHeaders: false });
+  router.post('/:id/speech', requireCap(SYNTHESIZE), csrf.requireToken, speechSubmissions, wrap(async (req, res) => {
+    res.status(202).json(await speech.submit(req.user, req.params.id, req.body));
+  }));
+  router.get('/:id/speech/:jobId', requireCap(SYNTHESIZE), wrap(async (req, res) => {
+    res.json(await speech.get(req.user, req.params.id, req.params.jobId));
+  }));
+  router.get('/:id/speech/:jobId/audio', requireCap(SYNTHESIZE), wrap(async (req, res) => {
+    const audio = await speech.get(req.user, req.params.id, req.params.jobId, true);
+    res.set({ 'Content-Type': 'audio/wav', 'Content-Disposition': 'inline; filename="miien-preview.wav"' }).send(audio);
   }));
   const audioActive = new Set();
   router.post('/:id/transcribe', requireCap(WRITE, TRANSCRIBE), csrf.requireToken, mutations,
@@ -87,7 +100,7 @@ function createMiienRouter({ service, asr, roleModel, logger }) {
     if (req.aborted || res.destroyed) return;
     if (res.headersSent) return next(error);
     const status = error instanceof MiienError ? error.status : error.type === 'entity.too.large' ? 413 : ['entity.parse.failed', 'parameters.too.many'].includes(error.type) ? 400 : 503;
-    if (status >= 500) logger.error('Miien operation failed; check Chat5 or ASR availability', {
+    if (status >= 500) logger.error('Miien operation failed; check Chat5, ASR or speech availability', {
       category: 'chat5_miien', metadata: { operation: req.route?.path || 'request', errorName: error?.name || 'Error' },
     });
     const message = error instanceof MiienError ? error.message : status === 413 ? 'Request is too large.' : status === 400 ? 'Invalid request.'
