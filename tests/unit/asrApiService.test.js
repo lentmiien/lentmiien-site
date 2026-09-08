@@ -149,3 +149,13 @@ describe('AsrApiService CrisperWhisper support', () => {
     }));
   });
 });
+
+test('Miien ASR requests are cancellable, bounded and do not follow redirects', async () => {
+  axios.post.mockResolvedValue({ data: { text: 'test' }, headers: {} });
+  const service = new AsrApiService({ requestTimeoutMs: 60000 });
+  const controller = new AbortController();
+  await service.transcribeBuffer({ buffer: Buffer.from('audio'), privateRequest: true, signal: controller.signal });
+  expect(axios.post).toHaveBeenLastCalledWith(expect.any(String), expect.any(Object), expect.objectContaining({
+    signal: controller.signal, timeout: 60000, maxContentLength: 1024 * 1024, maxBodyLength: 2 * 1024 * 1024, maxRedirects: 0,
+  }));
+});

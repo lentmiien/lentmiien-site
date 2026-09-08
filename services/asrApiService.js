@@ -212,7 +212,7 @@ class AsrApiService {
     };
   }
 
-  async transcribeBuffer({ buffer, originalName = 'audio.webm', mimetype, options = {} }) {
+  async transcribeBuffer({ buffer, originalName = 'audio.webm', mimetype, options = {}, privateRequest = false, signal }) {
     if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
       throw new Error('Audio buffer is required for transcription.');
     }
@@ -242,7 +242,7 @@ class AsrApiService {
       appendIfPresent(key, value);
     });
 
-    logger.notice('Submitting ASR transcription (service)', {
+    if (!privateRequest) logger.notice('Submitting ASR transcription (service)', {
       category: 'asr_service',
       metadata: {
         apiBase: this.apiBase,
@@ -261,9 +261,10 @@ class AsrApiService {
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
         timeout: requestTimeoutMs,
+        ...(privateRequest ? { signal, maxContentLength: 1024 * 1024, maxBodyLength: 2 * 1024 * 1024, maxRedirects: 0 } : {}),
       });
 
-      await recordApiDebugLog({
+      if (!privateRequest) await recordApiDebugLog({
         functionName: 'asr_transcribe',
         requestUrl,
         requestBody: requestMetadata,
@@ -273,7 +274,8 @@ class AsrApiService {
 
       return { data: response.data, request: requestMetadata };
     } catch (error) {
-      await recordApiDebugLog({
+      if (privateRequest && signal?.aborted) throw error;
+      if (!privateRequest) await recordApiDebugLog({
         functionName: 'asr_transcribe',
         requestUrl,
         requestBody: requestMetadata,
@@ -285,7 +287,7 @@ class AsrApiService {
         metadata: {
           apiBase: this.apiBase,
           status: error?.response?.status,
-          message: error?.message,
+          ...(privateRequest ? { errorName: error?.name } : { message: error?.message }),
         },
       });
       if (error && typeof error === 'object' && error.asrRequestTimeoutMs === undefined) {

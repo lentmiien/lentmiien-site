@@ -1,0 +1,62 @@
+{
+  "tool": "image_gen.imagegen (built-in)",
+  "appearanceReference": "documentation/README-Prompts.md sections B and D",
+  "processing": "Sharp resize(768, 1024).webp({ quality: 85 }); no manual facial edits",
+  "assets": [
+    {
+      "mood": "neutral",
+      "file": "neutral.webp",
+      "width": 768,
+      "height": 1024,
+      "bytes": 93270,
+      "sha256": "a96d921b3afea4022ffab1c3b2292b35ac6c62db78367f2f1c980997936d9978",
+      "generatedSource": "exec-f1a19e06-9b39-45d2-b780-d40128bff2ab.png",
+      "reference": null,
+      "prompt": "Use case: stylized-concept. Asset type: neutral base portrait for a website character chat, one image only. Create Miien, an adult anime catgirl mascot with cat ears, dark graphite hair in twin tails, golden-amber eyes, futuristic fully zipped graphite hoodie with Ember orange trim and black nickel details, modest fully clothed A-line silhouette. Waist-up centered symmetrical framing, ears and hair fully within image, hands out of frame. Calm attentive neutral expression, tiny closed-mouth smile. Clean high-detail line art, polished semi-realistic cel shading, soft amber rim light. Abstract deep Graphite (#20242A) studio background, subtle vignette, Ember (#FF6A1F) and Golden Amber (#FFC247) accents. Portrait 3:4, UI-friendly with breathing room above ears. No letters, words, numbers, logos, watermarks, props, extra characters, explicit content. This will be the fixed identity, outfit, background and framing reference for subsequent expression-only edits."
+    },
+    {
+      "mood": "happy",
+      "file": "happy.webp",
+      "width": 768,
+      "height": 1024,
+      "bytes": 89742,
+      "sha256": "6f7a06334755a2fa00f18953b59a7b4eb41b9aa93205f3a8ec08ba80256819e4",
+      "generatedSource": "exec-e45d6065-a6d7-4a75-b2da-ca1da07ca5af.png",
+      "reference": "exec-f1a19e06-9b39-45d2-b780-d40128bff2ab.png",
+      "prompt": "Use case: identity-preserve. Edit this Miien website character portrait. Change ONLY facial expression to happy: warm clearly visible cheerful smile, gently lifted cheeks and softly smiling golden eyes. Preserve exact adult character identity, hair, cat ears, fully zipped graphite/ember hoodie, pose, framing, image dimensions, background, lighting and art style. No text, no props. One matching portrait."
+    },
+    {
+      "mood": "thoughtful",
+      "file": "thoughtful.webp",
+      "width": 768,
+      "height": 1024,
+      "bytes": 89352,
+      "sha256": "9cba193a5a0c47e71b5d663e652fd45f8a7f3a5cd70cb2bc8ae1b9e235afa6c1",
+      "generatedSource": "exec-90069edc-d8eb-4e06-bccc-fdccb205b72d.png",
+      "reference": "exec-f1a19e06-9b39-45d2-b780-d40128bff2ab.png",
+      "prompt": "Use case: identity-preserve. Edit this Miien website portrait. Change ONLY facial expression to thoughtful: subtly drawn inward brows, eyes looking slightly to viewer's left, closed lips thoughtful and composed. Keep head position absolutely unchanged. Preserve exact adult character, hair, cat ears, zipped graphite/ember hoodie, pose, framing, dimensions, background, lighting and style. No hands, props or text. One matching portrait."
+    },
+    {
+      "mood": "concerned",
+      "file": "concerned.webp",
+      "width": 768,
+      "height": 1024,
+      "bytes": 88634,
+      "sha256": "fb43fa1ec98302f923b3be36522627d231996b03453d45ba71f480525e6a34cd",
+      "generatedSource": "exec-cd1b3565-9e41-4bdf-8044-6000ebb58611.png",
+      "reference": "exec-f1a19e06-9b39-45d2-b780-d40128bff2ab.png",
+      "prompt": "Use case: identity-preserve. Edit this Miien website portrait. Change ONLY facial expression to concerned: inner eyebrows raised gently, sympathetic softened eyes, subtle closed-mouth frown. Compassionate and calm, no tears. Preserve exact adult character identity, hair, cat ears, zipped graphite/ember hoodie, pose, head position, framing, dimensions, background, lighting and style. No hands, props or text. One matching portrait."
+    },
+    {
+      "mood": "surprised",
+      "file": "surprised.webp",
+      "width": 768,
+      "height": 1024,
+      "bytes": 90700,
+      "sha256": "c272f483daeefa41bc1cc5679103c14b48e004ace9dc777af9f3242d315d6a0b",
+      "generatedSource": "exec-967e15ed-0349-4edc-98aa-344f07045629.png",
+      "reference": "exec-f1a19e06-9b39-45d2-b780-d40128bff2ab.png",
+      "prompt": "Use case: identity-preserve. Edit this Miien website portrait. Change ONLY facial expression to surprised: clearly widened golden eyes, raised eyebrows, small open mouth in a soft oh shape. Friendly surprise, not fear. Preserve exact adult character identity, hair, cat ears, zipped graphite/ember hoodie, pose, head position, framing, dimensions, background, lighting and style. No hands, props or text. One matching portrait."
+    }
+  ]
+}

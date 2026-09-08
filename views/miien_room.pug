@@ -1,0 +1,52 @@
+extends miien_base
+block content
+  .room-heading
+    div
+      span.eyebrow Character chat · Phase 1
+      h1= conversation.title
+    a.secondary(href=`/chat5/miien/${conversation._id}/settings`) Settings
+  #miien-room.room(data-id=conversation._id, data-csrf=csrfToken)
+    section.stage(aria-label='Miien character')
+      .art-fallback Miien is here.<br>Artwork is unavailable; you can still chat.
+      img#character(src='/i/miien/neutral.webp', alt='Miien with a neutral expression', width='768', height='1024')
+      .stage-top
+        span#presence.pill Ready to connect
+        span#mood-label.pill Expression: neutral
+      .dialogue-panel
+        span.eyebrow Miien
+        p#latest-reply Say hello. I’m ready when you are.
+        p#art-status.hint(role='status')
+    aside.conversation-panel
+      details.voice-options
+        summary Voice & expression
+        label.check
+          input#speech-enabled(type='checkbox')
+          | Speak new replies
+        label(for='speech-voice') Browser voice (placeholder)
+        select#speech-voice
+          option(value='') Browser default
+        p#speech-status.hint(role='status') Playback is optional. Press Replay to enable audio if your browser blocks it.
+        .button-row
+          button#replay(type='button') Replay latest
+          button#stop(type='button') Stop voice / recording
+        label(for='mood-override') Expression preview
+        select#mood-override
+          option(value='auto') Automatic from reply
+          each mood in moods
+            option(value=mood)= mood
+        p.hint Expression is a simple text cue, not an assessment of your feelings.
+      details.transcript(open)
+        summary Conversation history
+        #history(role='log', aria-label='Conversation transcript', tabindex='0')
+      form#message-form.composer
+        label(for='message') Your message
+        textarea#message(rows='3', maxlength='4000', placeholder='What’s on your mind?', required, disabled=!canWrite)
+        .button-row
+          button#send.primary(type='submit', disabled=!canWrite) Send
+          button#mic(type='button', disabled=!canTranscribe, data-allowed=canTranscribe ? 'true' : 'false') Microphone
+        p#mic-status.hint(role='status')= canTranscribe ? 'Record up to 60 seconds. Review and edit before sending.' : 'Microphone unavailable for this account.'
+        p#chat-status(role='status', aria-live='polite') Loading saved conversation…
+        p.hint Ctrl/⌘ + Enter to send. Text remains available if voice fails.
+block scripts
+  script(src='/js/miien_voice.js', defer)
+  script(src='/js/miien.js', defer)

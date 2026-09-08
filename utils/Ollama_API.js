@@ -1851,7 +1851,7 @@ const normalizeChatJobRecord = (data, { expectedJobId = null } = {}) => {
   };
 };
 
-const sendChatJobPayload = async (payload, functionName) => {
+const sendChatJobPayload = async (payload, functionName, options = {}) => {
   const requestUrl = `${hostBaseUrl}${CHAT_JOBS_ENDPOINT}`;
   const logPayload = sanitizeChatPayloadForLogging(payload);
 
@@ -1861,7 +1861,7 @@ const sendChatJobPayload = async (payload, functionName) => {
       timeout: JOB_REQUEST_TIMEOUT_MS,
     });
     const job = normalizeChatJobRecord(response.data);
-    await recordApiDebugLog({
+    if (!options.privateRequest) await recordApiDebugLog({
       requestUrl,
       requestHeaders: null,
       requestBody: logPayload,
@@ -1871,7 +1871,7 @@ const sendChatJobPayload = async (payload, functionName) => {
     });
     return job;
   } catch (error) {
-    await recordApiDebugLog({
+    if (!options.privateRequest) await recordApiDebugLog({
       requestUrl,
       requestHeaders: null,
       requestBody: logPayload,
@@ -1883,9 +1883,9 @@ const sendChatJobPayload = async (payload, functionName) => {
   }
 };
 
-const postChatJobPayload = async (payload, functionName) => {
+const postChatJobPayload = async (payload, functionName, options = {}) => {
   try {
-    return await sendChatJobPayload(payload, functionName);
+    return await sendChatJobPayload(payload, functionName, options);
   } catch (error) {
     if (shouldRetryWithToolRoleFallback(error, payload)) {
       const fallbackPayload = {
@@ -1896,7 +1896,7 @@ const postChatJobPayload = async (payload, functionName) => {
         category: 'ollama_background_job',
         metadata: { model: payload.model },
       });
-      const fallbackJob = await sendChatJobPayload(fallbackPayload, `${functionName}.toolRoleFallback`);
+      const fallbackJob = await sendChatJobPayload(fallbackPayload, `${functionName}.toolRoleFallback`, options);
       fallbackJob.gateway_tool_role_fallback = true;
       return fallbackJob;
     }
@@ -1906,7 +1906,7 @@ const postChatJobPayload = async (payload, functionName) => {
       metadata: {
         model: payload?.model || null,
         statusCode: error?.response?.status || null,
-        error: error?.message || String(error),
+        ...(options.privateRequest ? { errorName: error?.name || 'Error' } : { error: error?.message || String(error) }),
       },
     });
     throw error;
@@ -1964,7 +1964,7 @@ const submitChatJob = async (conversation, messages, model, options = {}) => {
     payload.tools = tools;
   }
 
-  const job = await postChatJobPayload(payload, 'submitChatJob');
+  const job = await postChatJobPayload(payload, 'submitChatJob', options);
   void logger.notice('Ollama background chat job accepted', {
     category: 'ollama_background_job',
     metadata: {

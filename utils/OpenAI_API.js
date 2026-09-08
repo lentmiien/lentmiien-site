@@ -902,11 +902,14 @@ const chat = async (conversation, messages, model, options = {}) => {
     }
   }
 
+  if (Number.isInteger(options.maxOutputTokens) && options.maxOutputTokens > 0) {
+    inputParameters.max_output_tokens = options.maxOutputTokens;
+  }
   const requestUrl = 'openai.responses.create';
 
   try {
-    const response = await openai.responses.create(inputParameters);
-    await recordApiDebugLog({
+    const response = await openai.responses.create(inputParameters, ...(options.privateRequest ? [{ timeout: 60000, maxRetries: 0 }] : []));
+    if (!options.privateRequest) await recordApiDebugLog({
       requestUrl,
       requestBody: inputParameters,
       functionName: 'chat',
@@ -914,13 +917,17 @@ const chat = async (conversation, messages, model, options = {}) => {
     });
     return response.id;
   } catch (error) {
-    await recordApiDebugLog({
+    if (!options.privateRequest) await recordApiDebugLog({
       requestUrl,
       requestBody: inputParameters,
       functionName: 'chat',
       responseBody: error,
     });
-    logger.error(`Error while calling ChatGPT API: ${error}`);
+    if (options.privateRequest) {
+      logger.error('Miien Chat5 provider submission failed', { category: 'chat5_miien', metadata: { errorName: error?.name || 'Error' } });
+    } else {
+      logger.error(`Error while calling ChatGPT API: ${error}`);
+    }
     return null;
   }
 };

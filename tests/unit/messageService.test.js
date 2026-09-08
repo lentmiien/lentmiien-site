@@ -798,3 +798,28 @@ describe('MessageService', () => {
     expect(chatGPT).toHaveBeenCalledWith(expect.any(Array), 'summary-model-from-db');
   });
 });
+
+test('Miien submission fails before creating a placeholder when OpenAI returns no ID', async () => {
+  AIModelCards.find.mockResolvedValue([{ provider: 'OpenAI', api_model: 'catalog-model' }]);
+  Chat5Model.find.mockResolvedValue([]);
+  ai.chat.mockResolvedValue(null);
+  Chat5Model.mockClear();
+  const service = new MessageService({}, {});
+  await expect(service.generateAIMessage({ conversation: { metadata: { model: 'catalog-model' }, members: ['owner'], messages: [] },
+    privateRequest: true, maxOutputTokens: 4096 })).rejects.toThrow('did not accept');
+  expect(Chat5Model).not.toHaveBeenCalled();
+  expect(ai.chat).toHaveBeenLastCalledWith(expect.any(Object), [], expect.any(Object),
+    { includeLastToolBatch: false, privateRequest: true, maxOutputTokens: 4096 });
+});
+
+test('Miien local token cap is runtime-only and does not change saved metadata', async () => {
+  AIModelCards.find.mockResolvedValue([{ provider: 'Local', api_model: 'catalog-model' }]);
+  Chat5Model.find.mockResolvedValue([]);
+  ollama.submitChatJob.mockResolvedValue({ job_id: 'test-job' });
+  const conversation = { metadata: { model: 'catalog-model' }, members: ['owner'], messages: [] };
+  const service = new MessageService({}, {});
+  await service.generateAIMessage({ conversation, privateRequest: true, maxOutputTokens: 4096 });
+  expect(conversation.metadata).not.toHaveProperty('max_tokens');
+  expect(ollama.submitChatJob).toHaveBeenLastCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ max_tokens: 4096 }) }),
+    [], expect.any(Object), { includeLastToolBatch: false, privateRequest: true });
+});

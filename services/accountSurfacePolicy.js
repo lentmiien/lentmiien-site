@@ -6,6 +6,8 @@ const extras = require('./accountNavigationExtras.json');
 const { CHAT_TOOL_ROLE_CAPABILITY_BUNDLES } = require('../utils/chatToolAuthorizationPolicy');
 const { getSoraLifecycle } = require('../utils/soraLifecycle');
 
+const { MIIEN_ROLE_CAPABILITY_BUNDLES } = require('../utils/miienAuthorizationPolicy');
+
 const BASE = ['dashboard.account.read', 'dashboard.preferences.write'];
 const ADMIN = ['dashboard.operations.read', 'dashboard.personal.read', 'dashboard.personal.write', 'dashboard.embedding.search'];
 const ROLE_BUNDLES = { admin: [...BASE, ...ADMIN], family: BASE, user: BASE };
@@ -23,6 +25,7 @@ function groupFor(item) {
   return GROUPS[2];
 }
 const NAVIGATION = MYPAGE_ICON_DEFINITIONS.map(item => ({ ...item, public: false }));
+NAVIGATION.push({ id: 'chat5_miien', href: '/chat5/miien', label: 'Miien character chat', src: '/i/miien/neutral.webp', capability: 'chat.conversation.read', subgroup: 'Chat5 tools' });
 for (const item of extras) {
   const existing = NAVIGATION.find(x => x.href === item.href);
   if (existing) continue;
@@ -80,7 +83,7 @@ async function resolvePolicy(user, roleModel, ownerId) {
   return {
     user, isAdmin: user.type_user === 'admin', isOwner: ownerMatches(user, ownerId),
     capabilities: [...new Set([...assigned, ...roleBundleCapabilities(user, ROLE_BUNDLES),
-      ...roleBundleCapabilities(user, CHAT_TOOL_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CODEX_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, RUNPOD_ROLE_CAPABILITY_BUNDLES)])],
+      ...roleBundleCapabilities(user, MIIEN_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CHAT_TOOL_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CODEX_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, RUNPOD_ROLE_CAPABILITY_BUNDLES)])],
   };
 }
 function allows(policy, item) {
