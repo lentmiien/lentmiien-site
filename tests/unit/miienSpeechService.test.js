@@ -134,7 +134,23 @@ test('Unicode preview never splits a surrogate pair and never sends more than 60
   await f.service.submit(user, conversation, body); await flush();
   expect(f.http.post.mock.calls[0][1].text).toBe('🐱'.repeat(600));
 });
-test.each(['file:///tmp/audio', 'https://user:password@host.invalid', 'http://host.invalid/tts', 'http://host.invalid/?token=x'])('invalid configured origin fails without logging it', apiBase => {
-  const f = fixture(); expect(() => new MiienSpeechService({ ...f, apiBase })).toThrow('Invalid Miien TTS origin');
+test.each(['not-an-origin', 'file:///tmp/audio', 'https://user:password@host.invalid', 'http://host.invalid/tts', 'http://host.invalid/tts/', 'http://host.invalid/?token=x', 'http://host.invalid/#fragment'])('invalid optional origin %s fails only on use, before network or admission', async apiBase => {
+  const f = fixture();
+  const service = new MiienSpeechService({ ...f, apiBase });
+  expect(f.logger.error).not.toHaveBeenCalled();
+  await expect(service.submit(user, conversation, body)).rejects.toMatchObject({ status: 503, message: expect.stringContaining('Anny is unavailable') });
+  await expect(service.voices()).rejects.toHaveProperty('status', 503);
+  expect(f.http.get).not.toHaveBeenCalled();
+  expect(f.http.post).not.toHaveBeenCalled();
+  expect(f.slots.create).not.toHaveBeenCalled();
+  expect(service.jobs.size).toBe(0);
+  expect(f.logger.error).toHaveBeenCalledWith(expect.stringContaining('check TTS_API_BASE'), { category: 'chat5_miien_speech' });
   expect(JSON.stringify(f.logger.error.mock.calls)).not.toContain(apiBase);
+});
+test.each(['http://gateway.invalid:8080', 'https://gateway.invalid/'])('valid origin %s uses only fixed server endpoints', async apiBase => {
+  const f = fixture();
+  const service = new MiienSpeechService({ ...f, apiBase });
+  await service.submit(user, conversation, body); await flush();
+  expect(f.http.get).toHaveBeenCalledWith(`${new URL(apiBase).origin}/tts/voices`, expect.objectContaining({ maxRedirects: 0 }));
+  expect(f.http.post).toHaveBeenCalledWith(`${new URL(apiBase).origin}/tts`, expect.any(Object), expect.objectContaining({ maxRedirects: 0 }));
 });

@@ -11,20 +11,26 @@ const HANDLE = /^[a-f\d-]{36}$/i;
 
 class MiienSpeechService {
   constructor({ chat, slots, authorize, logger, http = axios, apiBase = process.env.TTS_API_BASE || 'http://192.168.0.20:8080' }) {
+    Object.assign(this, { chat, slots, authorize, logger, http, apiBase });
+    this.origin = null;
+    this.jobs = new Map();
+    this.active = null;
+    this.catalog = null;
+  }
+  requireOrigin() {
+    if (this.origin) return this.origin;
     let url;
     try {
-      url = new URL(apiBase);
+      url = new URL(this.apiBase);
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !/^\/$/.test(url.pathname)) {
         throw new Error('Invalid origin');
       }
     } catch (_) {
-      logger.error('Miien speech origin configuration is invalid; check TTS_API_BASE', { category: 'chat5_miien_speech' });
-      throw new Error('Invalid Miien TTS origin configuration');
+      this.logger.error('Miien speech origin configuration is invalid; check TTS_API_BASE', { category: 'chat5_miien_speech' });
+      throw new MiienError(503, 'Anny is unavailable. Text chat is ready; an operator must check speech configuration.');
     }
-    Object.assign(this, { chat, slots, authorize, logger, http, apiBase: url.origin });
-    this.jobs = new Map();
-    this.active = null;
-    this.catalog = null;
+    this.origin = url.origin;
+    return this.origin;
   }
   prune() {
     for (const [id, job] of this.jobs) {
@@ -40,6 +46,9 @@ class MiienSpeechService {
     fields(body, ['messageId', 'voiceId']);
     if (typeof body.messageId !== 'string' || !ID.test(body.messageId) || body.voiceId !== 'anny_en') throw new MiienError(400, 'Choose a saved assistant reply and Anny English.');
     const text = await this.chat.speechText(user, conversationId, body.messageId);
+    // This optional integration must not prevent route startup or text chat.
+    // Validate before admission, even when a previous job could be reused.
+    this.requireOrigin();
     this.prune();
     const owner = String(user._id);
     const duplicate = [...this.jobs.values()].find(job => job.owner === owner && job.conversationId === conversationId && job.messageId === body.messageId);
@@ -58,7 +67,7 @@ class MiienSpeechService {
   }
   async voices(signal) {
     if (this.catalog && this.catalog.until > Date.now()) return this.catalog.voices;
-    const response = await this.http.get(`${this.apiBase}/tts/voices`, {
+    const response = await this.http.get(`${this.requireOrigin()}/tts/voices`, {
       timeout: 15000, signal, maxRedirects: 0, maxContentLength: 256 * 1024,
     });
     if (!Array.isArray(response.data?.voices) || response.data.voices.length > 1000) throw new Error('Invalid catalog');
@@ -101,7 +110,7 @@ class MiienSpeechService {
       job.truncated = Array.from(text).length > 600;
       job.spokenCharacters = Array.from(preview).length;
       dispatched = true;
-      const response = await this.http.post(`${this.apiBase}/tts`, {
+      const response = await this.http.post(`${this.requireOrigin()}/tts`, {
         text: preview, voice_id: 'anny_en', params: { format: 'wav' },
         timeout_sec: Math.max(1, Math.floor((job.deadlineAt - Date.now()) / 1000)),
       }, { responseType: 'arraybuffer', signal: controller.signal,

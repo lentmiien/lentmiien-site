@@ -9,8 +9,8 @@ block content
         h1 A little company,<br> a little curiosity.
         p Meet Miien, your Chat5 companion.
     section.settings-panel(aria-labelledby='settings-heading')
-      span.eyebrow Character chat · Phase 1
-      h2#settings-heading= conversation ? 'Room settings' : 'Make yourself comfortable'
+      span.eyebrow Character chat · Phase 2 foundation
+      h2#settings-heading= conversation ? 'Model & context settings' : 'Make yourself comfortable'
       p.subtle= conversation ? 'Changes apply to this saved Chat5 conversation.' : 'Choose a model, settle in, and talk. Your conversation stays in Chat5.'
       if !canWrite
         p.hint This account has read-only access. Conversation creation and settings changes require write access.
@@ -45,19 +45,12 @@ block content
           label(for='context') Saved context prompt
           textarea#context(name='context', maxlength='4000', rows='6')= settings.contextPrompt
           p.hint Only this conversation uses these instructions. They are editable and saved in Chat5.
-        fieldset
-          legend Voice preferences · this browser tab
-          label.check
-            input#speech-enabled(type='checkbox')
-            | Speak new replies (browser voice placeholder)
-          label(for='speech-voice') Playback voice
-          select#speech-voice
-            option(value='') Browser default
-          p#speech-status.hint(role='status') Device voices vary. Some browser/OS voices send text to their speech provider.
-          if canTranscribe
-            p.hint Microphone input uses the configured ASR service. Up to 60 seconds; edit the transcript before sending. Audio is not saved by this interface.
+        p.hint Voice, captions and motion are set in room Settings for this browser tab. Voice defaults to Off.
+          if conversation
+            | #{' '}
+            a(href=`/chat5/miien/${conversation._id}`) Return to room
           else
-            p.hint Microphone transcription is unavailable for this account. Text input is always available.
+            |  Start or resume a conversation to open room Settings.
         button.primary(type='submit', disabled=!models.length || !canWrite)= conversation ? 'Save & return to Miien' : 'Start talking with Miien →'
         if conversation
           a.secondary(href=`/chat5/miien/${conversation._id}`) Cancel
@@ -69,5 +62,3 @@ block content
             p No compatible candidates yet. Start a new room above.
           each item in conversations
             a.resume-link(href=`/chat5/miien/${item._id}`)= item.title
-block scripts
-  script(src='/js/miien_voice.js', defer)

@@ -45,6 +45,33 @@ test('admin can read private page with real generated art and no analytics',asyn
   expect(html).toContain('/i/miien/neutral.webp');expect(html).not.toMatch(/googletagmanager|cdn\./);
   expect(r.headers.get('referrer-policy')).toBe('no-referrer');
 });
+test.each(['', `/${id}/settings`])('start/model page %s directs preferences to the room and preserves settings fields', async url => {
+  const response = await request(url);
+  const html = await response.text();
+  expect(response.status).toBe(200);
+  expect(html).toContain('Phase 2 foundation');
+  expect(html).toContain('Voice, captions and motion are set in room Settings');
+  expect(html).not.toMatch(/id="speech-(enabled|voice|status)"|miien_voice.js|Phase 1/);
+  for (const field of ['title', 'model', 'reasoning', 'verbosity', 'maxMessages', 'context', '_csrf']) {
+    expect(html).toContain(`name="${field}"`);
+  }
+  if (url) {
+    expect(html).toContain(`action="/chat5/miien/${id}/settings"`);
+    expect(html).toContain(`href="/chat5/miien/${id}">Return to room</a>`);
+  } else {
+    expect(html).toContain('Start or resume a conversation to open room Settings.');
+  }
+});
+test('model/context form saves through the existing CSRF-protected conversation update', async () => {
+  const body = { title: 'Updated', model: 'model', reasoning: 'low', verbosity: 'medium', maxMessages: '12', context: 'Synthetic context' };
+  const url = `/${id}/settings`;
+  expect((await post(url, body, { 'X-CSRF-Token': '' })).status).toBe(403);
+  expect(service.update).not.toHaveBeenCalled();
+  const response = await request(url, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ ...body, _csrf: token }) });
+  expect(response.status).toBe(303);
+  expect(response.headers.get('location')).toBe(`/chat5/miien/${id}`);
+  expect(service.update).toHaveBeenCalledWith(principal, id, { ...body, _csrf: token });
+});
 test.each([['missing',''],['invalid','B'.repeat(43)]])('rejects %s CSRF before mutation',async(_,csrf)=>{
   expect((await post('',{}, {'X-CSRF-Token':csrf})).status).toBe(403);expect(service.create).not.toHaveBeenCalled();
 });

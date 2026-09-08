@@ -1,5 +1,5 @@
-const roles = JSON.parse(document.getElementById("roles").innerHTML);
-const selection = JSON.parse(document.getElementById("selection").innerHTML);
+const roles = JSON.parse(document.getElementById("roles").textContent);
+const selection = JSON.parse(document.getElementById("selection").textContent);
 const input_form = document.getElementById("input_form");
 
 function UpdateInputForm(select) {
@@ -16,10 +16,11 @@ function UpdateInputForm(select) {
   document.getElementById("role").value = value;
   document.getElementById("type").value = type;
   for (let i = 0; i < roles.length; i++) {
-    if (roles[i].name === value) {
+    if (roles[i].name === value && roles[i].type === type) {
       // Set pre-existing checkbox values
       roles[i].permissions.forEach(e_id => {
-        document.getElementById(e_id).checked = true;
+        const checkbox = Array.from(cb).find(input => input.value === e_id);
+        if (checkbox) checkbox.checked = true;
       });
     }
   }

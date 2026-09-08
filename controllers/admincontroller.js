@@ -81,6 +81,10 @@ const routes = [
   "chat3",
   "chat4",
   "chat5",
+  "chat.conversation.read",
+  "chat.conversation.write",
+  "chat.audio.transcribe",
+  "chat.audio.synthesize",
   "openai",
   "embedding",
   "gptdocument",
@@ -405,7 +409,9 @@ exports.manage_roles = async (req, res) => {
   const selection = {
     name_list: [],
     role_list: [],
-    routes
+    // Include stored grants so the replacement form can retain or explicitly
+    // revoke permissions that are not yet in the admin catalog.
+    routes: [...new Set([...routes, ...roles.flatMap(role => role.permissions)])]
   };
   users.forEach(user => {
     if (selection.name_list.indexOf(user.name) === -1) selection.name_list.push(user.name);
