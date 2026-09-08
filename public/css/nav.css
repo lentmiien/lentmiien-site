@@ -1,7 +1,25 @@
-.nav-placeholder { height: 64px; }
-.account-topbar { position: fixed; inset: 0 0 auto; height: 54px; display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: .4rem max(1rem, env(safe-area-inset-left)); background: var(--surface-3); border-bottom: 1px solid var(--border); z-index: 500; }
-.account-topbar a, .account-topbar button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 40px; padding: .45rem .9rem; border: 1px solid var(--border); border-radius: .6rem; color: var(--text); background: var(--surface-1); font: inherit; text-decoration: none; }
-.account-topbar #actionBtn { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Navigation owns document clearance; nav.js replaces this fallback after measurement. */
+:root { --nav-clearance: calc(4rem + env(safe-area-inset-top, 0px)); }
+html { scroll-padding-top: var(--nav-clearance); }
+.nav-placeholder { height: var(--nav-clearance); }
+.account-topbar {
+  position: fixed;
+  inset: 0 0 auto;
+  box-sizing: border-box;
+  min-height: calc(54px + env(safe-area-inset-top, 0px));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  padding: calc(.4rem + env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right, 0px)) .4rem max(1rem, env(safe-area-inset-left, 0px));
+  background: var(--surface-3);
+  border-bottom: 1px solid var(--border);
+  z-index: 500;
+}
+.account-topbar a, .account-topbar button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-width: 0; max-width: 100%; min-height: 40px; padding: .45rem .9rem; border: 1px solid var(--border); border-radius: .6rem; color: var(--text); background: var(--surface-1); font: inherit; text-decoration: none; overflow-wrap: anywhere; }
+.account-topbar a span { min-width: 0; }
+.account-topbar #actionBtn { display: block; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #actionBtn:disabled { color: var(--text-muted); }
 .account-topbar .navbar-icon { background: var(--brand); color: var(--text-inverse); font-weight: 650; }
 .account-tools { width: min(1100px, calc(100% - 2rem)); max-height: calc(100dvh - 2rem); margin: auto; padding: 1.5rem; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 1rem; overflow-y: auto; overscroll-behavior: contain; }
@@ -32,5 +50,11 @@
 .navbar-column h2 { font-size: 1.1rem; }
 .navbar-html-rating { color: var(--text-muted); }
 .no-scroll { overflow: hidden; }
-@media (max-width: 640px) { .account-tools { width: 100%; max-height: 100dvh; height: 100dvh; border-radius: 0; padding: 1rem; } .tools-groups { grid-template-columns: 1fr; } .tools-shortcuts .tools-icon-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .account-topbar { padding-inline: .5rem; } }
+@media (max-width: 640px) {
+  .account-tools { width: 100%; max-height: 100dvh; height: 100dvh; border-radius: 0; padding: 1rem; }
+  .tools-groups { grid-template-columns: 1fr; }
+  .tools-shortcuts .tools-icon-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .account-topbar { gap: .4rem; padding-right: max(.5rem, env(safe-area-inset-right, 0px)); padding-left: max(.5rem, env(safe-area-inset-left, 0px)); }
+  .account-topbar a, .account-topbar button { padding-inline: .6rem; }
+}
 @media (prefers-reduced-motion: reduce) { .account-tools *, .account-topbar * { scroll-behavior: auto !important; transition: none !important; } }

@@ -1,5 +1,30 @@
 /* Native dialog provides modal focus containment, Escape and inert background. */
 (() => {
+  // Measure the persistent bar, never the Tools dialog (#navbar). Its own size
+  // must not depend on clearance, so updating the spacer cannot resize the bar.
+  const topbar = document.querySelector('.account-topbar');
+  if (topbar) {
+    let lastHeight = 0;
+    const updateClearance = () => {
+      const height = Math.ceil(topbar.getBoundingClientRect().height);
+      if (!Number.isFinite(height) || height <= 0 || height === lastHeight) return;
+      lastHeight = height;
+      document.documentElement.style.setProperty('--nav-clearance', `${height + 10}px`);
+    };
+    updateClearance();
+    if (window.ResizeObserver) {
+      new window.ResizeObserver(updateClearance).observe(topbar, { box: 'border-box' });
+    } else if (window.MutationObserver) {
+      // Older browsers still need to notice page scripts changing action labels.
+      new window.MutationObserver(updateClearance).observe(topbar, {
+        subtree: true, childList: true, characterData: true, attributes: true,
+      });
+    }
+    window.addEventListener('resize', updateClearance);
+    window.addEventListener('load', updateClearance);
+    document.fonts?.ready.then(updateClearance);
+  }
+
   const dialog = document.getElementById('navbar');
   const toggle = document.getElementById('tools-toggle');
   const close = document.getElementById('tools-close');

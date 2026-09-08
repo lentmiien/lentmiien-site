@@ -20,10 +20,6 @@ body a:focus {
   padding-bottom: 32px;
 }
 
-.nav-placeholder {
-  height: 28px;
-}
-
 .nav-action-btn,
 .navbar-icon,
 #goTopPageBtn,
@@ -2935,7 +2931,7 @@ label,
 
 .chat5-bucket-header {
   position: sticky;
-  top: 0;
+  top: var(--nav-clearance, 0px);
   z-index: 1;
   padding: 6px 10px;
   background: rgba(27, 32, 38, 0.94);
