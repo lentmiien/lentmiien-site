@@ -26,7 +26,7 @@ block content
         .codex-panel__header
           h2 Add Template
           span.codex-chip= templates.length + ' saved'
-        form#codex-template-create.codex-form.codex-form--template
+        form#codex-template-create.codex-form.codex-form--template(method='post')
           .codex-field
             label(for='template-name') Name
             input#template-name(type='text', name='name', maxlength='120', required, placeholder='Review pending changes')
@@ -55,7 +55,7 @@ block content
             each template in templates
               - const assignedWorkspace = workspaceById.get(String(template.workspaceId || ''));
               - const assignedWorkspaceLabel = assignedWorkspace ? assignedWorkspace.name : (template.workspaceId ? 'Unavailable workspace' : 'All workspaces');
-              form.codex-template-card(data-template-form=template.id)
+              form.codex-template-card(method='post', data-template-form=template.id)
                 .codex-template-card__header
                   strong= template.name
                   small= assignedWorkspaceLabel + ' / Updated ' + fmt(template.updatedAt)
@@ -85,4 +85,4 @@ block content
 
 block script
   script#codex-page-data(type='application/json')!= codexStateJson
-  script(src='/js/codex.js', defer)
+  script(src=formAssetUrl('codex.js'), defer)

@@ -21,7 +21,7 @@ block content
         .codex-panel__header
           h2 Add Workspace
           span.codex-chip= targets.length + ' target' + (targets.length === 1 ? '' : 's')
-        form#codex-workspace-create.codex-form.codex-form--workspace
+        form#codex-workspace-create.codex-form.codex-form--workspace(method='post')
           .codex-field
             label(for='workspace-name') Name
             input#workspace-name(type='text', name='name', maxlength='140', required)
@@ -62,7 +62,7 @@ block content
         .codex-workspace-list
           if workspaces.length
             each workspace in workspaces
-              form.codex-workspace-row(data-workspace-form=workspace.id)
+              form.codex-workspace-row(method='post', data-workspace-form=workspace.id)
                 input(type='hidden', name='id', value=workspace.id)
                 .codex-workspace-row__main
                   .codex-field
@@ -102,4 +102,4 @@ block content
 
 block script
   script#codex-page-data(type='application/json')!= codexStateJson
-  script(src='/js/codex.js', defer)
+  script(src=formAssetUrl('codex.js'), defer)

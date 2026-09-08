@@ -1,10 +1,29 @@
 (() => {
   const lifeLogForm = document.getElementById('life-log-form');
-  if (!lifeLogForm) return;
+  if (!lifeLogForm || lifeLogForm.dataset.lifeLogInitialized === 'true') return;
 
   const lifeLogBasePath = window.LIFE_LOG_BASE_PATH || '/admin/life_log';
   const csrfToken = document.getElementById('account-dashboard')?.dataset.csrfToken;
+  const accountMode = lifeLogBasePath === '/mypage/api/life';
+  const csrfHelp = 'Your secure form session is unavailable or was rejected. Your entries are still here. Copy any unsaved text and note body-map points before reloading; sign in again if asked.';
   const lifeLogUrl = (path = '') => `${lifeLogBasePath}${path}`;
+
+  const postJson = async (path, payload) => {
+    if (accountMode && (typeof csrfToken !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(csrfToken))) {
+      throw new Error(csrfHelp);
+    }
+    const response = await fetch(lifeLogUrl(path), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) },
+      body: JSON.stringify(payload),
+    });
+    if (response.redirected || response.status === 401) throw new Error(csrfHelp);
+    const data = await response.json();
+    if (data.code === 'CSRF_REJECTED') throw new Error(csrfHelp);
+    if (!response.ok) throw new Error(data.error || 'Unable to save entry.');
+    return data;
+  };
 
   const typeSelect = document.getElementById('life-log-type');
   const labelInput = document.getElementById('life-log-label');
@@ -77,7 +96,7 @@
       label: labelInput.value.trim(),
       value: valueInput.value.trim(),
       text: textInput.value.trim(),
-      timestamp: csrfToken && timestampInput.value ? new Date(timestampInput.value).toISOString() : timestampInput.value,
+      timestamp: accountMode && timestampInput.value ? new Date(timestampInput.value).toISOString() : timestampInput.value,
     };
     if (!payload.timestamp) {
       delete payload.timestamp;
@@ -92,7 +111,7 @@
     timestampInput.value = formatDateTimeInput(new Date());
   };
 
-  timestampInput.value = formatDateTimeInput(new Date());
+  timestampInput.value ||= formatDateTimeInput(new Date());
   updateTypeRows();
 
   typeSelect.addEventListener('change', updateTypeRows);
@@ -125,22 +144,9 @@
   lifeLogForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     setStatus('Saving...');
-    const payload = collectPayload();
-
     try {
-      const resp = await fetch(lifeLogUrl('/entry'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        throw new Error(data?.error || 'Unable to save entry.');
-      }
+      const payload = collectPayload();
+      await postJson('/entry', payload);
       setStatus('Saved.');
       removeMatchingReminder(payload.type, payload.label);
       resetForm();
@@ -413,19 +419,7 @@
       setVisualFollowupsStatus('Saving follow-up...');
 
       try {
-        const resp = await fetch(lifeLogUrl('/entry'), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        });
-        const data = await resp.json();
-        if (!resp.ok) {
-          throw new Error(data?.error || 'Unable to save follow-up.');
-        }
+        await postJson('/entry', payload);
         itemStatus.textContent = 'Saved.';
         setVisualFollowupsStatus('Saved follow-up.');
         loadVisualFollowups({ silent: true });
@@ -797,7 +791,7 @@
       setVisualStatus('Point removed.');
     });
 
-    visualTimestamp.value = formatDateTimeInput(new Date());
+    visualTimestamp.value ||= formatDateTimeInput(new Date());
 
     visualSave.addEventListener('click', async () => {
       if (!visualLogState.points.length) {
@@ -805,31 +799,19 @@
         return;
       }
       setVisualStatus('Saving visual log...');
-      const payload = {
-        type: 'visual_log',
-        label: 'body_map',
-        v_log_data: JSON.stringify({
-          version: 1,
-          image: '/i/img_select.jpg',
-          canvas: { ...visualLogState.canvas },
-          points: visualLogState.points,
-        }),
-        timestamp: csrfToken && visualTimestamp.value ? new Date(visualTimestamp.value).toISOString() : visualTimestamp.value,
-      };
       try {
-        const resp = await fetch(lifeLogUrl('/entry'), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        });
-        const data = await resp.json();
-        if (!resp.ok) {
-          throw new Error(data?.error || 'Unable to save visual log.');
-        }
+        const payload = {
+          type: 'visual_log',
+          label: 'body_map',
+          v_log_data: JSON.stringify({
+            version: 1,
+            image: '/i/img_select.jpg',
+            canvas: { ...visualLogState.canvas },
+            points: visualLogState.points,
+          }),
+          timestamp: accountMode && visualTimestamp.value ? new Date(visualTimestamp.value).toISOString() : visualTimestamp.value,
+        };
+        await postJson('/entry', payload);
         setVisualStatus('Saved.');
         visualLogState.points = [];
         visualLogState.selected = -1;
@@ -851,4 +833,5 @@
     }
     loadVisualFollowups();
   }
+  lifeLogForm.dataset.lifeLogInitialized = 'true';
 })();

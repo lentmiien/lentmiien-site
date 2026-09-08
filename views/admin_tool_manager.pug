@@ -28,7 +28,7 @@ block content
           h2.tool-manager-panel__title Manual tester
           p.tool-manager-panel__meta= `${tools.filter((tool) => tool.enabled).length} enabled`
         span.tool-manager-tester__status#toolTesterStatus(aria-live='polite')
-      form#toolTesterForm.tool-manager-tester__form
+      form#toolTesterForm.tool-manager-tester__form(method='post')
         .tool-manager-tester__controls
           label.form-label(for='toolTesterName') Tool
           select#toolTesterName.form-select(name='toolName', required)
@@ -159,4 +159,4 @@ block content
   script(type='application/json', id='toolManagerPageConfig') !{safeJson(testerConfig)}
 
 block script
-  script(src='/js/tool_manager.js', defer)
+  script(src=formAssetUrl('tool_manager.js'), defer)

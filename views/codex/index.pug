@@ -72,7 +72,7 @@ block content
                 aria-controls='codex-new-session-form',
                 aria-pressed='false'
               ) Maximize
-          form#codex-new-session-form.codex-form(data-codex-prompt-form)
+          form#codex-new-session-form.codex-form(method='post', data-codex-prompt-form)
             .codex-field
               label(for='codex-workspace') Workspace
               select#codex-workspace(name='workspaceId', required, disabled=!workspaces.length)
@@ -284,7 +284,7 @@ block content
             .codex-pricing-grid
               each provider in pricingProviders
                 - const providerPricing = pricingByProvider[provider.value] || {};
-                form.codex-pricing-card.codex-form.codex-form--pricing(data-codex-pricing-form, data-provider=provider.value)
+                form.codex-pricing-card.codex-form.codex-form--pricing(method='post', data-codex-pricing-form, data-provider=provider.value)
                   .codex-pricing-card__heading
                     h3= provider.label
                     p= provider.value === 'openai' ? 'Used only for OpenAI-backed Codex turns.' : 'Used for local Ollama and Runpod-backed Qwen/GLM turns.'
@@ -397,4 +397,4 @@ block content
 
 block script
   script#codex-page-data(type='application/json')!= codexStateJson
-  script(src='/js/codex.js', defer)
+  script(src=formAssetUrl('codex.js'), defer)

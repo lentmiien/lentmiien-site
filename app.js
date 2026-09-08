@@ -52,6 +52,8 @@ app.set('logger', logger);
 app.set('databaseLifecycle', databaseLifecycle);
 app.locals.safeJson = serializeForInlineScript;
 app.locals.safeJsonText = escapeInlineScriptText;
+const formAssets = require('./utils/formAssets').createFormAssets();
+app.locals.formAssetUrl = formAssets.url;
 
 function getPositiveIntegerEnv(name, fallback) {
   const value = Number.parseInt(process.env[name], 10);
@@ -387,6 +389,7 @@ protectedStaticDirectories.forEach((directory) => {
 });
 
 // Serve static files
+app.get('/assets/forms/:revision/:filename', formAssets.serve);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/vendor/katex', express.static(path.join(__dirname, 'node_modules', 'katex', 'dist')));
 app.use('/vendor/mermaid', express.static(path.join(__dirname, 'node_modules', 'mermaid', 'dist')));

@@ -38,6 +38,45 @@ function request({
 }
 
 describe('session CSRF middleware', () => {
+  test.each([
+    [undefined, 'a'.repeat(43), 'missing_token'],
+    ['', 'a'.repeat(43), 'missing_token'],
+    ['bad', 'a'.repeat(43), 'malformed_token'],
+    [17, 'a'.repeat(43), 'malformed_token'],
+    [['a'.repeat(43)], 'a'.repeat(43), 'malformed_token'],
+    ['a'.repeat(43), undefined, 'missing_session_token'],
+    ['a'.repeat(43), 'b'.repeat(43), 'token_mismatch'],
+  ])('classifies rejection %# without exposing token or payload data', (token, sessionToken, tokenStatus) => {
+    const appLogger = { warning: jest.fn() };
+    const csrf = createSessionCsrf({ appLogger });
+    const req = request({ token, session: { csrfToken: sessionToken }, accept: 'application/json' });
+    req.body.privateText = 'synthetic private payload';
+    const res = response(); const next = jest.fn();
+    csrf.requireToken(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, code: 'CSRF_REJECTED', error: 'The form expired or came from an untrusted page. Reload and try again.' });
+    expect(appLogger.warning).toHaveBeenCalledWith('Rejected browser mutation with an invalid CSRF token', {
+      category: 'csrf', metadata: { route: '/pods', tokenStatus },
+    });
+  });
+
+  test('mutation token issuance leaves an absent session token absent for validation', () => {
+    const csrf = createSessionCsrf(); const req = request(); req.method = 'POST';
+    csrf.issueToken(req, response(), jest.fn());
+    expect(req.session.csrfToken).toBeUndefined();
+  });
+
+  test.each([undefined, 'https://trusted.example.test'])('accepts header transport with absent or explicitly trusted Origin %s', origin => {
+    const token = 'a'.repeat(43);
+    const csrf = createSessionCsrf({ allowedOrigins: ['https://trusted.example.test'] });
+    const req = request({ session: { csrfToken: token } });
+    const originalGet = req.get;
+    req.get = name => name === 'x-csrf-token' ? token : name === 'origin' ? origin : originalGet(name);
+    const next = jest.fn(); csrf.requireToken(req, response(), next);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   test('issues a high-entropy session token once and exposes it to the view', () => {
     const randomBytes = jest.fn().mockReturnValue(Buffer.alloc(32, 7));
     const csrf = createSessionCsrf({ randomBytes, appLogger: { error: jest.fn() } });
@@ -169,6 +208,7 @@ describe('session CSRF middleware', () => {
     expect(res.json).toHaveBeenCalledWith({
       ok: false,
       error: 'The form expired or came from an untrusted page. Reload and try again.',
+      code: 'CSRF_REJECTED',
     });
     expect(res.render).not.toHaveBeenCalled();
   });

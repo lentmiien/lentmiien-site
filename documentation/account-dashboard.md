@@ -105,6 +105,9 @@ public cooking, both calendars and cookbook remain available.
 
 ## Deployment and rollback
 
+For form script revisions, CSRF diagnostics and the protected-form audit, see
+[the CSRF form repair notes](csrf-form-repair.md).
+
 1. Bind `DASHBOARD_PERSONAL_OWNER_USER_ID` to Lennart's confirmed Useraccount MongoDB `_id`
    in deployment configuration. No live identity/grants were queried or changed during this
    work. Confirm the ID and existing tool grants in the deployment environment.

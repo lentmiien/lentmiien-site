@@ -112,7 +112,7 @@ block content
               h2 Add a message
               span.codex-chip(data-additional-message-state)= turn.status === 'running' ? 'Running' : 'Waiting'
             p.codex-field-help Send a course correction or missing detail to the Codex turn that is currently running.
-            form#codex-additional-message-form.codex-form(data-turn-id=turn.id, data-codex-prompt-form)
+            form#codex-additional-message-form.codex-form(method='post', data-turn-id=turn.id, data-codex-prompt-form)
               .codex-field
                 .codex-field-label-row
                   label(for='codex-additional-message') Message
@@ -320,4 +320,4 @@ block content
 
 block script
   script#codex-page-data(type='application/json')!= codexStateJson
-  script(src='/js/codex.js', defer)
+  script(src=formAssetUrl('codex.js'), defer)

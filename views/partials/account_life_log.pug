@@ -25,7 +25,7 @@
   .row.g-4
     .col-lg-5
       .life-log-panel
-        form#life-log-form
+        form#life-log-form(method='post', action='/mypage/api/life/entry')
           .d-flex.flex-column.gap-3
             .d-flex.flex-column
               span.life-log-label Type

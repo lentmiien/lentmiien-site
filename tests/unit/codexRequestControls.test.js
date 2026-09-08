@@ -1,5 +1,6 @@
 const path = require('path');
 const pug = require('pug');
+const formAssetUrl = require('../../utils/formAssets').createFormAssets().url;
 const {
   buildActivityRows,
   canSubmitAdditionalMessage,
@@ -15,6 +16,7 @@ const {
 
 const commonLocals = {
   pageTitle: 'Codex',
+  formAssetUrl,
   loggedIn: false,
   permissions: [],
   htmlPaths: [],
@@ -23,12 +25,15 @@ const commonLocals = {
 };
 
 function renderCodexView(view, codexState, locals = {}) {
-  return pug.renderFile(path.join(process.cwd(), 'views', 'codex', `${view}.pug`), {
+  const html = pug.renderFile(path.join(process.cwd(), 'views', 'codex', `${view}.pug`), {
     ...commonLocals,
     ...locals,
     codexState,
     codexStateJson: JSON.stringify(codexState),
   });
+  for (const form of html.match(/<form\b[^>]*>/g) || []) expect(form).toContain('method="post"');
+  expect(html).toContain(`src="${formAssetUrl('codex.js')}"`);
+  return html;
 }
 
 describe('Codex request prompt controls', () => {

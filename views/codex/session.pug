@@ -138,7 +138,7 @@ block content
           h2 Follow-up
           span.codex-chip= session.codexThreadId ? 'Ready' : 'Waiting'
         if session.codexThreadId && sessionProviderAvailable
-          form#codex-followup-form.codex-form(data-session-id=session.id, data-codex-prompt-form)
+          form#codex-followup-form.codex-form(method='post', data-session-id=session.id, data-codex-prompt-form)
             input(type='hidden', name='modelProvider', value=sessionProvider)
             .codex-mode-group(role='radiogroup', aria-label='Follow-up mode')
               label.codex-mode-option
@@ -215,4 +215,4 @@ block content
 
 block script
   script#codex-page-data(type='application/json')!= codexStateJson
-  script(src='/js/codex.js', defer)
+  script(src=formAssetUrl('codex.js'), defer)

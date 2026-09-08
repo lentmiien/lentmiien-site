@@ -1,11 +1,12 @@
 const path = require('path');
 const pug = require('pug');
+const formAssetUrl = require('../../utils/formAssets').createFormAssets().url;
 const { resolvePolicy, navigationFor, GROUPS } = require('../../services/accountSurfacePolicy');
 const { effective } = require('../../services/accountPreferencesService');
 async function render(role, id = '111111111111111111111111', overrides = {}) {
   const policy = await resolvePolicy({ _id: id, name: 'synthetic', type_user: role }, { findOne: async () => ({ permissions: ['accounting', 'budget', 'chat5'] }) }, '111111111111111111111111');
   return pug.renderFile(path.join(__dirname, '../../views/mypage.pug'), {
-    loggedIn: true, permissions: policy.capabilities, bookmarks: [], htmlPaths: [], dashboard: effective(policy),
+    formAssetUrl, loggedIn: true, permissions: policy.capabilities, bookmarks: [], htmlPaths: [], dashboard: effective(policy),
     accountNavigation: navigationFor(policy), navigationGroups: GROUPS, navChoices: navigationFor(policy), ...overrides,
   });
 }

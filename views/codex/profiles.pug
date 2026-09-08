@@ -21,7 +21,7 @@ block content
         .codex-panel__header
           h2 Add Profile
           span.codex-chip= profiles.length + ' profile' + (profiles.length === 1 ? '' : 's')
-        form#codex-profile-create.codex-form.codex-form--profile
+        form#codex-profile-create.codex-form.codex-form--profile(method='post')
           .codex-field
             label(for='profile-id') Key
             input#profile-id(type='text', name='id', maxlength='80', pattern='[A-Za-z0-9_-]+', placeholder='auto-from-name')
@@ -61,7 +61,7 @@ block content
         .codex-profile-list
           if profiles.length
             each profile in profiles
-              form.codex-profile-row(data-profile-form=profile.id)
+              form.codex-profile-row(method='post', data-profile-form=profile.id)
                 input(type='hidden', name='id', value=profile.id)
                 .codex-profile-row__main
                   .codex-field
@@ -102,4 +102,4 @@ block content
 
 block script
   script#codex-page-data(type='application/json')!= codexStateJson
-  script(src='/js/codex.js', defer)
+  script(src=formAssetUrl('codex.js'), defer)

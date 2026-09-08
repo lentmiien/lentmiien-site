@@ -3,6 +3,7 @@
   if (!root) return;
   let settings = JSON.parse(document.getElementById('account-settings').textContent);
   const token = root.dataset.csrfToken;
+  const csrfHelp = 'Your secure form session is unavailable or was rejected. Your choices are still here; note them before reloading and sign in again if asked.';
   const dialog = document.getElementById('account-customizer');
   const globalStatus = document.getElementById('account-status');
   const queue = [];
@@ -13,12 +14,16 @@
   const cards = [...root.querySelectorAll('[data-section]')];
   const labels = { ocr: 'OCR', ocr_tts: 'OCR to TTS', asr: 'Transcription', gpt_image: 'GPT Image', trellis2: 'TRELLIS.2', pixal3d: 'Pixal3D', prompt_to_3d: 'Prompt to 3D', music: 'Music', sora: 'Sora', bulk: 'ComfyUI bulk' };
   async function request(url, options = {}) {
+    if (options.method && !/^[A-Za-z0-9_-]{43}$/.test(token || '')) throw new Error(csrfHelp);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(url, { credentials: 'same-origin', ...options, signal: controller.signal,
         headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': token, ...options.headers } });
-      if (!response.ok || response.redirected) throw new Error('Request failed');
+      if (!response.ok || response.redirected) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.code === 'CSRF_REJECTED' || response.status === 401 || response.redirected ? csrfHelp : 'Request failed');
+      }
       return options.html ? response.text() : response.json();
     } finally { clearTimeout(timeout); }
   }
@@ -54,7 +59,7 @@
       card.querySelector('.schedule-task-pill--empty').hidden = data.rows.length > 0;
       return;
     }
-    if (card.dataset.section === 'life' && target.dataset.panelLoaded) return;
+    if (card.dataset.section === 'life' && target.dataset.panelMounted) return;
     const list = element('ul', undefined, 'account-rows');
     data.rows.forEach(row => {
       const item = element('li', undefined, 'account-row'); item.append(localLink(row.title, row.href));
@@ -80,14 +85,26 @@
         || `Updated ${new Intl.DateTimeFormat('en', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' }).format(new Date(data.fetchedAt))}`;
       renderRows(card, data); card.querySelector('.account-card-note').textContent = data.note || '';
       if (id === 'life' && !card.querySelector('.account-card-data').dataset.panelLoaded) {
-        const html = await request('/mypage/api/life-panel', { html: true });
         const target = card.querySelector('.account-card-data');
-        // This fragment is escaped Pug from the same authorized route, never record HTML.
-        target.innerHTML = html; target.dataset.panelLoaded = 'true';
+        if (!target.dataset.panelMounted) {
+          const html = await request('/mypage/api/life-panel', { html: true });
+          // This fragment is escaped Pug from the same authorized route, never record HTML.
+          target.innerHTML = html; target.dataset.panelMounted = 'true';
+          // A script download failure must never leave a native GET form exposing entries in a URL.
+          target.querySelector('form').addEventListener('submit', event => event.preventDefault());
+        }
         window.LIFE_LOG_BASE_PATH = '/mypage/api/life';
         await new Promise((resolve, reject) => {
-          const script = document.createElement('script'); script.src = '/js/my_life_log.js'; script.onload = resolve; script.onerror = reject; document.body.append(script);
+          const script = document.createElement('script'); script.src = root.dataset.lifeLogScript;
+          script.onload = () => {
+            script.remove();
+            if (target.querySelector('form').dataset.lifeLogInitialized === 'true') resolve();
+            else reject(new Error('Life log did not initialize'));
+          };
+          script.onerror = () => { script.remove(); reject(new Error('Life log script unavailable')); };
+          document.body.append(script);
         });
+        target.dataset.panelLoaded = 'true';
       }
       loaded.add(id);
     } catch (_) {
@@ -159,7 +176,7 @@
       settings = result.settings;
       // Reload only after the server acknowledges the save, applying all states consistently.
       window.location.reload();
-    } catch (_) { status.textContent = 'Could not save. Your saved settings are unchanged; try again.'; }
+    } catch (error) { status.textContent = error.message === csrfHelp ? csrfHelp : 'Could not save. Your saved settings are unchanged; try again.'; }
     finally { buttons.forEach(b => { b.disabled = false; }); }
   }
   document.getElementById('account-save').addEventListener('click', () => void save());
@@ -173,7 +190,7 @@
       }) });
       if (!result.ok) throw new Error('Save not acknowledged');
       window.location.reload();
-    } catch (_) { status.textContent = 'Could not save shortcuts. Try again.'; }
+    } catch (error) { status.textContent = error.message === csrfHelp ? csrfHelp : 'Could not save shortcuts. Try again.'; }
   }
   document.getElementById('nav-save').addEventListener('click', () => void saveNav());
   document.getElementById('nav-reset').addEventListener('click', () => void saveNav(true));

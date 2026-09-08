@@ -12,7 +12,7 @@ beforeEach(async () => {
   authenticated = true; grants = [];
   data = { load: jest.fn(async () => ({ rows: [], state: 'empty' })), read: jest.fn(async () => []) };
   userModel = { updateOne: jest.fn(async () => ({ matchedCount: 1 })) };
-  const app = express(); app.set('views', 'views'); app.set('view engine', 'pug');
+  const app = express(); app.set('views', 'views'); app.set('view engine', 'pug'); app.locals.formAssetUrl = require('../../utils/formAssets').createFormAssets().url;
   app.use((req, res, next) => { req.user = principal; req.isAuthenticated = () => authenticated; req.session = { csrfToken: token }; res.locals.loggedIn = authenticated; res.locals.bookmarks = []; res.locals.htmlPaths = []; next(); });
   app.use('/mypage', createAccountDashboard({ data, userModel, roleModel: { findOne: async q => q.type === 'user' ? { permissions: grants } : null } }));
   await new Promise(resolve => { server = app.listen(0, '127.0.0.1', resolve); }); base = `http://127.0.0.1:${server.address().port}`;

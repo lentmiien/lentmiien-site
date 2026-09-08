@@ -7,7 +7,7 @@ block styles
 
 block content
   - const settings = typeof dashboard !== 'undefined' ? dashboard : { sections: [], hiddenSections: [], collapsedSections: [], jobs: {} };
-  main#account-dashboard.account-dashboard(data-csrf-token=csrfToken)
+  main#account-dashboard.account-dashboard(data-csrf-token=csrfToken, data-life-log-script=formAssetUrl('my_life_log.js'))
     header.account-heading
       div
         p.account-eyebrow= typeof accountContext !== 'undefined' ? accountContext : 'Your account'
@@ -111,5 +111,5 @@ block content
   script#account-settings(type='application/json')!= safeJson(settings)
 
 block script
-  script(src='/js/mypage_tasks.js', defer)
-  script(src='/js/account_dashboard.js', defer)
+  script(src=formAssetUrl('mypage_tasks.js'), defer)
+  script(src=formAssetUrl('account_dashboard.js'), defer)

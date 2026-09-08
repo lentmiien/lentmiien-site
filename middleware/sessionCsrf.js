@@ -42,7 +42,7 @@ function requestFetchSite(req) {
 }
 
 function safeEqual(left, right) {
-  if (!TOKEN_PATTERN.test(left || '') || !TOKEN_PATTERN.test(right || '')) return false;
+  if (typeof left !== 'string' || typeof right !== 'string' || !TOKEN_PATTERN.test(left) || !TOKEN_PATTERN.test(right)) return false;
   const leftBuffer = Buffer.from(left);
   const rightBuffer = Buffer.from(right);
   return leftBuffer.length === rightBuffer.length
@@ -64,7 +64,7 @@ function renderDenied(req, res, {
     .status(status)
     .set('Cache-Control', PRIVATE_NO_STORE);
   if (wantsJson(req)) {
-    return response.json({ ok: false, error: message });
+    return response.json({ ok: false, error: message, ...(status === 403 ? { code: 'CSRF_REJECTED' } : {}) });
   }
   return response.render('accessDenied', {
     title,
@@ -92,7 +92,10 @@ function createSessionCsrf({
       });
     }
 
-    if (!TOKEN_PATTERN.test(req.session.csrfToken || '')) {
+    // Do not manufacture a replacement token on a rejected mutation: retain the cause
+    // (missing session token) for diagnostics. Safe page requests establish the token.
+    if (!['GET', 'HEAD'].includes(req.method || 'GET')) return next();
+    if (typeof req.session.csrfToken !== 'string' || !TOKEN_PATTERN.test(req.session.csrfToken)) {
       req.session.csrfToken = randomBytes(TOKEN_BYTES).toString('base64url');
     }
     res.locals.csrfToken = req.session.csrfToken;
@@ -129,17 +132,22 @@ function createSessionCsrf({
       }
     }
 
-    const suppliedToken = typeof req.body?._csrf === 'string'
+    const suppliedToken = req.body?._csrf !== undefined
       ? req.body._csrf
       : (typeof req.get === 'function' ? req.get('x-csrf-token') : null);
     if (!safeEqual(req.session?.csrfToken, suppliedToken)) {
+      const tokenStatus = suppliedToken == null || suppliedToken === '' ? 'missing_token'
+        : typeof suppliedToken !== 'string' || !TOKEN_PATTERN.test(suppliedToken) ? 'malformed_token'
+          : typeof req.session?.csrfToken !== 'string' || !TOKEN_PATTERN.test(req.session.csrfToken) ? 'missing_session_token'
+            : 'token_mismatch';
       appLogger.warning('Rejected browser mutation with an invalid CSRF token', {
         category: 'csrf',
-        metadata: { route: req.route?.path || null },
+        metadata: { route: req.route?.path || null, tokenStatus },
       });
       return renderDenied(req, res);
     }
 
+    res.locals.csrfToken = req.session.csrfToken;
     return next();
   }
 
