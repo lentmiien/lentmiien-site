@@ -5,7 +5,7 @@ searchable icon drawer. It preserves original icon IDs, public navigation, bookm
 Quick Add, `actionBtn`, `chatmode`, `history_list` and `head_list`. An authorized full
 catalog remains discoverable even when shortcuts are hidden. The first eight visible
 shortcuts follow the saved order. Native dialogs support Escape, focus containment and
-restoration; task links retain 900 ms holds and have visible keyboard completion buttons.
+restoration; task links retain 900 ms holds, Space completion and Enter navigation.
 
 ## Security contract and inventory
 
@@ -72,8 +72,14 @@ restoration; task links retain 900 ms holds and have visible keyboard completion
 
 ## Data semantics and deliberate limits
 
-Tasks use deadlines for overdue/today/later, with a bounded list; agenda includes overlapping
-presences and today's due tasks using Asia/Tokyo. Cooking is explicitly household data.
+Tasks show Overdue, Due today, Ongoing and Upcoming groups with start/deadline dates.
+Only My Page restricts starts to an inclusive now + 14 days; missing starts are available
+anytime. Missing deadlines never expire a task. The existing query budgets remain: up to
+12 overdue deadlines, 12 deadlines today and 16 later/missing deadlines, each filtered by
+start before its limit. The full Upcoming Tasks page has no horizon or row cutoff.
+See [task planning release notes](task-planning-release.md) for exact time boundaries,
+month grouping and verification. Agenda includes overlapping presences and today's due
+tasks using Asia/Tokyo. Cooking is explicitly household data.
 Ask Lennart lists safe pending request types and oldest times, never prompts. Codex shows
 admin queued/running operations without provider helpers.
 

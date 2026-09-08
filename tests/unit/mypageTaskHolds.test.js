@@ -26,7 +26,6 @@ function element(parent = null, dataset = {}) {
     contains(other) { return Boolean(other && (other === this || this.contains(other.parent))); },
     closest(selector) {
       if (selector === '[data-task-id]' && this.dataset.taskId) return this;
-      if (selector === '[data-complete-task]' && this.dataset.completeTask) return this;
       return this.parent?.closest(selector);
     },
     setAttribute: jest.fn(), removeAttribute: jest.fn(),
@@ -218,13 +217,32 @@ test('suppresses touch callouts only during hold, retaining ordinary context men
   expect(section.emit('contextmenu').preventDefault).not.toHaveBeenCalled();
 });
 
-test('visible keyboard completion button sends one request and waits for server acknowledgement', async () => {
-  const button = element(section, { completeTask: 'todo-id' });
-  section.emit('click', { target: button, detail: 0 });
+test('Space completes on release once, waits for acknowledgement and restores focus', async () => {
+  doc.activeElement = first;
+  const key = (name, fields = {}) => section.emit(name, { target: first, key: ' ', ...fields });
+  expect(key('keydown').preventDefault).toHaveBeenCalled();
+  key('keydown', { repeat: true });
+  expect(win.fetch).not.toHaveBeenCalled();
+  key('keyup');
   expect(win.fetch).toHaveBeenCalledTimes(1);
   expect(first.removed).not.toBe(true);
-  section.emit('click', { target: button, detail: 0 });
+  key('keydown'); key('keyup');
   expect(win.fetch).toHaveBeenCalledTimes(1);
   success(); await flush();
   expect(first.removed).toBe(true);
+  expect(second.focus).toHaveBeenCalled();
+  // Auto-repeat after focus moves cannot complete the next task.
+  section.emit('keydown', { target: second, key: ' ', repeat: true });
+  section.emit('keyup', { target: second, key: ' ' });
+  expect(win.fetch).toHaveBeenCalledTimes(1);
+});
+
+test.each(['focusout', 'escape', 'blur', 'modified', 'enter', 'outside'])('keyboard %s does not complete', mode => {
+  section.emit('keydown', { target: mode === 'outside' ? section : first,
+    key: mode === 'enter' ? 'Enter' : ' ', ctrlKey: mode === 'modified' });
+  if (mode === 'focusout') section.emit('focusout');
+  if (mode === 'escape') doc.emit('keydown', { key: 'Escape' });
+  if (mode === 'blur') win.emit('blur');
+  section.emit('keyup', { target: first, key: ' ' });
+  expect(win.fetch).not.toHaveBeenCalled();
 });

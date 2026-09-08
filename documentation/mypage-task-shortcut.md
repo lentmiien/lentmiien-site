@@ -3,9 +3,11 @@
 ## Behavior and release notes
 
 Hold one todo/tobuy for 900 ms to complete it. A progress track fills throughout
-the hold. Clicking an item or the section background still opens
-`/scheduleTask/upcoming`; keyboard users retain ordinary links and that page's
-completion buttons. Movement over 10 CSS pixels, scrolling, leaving the item,
+the hold. Clicking an item opens `/scheduleTask/upcoming`. Keyboard users can
+focus the same link and press Space to complete on key release, or Enter to open
+the full planning page. There is no separate Complete button on My Page. Key repeat,
+focus loss and Escape cannot cause an unintended keyboard completion. Movement
+over 10 CSS pixels, scrolling, leaving the item,
 pointer cancellation, a second pointer, Escape, or losing focus cancels an
 unfinished hold. Releasing early preserves normal click navigation.
 
@@ -13,7 +15,11 @@ Only a confirmed successful response removes the selected item. Pending requests
 cannot be duplicated. Failed requests keep the item and show an accessible error;
 reload before retrying if a response was lost, since the server may have saved it.
 After the last item, the section shows the existing “Show all tasks” link. There
-are no displayed counts to adjust.
+are no displayed counts to adjust. Empty task group headings are removed with their
+last row, and keyboard focus moves to a remaining task or the all-tasks link.
+
+For the start window, missing-date rules and restored monthly planning sections, see
+[task planning release notes](task-planning-release.md).
 
 Completion shares the Upcoming page's task save and pending Pushover reminder
 cleanup. Todo and tobuy both set `done: true` on one owner-scoped document.

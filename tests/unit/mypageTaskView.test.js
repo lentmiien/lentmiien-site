@@ -9,6 +9,8 @@ test('task shell has delegated hold and keyboard completion support, status and 
   expect(html).toContain('id="mypage-tasks" data-csrf-token="fixture-token"');
   expect(html).toContain('id="mypage-task-status" role="status"');
   expect(html).toContain('Hold a task for 0.9 seconds');
+  expect(html).toContain('press Space to complete; Enter opens all tasks');
+  expect(html).not.toContain('Complete button');
   expect(html).toContain('href="/scheduleTask/upcoming"');
   expect(html).toContain(`src="${formAssetUrl('mypage_tasks.js')}"`);
   expect(html).not.toContain('data-task-id=');

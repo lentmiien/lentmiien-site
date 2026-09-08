@@ -153,3 +153,14 @@ test('capability lookup failure fails closed', async () => {
   expect((await complete()).status).toBe(503);
   expect(Task.findOne).not.toHaveBeenCalled();
 });
+
+test.each([
+  { start: null, end: new Date('2020-01-01T00:00:00Z') },
+  { start: new Date('2020-01-01T00:00:00Z'), end: null },
+  { start: null, end: null },
+])('date availability never prevents authorized completion: %#', async dates => {
+  Object.assign(task, dates);
+  expect((await complete()).status).toBe(200);
+  expect(task.done).toBe(true);
+  expect(task.save).toHaveBeenCalledTimes(1);
+});

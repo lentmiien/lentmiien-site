@@ -222,3 +222,66 @@ describe('schedule task controller reminder lifecycle', () => {
     expect(res.redirect).toHaveBeenCalledWith('/scheduleTask/upcoming');
   });
 });
+
+describe('upcoming planning page with the real shared layout', () => {
+  const pug = require('pug');
+  const { now, cases, tasks, matches } = require('../fixtures/taskDates');
+  const { createRequire } = require('module');
+  const { JSDOM } = createRequire(__filename)('jsdom');
+  const logger = require('../../utils/logger');
+  beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(now); jest.clearAllMocks(); });
+  afterEach(() => jest.useRealTimers());
+
+  test.each([[[]], [['Planning']]])('renders every incomplete task, far future months and navigation with groups %j', async navigationGroups => {
+    const records = [...tasks, { ...tasks[0], _id: 'completed', done: true },
+      { ...tasks[0], _id: 'foreign', userId: 'other' }, { ...tasks[0], _id: 'presence', type: 'presence' },
+      { ...tasks[0], _id: 'escaped', title: '<script>throw new Error("injected")</script>', description: '<img src=x onerror=alert(1)>' },
+      { ...tasks[0], _id: 'month-boundary', start: new Date('2026-09-30T15:00:00Z') }];
+    Task.find.mockImplementation(filter => ({ lean: async () => records.filter(t => matches(t, filter)) }));
+    const res = createResponse(); const next = jest.fn();
+    await controller.renderUpcomingTasksPage({ user: { name: 'member' } }, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(Task.find).toHaveBeenCalledWith({ userId: 'member', done: false, type: { $in: ['todo', 'tobuy'] } });
+    const [view, locals] = res.render.mock.calls[0];
+    expect(locals).not.toHaveProperty('groups');
+    const html = pug.renderFile(`views/${view}.pug`, { ...locals, loggedIn: true, permissions: [], bookmarks: [], htmlPaths: [],
+      navigationGroups, accountNavigation: [{ id: 'fixture-tool', label: 'Fixture tool', group: 'Planning', subgroup: 'Tasks', href: '/scheduleTask/calendar', src: '/i/fixture.png' }] });
+    const dom = new JSDOM(html); const doc = dom.window.document;
+    expect(doc.querySelectorAll('.task-card')).toHaveLength(tasks.length + 2);
+    expect(doc.querySelector('.section-group[data-key="2028-02"]')).not.toBeNull();
+    expect(doc.querySelector('.section-group[data-key="2026-10"] [data-id="month-boundary"]')).not.toBeNull();
+    expect(doc.querySelector('.section-group[data-key="2026-09"] [data-id="past-start"]')).not.toBeNull();
+    for (const [id, , status] of cases) {
+      const card = doc.querySelector(`[data-id="${id}"]`).closest('.task-card');
+      expect(card.textContent).toContain(status);
+      expect(Boolean(card.closest('.section-expired'))).toBe(status === 'Overdue');
+    }
+    expect(doc.querySelector('[data-id="missing-both"]').closest('.task-card').textContent).toContain('Available anytimeNo deadline');
+    expect(doc.querySelector('[data-id="started-future-deadline"]').closest('.task-card').querySelectorAll('time')).toHaveLength(2);
+    expect(doc.querySelector('.tools-group [data-tool-id="fixture-tool"]') !== null).toBe(navigationGroups.length > 0);
+    expect(doc.querySelector('.task-card script, .task-card img')).toBeNull();
+    for (const href of ['/scheduleTask/calendar', '/scheduleTask/statistics', '/scheduleTask/new/presence', '/scheduleTask/new/task']) {
+      expect(doc.querySelector(`a[href="${href}"]`)).not.toBeNull();
+    }
+    dom.window.close();
+  });
+
+  test('empty plan renders with the real layout', async () => {
+    Task.find.mockReturnValue({ lean: async () => [] });
+    const res = createResponse();
+    await controller.renderUpcomingTasksPage({ user: { name: 'member' } }, res, jest.fn());
+    expect(pug.renderFile('views/scheduleTask/upcoming.pug', { ...res.render.mock.calls[0][1], loggedIn: true,
+      permissions: [], bookmarks: [], htmlPaths: [] })).toContain('No incomplete tasks.');
+  });
+
+  test('logs an actionable generic failure without private diagnostic payloads', async () => {
+    const err = new Error('synthetic private payload');
+    Task.find.mockReturnValue({ lean: async () => { throw err; } });
+    const next = jest.fn();
+    await controller.renderUpcomingTasksPage({ user: { name: 'member' } }, createResponse(), next);
+    expect(next).toHaveBeenCalledWith(err);
+    expect(logger.error).toHaveBeenCalledWith('Failed to load upcoming tasks', {
+      category: 'schedule_task', metadata: { errorName: 'Error' },
+    });
+  });
+});

@@ -2,13 +2,9 @@
 const { allows, SECTIONS } = require('./accountSurfacePolicy');
 const { jobTypesFor } = require('./accountPreferencesService');
 const logger = require('../utils/logger');
+const { tokyoDay, dashboardTaskStartFilter, taskDates, TASK_STATES } = require('../utils/scheduleTaskDates');
 const DAY = 86400000;
 const text = value => String(value ?? '').slice(0, 180);
-function tokyoDay(now = new Date()) {
-  const key = new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
-  const start = new Date(`${key}T00:00:00+09:00`);
-  return { key, start, end: new Date(start.getTime() + DAY) };
-}
 function freshness(date, now, maxAge = 30 * 60000) {
   const age = date ? now.getTime() - new Date(date).getTime() : NaN;
   return !Number.isFinite(age) ? 'unavailable' : age > maxAge || age < -60000 ? 'stale' : 'ready';
@@ -56,17 +52,24 @@ function createDashboardData({ model = name => require(`../models/${name}`), now
   }
   const adapters = {
     async tasks(policy) {
-      const day = tokyoDay(now());
+      const instant = now();
+      const day = tokyoDay(instant);
       const ownerFilter = { userId: policy.user.name, done: false, type: { $in: ['todo', 'tobuy'] } };
-      const taskRead = (filter, limit) => read('scheduleTask/Task', { ...ownerFilter, ...filter }, 'title type start end', { end: 1, createdAt: 1, _id: 1 }, limit);
+      const taskRead = (filter, limit) => read('scheduleTask/Task', {
+        ...ownerFilter, $and: [dashboardTaskStartFilter(instant), filter],
+      }, 'title type start end', { end: 1, start: 1, createdAt: 1, _id: 1 }, limit);
       const groups = await Promise.all([
         taskRead({ end: { $lt: day.start, $ne: null } }, 12),
         taskRead({ end: { $gte: day.start, $lt: day.end } }, 12),
         taskRead({ $or: [{ end: { $gte: day.end } }, { end: null }] }, 16),
       ]);
-      const tasks = groups.flat();
-      return { rows: tasks.map(t => ({ ...row(t.title, `${t.type === 'tobuy' ? 'Buy' : 'To do'} · ${t.end && new Date(t.end) < day.start ? 'Overdue' : t.end && new Date(t.end) < day.end ? 'Today' : 'Later / no deadline'}`, '/scheduleTask/upcoming', t.end),
-        taskId: String(t._id), canComplete: policy.capabilities.includes('schedule.task.complete') || ['admin', 'family', 'user'].includes(policy.user.type_user) })), note: 'Up to 40 incomplete tasks. Hold for 0.9 seconds or use Complete.' };
+      const tasks = groups.flat().map(t => ({ ...t, dates: taskDates(t, instant) }))
+        .sort((a, b) => TASK_STATES.indexOf(a.dates.status) - TASK_STATES.indexOf(b.dates.status)
+          || a.dates.planningDate - b.dates.planningDate || String(a._id).localeCompare(String(b._id)));
+      return { rows: tasks.map(t => ({ ...row(t.title, `${t.type === 'tobuy' ? 'Buy' : 'To do'} · ${t.dates.status}`, '/scheduleTask/upcoming', t.end),
+        group: t.dates.status, start: iso(t.start), end: iso(t.end),
+        taskId: String(t._id), canComplete: policy.capabilities.includes('schedule.task.complete') || ['admin', 'family', 'user'].includes(policy.user.type_user) })),
+      note: 'Up to 40 incomplete tasks available now or starting within 14 days. Dates: Asia/Tokyo. Open all tasks for the full plan.' };
     },
     async agenda(policy) {
       const day = tokyoDay(now());

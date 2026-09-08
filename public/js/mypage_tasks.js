@@ -9,6 +9,7 @@
     if (!token || !status) return;
 
     let gesture = null;
+    let keyboardItem = null;
     let pending = null;
     let frame = null;
     let suppressClick = false;
@@ -25,6 +26,7 @@
     }
 
     function cancel(suppress = true) {
+      keyboardItem = null;
       if (!gesture) return;
       win.cancelAnimationFrame(frame);
       if (!gesture.committed) {
@@ -55,8 +57,10 @@
         const result = await response.json();
         if (result.ok !== true || result.done !== true) throw new Error('Completion not confirmed');
         const wrapper = item.closest?.('.account-task-row');
+        const group = item.closest?.('[data-task-group]');
         const hadFocus = doc.activeElement === item || Boolean(wrapper?.contains(doc.activeElement));
         (wrapper || item).remove();
+        if (group && !group.querySelector('.account-task-row')) group.remove();
         const nextTask = section.querySelector('[data-task-id]');
         const emptyLink = section.querySelector('.schedule-task-pill--empty');
         emptyLink.hidden = Boolean(nextTask);
@@ -73,12 +77,23 @@
       }
     }
 
-    section.addEventListener('click', (event) => {
-      const button = event.target.closest?.('[data-complete-task]');
-      if (!button || pending) return;
-      const item = [...section.querySelectorAll('[data-task-id]')].find(el => el.dataset.taskId === button.dataset.completeTask);
-      if (item) { cancel(false); void complete(item); }
+    section.addEventListener('keydown', (event) => {
+      const item = event.target.closest?.('[data-task-id]');
+      if (event.key !== ' ' || !item || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      if (event.repeat || pending) return;
+      cancel(false);
+      keyboardItem = item;
     });
+    section.addEventListener('keyup', (event) => {
+      if (event.key !== ' ' || !keyboardItem) return;
+      const item = keyboardItem;
+      keyboardItem = null;
+      event.preventDefault();
+      if (event.target === item && section.contains(item) && !pending
+        && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) void complete(item);
+    });
+    section.addEventListener('focusout', () => { keyboardItem = null; });
 
     function tick(now) {
       if (!gesture || gesture.committed) return;
@@ -102,7 +117,6 @@
         return;
       }
       suppressClick = false;
-      if (event.target.closest?.('[data-complete-task]')) return;
       const item = event.target.closest?.('[data-task-id]');
       if (!item || !section.contains(item)) return;
       if (pending) {

@@ -10,41 +10,50 @@ block content
 
     h2.mt-2.mb-3 Upcoming Tasks
     p.text-muted.small
-      | Showing non-completed tasks. Grouped by month using each task's end date if available,
-      | otherwise start date, otherwise today. Expired tasks are shown first.
+      | All incomplete tasks, with no future cutoff. Overdue deadlines appear first.
+      |  Months use the deadline, otherwise a future start, otherwise the current month.
+      |  Tasks without deadlines stay ongoing once available. Dates: Asia/Tokyo.
 
-    if expired && expired.length
-      h3.mt-4.mb-2 Expired
+    mixin taskCard(t)
+      .col
+        .task-card.card(class=t.type)
+          .card-body
+            .d-flex.justify-content-between.align-items-start.mb-1
+              h5.card-title.mb-0= t.title
+              button.btn.btn-sm.btn-outline-success.btn-complete(data-id=t._id) Mark as done
+            if t.description
+              p.card-text.text-secondary= t.description
+            .d-flex.justify-content-between.align-items-center.mt-2
+              span.badge.rounded-pill(class=t.type)= t.type
+              span.task-date= t.status
+            .task-date.mt-2
+              div
+                if t.start
+                  = 'Start: '
+                  time(datetime=t.start.toISOString())= formatTaskDate(t.start)
+                else
+                  | Available anytime
+              div
+                if t.end
+                  = 'Deadline: '
+                  time(datetime=t.end.toISOString())= formatTaskDate(t.end)
+                else
+                  | No deadline
+
+    if overdueTasks.length
+      h3.mt-4.mb-2 Overdue
       .row.row-cols-1.row-cols-md-2.row-cols-lg-3.g-3.section-expired
-        each t in expired
-          .col
-            .task-card.card(class=t.type)
-              .card-body
-                .d-flex.justify-content-between.align-items-start.mb-1
-                  h5.card-title.mb-0= t.title
-                  button.btn.btn-sm.btn-outline-success.btn-complete(data-id=t._id) Mark as done
-                if t.description
-                  p.card-text.text-secondary= t.description
-                .d-flex.justify-content-between.align-items-center.mt-2
-                  span.badge.rounded-pill(class=t.type)= t.type
-                  span.task-date #{new Date(t.effectiveDate).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric'})}
+        each task in overdueTasks
+          +taskCard(task)
 
-    each g in groups
-      if g.items && g.items.length
-        h3.mt-4.mb-2= g.label
-        .row.row-cols-1.row-cols-md-2.row-cols-lg-3.g-3.section-group(data-key=g.key)
-          each t in g.items
-            .col
-              .task-card.card(class=t.type)
-                .card-body
-                  .d-flex.justify-content-between.align-items-start.mb-1
-                    h5.card-title.mb-0= t.title
-                    button.btn.btn-sm.btn-outline-success.btn-complete(data-id=t._id) Mark as done
-                  if t.description
-                    p.card-text.text-secondary= t.description
-                  .d-flex.justify-content-between.align-items-center.mt-2
-                    span.badge.rounded-pill(class=t.type)= t.type
-                    span.task-date #{new Date(t.effectiveDate).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric'})}
+    each taskGroup in taskGroups
+      if taskGroup.items.length
+        h3.mt-4.mb-2= taskGroup.label
+        .row.row-cols-1.row-cols-md-2.row-cols-lg-3.g-3.section-group(data-key=taskGroup.key)
+          each task in taskGroup.items
+            +taskCard(task)
 
-  //- Scripts
+    if !overdueTasks.length && !taskGroups.length
+      p No incomplete tasks.
+
   script(src='/js/scheduleTask/upcoming.js', defer)

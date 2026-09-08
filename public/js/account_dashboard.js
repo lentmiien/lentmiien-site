@@ -40,21 +40,33 @@
     const target = card.querySelector('.account-card-data');
     if (card.dataset.section === 'tasks') {
       const list = card.querySelector('.account-task-list'); list.replaceChildren();
+      const groups = new Map();
+      const dateFormat = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Tokyo', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       data.rows.forEach(row => {
+        if (!groups.has(row.group)) {
+          const group = element('div'); group.dataset.taskGroup = row.group;
+          group.append(element('h3', row.group, 'account-task-group-title'));
+          groups.set(row.group, group); list.append(group);
+        }
         const wrapper = element('div', undefined, 'account-task-row');
         const link = localLink(row.title, row.href); link.className = 'schedule-task-pill'; link.draggable = false;
         link.append(element('small', row.detail));
+        for (const [field, label, fallback] of [['start', 'Start', 'Available anytime'], ['end', 'Deadline', 'No deadline']]) {
+          const line = element('small', row[field] ? `${label}: ` : fallback);
+          if (row[field]) {
+            const time = element('time', dateFormat.format(new Date(row[field])));
+            time.dateTime = row[field]; line.append(time);
+          }
+          link.append(line);
+        }
         if (row.canComplete) {
           link.dataset.taskId = row.taskId; link.setAttribute('aria-describedby', 'mypage-task-hint');
+          link.setAttribute('aria-keyshortcuts', 'Space');
           const progress = element('span', undefined, 'mypage-task-progress');
           progress.append(element('span', undefined, 'mypage-task-progress__fill')); link.append(progress);
         }
         wrapper.append(link);
-        if (row.canComplete) {
-          const button = element('button', 'Complete'); button.type = 'button'; button.dataset.completeTask = row.taskId;
-          button.setAttribute('aria-label', `Complete ${row.title}`); wrapper.append(button);
-        }
-        list.append(wrapper);
+        groups.get(row.group).append(wrapper);
       });
       card.querySelector('.schedule-task-pill--empty').hidden = data.rows.length > 0;
       return;

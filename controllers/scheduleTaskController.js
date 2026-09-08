@@ -10,6 +10,7 @@ const {
 } = require('../services/scheduleTaskReminderService');
 const { Task, Palette } = require('../database');
 const logger = require('../utils/logger');
+const { taskDates, taskMonth, formatTaskDate } = require('../utils/scheduleTaskDates');
 
 function asArray(value) {
   if (Array.isArray(value)) return value;
@@ -423,51 +424,37 @@ exports.saveEdit = async (req, res, next) => {
 /**
  * GET /upcoming - Upcoming tasks grouped by month
  * - Only non-completed tasks (type in ['todo','tobuy'])
- * - Sections: Expired, then current month, then future months that have tasks
- * - Effective date = end || start || today
+ * - Overdue first, then all planning months, without a start horizon.
+ * - Only a deadline can be overdue; available undated tasks use the current month.
  */
 exports.renderUpcomingTasksPage = async function(req, res, next) {
   try {
-    const userId = req.user.name;
     const today = new Date();
-    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
     const raw = await Task.find({
-      userId,
+      userId: req.user.name,
       done: false,
       type: { $in: ['todo', 'tobuy'] }
     }).lean();
-
-    const tasks = raw.map(t => {
-      const eff = t.end ? new Date(t.end) : (t.start ? new Date(t.start) : new Date(today));
-      return { ...t, effectiveDate: eff };
-    }).sort((a, b) => a.effectiveDate - b.effectiveDate);
-
-    const expired = [];
-    const futureMap = new Map(); // key: 'YYYY-MM' -> { label, items: [] }
-
-    for (const t of tasks) {
-      const d = t.effectiveDate;
-      if (d < startOfToday) {
-        expired.push(t);
+    const tasks = raw.map(t => ({ ...t, ...taskDates(t, today) }))
+      .sort((a, b) => a.planningDate - b.planningDate || String(a._id).localeCompare(String(b._id)));
+    const overdueTasks = [];
+    const months = new Map();
+    for (const task of tasks) {
+      if (task.status === 'Overdue') {
+        overdueTasks.push(task);
         continue;
       }
-      const y = d.getFullYear();
-      const m = d.getMonth(); // 0-based
-      const key = `${y}-${String(m+1).padStart(2, '0')}`;
-      const label = `${d.toLocaleString('en-US', { month: 'long' })} - ${y}`;
-      if (!futureMap.has(key)) futureMap.set(key, { key, label, items: [] });
-      futureMap.get(key).items.push(t);
+      const { key, label } = taskMonth(task.planningDate);
+      if (!months.has(key)) months.set(key, { key, label, items: [] });
+      months.get(key).items.push(task);
     }
-
-    const groups = Array.from(futureMap.values()).sort((a, b) => a.key.localeCompare(b.key));
-
-    res.render('scheduleTask/upcoming', {
-      expired,
-      groups,
-      today
-    });
+    // Page-specific locals cannot be shadowed by the layout's navigation groups.
+    const taskGroups = [...months.values()].sort((a, b) => a.key.localeCompare(b.key));
+    res.render('scheduleTask/upcoming', { overdueTasks, taskGroups, formatTaskDate });
   } catch (err) {
+    logger.error('Failed to load upcoming tasks', {
+      category: 'schedule_task', metadata: { errorName: err.name },
+    });
     next(err);
   }
 };

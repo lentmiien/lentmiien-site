@@ -32,7 +32,7 @@ block content
             .account-card-data
             if section.id === 'tasks'
               #mypage-tasks(data-csrf-token=csrfToken)
-                p#mypage-task-hint.account-note Hold a task for 0.9 seconds to complete, or use its Complete button.
+                p#mypage-task-hint.account-note Hold a task for 0.9 seconds to complete. Keyboard: focus a task and press Space to complete; Enter opens all tasks.
                 .account-task-list
                 a.schedule-task-pill--empty(href='/scheduleTask/upcoming') Show all tasks
                 p#mypage-task-status(role='status', aria-live='polite')
