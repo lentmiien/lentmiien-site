@@ -8,12 +8,12 @@ const { createRequire } = require('module');
 // jsdom includes ESM dependencies; use Node's native loader under Jest's VM modules.
 const { JSDOM } = createRequire(__filename)('jsdom');
 const { createAccountDashboard } = require('../../routes/accountDashboard');
-const { createFormAssets } = require('../../utils/formAssets');
+const { createFormAssets, FORM_SCRIPTS } = require('../../utils/formAssets');
 const accountSurfaceBody = require('../../middleware/accountSurfaceBody');
 const Entry = require('../../models/my_life_log_entry');
 const embedding = require('../../services/accountEmbeddingAdapter');
 const logger = require('../../utils/logger');
-let server; let base; let store; let userModel; let dom; let cookie; let requests; let assets; let user;
+let server; let base; let store; let userModel; let dom; let cookie; let requests; let assets; let user; let scriptCache;
 let nextOwner = 100;
 const visual = { version: 1, image: '/i/img_select.jpg', canvas: { width: 200, height: 400 }, points: [{ x: 0.5, y: 0.5, radius: 8, opacity: 80, category: 'a' }] };
 const until = async predicate => {
@@ -26,7 +26,7 @@ const until = async predicate => {
 beforeEach(async () => {
   user = { _id: String(nextOwner++).padStart(24, '0'), type_user: 'admin', name: 'synthetic' };
   process.env.DASHBOARD_PERSONAL_OWNER_USER_ID = user._id;
-  requests = []; cookie = '';
+  requests = []; cookie = ''; scriptCache = new Map();
   const app = express();
   assets = createFormAssets(); app.locals.formAssetUrl = assets.url;
   app.set('view engine', 'pug'); app.set('views', 'views');
@@ -53,10 +53,18 @@ afterEach(async () => {
   delete process.env.DASHBOARD_PERSONAL_OWNER_USER_ID;
 });
 async function browserFetch(url, options = {}) {
-  const response = await fetch(new URL(url, base), { ...options, headers: { Cookie: cookie, Origin: base, ...options.headers } });
+  const pathname = new URL(url, base).pathname;
+  const cacheHit = (!options.method || options.method === 'GET') && scriptCache.has(pathname);
+  const response = cacheHit ? scriptCache.get(pathname).clone()
+    : await fetch(new URL(url, base), { ...options, headers: { Cookie: cookie, Origin: base, ...options.headers } });
   const setCookie = response.headers.get('set-cookie');
   if (setCookie) cookie = setCookie.split(';')[0];
-  requests.push({ url: new URL(url, base).pathname, options, status: response.status });
+  const cacheControl = response.headers.get('cache-control');
+  // Model fresh public script caching, never private HTML/API/token responses.
+  if (!cacheHit && response.ok && cacheControl === 'public, max-age=31536000, immutable') {
+    scriptCache.set(pathname, response.clone());
+  }
+  requests.push({ url: pathname, options, status: response.status, cacheHit, cacheControl });
   return response;
 }
 async function page({ missingToken = false, failScript = false } = {}) {
@@ -113,6 +121,35 @@ async function changeSession(change) {
   await new Promise((resolve, reject) => store.set(id, saved, error => error ? reject(error) : resolve()));
 }
 const writes = () => requests.filter(r => r.url.endsWith('/entry') && r.options.method === 'POST');
+
+test('fresh navigations select fingerprinted scripts with legacy URLs still cached and caching enabled', async () => {
+  for (const name of FORM_SCRIPTS) {
+    scriptCache.set(`/js/${name}`, new Response('throw new Error("Stale legacy script executed");'));
+  }
+  for (let navigation = 0; navigation < 2; navigation++) {
+    const doc = await page();
+    expect(doc.getElementById('account-dashboard').dataset.lifeLogScript).toBe(assets.url('my_life_log.js'));
+    expect([...doc.scripts].find(s => s.src.endsWith('/mypage_tasks.js')).getAttribute('src')).toBe(assets.url('mypage_tasks.js'));
+    fill(doc); submit(doc);
+    await until(() => doc.getElementById('life-log-status').textContent === 'Saved.');
+    expect(Entry.create).toHaveBeenCalledTimes(navigation + 1);
+    dom.window.close(); dom = null;
+  }
+  for (const name of ['account_dashboard.js', 'my_life_log.js']) {
+    expect(requests.filter(r => r.url === assets.url(name)).map(r => r.cacheHit)).toEqual([false, true]);
+  }
+  expect(writes()).toHaveLength(2);
+  expect(writes().every(r => r.status === 200)).toBe(true);
+  expect(requests.some(r => r.url.startsWith('/js/'))).toBe(false);
+  for (const name of FORM_SCRIPTS) expect(scriptCache.has(`/js/${name}`)).toBe(true);
+  const privateRequests = requests.filter(r => r.url.startsWith('/mypage'));
+  expect(privateRequests.filter(r => r.url === '/mypage')).toHaveLength(2);
+  for (const request of privateRequests) {
+    expect(request.cacheHit).toBe(false);
+    expect(request.cacheControl).toBe('private, no-store, max-age=0');
+    expect(scriptCache.has(request.url)).toBe(false);
+  }
+});
 
 test.each(['basic', 'medical', 'diary'])('rendered dashboard, fragment and actual %s submit send the session token', async type => {
   const doc = await page(); fill(doc, type); submit(doc);

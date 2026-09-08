@@ -1,6 +1,7 @@
 const ToolManagerService = require('../services/toolManagerService');
 const defaultToolSeeds = require('../services/data/toolSeeds');
 const logger = require('../utils/logger');
+const { PRIVATE_NO_STORE } = require('../middleware/sessionCsrf');
 
 const toolManagerService = new ToolManagerService();
 
@@ -51,6 +52,7 @@ function parseJsonInput(value, label) {
 }
 
 exports.index = async (req, res) => {
+  res.set('Cache-Control', PRIVATE_NO_STORE);
   try {
     const [tools, editTool] = await Promise.all([
       toolManagerService.listTools({ includeDisabled: true }),

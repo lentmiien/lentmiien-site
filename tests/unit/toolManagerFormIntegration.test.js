@@ -1,4 +1,9 @@
 jest.mock('../../utils/logger', () => ({ warning: jest.fn(), error: jest.fn() }));
+jest.mock('../../services/toolManagerService', () => jest.fn().mockImplementation(() => ({
+  listTools: jest.fn(async () => [{ _id: '333333333333333333333333', name: 'synthetic', displayName: 'Synthetic', enabled: true, tags: [] }]),
+  getRegisteredHandlerKeys: jest.fn(() => []),
+})));
+jest.mock('../../services/data/toolSeeds', () => []);
 const express = require('express');
 const session = require('express-session');
 const { createRequire } = require('module');
@@ -13,16 +18,14 @@ test('rendered Tool Manager tester uses the revisioned script and session header
   app.use(session({ secret: 'synthetic-tool-form-secret', resave: false, saveUninitialized: false }));
   app.use(express.json()); const csrf = createSessionCsrf(); app.use(csrf.issueToken);
   app.get('/assets/forms/:revision/:filename', assets.serve);
-  app.get('/admin/tools', (req, res) => res.render('admin_tool_manager', {
-    editTool: null, formDefaults: {}, feedback: null, handlerKeys: [], seedToolNames: [], toolDefinitionText: '{}', metadataText: '{}',
-    tools: [{ name: 'synthetic', displayName: 'Synthetic', enabled: true, tags: [] }],
-    testerConfig: { endpoint: '/admin/tools/test', csrfToken: res.locals.csrfToken }, bookmarks: [], htmlPaths: [],
-  }));
+  Object.assign(app.locals, { bookmarks: [], htmlPaths: [] });
+  app.get('/admin/tools', require('../../controllers/toolManagerController').index);
   const execute = jest.fn((req, res) => res.json({ ok: true, result: 'Synthetic' }));
   app.post('/admin/tools/test', csrf.requireToken, execute);
   await new Promise(resolve => { server = app.listen(0, '127.0.0.1', resolve); });
   const base = `http://127.0.0.1:${server.address().port}`;
   const response = await fetch(base + '/admin/tools'); expect(response.status).toBe(200);
+  expect(response.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   const cookie = response.headers.get('set-cookie').split(';')[0];
   dom = new JSDOM(await response.text(), { url: base + '/admin/tools', runScripts: 'outside-only' });
   const doc = dom.window.document;

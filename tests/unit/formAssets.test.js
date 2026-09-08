@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
+const session = require('express-session');
 const { createFormAssets, FORM_SCRIPTS } = require('../../utils/formAssets');
 let root; let server;
 afterEach(async () => {
@@ -49,4 +50,39 @@ test('missing security-critical scripts fail startup with a safe actionable log'
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'form-assets-test-'));
   expect(() => createFormAssets(root)).toThrow('Required form script unavailable');
   expect(require('../../utils/logger').error).toHaveBeenCalledWith('Required form script unavailable; restore public/js before starting', { category: 'form_assets' });
+});
+
+test('public assets expose only allowlisted JavaScript snapshots with cache-safe GET and HEAD responses', async () => {
+  const assets = createFormAssets();
+  const app = express();
+  app.use(session({ secret: 'synthetic-assets-session-secret', resave: false, saveUninitialized: false }));
+  app.get('/assets/forms/:revision/:filename', assets.serve);
+  app.use(express.static(path.resolve('public')));
+  const privateRoute = jest.fn((_req, res) => res.status(401).end());
+  app.use('/mypage', privateRoute);
+  await new Promise(resolve => { server = app.listen(0, '127.0.0.1', resolve); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  for (const name of FORM_SCRIPTS) {
+    for (const method of ['GET', 'HEAD']) {
+      const response = await fetch(base + assets.url(name), { method, redirect: 'manual' });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toMatch(/^application\/javascript(?:; charset=utf-8)?$/);
+      expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+      expect(response.headers.get('set-cookie')).toBeNull();
+      expect(response.headers.get('location')).toBeNull();
+      const bytes = Buffer.from(await response.arrayBuffer());
+      expect(bytes.equals(method === 'HEAD' ? Buffer.alloc(0) : fs.readFileSync(path.join('public/js', name)))).toBe(true);
+    }
+  }
+  const revision = assets.url('my_life_log.js').split('/')[3];
+  // Encoded separators stay within a single Express parameter, exercising decoding
+  // without a URL client's normalization hiding the attempted path traversal.
+  for (const filename of ['other.js', '.env', 'app.js', '__proto__', '%2e%2e%2f.env', '%2Fetc%2Fpasswd', '..%5C.env', 'my_life_log.js%00']) {
+    const response = await fetch(`${base}/assets/forms/${revision}/${filename}`);
+    expect(response.status).toBe(404);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.text()).toBe('');
+  }
+  expect(privateRoute).not.toHaveBeenCalled();
+  expect((await fetch(base + '/mypage')).status).toBe(401);
 });
