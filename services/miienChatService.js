@@ -78,12 +78,20 @@ class MiienChatService {
   async snapshot(user, id) {
     const conversation = await this.owned(user, id);
     await this.compatible(conversation);
-    const rows = await this.messages.find({ _id: { $in: conversation.messages }, contentType: 'text', hideFromBot: { $ne: true } })
+    const rows = await this.messages.find({ _id: { $in: conversation.messages }, contentType: 'text',
+      hideFromBot: { $ne: true }, user_id: { $in: ['bot', user.name] } })
       .select('_id user_id content.text timestamp').lean();
     const order = new Map(conversation.messages.map((value, index) => [String(value), index]));
     rows.sort((a, b) => order.get(String(a._id)) - order.get(String(b._id)));
-    const messages = rows.map(row => ({ id: String(row._id), role: row.user_id === 'bot' ? 'assistant' : 'user',
-      text: (row.content?.text || '').slice(0, 64000), mood: row.user_id === 'bot' ? classifyMood(row.content?.text) : 'neutral' }));
+    const messages = [];
+    for (const row of rows) {
+      if (typeof row.content?.text !== 'string' || !row.content.text.trim()) continue;
+      const text = row.content.text.slice(0, 64000);
+      const role = row.user_id === 'bot' ? 'assistant' : 'user';
+      // Only preceding visible conversational rows; never system metadata or future turns.
+      const mood = role === 'assistant' ? classifyMood(text, messages.slice(-3)) : 'neutral';
+      messages.push({ id: String(row._id), role, text, mood });
+    }
     return { id: String(conversation._id), title: conversation.title, model: conversation.metadata.model,
       messages, pending: await this.pendingFor(id) || new Date(conversation.miienBusyUntil || 0).getTime() > Date.now() };
   }

@@ -12,11 +12,20 @@ block content
       .stage-top
         span#presence.pill Ready to connect
         span#mood-label.pill Expression: neutral
+      form#message-form.composer
+        label(for='message') Your message
+        textarea#message(rows='3', maxlength='4000', placeholder='What’s on your mind?', required, disabled=!canWrite)
+        .button-row
+          button#send.primary(type='submit', disabled=!canWrite) Send
+          button#mic(type='button', disabled=!canTranscribe, data-allowed=canTranscribe ? 'true' : 'false') Microphone
+        p#mic-status.hint(role='status')= canTranscribe ? 'Record up to 60 seconds. Review and edit before sending.' : 'Microphone unavailable for this account.'
+        p#chat-status(role='status', aria-live='polite') Loading saved conversation…
+        p.hint Ctrl/⌘ + Enter to send. Text remains available if voice fails.
+    aside.conversation-panel
       .dialogue-panel
         span.eyebrow Miien
-        p#latest-reply Say hello. I’m ready when you are.
+        p#latest-reply(tabindex='0', role='region', aria-label='Latest Miien reply') Say hello. I’m ready when you are.
         p#art-status.hint(role='status')
-    aside.conversation-panel
       details.voice-options
         summary Voice & expression
         label.check
@@ -31,22 +40,14 @@ block content
           button#stop(type='button') Stop voice / recording
         label(for='mood-override') Expression preview
         select#mood-override
-          option(value='auto') Automatic from reply
+          option(value='auto') Automatic from conversation
           each mood in moods
             option(value=mood)= mood
-        p.hint Expression is a simple text cue, not an assessment of your feelings.
-      details.transcript(open)
+        p.hint Expressions follow conversation cues, not an assessment of your feelings.
+      details.transcript
         summary Conversation history
         #history(role='log', aria-label='Conversation transcript', tabindex='0')
-      form#message-form.composer
-        label(for='message') Your message
-        textarea#message(rows='3', maxlength='4000', placeholder='What’s on your mind?', required, disabled=!canWrite)
-        .button-row
-          button#send.primary(type='submit', disabled=!canWrite) Send
-          button#mic(type='button', disabled=!canTranscribe, data-allowed=canTranscribe ? 'true' : 'false') Microphone
-        p#mic-status.hint(role='status')= canTranscribe ? 'Record up to 60 seconds. Review and edit before sending.' : 'Microphone unavailable for this account.'
-        p#chat-status(role='status', aria-live='polite') Loading saved conversation…
-        p.hint Ctrl/⌘ + Enter to send. Text remains available if voice fails.
+
 block scripts
   script(src='/js/miien_voice.js', defer)
   script(src='/js/miien.js', defer)

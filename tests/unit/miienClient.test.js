@@ -4,13 +4,14 @@ const pug = require('pug');
 let JSDOM;
 beforeAll(async () => { ({ JSDOM } = await import('jsdom')); });
 const source = fs.readFileSync('public/js/miien.js', 'utf8');
+const { MOODS, classifyMood } = require('../../utils/miienMood');
 const voiceSource = fs.readFileSync('public/js/miien_voice.js', 'utf8');
 const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 const response = data => ({ ok: true, json: async () => data });
 let dom;
 afterEach(() => { dom?.window.close(); });
-function setup({ timers = false } = {}) {
-  const html = pug.renderFile('views/miien_room.pug', {conversation:{_id:'a'.repeat(24),title:'Fixture'},moods:['neutral','happy'],canWrite:true,canTranscribe:true,csrfToken:'token'});
+function setup({ timers = false, initial = { messages: [], pending: false }, decode } = {}) {
+  const html = pug.renderFile('views/miien_room.pug', {conversation:{_id:'a'.repeat(24),title:'Fixture'},moods:MOODS,canWrite:true,canTranscribe:true,csrfToken:'token'});
   dom = new JSDOM(html, { url:'https://fixture.invalid/chat5/miien/'+ 'a'.repeat(24),runScripts:'outside-only' });
   const {window:w}=dom;
   if (timers) {
@@ -19,9 +20,9 @@ function setup({ timers = false } = {}) {
     w.setTimeout = callback => { const id = ++nextTimer; w.fixtureTimers.set(id, callback); return id; };
     w.clearTimeout = id => w.fixtureTimers.delete(id);
   }
-  w.fetch=jest.fn().mockResolvedValue(response({messages:[],pending:false}));
+  w.fetch=jest.fn().mockResolvedValue(response(initial));
   w.MiienVoice={stop:jest.fn(),speak:jest.fn()};
-  w.Image=class { constructor(){this.src='';} decode(){return Promise.resolve();} };
+  w.Image=class { constructor(){this.src='';} decode(){return decode ? decode(this.src) : Promise.resolve();} };
   w.isSecureContext=true;
   w.AudioContext=class {};
   w.OfflineAudioContext=class {};
@@ -118,4 +119,121 @@ test('speech waits for pending cleanup and plays a newly saved reply exactly onc
   await tick({messages,pending:false});expect(w.MiienVoice.speak).toHaveBeenCalledTimes(1);
   expect(w.document.getElementById('chat-status').textContent).not.toContain('without text');
   await tick({messages,pending:false});expect(w.MiienVoice.speak).toHaveBeenCalledTimes(1);
+});
+
+async function tick(w, data) {
+  w.fetch.mockResolvedValueOnce(response(data));
+  const poll = [...w.fixtureTimers.values()].pop();
+  w.fixtureTimers.clear();
+  await poll();
+  await settle();
+}
+const assistant = (id, text, recent = []) => ({ id, role: 'assistant', text, mood: classifyMood(text, recent) });
+const element = (w, id) => w.document.getElementById(id);
+function preview(w, value) {
+  element(w, 'mood-override').value = value;
+  element(w, 'mood-override').dispatchEvent(new w.Event('change'));
+}
+test('automatic portraits follow successive natural replies and bilingual context; repeated polls preserve DOM', async () => {
+  const w = setup({ timers: true }); await settle();
+  const messages = [];
+  for (const [text, expected] of [
+    ['It means the value stays in memory.', 'thoughtful'],
+    ['You made it!', 'happy'], ['That sounds rough.', 'concerned'],
+    ['It came out of nowhere.', 'surprised'],
+  ]) {
+    messages.push(assistant(String(messages.length), text));
+    await tick(w, { messages, pending: false });
+    expect(element(w, 'character').src).toMatch(new RegExp(`/${expected}\\.webp$`));
+    expect(element(w, 'character').alt).toContain(expected);
+    expect(element(w, 'latest-reply').textContent).toBe(text);
+  }
+  const context = { id: 'u', role: 'user', text: 'どうすれば使えますか？', mood: 'neutral' };
+  messages.push(context, assistant('jp', 'Here you go.', [context]));
+  await tick(w, { messages, pending: false });
+  expect(element(w, 'character').src).toContain('/thoughtful.webp');
+  const article = element(w, 'history').firstChild;
+  await tick(w, { messages, pending: false });
+  expect(element(w, 'history').firstChild).toBe(article);
+});
+test('manual neutral overrides later replies, then automatic restores the newest mood', async () => {
+  const w = setup({ timers: true }); await settle();
+  await tick(w, { messages: [assistant('1', 'You made it!')], pending: false });
+  preview(w, 'neutral'); await settle();
+  await tick(w, { messages: [assistant('2', 'It means we can start.')], pending: false });
+  expect(element(w, 'character').src).toContain('/neutral.webp');
+  expect(element(w, 'mood-label').textContent).toContain('preview');
+  preview(w, 'auto'); await settle();
+  expect(element(w, 'character').src).toContain('/thoughtful.webp');
+  expect(element(w, 'mood-label').textContent).not.toContain('preview');
+  expect(w.fetch.mock.calls.every(([url]) => url.endsWith('/state'))).toBe(true);
+});
+test('late decode cannot replace a newer selection; failed art keeps text and current portrait', async () => {
+  let resolveHappy;
+  const w = setup({ timers: true, decode: src => src.endsWith('/happy.webp')
+    ? new Promise(resolve => { resolveHappy = resolve; })
+    : src.endsWith('/surprised.webp') ? Promise.reject(new Error('missing')) : Promise.resolve() });
+  await settle();
+  preview(w, 'happy'); preview(w, 'thoughtful'); await settle();
+  resolveHappy(); await settle();
+  expect(element(w, 'character').src).toContain('/thoughtful.webp');
+  preview(w, 'surprised'); await settle();
+  expect(element(w, 'character').src).toContain('/thoughtful.webp');
+  expect(element(w, 'art-status').textContent).toContain('unavailable');
+  expect(element(w, 'send').disabled).toBe(false);
+});
+test('unknown moods and empty history safely restore neutral and clear stale replay text', async () => {
+  const w = setup({ timers: true }); await settle();
+  await tick(w, { messages: [assistant('1', 'You made it!')], pending: false });
+  await tick(w, { messages: [{ ...assistant('2', 'Hello.'), mood: '../../unknown' }], pending: false });
+  expect(element(w, 'character').src).toContain('/neutral.webp');
+  expect(element(w, 'mood-label').textContent).toBe('Expression: neutral');
+  await tick(w, { messages: [], pending: false });
+  expect(element(w, 'latest-reply').textContent).toContain('Say hello');
+  element(w, 'replay').click();
+  expect(w.MiienVoice.speak).toHaveBeenLastCalledWith('', true);
+});
+test('history, pending-at-open, background replies and older rows never autoplay on later polls', async () => {
+  const first = assistant('1', 'You made it!');
+  const second = assistant('2', 'The reason is simple.');
+  const w = setup({ timers: true, initial: { messages: [first, second], pending: true } });
+  Object.defineProperty(w.document, 'hidden', { value: false, configurable: true });
+  await settle();
+  await tick(w, { messages: [first, second], pending: false });
+  await tick(w, { messages: [first], pending: false });
+  expect(w.MiienVoice.speak).not.toHaveBeenCalled();
+  const third = assistant('3', 'That sounds rough.');
+  Object.defineProperty(w.document, 'hidden', { value: true, configurable: true });
+  await tick(w, { messages: [first, second, third], pending: false });
+  Object.defineProperty(w.document, 'hidden', { value: false, configurable: true });
+  await tick(w, { messages: [first, second, third], pending: false });
+  expect(w.MiienVoice.speak).not.toHaveBeenCalled();
+  const fourth = assistant('4', 'It came out of nowhere.');
+  await tick(w, { messages: [first, second, third, fourth], pending: true });
+  expect(element(w, 'send').disabled).toBe(true);
+  await tick(w, { messages: [first, second, third, fourth], pending: false });
+  await tick(w, { messages: [first, second, third, fourth], pending: false });
+  expect(w.MiienVoice.speak).toHaveBeenCalledTimes(1);
+  expect(w.MiienVoice.speak).toHaveBeenCalledWith(fourth.text);
+});
+test('a user-ended snapshot never speaks a preceding assistant; keyboard sends and IME stays editable', async () => {
+  const w = setup({ timers: true }); await settle();
+  Object.defineProperty(w.document, 'hidden', { value: false });
+  await tick(w, { messages: [assistant('1', 'Hello.'), { id: 'u', role: 'user', text: 'Hi', mood: 'neutral' }], pending: false });
+  expect(w.MiienVoice.speak).not.toHaveBeenCalled();
+  element(w, 'message').value = 'Draft';
+  element(w, 'message').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, isComposing: true }));
+  expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/messages'))).toHaveLength(0);
+  element(w, 'message').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', metaKey: true }));
+  await settle();
+  expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/messages'))).toHaveLength(1);
+});
+test('room exposes long text, a focusable latest reply and history collapsed by default', async () => {
+  const text = 'A long synthetic reply.\n'.repeat(1500);
+  const w = setup({ initial: { messages: [assistant('1', text)], pending: false } }); await settle();
+  expect(element(w, 'latest-reply').textContent).toBe(text);
+  expect(element(w, 'latest-reply').tabIndex).toBe(0);
+  expect(w.document.querySelector('details.transcript').open).toBe(false);
+  expect(element(w, 'history').textContent).toContain(text);
+  expect(element(w, 'message-form').closest('.stage')).not.toBeNull();
 });

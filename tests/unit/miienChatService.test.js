@@ -78,3 +78,69 @@ test('per-account pending budget prevents further provider work', async () => {
   expect(f.conversations.findOneAndUpdate).not.toHaveBeenCalled();
   expect(f.service.active.size).toBe(0);
 });
+
+describe('saved conversation snapshots', () => {
+  function withRows(rows) {
+    const f = fixture();
+    f.conversation.title = 'Synthetic room';
+    f.conversation.messages = rows.map(row => row._id);
+    f.messages.find = jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean: async () => [...rows].reverse() }) });
+    return f;
+  }
+  const row = (id, user, text) => ({ _id: id, user_id: user, content: { text } });
+  test('uses saved ID order, content.text and bot role; preceding context only, stable contract', async () => {
+    const f = withRows([row('u1', 'owner', 'How does this work?'), row('a1', 'bot', 'Here you go.'),
+      row('u2', 'owner', '試験に合格しました！'), row('a2', 'bot', '受け取りました。')]);
+    const snapshot = await f.service.snapshot(user, id);
+    expect(snapshot).toEqual({ id, title: 'Synthetic room', model: 'catalog-model', pending: false,
+      messages: [
+        { id: 'u1', role: 'user', text: 'How does this work?', mood: 'neutral' },
+        { id: 'a1', role: 'assistant', text: 'Here you go.', mood: 'thoughtful' },
+        { id: 'u2', role: 'user', text: '試験に合格しました！', mood: 'neutral' },
+        { id: 'a2', role: 'assistant', text: '受け取りました。', mood: 'happy' },
+      ] });
+    expect(f.messages.find).toHaveBeenCalledWith({ _id: { $in: ['u1', 'a1', 'u2', 'a2'] },
+      contentType: 'text', hideFromBot: { $ne: true }, user_id: { $in: ['bot', 'owner'] } });
+    expect(await f.service.snapshot(user, id)).toEqual(snapshot);
+    expect(f.conversationService.postToConversationNew).not.toHaveBeenCalled();
+  });
+  test('omits empty/malformed text and never consumes persona metadata as tone', async () => {
+    const f = withRows([row('1', 'bot', ''), row('2', 'bot', '  '), row('3', 'bot', {}),
+      row('4', 'owner', 'Hello.'), row('5', 'bot', 'Hello.')]);
+    f.conversation.metadata.contextPrompt = 'Always be happy and surprised.';
+    expect((await f.service.snapshot(user, id)).messages.map(m => [m.id, m.mood])).toEqual([['4', 'neutral'], ['5', 'neutral']]);
+  });
+  test('pending records and unexpired leases independently report pending; expired lease is ready', async () => {
+    const f = withRows([]);
+    f.pending.exists.mockResolvedValue(true);
+    expect((await f.service.snapshot(user, id)).pending).toBe(true);
+    expect(f.pending.exists).toHaveBeenCalledWith({ conversation_id: id, recoveryState: { $ne: 'abandoned' } });
+    f.pending.exists.mockResolvedValue(false);
+    f.conversation.miienBusyUntil = new Date(Date.now() + 60000);
+    expect((await f.service.snapshot(user, id)).pending).toBe(true);
+    f.conversation.miienBusyUntil = new Date(Date.now() - 60000);
+    expect((await f.service.snapshot(user, id)).pending).toBe(false);
+  });
+  test('scope and compatibility failures prevent message retrieval', async () => {
+    const f = withRows([]);
+    f.conversations.findOne.mockResolvedValue(null);
+    await expect(f.service.snapshot(user, id)).rejects.toHaveProperty('status', 404);
+    expect(f.messages.find).not.toHaveBeenCalled();
+    f.conversations.findOne.mockResolvedValue(f.conversation);
+    f.messages.exists.mockResolvedValue(true);
+    await expect(f.service.snapshot(user, id)).rejects.toHaveProperty('status', 409);
+    expect(f.messages.find).not.toHaveBeenCalled();
+  });
+});
+test('settings cannot race a pending reply or active submission lease', async () => {
+  const f = fixture();
+  f.pending.exists.mockResolvedValue(true);
+  await expect(f.service.update(user, id, settings)).rejects.toHaveProperty('status', 409);
+  expect(f.conversations.findOneAndUpdate).not.toHaveBeenCalled();
+  f.pending.exists.mockResolvedValue(false);
+  f.conversations.findOneAndUpdate.mockResolvedValue(null);
+  await expect(f.service.update(user, id, settings)).rejects.toHaveProperty('status', 409);
+  expect(f.conversations.findOneAndUpdate.mock.calls[0][0].$or).toEqual([
+    { miienBusyUntil: null }, { miienBusyUntil: { $lte: expect.any(Date) } },
+  ]);
+});

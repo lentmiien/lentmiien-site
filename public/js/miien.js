@@ -14,7 +14,7 @@
   let initialized = false;
   let polling = false;
   let pollTimer;
-  let spokenAssistant = '';
+  const seenAssistants = new Set();
   let latestText = '';
   let lastSubmission = null;
   let sendError = '';
@@ -52,8 +52,9 @@
   async function mood() {
     const version = ++artVersion;
     const requested = byId('mood-override').value;
-    const selected = requested === 'auto' ? autoMood : requested;
-    const image = images.get(selected) || images.get('neutral');
+    const candidate = requested === 'auto' ? autoMood : requested;
+    const selected = images.has(candidate) ? candidate : 'neutral';
+    const image = images.get(selected);
     try {
       await image.decode();
       if (version !== artVersion || disposed) return;
@@ -69,36 +70,44 @@
   byId('character').addEventListener('error', () => { byId('character').hidden = true; });
   function render(data) {
     if (data.pending && !pending) stopAudio();
-    const fragment = document.createDocumentFragment();
-    data.messages.forEach(row => {
-      const article = document.createElement('article');
-      article.className = `message ${row.role === 'assistant' ? 'assistant' : 'user'}`;
-      const label = document.createElement('strong');
-      label.textContent = row.role === 'assistant' ? 'Miien' : 'You';
-      const content = document.createElement('p');
-      content.textContent = row.text;
-      article.append(label, content);
-      fragment.append(article);
-    });
-    const history = byId('history');
-    // Preserve scroll position when revisiting older messages.
-    const scroller = history.parentElement;
-    const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
     const signature = JSON.stringify(data.messages);
+    const history = byId('history');
     if (signature !== transcriptSignature) {
+      const fragment = document.createDocumentFragment();
+      data.messages.forEach(row => {
+        const article = document.createElement('article');
+        article.className = `message ${row.role === 'assistant' ? 'assistant' : 'user'}`;
+        const label = document.createElement('strong');
+        label.textContent = row.role === 'assistant' ? 'Miien' : 'You';
+        const content = document.createElement('p');
+        content.textContent = row.text;
+        article.append(label, content);
+        fragment.append(article);
+      });
+      // Preserve scroll position when revisiting older messages.
+      const scroller = history.parentElement;
+      const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
       history.replaceChildren(fragment);
       transcriptSignature = signature;
+      if (atBottom) scroller.scrollTop = scroller.scrollHeight;
     }
-    if (atBottom) scroller.scrollTop = scroller.scrollHeight;
     const assistant = [...data.messages].reverse().find(row => row.role === 'assistant');
     if (assistant) {
       latestText = assistant.text;
-      byId('latest-reply').textContent = latestText;
-      autoMood = assistant.mood;
-      mood();
-      if (initialized && spokenAssistant !== assistant.id && !data.pending && !document.hidden) voice?.speak(latestText);
-      if (!initialized || !data.pending) spokenAssistant = assistant.id;
+      if (byId('latest-reply').textContent !== latestText) byId('latest-reply').textContent = latestText;
+      const nextMood = images.has(assistant.mood) ? assistant.mood : 'neutral';
+      if (!initialized || nextMood !== autoMood) { autoMood = nextMood; mood(); }
+      if (initialized && !seenAssistants.has(assistant.id) && !data.pending && !document.hidden
+        && data.messages.at(-1)?.id === assistant.id) voice?.speak(latestText);
+    } else {
+      latestText = '';
+      byId('latest-reply').textContent = 'Say hello. I’m ready when you are.';
+      if (autoMood !== 'neutral') { autoMood = 'neutral'; mood(); }
     }
+    // Mark all loaded history as seen; pending new replies remain eligible until final.
+    if (!initialized || !data.pending) data.messages.forEach(row => {
+      if (row.role === 'assistant') seenAssistants.add(row.id);
+    });
     if (initialized && pending && !data.pending && data.messages[data.messages.length - 1]?.role !== 'assistant') chatStatus('The response finished without text. Review Chat5 or send another message.');
     else if (sendError) chatStatus(sendError);
     else chatStatus(data.pending ? 'Waiting for the saved Chat5 response… You can leave and resume later.' : 'Conversation saved. Ready when you are.');
