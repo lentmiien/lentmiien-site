@@ -1,7 +1,7 @@
 ((root, factory) => {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.MiienMotion = factory();
-})(typeof window === 'object' ? window : this, () => {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./miien_layers'));
+  else root.MiienMotion = factory(root.MiienLayers);
+})(typeof window === 'object' ? window : this, Layers => {
   'use strict';
   const moods = ['neutral', 'happy', 'thoughtful', 'concerned', 'surprised'];
   const states = ['idle', 'listening', 'thinking', 'speaking'];
@@ -33,23 +33,42 @@
       slots.add(key);
     }
     if (manifest.clips.length && manifest.clipStatus !== 'reviewed') return null;
+    if (manifest.layered !== undefined) {
+      const rig = manifest.layered;
+      if (!rig || rig.version !== 1 || rig.mood !== 'neutral' || rig.reviewStatus !== 'prototype'
+        || rig.width !== 768 || rig.height !== 1024 || !local(rig.provenance, 'json') || !rig.mouths) return null;
+      for (const item of [rig.base, rig.blink, rig.mouths.small, rig.mouths.open]) {
+        if (!item || !local(item.src, 'webp') || !hash(item.sha256)
+          || !Number.isInteger(item.x) || item.x < 0 || !Number.isInteger(item.y) || item.y < 0
+          || !Number.isInteger(item.width) || item.width < 1 || !Number.isInteger(item.height) || item.height < 1
+          || item.x + item.width > rig.width || item.y + item.height > rig.height) return null;
+      }
+      if (rig.base.x !== 0 || rig.base.y !== 0 || rig.base.width !== rig.width || rig.base.height !== rig.height) return null;
+    }
     return manifest;
   }
   // Clips are approved build assets, never generated or selected from user text.
   function create({ document, still, status, Image, mediaQuery, connection }) {
-    let manifest = null, generation = 0, video = null, timer, enabled = true;
+    let manifest = null, generation = 0, video = null, timer, enabled = true, rig = null, disposed = false;
+    let mouthShape = 0;
     let mood = 'neutral', state = 'idle', hidden = Boolean(document.hidden), currentKey = '';
     const preload = new Map();
     const halt = () => {
       generation += 1;
       clearTimeout(timer);
+      rig?.dispose(); rig = null;
+      still.hidden = false;
       if (video) { video.pause(); video.removeAttribute('src'); video.load(); video.remove(); video = null; }
       currentKey = '';
     };
     async function show(nextMood = mood, nextState = state, force = false) {
+      if (disposed) return;
       mood = moods.includes(nextMood) ? nextMood : 'neutral';
       state = states.includes(nextState) ? nextState : 'idle';
-      const key = `${mood}:${state}:${enabled}:${mediaQuery.matches}:${hidden}:${Boolean(connection?.saveData)}`;
+      if (state !== 'speaking') { mouthShape = 0; rig?.mouth(0); }
+      // Activity changes must not restart the independent breathing/blink clocks.
+      const layered = manifest?.layered && mood === 'neutral' && Layers;
+      const key = `${mood}:${layered ? 'layered' : state}:${enabled}:${mediaQuery.matches}:${hidden}:${Boolean(connection?.saveData)}`;
       if (!force && key === currentKey) return;
       halt(); currentKey = key;
       const version = generation;
@@ -66,6 +85,28 @@
         return;
       }
       if (!enabled || mediaQuery.matches || hidden || connection?.saveData) return;
+      if (layered) {
+        const asset = manifest.layered;
+        const items = [asset.base, asset.blink, asset.mouths.small, asset.mouths.open];
+        const fail = () => {
+          if (version !== generation) return;
+          halt(); still.src = src;
+          status.textContent = 'Character layers unavailable; showing the expression portrait.';
+        };
+        timer = setTimeout(fail, 10000);
+        try {
+          await Promise.all(items.map(item => {
+            if (!preload.has(item.src)) { const image = new Image(); image.src = item.src; preload.set(item.src, image); }
+            return preload.get(item.src).decode();
+          }));
+          if (version !== generation) return;
+          clearTimeout(timer);
+          rig = Layers.create({ document, still, asset, onError: fail });
+          rig.mouth(state === 'speaking' ? mouthShape : 0);
+          still.hidden = true;
+        } catch (_) { fail(); }
+        return;
+      }
       const clip = manifest?.clips.find(item => item.mood === mood && item.state === state);
       if (!clip) return;
       // The incoming first frame sits below the decoder, avoiding a portrait jump.
@@ -103,10 +144,11 @@
     connection?.addEventListener?.('change', refresh);
     return {
       show,
+      mouth(value) { mouthShape = state === 'speaking' && [1, 2].includes(value) ? value : 0; rig?.mouth(mouthShape); },
       setManifest(value) { manifest = validate(value); return refresh(); },
       enable(value) { enabled = Boolean(value); return refresh(); },
       suspend(value) { if (hidden === Boolean(value)) return; hidden = Boolean(value); return refresh(); },
-      dispose() { halt(); mediaQuery.removeEventListener?.('change', refresh); connection?.removeEventListener?.('change', refresh); },
+      dispose() { disposed = true; halt(); preload.clear(); mediaQuery.removeEventListener?.('change', refresh); connection?.removeEventListener?.('change', refresh); },
     };
   }
   return { moods, states, local, validate, create };

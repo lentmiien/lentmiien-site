@@ -23,6 +23,8 @@ function setup({ mode = 'anny_en', savedJob, fetch } = {}) {
     constructor(url) { this.src = url; this.play = jest.fn().mockResolvedValue(); this.pause = jest.fn(); this.load = jest.fn(); this.removeAttribute = jest.fn(); w.audios.push(this); }
   };
   w.phases = []; w.addEventListener('miien:voice', event => w.phases.push(event.detail.phase));
+  w.speechMotion = { start: jest.fn(), stop: jest.fn() };
+  w.MiienSpeechMotion = { create: () => w.speechMotion };
   vm.runInContext(source, dom.getInternalVMContext());
   w.MiienVoice.setLatestMessage(messageId);
   if (savedJob) w.MiienVoice.resume();
@@ -127,4 +129,37 @@ test('Stop during cached Replay authorization discards a late success', async ()
 test('legacy restored handles lacking backend/message attribution fail closed without fetching', async () => {
   const w = setup({ savedJob: { id: handle, deadlineAt: Date.now() + 1200000 } }); await settle();
   expect(w.fetch).not.toHaveBeenCalled(); expect(status(w)).toContain('does not match');
+});
+
+test('speech animation follows playing, pause, buffering, seeking, end, error and teardown', async () => {
+  const w = setup({ fetch: readyFetch() }); w.MiienVoice.speak('reply', true, messageId); await settle();
+  const audio = w.audios[0]; expect(w.speechMotion.start).not.toHaveBeenCalled();
+  audio.onplaying(); expect(w.speechMotion.start).toHaveBeenLastCalledWith(audio);
+  for (const event of ['onpause', 'onwaiting', 'onstalled', 'onseeking']) {
+    audio.onplaying(); const count = w.speechMotion.stop.mock.calls.length;
+    audio[event](); expect(w.speechMotion.stop).toHaveBeenCalledTimes(count + 1);
+    expect(w.phases.at(-1)).not.toBe('playing');
+  }
+  audio.paused = true; audio.readyState = 4; audio.onseeked(); expect(w.phases.at(-1)).toBe('idle');
+  audio.paused = false; audio.onseeked(); expect(w.phases.at(-1)).toBe('playing');
+  const old = audio.onplaying; audio.onended(); old(); expect(w.phases.at(-1)).toBe('idle');
+  w.MiienVoice.speak('reply', true, messageId); await settle();
+  audio.onplaying(); audio.onerror(); expect(w.phases.at(-1)).toBe('idle');
+  expect(audio.onseeking).toBeNull();
+  w.dispatchEvent(new w.Event('pagehide')); expect(w.speechMotion.stop).toHaveBeenCalled();
+});
+
+test('browser speech pause/resume and stale events reset the independent speech envelope', () => {
+  const w = setup({ mode: 'browser' }); let utterance;
+  w.SpeechSynthesisUtterance = class {};
+  w.speechSynthesis = { cancel: jest.fn(), getVoices: () => [], addEventListener: jest.fn(), speak: value => { utterance = value; } };
+  vm.runInContext(source, dom.getInternalVMContext());
+  w.MiienVoice.speak('Short reply', true);
+  expect(w.speechMotion.start).not.toHaveBeenCalled();
+  utterance.onstart(); expect(w.phases.at(-1)).toBe('playing');
+  utterance.onpause(); expect(w.phases.at(-1)).toBe('idle');
+  utterance.onresume(); expect(w.phases.at(-1)).toBe('playing');
+  w.MiienVoice.stop(); const count = w.speechMotion.start.mock.calls.length;
+  utterance.onresume(); expect(w.speechMotion.start).toHaveBeenCalledTimes(count);
+  expect(w.phases.at(-1)).toBe('idle');
 });

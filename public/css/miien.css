@@ -132,3 +132,25 @@ details { border-top: 1px solid var(--divider); padding: 1rem 0; } summary { cur
 @media (prefers-reduced-motion: reduce) { .character-motion { display: none !important; } }
 .keyboard-open #character, .keyboard-open .character-motion { visibility: hidden; }
 .miien-call .stage .composer { max-height: calc(var(--call-height, 100dvh) - 7rem); overflow: auto; overscroll-behavior: contain; }
+
+/* Neutral v1: fixed theme background, registered transparent foreground and
+   generated facial patches. Breathing and blinking have independent CSS clocks. */
+.character-layers { position: absolute; inset: 3rem 0 0; height: calc(100% - 3rem); container-type: size; display: flex; justify-content: center; pointer-events: none; overflow: hidden; }
+.miien-rig { position: relative; width: min(100cqw, 75cqh); height: min(133.3333cqw, 100cqh); flex: none; transform-origin: 50% 95%; animation: miien-breathe 5.8s ease-in-out infinite; }
+.miien-rig img { position: absolute; display: block; max-width: none; }
+.miien-blink { opacity: 0; animation: miien-blink 6.7s linear infinite; }
+@keyframes miien-breathe { 0%, 100% { transform: translateY(0) scaleY(1); } 50% { transform: translateY(-1px) scaleY(1.004); } }
+@keyframes miien-blink { 0%, 45%, 48%, 100% { opacity: 0; } 45.01%, 47.99% { opacity: 1; } }
+.miien-call .stage:has(.character-layers) .art-fallback { visibility: hidden; }
+.room:fullscreen .character-layers { inset: 0; height: 100%; }
+.keyboard-open .character-layers { visibility: hidden; }
+@media (max-width: 600px) {
+  .miien-call .character-layers { top: 7rem; height: max(150px, calc(100% - 23rem)); }
+}
+@media (max-height: 570px) and (min-width: 700px) {
+  .miien-call .character-layers { width: 40%; top: 5.5rem; height: calc(100% - 5.5rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .miien-rig, .miien-blink { animation: none; }
+  .miien-blink, .miien-mouth { visibility: hidden; }
+}

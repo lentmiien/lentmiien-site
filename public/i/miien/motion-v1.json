@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetVersion": "miien-2.1",
+  "assetVersion": "miien-2.3",
   "clipStatus": "not-produced",
   "policy": {
     "loop": true,
@@ -48,5 +48,47 @@
       "provenance": "/i/miien/provenance.json"
     }
   ],
-  "clips": []
+  "clips": [],
+  "layered": {
+    "version": 1,
+    "mood": "neutral",
+    "reviewStatus": "prototype",
+    "width": 768,
+    "height": 1024,
+    "provenance": "/i/miien/neutral-v1/provenance.json",
+    "base": {
+      "src": "/i/miien/neutral-v1/character.webp",
+      "x": 0,
+      "y": 0,
+      "width": 768,
+      "height": 1024,
+      "sha256": "6c84d93a90366088748df1b0e78b17c7ed22ec82c5958e2fa21cca255cfc34ac"
+    },
+    "blink": {
+      "src": "/i/miien/neutral-v1/blink.webp",
+      "x": 264,
+      "y": 298,
+      "width": 248,
+      "height": 80,
+      "sha256": "f9901ab469c087bc8d91349edcf33c640dc10e8f25ff767446e4061341509fb1"
+    },
+    "mouths": {
+      "small": {
+        "src": "/i/miien/neutral-v1/mouth-small.webp",
+        "x": 350,
+        "y": 409,
+        "width": 86,
+        "height": 51,
+        "sha256": "4b780b19b3e1b6fe024f46383f70d638763e1c7de6c1e997df0e288dbfe35465"
+      },
+      "open": {
+        "src": "/i/miien/neutral-v1/mouth-open.webp",
+        "x": 350,
+        "y": 409,
+        "width": 86,
+        "height": 51,
+        "sha256": "abd5869996ed48b42ca75fd8b66acf26897565e9d7b8dcae290f06514c6aebbb"
+      }
+    }
+  }
 }

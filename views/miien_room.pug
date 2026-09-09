@@ -43,8 +43,8 @@ block content
               p.hint Expressions follow conversation cues, not an assessment of your feelings.
               label.check
                 input#motion-enabled(type='checkbox', checked)
-                | Enable approved motion clips
-              p.hint Reviewed matching clips play when available. Reduced-motion and data saver use portraits.
+                | Enable character motion
+              p.hint Neutral layered prototype: subtle breathing, blinking and approximate speaking motion. Other expressions, reduced-motion and data saver use portraits.
               button#fullscreen(type='button', hidden) Enter fullscreen
       .call-bottom
         #captions.dialogue-panel
@@ -64,6 +64,8 @@ block content
           p#art-status.hint(role='status')
 block scripts
   script(src='/js/miien_activity.js', defer)
+  script(src='/js/miien_layers.js', defer)
   script(src='/js/miien_motion.js', defer)
+  script(src='/js/miien_speech_motion.js', defer)
   script(src='/js/miien_voice.js', defer)
   script(src='/js/miien.js', defer)

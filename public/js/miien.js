@@ -42,6 +42,7 @@
     motion.show(requested === 'auto' ? autoMood : requested, state);
   });
   window.addEventListener('miien:voice', event => activity.update({ voice: event.detail?.phase }));
+  window.addEventListener('miien:mouth', event => { if (!disposed) motion.mouth(event.detail?.shape); });
   activity.update({ voice: voice?.phase || 'idle' });
   const manifestController = new AbortController();
   const manifestTimeout = setTimeout(() => manifestController.abort(), 10000);

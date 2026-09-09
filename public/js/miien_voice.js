@@ -9,7 +9,15 @@
   const handleKey = `miienSpeech:${room.dataset.id}`;
   let generation = 0, watchdog, pollTimer, request, audio, objectUrl, audioMessage, currentJob;
   let voices = [], preferred = '', disposed = false, phase = 'idle', latestMessage = null;
-  const activity = value => { phase = value; window.dispatchEvent(new CustomEvent('miien:voice', { detail: { phase } })); };
+  const speechMotion = window.MiienSpeechMotion?.create({
+    onShape: shape => window.dispatchEvent(new CustomEvent('miien:mouth', { detail: { shape } })),
+  });
+  const activity = value => {
+    phase = value;
+    if (phase === 'playing') speechMotion?.start(audio);
+    else speechMotion?.stop();
+    window.dispatchEvent(new CustomEvent('miien:voice', { detail: { phase } }));
+  };
   const storage = (key, value) => {
     try { if (value === null) sessionStorage.removeItem(key); else sessionStorage.setItem(key, JSON.stringify(value)); } catch (_) { /* Optional tab preferences/handle. */ }
   };
@@ -25,7 +33,7 @@
     generation += 1;
     clearTimeout(watchdog); clearTimeout(pollTimer); request?.abort(); request = null;
     synth?.cancel();
-    if (audio) { audio.onplaying = audio.onended = audio.onerror = audio.onpause = audio.onwaiting = null; audio.pause(); audio.removeAttribute('src'); audio.load(); audio = null; }
+    if (audio) { audio.onplaying = audio.onended = audio.onerror = audio.onpause = audio.onwaiting = audio.onstalled = audio.onseeking = audio.onseeked = null; audio.pause(); audio.removeAttribute('src'); audio.load(); audio = null; }
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = null; audioMessage = null; currentJob = null;
     if (!preserve) storage(handleKey, null);
@@ -77,6 +85,12 @@
     // Playback follows the media playing event, never synthesis or play() itself.
     audio.onplaying = () => { if (version === generation) { activity('playing'); status.textContent = `Speaking · ${notice(currentJob)}`; } };
     audio.onwaiting = () => { if (version === generation) { activity('preparing'); status.textContent = 'Buffering Anny audio…'; } };
+    audio.onstalled = audio.onwaiting;
+    audio.onseeking = () => { if (version === generation) activity('preparing'); };
+    audio.onseeked = () => {
+      if (version !== generation) return;
+      activity(!audio.paused && !audio.ended && audio.readyState >= 3 ? 'playing' : 'idle');
+    };
     audio.onpause = () => { if (version === generation) activity('idle'); };
     audio.onended = () => {
       if (version !== generation) return;
@@ -163,6 +177,8 @@
     if (utterance.voice) utterance.lang = utterance.voice.lang;
     activity('preparing'); status.textContent = 'Starting browser voice… If silent, press Replay.';
     utterance.onstart = () => { if (version === generation) { activity('playing'); status.textContent = 'Speaking…'; } };
+    utterance.onpause = () => { if (version === generation) activity('idle'); };
+    utterance.onresume = () => { if (version === generation) activity('playing'); };
     utterance.onend = () => { if (version === generation) { generation += 1; clearTimeout(watchdog); activity('idle'); status.textContent = text.length > 3000 ? 'Played the first 3,000 characters. Full reply is in history.' : 'Playback finished.'; } };
     utterance.onerror = () => fail('Voice was unavailable or blocked. Press Replay or keep reading.', version);
     watchdog = setTimeout(() => fail('Browser playback stopped after three minutes.', version), 180000);
