@@ -154,7 +154,12 @@
         if (resumeAfterHistory) { resumeAfterHistory = false; controls(); if (audioEligible()) voice?.resume(); }
       }
     }
-    catch (error) { if (!disposed && !document.hidden && !sending && epoch === pollEpoch) { stopAudio(); chatStatus(`Could not refresh history. ${error.message}`); } }
+    catch (error) { if (!disposed && !document.hidden && !sending && epoch === pollEpoch) {
+      // Recovery must validate fresh history before any old/new voice can play.
+      resumeAfterHistory = true;
+      stopAudio({ preserveVoice: true });
+      chatStatus(`Could not refresh history. ${error.message}`);
+    } }
     finally { clearTimeout(timeout); polling = false; if (!disposed && !document.hidden) pollTimer = setTimeout(poll, epoch !== pollEpoch ? 0 : pending ? 2500 : 12000); }
   }
   function stopAudio({ preserveVoice = false, keepVoice = false } = {}) {

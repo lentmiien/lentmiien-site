@@ -163,7 +163,8 @@ test('failure attribution is bounded and never copies arbitrary provider fields'
   f.http.post.mockRejectedValue({ code: 'SECRET_TOKEN', message: 'private speech', response: { status: 502, data: 'audio secret' } });
   await f.service.submit(user, conversation, body); await flush();
   expect(f.logger.warning).toHaveBeenCalledWith(expect.any(String), {
-    category: 'chat5_miien_speech', metadata: { backendId: 'omni_anny_en', stage: 'synthesis', outcome: 'failed', httpStatus: 502, failure: 'provider_or_transport', upstreamUncertain: true },
+    category: 'chat5_miien_speech', metadata: { backendId: 'omni_anny_en', stage: 'synthesis', outcome: 'failed', httpStatus: 502, failure: 'provider_or_transport', upstreamUncertain: true,
+      timings: expect.objectContaining({ synthesisMs: expect.any(Number), totalMs: expect.any(Number) }) },
   });
   expect(JSON.stringify(f.logger.warning.mock.calls)).not.toMatch(/SECRET_TOKEN|private speech|audio secret/);
 });
@@ -328,4 +329,20 @@ test('full storage still permits replacing an edited ready reply as submit alrea
   expect(await f.service.admission(user, conversation, '0'.repeat(24))).toEqual({ state: 'available' });
   await f.service.submit(user, conversation, { ...body, messageId: '0'.repeat(24) }); await flush();
   expect(f.http.post).toHaveBeenCalledTimes(MAX_JOBS + 1); expect(f.service.jobs.size).toBe(MAX_JOBS);
+});
+
+test('authorized lifecycle timings isolate provider latency without logging content or success traffic', async () => {
+  const f = fixture(); let elapsed = 0;
+  f.service.now = () => elapsed;
+  f.http.get.mockImplementation(async () => { elapsed += 25; return { data: { voices: [{ voice_id: 'omni_anny_en' }] } }; });
+  f.http.post.mockImplementation(async () => { elapsed += 1500; return { data: wav() }; });
+  const job = await f.service.submit(user, conversation, body); await flush();
+  const result = await f.service.get(user, conversation, job.id);
+  expect(result.timings).toEqual({ admissionMs: 0, catalogMs: 25, authorizationMs: 0, synthesisMs: 1500,
+    audio_validationMs: 0, retention_authorizationMs: 0, totalMs: 1525 });
+  result.timings.synthesisMs = 0;
+  expect((await f.service.get(user, conversation, job.id)).timings.synthesisMs).toBe(1500);
+  expect(JSON.stringify(result)).not.toContain('private preview');
+  expect(f.logger.warning).not.toHaveBeenCalled(); expect(f.logger.error).not.toHaveBeenCalled();
+  await expect(f.service.get({ _id: 'd'.repeat(24) }, conversation, job.id)).rejects.toHaveProperty('status', 404);
 });

@@ -1,6 +1,7 @@
 const { randomUUID } = require('crypto');
 const { prepareSpeechText } = require('../utils/miienSpeechText');
 const axios = require('axios');
+const { performance } = require('node:perf_hooks');
 const { MiienError, fields } = require('./miienChatService');
 const { validSpeechWav, MAX_SPEECH_BYTES } = require('../utils/miienAudio');
 const DEADLINE_MS = 20 * 60 * 1000;
@@ -17,8 +18,8 @@ class MiienSpeechOccupiedError extends MiienError {
 }
 
 class MiienSpeechService {
-  constructor({ chat, slots, authorize, logger, http = axios, apiBase = process.env.TTS_API_BASE || 'http://192.168.0.20:8080' }) {
-    Object.assign(this, { chat, slots, authorize, logger, http, apiBase });
+  constructor({ chat, slots, authorize, logger, http = axios, apiBase = process.env.TTS_API_BASE || 'http://192.168.0.20:8080', now = () => performance.now() }) {
+    Object.assign(this, { chat, slots, authorize, logger, http, apiBase, now });
     this.origin = null;
     this.jobs = new Map();
     this.active = null;
@@ -47,7 +48,7 @@ class MiienSpeechService {
   view(job) {
     return { id: job.id, messageId: job.messageId, voiceId: 'anny_en', backendId: job.backendId, status: job.status,
       preparationVersion: job.preparationVersion, truncated: job.truncated, spokenCharacters: job.spokenCharacters, deadlineAt: job.deadlineAt,
-      expiresAt: job.expiresAt || null, error: job.error || null };
+      expiresAt: job.expiresAt || null, error: job.error || null, timings: { ...job.timings } };
   }
   prepare(text) {
     let prepared;
@@ -129,8 +130,19 @@ class MiienSpeechService {
     let dispatched = false;
     let settled = false;
     let stage = 'admission';
+    const started = this.now();
+    let stageStarted = started;
+    job.timings = {};
+    const markStage = next => {
+      const now = this.now();
+      job.timings[`${stage}Ms`] = Math.max(0, Math.round(now - stageStarted));
+      stageStarted = now;
+      if (next) stage = next;
+    };
     const controller = new AbortController();
     const finish = (status, error) => {
+      markStage();
+      job.timings.totalMs = Math.max(0, Math.round(this.now() - started));
       job.status = status;
       job.error = error;
       job.expiresAt = Date.now() + RETENTION_MS;
@@ -151,15 +163,15 @@ class MiienSpeechService {
         if (error.code === 11000) throw new MiienError(409, 'Anny has outstanding work. If it persists, an operator must check Gateway.');
         throw error;
       }
-      stage = 'catalog';
+      markStage('catalog');
       if (!(await this.voices(controller.signal)).includes(job.backendId)) throw new MiienError(503, 'Anny English is unavailable in the voice catalog.');
-      stage = 'authorization';
+      markStage('authorization');
       const principal = await this.authorize(job.owner);
       if (!principal) throw new MiienError(403, 'Speech permission is no longer available.');
       const prepared = this.prepare(await this.chat.speechText(principal, job.conversationId, job.messageId));
       if (controller.signal.aborted) throw new Error('Deadline');
       this.recordPreparation(job, prepared);
-      stage = 'synthesis';
+      markStage('synthesis');
       dispatched = true;
       const response = await this.http.post(`${this.requireOrigin()}/tts`, {
         text: prepared.preview, voice_id: job.backendId, timeout_sec: 600,
@@ -168,9 +180,9 @@ class MiienSpeechService {
         maxContentLength: MAX_SPEECH_BYTES, maxBodyLength: 8192 });
       settled = true; // A complete HTTP success is settlement, not browser Stop.
       if (controller.signal.aborted) return;
-      stage = 'audio_validation';
+      markStage('audio_validation');
       if (!validSpeechWav(response.data)) throw new Error('Invalid WAV');
-      stage = 'retention_authorization';
+      markStage('retention_authorization');
       const current = await this.authorize(job.owner);
       if (!current) throw new MiienError(403, 'Speech permission is no longer available.');
       const retained = this.prepare(await this.chat.speechText(current, job.conversationId, job.messageId));
@@ -187,7 +199,7 @@ class MiienSpeechService {
         category: 'chat5_miien_speech', metadata: { backendId: job.backendId, stage, outcome: job.status,
           httpStatus: Number.isInteger(error.response?.status) && error.response.status >= 400 && error.response.status <= 599 ? error.response.status : null,
           failure: controller.signal.aborted ? 'deadline' : error instanceof MiienError ? 'rejected' : 'provider_or_transport',
-          upstreamUncertain: dispatched && !settled },
+          upstreamUncertain: dispatched && !settled, timings: { ...job.timings } },
       });
     } finally {
       clearTimeout(timeout);

@@ -288,3 +288,27 @@ test('a capacity response arriving after the wait deadline cannot submit even be
   resolve(response({ state: 'available' })); await settle();
   expect(w.fetch).toHaveBeenCalledTimes(1); expect(w.timers.size).toBe(0); expect(status(w)).toContain('20 minutes');
 });
+
+test('envelope analysis never delays playback, is reused on Replay, and Stop clears it', async () => {
+  const w = setup({ fetch: readyFetch() }); let resolve;
+  w.speechMotion.load = jest.fn(() => new Promise(r => { resolve = r; })); w.speechMotion.reset = jest.fn();
+  const events = []; w.addEventListener('miien:voice-timing', event => events.push(event.detail));
+  w.MiienVoice.speak('private reply', true, messageId); await settle();
+  const audio = w.audios[0]; expect(audio.play).toHaveBeenCalledTimes(1);
+  expect(w.speechMotion.load).toHaveBeenCalledTimes(1);
+  audio.onplaying(); audio.onended();
+  w.MiienVoice.speak('private reply', true, messageId); await settle();
+  expect(audio.play).toHaveBeenCalledTimes(2); expect(w.speechMotion.load).toHaveBeenCalledTimes(1);
+  resolve(true); await settle();
+  expect(w.MiienVoice.diagnostics.browser).toMatchObject({ envelopeAvailable: true, envelopeMs: expect.any(Number),
+    admissionWaitMs: expect.any(Number), submitMs: expect.any(Number), jobReadyObservedMs: expect.any(Number), audioFetchMs: expect.any(Number), playbackStartMs: expect.any(Number) });
+  expect(JSON.stringify(events)).not.toMatch(/private reply|cccccccc|11111111|token|blob:/);
+  w.MiienVoice.stop(); expect(w.speechMotion.reset).toHaveBeenCalledTimes(2);
+});
+test('late envelope result after Stop cannot update diagnostics or start animation', async () => {
+  const w = setup({ fetch: readyFetch() }); let resolve;
+  w.speechMotion.load = jest.fn(() => new Promise(r => { resolve = r; }));
+  w.MiienVoice.speak('reply', true, messageId); await settle(); w.MiienVoice.stop(); resolve(true); await settle();
+  expect(w.MiienVoice.diagnostics.browser).not.toHaveProperty('envelopeAvailable');
+  expect(w.speechMotion.start).not.toHaveBeenCalled();
+});

@@ -13,8 +13,13 @@ const html = pug.renderFile(path.join(root, 'views/miien_room.pug'), {
   canWrite: true, canTranscribe: true, canSynthesize: true, csrfToken: 'synthetic-token',
 });
 const state = { pending: false, messages: [{ id: messageId, role: 'assistant', text: 'Saved synthetic reply', mood: 'neutral' }] };
+let historyUnavailable = false;
 const server = http.createServer((req, res) => {
-  if (req.url.endsWith('/state')) { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify(state)); }
+  if (req.url.endsWith('/state')) {
+    res.setHeader('Content-Type', 'application/json');
+    if (historyUnavailable) { res.statusCode = 503; return res.end(JSON.stringify({ error: 'Synthetic outage' })); }
+    return res.end(JSON.stringify(state));
+  }
   if (req.url === '/chat5/miien/' + id) {
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self' blob:; connect-src 'self'; font-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
@@ -66,7 +71,11 @@ let browser;
   wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16);
   wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(16000, 24); wav.writeUInt32LE(32000, 28);
   wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(wav.length - 44, 40);
-  for (let i = 0; i < 48000; i++) wav.writeInt16LE(Math.round(1500 * Math.sin(i * 2 * Math.PI * 180 / 16000)), 44 + i * 2);
+  for (let i = 0; i < 48000; i++) {
+    const seconds = i / 16000;
+    const amplitude = seconds >= 1 && seconds < 1.8 ? 0 : seconds >= 0.4 && seconds < 0.8 ? 400 : 3000;
+    wav.writeInt16LE(Math.round(amplitude * Math.sin(i * 2 * Math.PI * 180 / 16000)), 44 + i * 2);
+  }
   let speechGate = deferred(), audioGate = null, asrGate = deferred(), speechCalls = 0, audioCalls = 0, asrCalls = 0, sends = 0;
   const job = () => ({ id: '11111111-1111-1111-1111-111111111111', messageId: state.messages.at(-1).id,
     voiceId: 'anny_en', backendId: 'omni_anny_en', status: 'ready', deadlineAt: Date.now() + 1200000, spokenCharacters: 20 });
@@ -126,6 +135,22 @@ let browser;
   await page.waitForTimeout(150); assert.equal(await page.evaluate(() => window.fixtureAudios.length), 0); await noMouth();
   await page.locator('#replay').click(); await presence('Speaking');
   await page.waitForFunction(() => !!document.querySelector('.miien-mouth:not([hidden])'));
+  await page.waitForFunction(() => window.MiienVoice.diagnostics.browser.envelopeAvailable === true);
+  await page.waitForFunction(() => window.fixtureAudios.at(-1).currentTime > 1.15);
+  await noMouth(); // Real silence, even though the media clock is advancing.
+  await page.evaluate(() => { window.fixtureAudios.at(-1).currentTime = 0.42; });
+  await page.waitForFunction(() => !document.querySelectorAll('.miien-mouth')[0].hidden);
+  await page.evaluate(() => { window.fixtureAudios.at(-1).currentTime = 2; });
+  await page.waitForFunction(() => !document.querySelectorAll('.miien-mouth')[1].hidden);
+  await page.evaluate(() => window.fixtureAudios.at(-1).pause()); await noMouth();
+  const audioFetchesBeforeReplay = audioCalls;
+  await page.locator('#replay').click(); await presence('Speaking');
+  assert.equal(audioCalls, audioFetchesBeforeReplay);
+  assert.equal(await page.evaluate(() => window.fixtureAudios.length), 1);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.waitForFunction(() => !document.querySelector('.character-layers')); await noMouth();
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.waitForFunction(() => !!document.querySelector('.character-layers'));
   await page.evaluate(() => window.fixtureAudios.at(-1).dispatchEvent(new Event('waiting')));
   await presence('Buffering'); await noMouth();
   await page.evaluate(() => window.fixtureAudios.at(-1).dispatchEvent(new Event('playing'))); await presence('Speaking');
@@ -135,6 +160,13 @@ let browser;
   await page.waitForFunction(() => !document.querySelector('#replay').disabled);
   const beforeReload = speechCalls; await page.reload();
   await page.waitForFunction(() => !document.querySelector('#replay').disabled);
+  assert.equal(speechCalls, beforeReload); assert.equal(await page.evaluate(() => window.fixtureAudios.length), 0);
+  historyUnavailable = true;
+  await page.waitForFunction(() => document.querySelector('#chat-status').textContent.includes('Could not refresh history'));
+  await guardedReplay();
+  state.messages = [{ id: 'd'.repeat(24), role: 'assistant', text: 'Recovered synthetic reply', mood: 'neutral' }];
+  historyUnavailable = false;
+  await page.waitForFunction(() => document.querySelector('#latest-reply').textContent === 'Recovered synthetic reply' && !document.querySelector('#replay').disabled);
   assert.equal(speechCalls, beforeReload); assert.equal(await page.evaluate(() => window.fixtureAudios.length), 0);
 
   // Exercise actual service admission with native browser audio. The provider
@@ -195,6 +227,10 @@ let browser;
   providerGate.resolve(); providerGate = null; await presence('Speaking');
   assert.deepEqual(generated, ['Held synthetic A', 'Latest synthetic B', 'Second held synthetic A', 'Winning synthetic C']);
   assert.equal(await page.evaluate(() => window.fixtureAudios.length), 2);
+  const diagnostics = await page.evaluate(() => window.MiienVoice.diagnostics);
+  assert.ok(diagnostics.server.synthesisMs >= 0);
+  assert.ok(diagnostics.browser.audioFetchMs >= 0);
+  assert.ok(diagnostics.browser.playbackStartMs >= 0);
   await page.locator('#stop').click(); await noMouth();
   assert.deepEqual(errors, []);
   process.stdout.write(JSON.stringify({ synthetic: true, checks: [
@@ -203,7 +239,10 @@ let browser;
     'delayed audio ignored after Stop', 'real synthetic WAV playback and mouth closure on buffering/Send',
     'pending reply exclusion', 'editable captions/history/draft during preparation', 'production CSP',
     'real service held A then B admission and native playback once', 'waiting B superseded by C without B generation',
-  ], speechCalls, audioCalls, asrCalls, sends, admissionReads, composedProviderCalls: generated.length, browserErrors: errors }, null, 2) + '\n');
+    'PCM silence rests, seeks select small/open, pause closes mouth', 'Replay reuses native audio and envelope',
+    'reduced motion stays static during native playback', 'history outage gates Replay and reconnect does not autoplay',
+    'content-free browser and authorized server timing diagnostics',
+  ], speechCalls, audioCalls, asrCalls, sends, admissionReads, composedProviderCalls: generated.length, diagnostics, browserErrors: errors }, null, 2) + '\n');
 })().catch(error => {
   require('../utils/logger').error('Miien turn-taking browser review failed', {
     category: 'chat5_miien_lifecycle', metadata: { failure: error.message.slice(0, 500) },

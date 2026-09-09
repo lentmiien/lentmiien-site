@@ -721,3 +721,17 @@ describe('Anny turn-taking across occupied server admission', () => {
     expect([...f.w.fixtureTimers.values()].some(callback => callback.fixtureDelay === 5000)).toBe(false);
   });
 });
+
+test('history outage gates Replay and recovery never autoplays replies first observed after reconnect', async () => {
+  const w = setup({ timers: true, realVoice: true, initial: { messages: [assistant('old', 'Old reply')], pending: false } }); await settle();
+  element(w, 'message').value = 'Keep this draft';
+  w.fetch.mockRejectedValueOnce(new Error('Offline'));
+  const poll = [...w.fixtureTimers.values()].find(callback => callback.fixtureDelay === 12000);
+  await poll(); await settle();
+  expect(element(w, 'chat-status').textContent).toContain('Could not refresh history'); rejectReplay(w);
+  expect(element(w, 'message').value).toBe('Keep this draft');
+  await tick(w, { messages: [assistant('new', 'Missed during outage')], pending: false });
+  expect(w.utterances).toHaveLength(0); expect(element(w, 'replay').disabled).toBe(false);
+  element(w, 'replay').click(); expect(w.utterances).toHaveLength(1);
+  expect(w.utterances[0].text).toBe('Missed during outage');
+});

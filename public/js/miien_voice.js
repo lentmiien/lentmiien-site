@@ -10,6 +10,14 @@
   let generation = 0, watchdog, pollTimer, request, audio, objectUrl, audioMessage, currentJob, currentUtterance;
   let voices = [], preferred = '', disposed = false, phase = 'idle', latestMessage = null;
   let eligible = () => true, manualPlayback = false;
+  let timings = {}, serverTimings = {}, jobWatchStarted = 0;
+  const now = () => performance.now();
+  const measure = (stage, started) => {
+    const durationMs = Math.max(0, Math.round(now() - started));
+    timings[stage] = durationMs;
+    // Local, bounded diagnostics only: no identifiers, text, URLs or telemetry.
+    window.dispatchEvent(new CustomEvent('miien:voice-timing', { detail: { stage, durationMs } }));
+  };
   const active = version => version === generation && !disposed && !document.hidden && eligible(manualPlayback);
   const speechMotion = window.MiienSpeechMotion?.create({
     onShape: shape => window.dispatchEvent(new CustomEvent('miien:mouth', { detail: { shape } })),
@@ -35,6 +43,7 @@
     generation += 1;
     clearTimeout(watchdog); clearTimeout(pollTimer); request?.abort(); request = null;
     synth?.cancel(); currentUtterance = null;
+    speechMotion?.reset?.();
     if (audio) { audio.onplaying = audio.onended = audio.onerror = audio.onpause = audio.onwaiting = audio.onstalled = audio.onseeking = audio.onseeked = null; audio.pause(); audio.removeAttribute('src'); audio.load(); audio = null; }
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = null; audioMessage = null; currentJob = null;
@@ -53,6 +62,8 @@
     stop(); status.textContent = message;
   }
   async function api(path, options, version, binary = false) {
+    const started = now();
+    const stage = binary ? 'audioFetchMs' : options?.method === 'POST' ? 'submitMs' : path.includes('speech-admission') ? 'capacityReadMs' : 'statusReadMs';
     const controller = new AbortController(); request = controller;
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
@@ -73,7 +84,7 @@
         return blob;
       }
       return await response.json();
-    } finally { clearTimeout(timeout); if (version === generation) request = null; }
+    } finally { clearTimeout(timeout); if (version === generation) { request = null; measure(stage, started); } }
   }
   const validJob = (job, expected) => job && /^[a-f\d-]{36}$/i.test(job.id)
     && /^[a-f\d]{24}$/i.test(job.messageId) && job.voiceId === 'anny_en' && job.backendId === 'omni_anny_en'
@@ -85,10 +96,15 @@
     : `Preview: ${job.spokenCharacters} characters. Full reply retained.`;
   function play(version) {
     if (!audio || !active(version)) return;
+    const started = now();
+    let measured = false;
     activity('preparing');
     status.textContent = 'Starting Anny audio…';
     // Playback follows the media playing event, never synthesis or play() itself.
-    audio.onplaying = () => { if (active(version)) { activity('playing'); status.textContent = `Speaking · ${notice(currentJob)}`; } };
+    audio.onplaying = () => { if (active(version)) {
+      if (!measured) { measure('playbackStartMs', started); measured = true; }
+      activity('playing'); status.textContent = `Speaking · ${notice(currentJob)}`;
+    } };
     audio.onwaiting = () => { if (active(version)) { activity('buffering'); status.textContent = 'Buffering Anny audio…'; } };
     audio.onstalled = audio.onwaiting;
     audio.onseeking = audio.onwaiting;
@@ -128,6 +144,10 @@
         fail('Anny preview does not match this job, backend or latest reply. Use Replay for the latest reply.', version); return;
       }
       currentJob = result;
+      serverTimings = {};
+      for (const key of ['admissionMs', 'catalogMs', 'authorizationMs', 'synthesisMs', 'audio_validationMs', 'retention_authorizationMs', 'totalMs']) {
+        if (Number.isFinite(result.timings?.[key]) && result.timings[key] >= 0) serverTimings[key] = result.timings[key];
+      }
       if (result.status === 'preparing') {
         if (!Number.isFinite(result.deadlineAt) || Date.now() > result.deadlineAt + 15000) {
           fail('Anny polling deadline reached. Upstream generation may continue. Full reply is saved.', version); return;
@@ -135,6 +155,7 @@
         activity('preparing'); status.textContent = `Preparing Anny English · OmniVoice preview (20 minute limit). ${notice(result)}`;
         pollTimer = setTimeout(() => poll(result, version, autoplay), 5000);
       } else if (result.status === 'ready') {
+        measure('jobReadyObservedMs', jobWatchStarted);
         activity('idle');
         status.textContent = `Anny audio ready. Press Replay to play. ${notice(result)}`;
         if (!autoplay || document.hidden) return;
@@ -142,6 +163,13 @@
         const blob = await api(`/speech/${encodeURIComponent(job.id)}/audio`, {}, version, true);
         if (!active(version)) return;
         objectUrl = URL.createObjectURL(blob); audio = new Audio(objectUrl); audioMessage = result.messageId;
+        const target = audio, started = now();
+        speechMotion?.load?.(target, blob).then(analyzed => {
+          // Replay/end can change generation while this same audio remains valid.
+          if (audio !== target || disposed || document.hidden) return;
+          measure('envelopeMs', started);
+          timings.envelopeAvailable = analyzed;
+        });
         play(version);
       } else fail(result.error || 'Anny failed. Text is saved; choose browser voice or keep reading.', version);
     } catch (error) { fail(`${error.message} No automatic retry was made.`, version); }
@@ -169,6 +197,7 @@
       if (capacity?.state !== 'available') throw new Error('Speech capacity could not be verified. Try Replay later.');
       if (Date.now() < wait.nextPost) { later(); return; }
       wait.posts += 1;
+      measure('admissionWaitMs', wait.started);
       wait.nextPost = Date.now() + 60000;
       status.textContent = 'Preparing latest Anny English preview · up to 600 characters, up to 20 minutes.';
       const job = await api('/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -177,6 +206,7 @@
       if (!validJob(job) || job.messageId !== messageId) { fail('Anny returned a mismatched preview. Text is saved.', version); return; }
       clearTimeout(watchdog);
       storage(handleKey, { id: job.id, messageId: job.messageId, voiceId: job.voiceId, backendId: job.backendId, deadlineAt: job.deadlineAt });
+      jobWatchStarted = now();
       return poll(job, version, true);
     } catch (error) {
       if (!active(version)) return;
@@ -206,6 +236,7 @@
       return;
     }
     stop();
+    timings = {}; serverTimings = {};
     if (mode.value === 'off') { status.textContent = 'Voice is off. Choose a voice in Settings to use Replay.'; return; }
     if (disposed || !text) return;
     const version = generation;
@@ -214,7 +245,7 @@
       activity('preparing'); status.textContent = 'Preparing Anny English preview · up to 600 characters, up to 20 minutes. You can keep typing.';
       const until = Date.now() + 20 * 60 * 1000;
       watchdog = setTimeout(() => fail('Waiting for voice capacity ended after 20 minutes. Text is saved; use Replay to try later.', version), 20 * 60 * 1000);
-      admit(messageId, version, { until, checks: 0, posts: 0, nextPost: 0 });
+      admit(messageId, version, { until, started: now(), checks: 0, posts: 0, nextPost: 0 });
       return;
     }
     if (!synth || !window.SpeechSynthesisUtterance) { status.textContent = 'Browser speech is unavailable. Text chat works normally.'; return; }
@@ -238,7 +269,8 @@
       const job = JSON.parse(sessionStorage.getItem(handleKey) || 'null');
       if (!job) return;
       if (!validJob({ ...job, status: 'preparing' })) { stop(); status.textContent = 'Saved Anny preview does not match the latest reply or backend. Use Replay.'; return; }
-      stop({ preserve: true }); poll(job, generation, false);
+      stop({ preserve: true }); timings = {}; serverTimings = {};
+      jobWatchStarted = now(); poll(job, generation, false);
     } catch (_) { /* A lost handle never regenerates audio. */ }
   }
   if (synth && window.SpeechSynthesisUtterance) { populate(); synth.addEventListener('voiceschanged', populate); }
@@ -259,6 +291,7 @@
       }
     },
     get phase() { return phase; },
+    get diagnostics() { return { browser: { ...timings }, server: { ...serverTimings } }; },
   };
   // History initialization never calls speak(); restored jobs only expose status.
   // The room validates fresh history before calling resume().

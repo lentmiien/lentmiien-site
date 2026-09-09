@@ -1,4 +1,82 @@
-# Miien character chat — phase 2 voice admission deferral
+# Miien character chat — scoped phase 3 polish
+
+**Phase 3 implementation is ready for a proper human testing session; acceptance and finalization remain open. Merge into `main` is the FINAL step, only after Lennart accepts the tested feature revision. Do not merge as part of this implementation handoff.** The coordinator owns test deployment and device testing. No production deployment/restart, Gateway changes, new synthesis, microphone capture or artwork generation was performed here. All five approved expression rigs/artwork remain unchanged.
+
+## Phase 3 implementation and release gate (2026-09-09)
+
+### Verified starting point and security scope
+
+Inspected repository `AGENTS.md`, [security framework](security-framework.md), this roadmap, actual client/service/routes/views and tests. The sole worktree was clean on `feat/chat5-miien-phase2-slice1` at `65a702c3e1096ffa27df8fe2450507601272b1b3`; a fresh remote read matched it. Remote main was `b774b10883d087199813ccbdc2c81b2c4f567b7e`. Prior test totals below are historical, not evidence for this revision. The current task supplies permission to implement, test, commit and push, and explicitly withholds the main merge until acceptance. Neutral and four mood artwork acceptance is user-supplied; it is not reopened here.
+
+Security contract: this is polish within the existing **logged-in** [current security contract](#current-security-contract), with no new route, principal, capability, object bypass, browser mutation, external host, dependency, environment variable or migration. READ/SYNTHESIZE and single-member conversation/saved-assistant scope still protect job/timing/audio responses; mutations retain shared CSRF/Origin controls. The only new private data is a transient local speech-energy envelope (at most 4,500 one-byte shapes) and bounded numeric timing fields. Neither contains text or identifiers or is sent to analytics. The envelope and browser diagnostics are never stored persistently; server timings share the existing job lifetime and, on failure, existing operational-log retention. Existing private/no-store media delivery, 8 MiB cap, retention, admission and authorization checks remain. Existing actionable failure logs gain numeric timing metadata through `utils/logger`; no success-path or per-poll production logs are added. Negative tests include unauthorized timing access, malformed/bounded PCM and stale asynchronous results.
+
+### Audio-reactive mouth and resource lifecycle
+
+- The existing downloaded Anny WAV is decoded locally as integer PCM: mono/stereo, 16/24/32-bit, 8–48 kHz. No Web Audio context, audio graph, additional fetch, model call or microphone is needed. The parser validates RIFF/chunk/format/alignment/size/duration bounds and computes RMS energy in approximately 40 ms windows with exact frame timing across channels (opposing stereo channels do not cancel).
+- Relative thresholds select closed/small/open from the upper voiced range, with an absolute silence floor. This is approximate loudness animation, not phonemes or realistic lip-sync. Quiet pauses rest. Shape lookup follows actual media `currentTime`, including Replay and programmatic seeking/rate changes; there is no new seek UI. Paused, ended, buffering, seeking, muted, zero-volume and stalled clocks rest. OS/device mute and Bluetooth/output latency are not observable from this envelope.
+- `play()` starts independently of analysis. Work yields before sample scanning and each second of PCM, checks cancellation, and retains only the compact envelope after completion. The mouth rests until analysis completes or if decoding is unsupported, fails, or audio exceeds the existing three-minute playback window. Browser speech has no exposed PCM; it retains the existing lifecycle-driven approximate motion.
+- Replay of retained audio reauthorizes as before and reuses both the blob and envelope. Stop, new turn/reply, mode changes, hidden page and pagehide release audio URLs and envelope, stop animation, and invalidate unfinished analysis. Pausing/ending retains the envelope alongside cached audio for Replay. Existing reduced-motion, motion-off, Save-Data and short-keyboard portrait fallbacks still prevent animated artwork; optional analysis can finish while static. No approved image/manifest or CSS/Pug file changed.
+
+### Timings and latency boundary
+
+Read `window.MiienVoice.diagnostics` in the review browser after playback. This returns a copy of the latest in-memory browser/server measurements, with no chat content, IDs, URLs or credentials. It is an inspection aid, not a new product control or persistent metrics service. Browser `miien:voice-timing` events carry only fixed stage names and duration milliseconds; no listener or telemetry collector is installed by this slice.
+
+| Measurement | What it includes |
+| --- | --- |
+| Browser `capacityReadMs`, `submitMs`, `statusReadMs`, `audioFetchMs` | Most recent completed request/body read for that stage; failed requests can also record duration. |
+| Browser `admissionWaitMs` | Eligible request start to the latest permitted speech POST, including occupied-capacity waits. |
+| Browser `jobReadyObservedMs` | Accepted job/status-resume to observed ready state, including status polling gaps. Restored handles measure only this observation session. |
+| Browser `envelopeMs`, `envelopeAvailable` | Local decode/analysis elapsed time including cooperative yields, plus success/fallback. |
+| Browser `playbackStartMs` | `play()` attempt to first actual `playing` event; refreshed by Replay. No physical speaker-latency claim. |
+| Server `admissionMs`, `catalogMs`, `authorizationMs`, `synthesisMs`, `audio_validationMs`, `retention_authorizationMs`, `totalMs` | Monotonic durations inside accepted background job work. Completed stages only while preparing; terminal total excludes initial submission validation and subsequent slot cleanup. Synthesis includes the entire Gateway HTTP operation, not just inference. |
+
+Inspection found the existing 60-second catalog cache and reauthorized cached Replay already avoid repeat provider work. This slice ensures envelope analysis adds no playback dependency and no additional Replay download/decode. The five-second capacity/status polling intervals and 2.5/12-second busy/idle history intervals remain: they can add observation latency. Faster polling would spend the shared 100-request/minute budget, so it is not changed without measurements. Authorization/preparation rechecks remain intact. Synthetic timings prove instrumentation wiring only; **no real Anny latency improvement or benchmark is claimed**.
+
+If real measurements show `synthesisMs` dominates, the next investigation belongs at the existing server → configured `TTS_API_BASE` → `/tts` boundary, using exact backend `omni_anny_en` and `/tts/voices`. Inspect Gateway queue/reservation wait, cold/model/voice loading, synthesis, WAV response time, and whether a documented cancel/status/settlement contract exists. This workspace cannot distinguish those stages or prove cancellation. Do not tune models, swap Anny, raise concurrency, clear slots, restart services or change Gateway based on these aggregate timings. Gateway inspection is a conditional follow-up, not a blocker to this local slice or authorization to modify that service.
+
+### Recovery and long-reply audit
+
+Concrete fix: a failed history refresh previously left cached history eligible for Replay, and the first reply observed on reconnect could autoplay. The client now gates audio until fresh history succeeds, preserves an existing opaque voice handle for status-only recovery, and marks recovered replies seen. Captions/history/draft stay readable/editable; successful recovery offers explicit Replay and never automatically regenerates audio. Subsequent normal new replies still follow the existing opt-in rules.
+
+Existing bounds are retained deliberately: Anny speaks the first **600 prepared Unicode characters**, with a truncation notice and full accepted text in captions/history; browser speech uses its existing **3,000 UTF-16-unit** preview. Markdown preparation, 64,000-character message compatibility and 200-message room bounds remain. Replies exceeding compatibility bounds require ordinary Chat5; there is no chunking, streaming or automatic continuation. Failed/empty/oversized ASR preserves the editable draft. Failed Send keeps the draft and in-page request ID for explicit retry; unsent drafts/request IDs are not reload-persistent and are not newly stored here.
+
+Reload/visible return restores saved history and, when available, same-tab voice status only. Audio/jobs live in application-process memory for 15 minutes after terminal completion and can be lost on restart; tests exercise a fresh service with missing jobs and an outstanding durable slot, not a real MongoDB/process restart. Uncertain/other-worker admission remains blocked pending operator inspection. Existing Chat5 pending-request recovery and request-ID behavior are unchanged; this slice makes no new cross-restart, multi-worker or exactly-once persistence claim. Stop cancels local work only: accepted TTS/ASR/LLM work may continue, and ambiguous TTS settlement retains its durable singleton.
+
+### Automatic validation for this revision
+
+Final checks passed on the completed code:
+
+- Focused: `volta run --node 24.20.0 npm test -- --runInBand --coverage=false tests/unit/miienSpeechMotion.test.js tests/unit/miienVoice.test.js tests/unit/miienClient.test.js tests/unit/miienSpeechService.test.js` — **4 suites / 191 tests passed**. Includes exact PCM timing for unusual sample rates, size/chunk/duration bounds, silence, stereo, cancellation, Replay reuse, timing privacy and reconnect gates.
+- Full: `volta run --node 24.20.0 npm test -- --runInBand` — **274 suites / 2,479 tests passed**, all configured coverage thresholds met (67.35% statements, 43.72% branches, 77.56% functions, 67.98% lines for configured critical files). Existing experimental VM Modules warning only; no failing tests.
+- Browser: `volta run --node 24.20.0 node scripts/review-miien-turn-taking-browser.js /tmp/connectivity-ui-qa/node_modules/playwright /home/lennart/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome` — **18 synthetic check groups passed**, zero page/CSP errors. Native PCM pauses/soft/loud shapes, seeking, cached Replay, reduced motion, reconnect, ASR draft edits and one-at-a-time real-service/mock-Gateway turn-taking passed. Four composed provider calls were fixture calls, never live synthesis.
+- Final diff/security review, all nine changed JavaScript syntax checks, `git diff --check`, and 51 repository file links passed. Approved artwork/manifest, CSS/Pug, routes, ordinary Chat5 code and speech-text preparation are byte-identical to the starting commit. No OpenAPI YAML changed.
+
+Tests use synthetic data/in-memory boundaries; the configured application and production services are never started. Browser checks use the repository's loopback fixture and installed standalone Playwright/Chromium after connected Browser discovery returned no available browser (`[]`). Native WAV playback exercises the actual HTML media clock, without audible Anny or physical microphone claims. The existing expression harness is not rerun because it rewrites accepted review images; unchanged-art hashes and the existing automated asset suites cover that boundary.
+
+Changed files (10): `public/js/miien.js`, `public/js/miien_speech_motion.js`, `public/js/miien_voice.js`, `services/miienSpeechService.js`, `scripts/review-miien-turn-taking-browser.js`, `tests/unit/miienClient.test.js`, `tests/unit/miienSpeechMotion.test.js`, `tests/unit/miienSpeechService.test.js`, `tests/unit/miienVoice.test.js`, and this roadmap. No dependency, schema, art or generated-media files changed.
+
+### Lennart's real-device acceptance session
+
+Record tested feature commit, deployment environment, device/browser/OS, voice settings, result, and session link for each failed case. The coordinator chooses/deploys the review revision; refresh its client assets. Use short intentional turns and the existing paid preview limits. Human observation is required for every row even where synthetic regressions exist.
+
+| Check | Human acceptance observations |
+| --- | --- |
+| Audio pauses and Replay | Listen to Anny with quiet pauses; mouth rests during silence, small/open shapes feel plausible and timing follows audio. Replay starts at the beginning and preserves Anny identity. If browser tooling seeks/changes rate, it stays aligned. Verify mute and end. |
+| Interruptions and page lifecycle | Stop during preparation/playback, send a new turn, start mic, hide/return, navigate back/forward. Old audio/mouth must not return; hidden/returned history stays silent until Replay. Repeat on a phone and with screen lock/Bluetooth if used. |
+| Automatic/manual voice | Voice Off stays silent; opt-in automatic speech plays a new reply once; automatic disabled still permits explicit Replay in a selected mode. Check blocked autoplay recovery, browser fallback and mode changes. |
+| Recording / ASR | Permission grant/deny, Stop while permission is pending, capture/Stop & transcribe, edit while ASR runs, review then Send. No auto-send/listening; drafts survive empty/failure/oversize outcomes. Check actual HTTPS permissions and microphone indicator closure. |
+| New message while voice busy | Send A, then B after A captions but before A voice finishes generating. B captions appear promptly, voice waits, only B eventually plays. Repeat with C superseding B and Stop/mic/hide while waiting. Check no overlapping/duplicate Gateway work. |
+| Reload / history / connection | Reload during pending reply/voice and after completion; history is ordered/full and never auto-speaks. Brief offline/online recovery keeps displayed text/draft and gates Replay until fresh state. Recovered reply requires Replay. Check expired-session feedback; do not simulate a production restart for this test. |
+| Long reply / captions | Use a saved long reply: full captions/history remain readable, scroll position usable, 600-character Anny preview notice honest. Captions toggle and typing remain usable during voice. Do not expect full spoken continuation. |
+| Moods / accepted art | Automatic mood and all five manual expressions retain identity, alignment, breathing/blinking; mouth rests after every interruption. No artwork reapproval is required unless a concrete regression appears. |
+| Fullscreen / mobile / accessibility | Desktop fullscreen enter/exit, phone portrait/landscape, virtual keyboard, zoom, focus order, Ctrl/Cmd+Enter, IME, Escape drawers, captions/history scrolling and screen-reader status. Reduced motion, Motion off and Save-Data remain static while audio works. |
+| Ordinary Chat5 | Start/resume/send/settings/history in ordinary Chat5 still work; Miien opt-in/voice/motion settings do not alter its controls. |
+
+**Release gate:** record failures and fix only concrete scoped regressions, rerun relevant checks, then obtain Lennart's acceptance of the exact revision. Additional ideas go to future update projects. Only after that acceptance should the coordinator perform final phase-3 closeout and **merge the feature branch into main as the final step**. Implementation commit/push does not satisfy this gate.
+
+Useful historical context: [voice admission investigation](/codex/sessions/tool-session-5e0a027e368644c8b85c6754b329635adaa4eb7c0aeb015c252e53bbc146b167) and [turn-taking planning](/codex/sessions/tool-session-e2e35dfc86f36008d9de857ccaae3c831d637c3286127974a471dc74b0d51014). No current session permalink or human acceptance link was supplied; none is invented.
+
+## Historical phase 2 voice admission deferral
 
 **This bounded slice fixes the verified voice admission race when a new Send supersedes an unfinished synthesis.** The five accepted rigs, artwork, mood classifier and playback-timed mouth animation remain unchanged. Phase 2 remains open pending deployment/device checks and closeout; this slice performs no deployment, production/Gateway operation or artwork generation. There are zero registered motion clips and the rejected H3 video remains **REJECTED / DO NOT SHIP**.
 
