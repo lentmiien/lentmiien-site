@@ -10,6 +10,11 @@ const SLOT = 'miien-anny-en';
 const BACKEND = 'omni_anny_en';
 const ID = /^[a-f\d]{24}$/i;
 const HANDLE = /^[a-f\d-]{36}$/i;
+class MiienSpeechOccupiedError extends MiienError {
+  constructor() {
+    super(429, 'Anny is still generating a previous voice. No new speech job was accepted.');
+  }
+}
 
 class MiienSpeechService {
   constructor({ chat, slots, authorize, logger, http = axios, apiBase = process.env.TTS_API_BASE || 'http://192.168.0.20:8080' }) {
@@ -60,6 +65,28 @@ class MiienSpeechService {
     const { preview, ...metadata } = prepared;
     Object.assign(job, metadata); // No raw text or preview retained in job metadata.
   }
+  reusable(owner, conversationId, messageId, prepared) {
+    return [...this.jobs.values()].find(job => job.owner === owner && job.conversationId === conversationId
+      && job.messageId === messageId && (job.status !== 'ready' || this.active === job.id
+        || (job.audio && job.fingerprint === prepared.fingerprint && job.preparationVersion === prepared.preparationVersion)));
+  }
+  async admission(user, conversationId, messageId) {
+    if (typeof messageId !== 'string' || !ID.test(messageId)) throw new MiienError(400, 'Choose a saved assistant reply.');
+    const prepared = this.prepare(await this.chat.speechText(user, conversationId, messageId));
+    this.requireOrigin();
+    // Read-only hint, never a reservation or permission to bypass submit checks.
+    // Expose no other principal's job, conversation, deadline or content.
+    const duplicate = this.reusable(String(user._id), conversationId, messageId, prepared);
+    if (duplicate && (!duplicate.expiresAt || duplicate.expiresAt > Date.now() || duplicate.id === this.active)) return { state: 'available' };
+    if (this.active) return { state: this.jobs.get(this.active)?.status === 'timeout' ? 'blocked' : 'occupied' };
+    const slot = await this.slots.exists({ _id: SLOT });
+    // A local submission may have started while the durable read was pending.
+    if (this.active) return { state: this.jobs.get(this.active)?.status === 'timeout' ? 'blocked' : 'occupied' };
+    if (slot) return { state: 'blocked' };
+    const retained = [...this.jobs.values()].filter(job => (!job.expiresAt || job.expiresAt > Date.now())
+      && !(job.owner === String(user._id) && job.conversationId === conversationId && job.messageId === messageId));
+    return { state: retained.length >= MAX_JOBS ? 'full' : 'available' };
+  }
   async submit(user, conversationId, body) {
     fields(body, ['messageId', 'voiceId']);
     if (typeof body.messageId !== 'string' || !ID.test(body.messageId) || body.voiceId !== 'anny_en') throw new MiienError(400, 'Choose a saved assistant reply and Anny English.');
@@ -72,11 +99,10 @@ class MiienSpeechService {
     const duplicate = [...this.jobs.values()].find(job => job.owner === owner && job.conversationId === conversationId && job.messageId === body.messageId);
     // Active/failed/timeout identity is deliberately independent of content. An
     // edit or preparation-version change must never bypass outstanding work.
-    if (duplicate && (duplicate.status !== 'ready' || this.active === duplicate.id
-      || (duplicate.audio && duplicate.fingerprint === prepared.fingerprint
-        && duplicate.preparationVersion === prepared.preparationVersion))) return this.view(duplicate);
+    if (this.reusable(owner, conversationId, body.messageId, prepared)) return this.view(duplicate);
     if (duplicate) { duplicate.audio = null; this.jobs.delete(duplicate.id); }
-    if (this.active || this.jobs.size >= MAX_JOBS) throw new MiienError(429, 'Anny is busy or audio storage is full. Try later; text chat is ready.');
+    if (this.active) throw new MiienSpeechOccupiedError();
+    if (this.jobs.size >= MAX_JOBS) throw new MiienError(429, 'Anny audio storage is full. Try later; text chat is ready.');
     const job = { id: randomUUID(), owner, conversationId, messageId: body.messageId,
       backendId: BACKEND, status: 'preparing',
       deadlineAt: Date.now() + DEADLINE_MS, audio: null };
@@ -193,4 +219,4 @@ class MiienSpeechService {
     return job.audio;
   }
 }
-module.exports = { MiienSpeechService, DEADLINE_MS, RETENTION_MS, MAX_JOBS };
+module.exports = { MiienSpeechService, MiienSpeechOccupiedError, DEADLINE_MS, RETENTION_MS, MAX_JOBS };

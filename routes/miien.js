@@ -7,6 +7,7 @@ const { READ, WRITE, TRANSCRIBE, SYNTHESIZE, MIIEN_ROLE_CAPABILITY_BUNDLES } = r
 const { MAX_AUDIO_BYTES, validMiienWav } = require('../utils/miienAudio');
 const { MiienError, DEFAULT_CONTEXT } = require('../services/miienChatService');
 const { MOODS } = require('../utils/miienMood');
+const { MiienSpeechOccupiedError } = require('../services/miienSpeechService');
 
 function createMiienRouter({ service, asr, speech, roleModel, logger }) {
   const router = express.Router();
@@ -63,6 +64,9 @@ function createMiienRouter({ service, asr, speech, roleModel, logger }) {
   router.post('/:id/speech', requireCap(SYNTHESIZE), csrf.requireToken, speechSubmissions, wrap(async (req, res) => {
     res.status(202).json(await speech.submit(req.user, req.params.id, req.body));
   }));
+  router.get('/:id/speech-admission/:messageId', requireCap(SYNTHESIZE), wrap(async (req, res) => {
+    res.json(await speech.admission(req.user, req.params.id, req.params.messageId));
+  }));
   router.get('/:id/speech/:jobId', requireCap(SYNTHESIZE), wrap(async (req, res) => {
     res.json(await speech.get(req.user, req.params.id, req.params.jobId));
   }));
@@ -106,7 +110,8 @@ function createMiienRouter({ service, asr, speech, roleModel, logger }) {
     const message = error instanceof MiienError ? error.message : status === 413 ? 'Request is too large.' : status === 400 ? 'Invalid request.'
       : 'Miien could not finish this operation. Text chat remains available. Check history before resending a message.';
     if (req.accepts(['html', 'json']) === 'html') return res.status(status).render('miien_error', { message });
-    return res.status(status).json({ error: message });
+    return res.status(status).json({ error: message,
+      ...(error instanceof MiienSpeechOccupiedError ? { code: 'speech_admission_occupied' } : {}) });
   });
   return router;
 }

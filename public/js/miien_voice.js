@@ -60,7 +60,10 @@
         headers: { Accept: binary ? 'audio/wav' : 'application/json', 'X-CSRF-Token': room.dataset.csrf, ...options?.headers } });
       if (!response.ok) {
         let data; try { data = await response.json(); } catch (_) { /* Session HTML. */ }
-        throw new Error(data?.error || 'Speech unavailable. Reload to check your session.');
+        const error = new Error(data?.error || (response.status === 429
+          ? 'Speech request limit reached. Try Replay later.' : 'Speech unavailable. Reload to check your session.'));
+        error.occupied = options?.method === 'POST' && response.status === 429 && data?.code === 'speech_admission_occupied';
+        throw error;
       }
       if (binary) {
         if (!response.headers.get('content-type')?.startsWith('audio/wav')) throw new Error('Speech audio is invalid.');
@@ -143,6 +146,46 @@
       } else fail(result.error || 'Anny failed. Text is saved; choose browser voice or keep reading.', version);
     } catch (error) { fail(`${error.message} No automatic retry was made.`, version); }
   }
+  async function admit(messageId, version, wait) {
+    if (!active(version)) return;
+    if (Date.now() >= wait.until || wait.checks >= 240) {
+      fail('Waiting for voice capacity ended after 20 minutes. Text is saved; use Replay to try later.', version); return;
+    }
+    const later = () => {
+      activity('preparing');
+      status.textContent = 'Waiting for previous voice generation before preparing the latest reply (20 minute wait limit). You can keep typing.';
+      pollTimer = setTimeout(() => admit(messageId, version, wait), 5000);
+    };
+    try {
+      wait.checks += 1;
+      const capacity = await api(`/speech-admission/${encodeURIComponent(messageId)}`, {}, version);
+      if (!active(version)) return;
+      if (Date.now() >= wait.until) {
+        fail('Waiting for voice capacity ended after 20 minutes. Text is saved; use Replay to try later.', version); return;
+      }
+      if (capacity?.state === 'occupied') { later(); return; }
+      if (capacity?.state === 'blocked') throw new Error('Anny has outstanding or uncertain work. An operator must check Gateway before more voice generation.');
+      if (capacity?.state === 'full') throw new Error('Anny audio storage is full. Try Replay later.');
+      if (capacity?.state !== 'available') throw new Error('Speech capacity could not be verified. Try Replay later.');
+      if (Date.now() < wait.nextPost) { later(); return; }
+      wait.posts += 1;
+      wait.nextPost = Date.now() + 60000;
+      status.textContent = 'Preparing latest Anny English preview · up to 600 characters, up to 20 minutes.';
+      const job = await api('/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageId, voiceId: 'anny_en' }) }, version);
+      if (!active(version)) return;
+      if (!validJob(job) || job.messageId !== messageId) { fail('Anny returned a mismatched preview. Text is saved.', version); return; }
+      clearTimeout(watchdog);
+      storage(handleKey, { id: job.id, messageId: job.messageId, voiceId: job.voiceId, backendId: job.backendId, deadlineAt: job.deadlineAt });
+      return poll(job, version, true);
+    } catch (error) {
+      if (!active(version)) return;
+      // Only this structured rejection proves no job/provider work was accepted.
+      // A read-only hint can race another tab/process; allow one spaced reattempt.
+      if (error.occupied && wait.posts < 2) { later(); return; }
+      fail(`${error.message} No further automatic attempt will be made.`, version);
+    }
+  }
   function speak(text, manual = false, messageId = '') {
     if (disposed || document.hidden || !eligible(manual)) return;
     if (!manual && (mode.value === 'off' || !enabled.checked)) return;
@@ -169,13 +212,9 @@
     if (mode.value === 'anny_en') {
       if (!/^[a-f\d]{24}$/i.test(messageId)) { status.textContent = 'Select a saved assistant reply for Anny.'; return; }
       activity('preparing'); status.textContent = 'Preparing Anny English preview · up to 600 characters, up to 20 minutes. You can keep typing.';
-      api('/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messageId, voiceId: 'anny_en' }) }, version).then(job => {
-        if (!active(version)) return;
-        if (!validJob(job) || job.messageId !== messageId) { fail('Anny returned a mismatched preview. Text is saved.', version); return; }
-        storage(handleKey, { id: job.id, messageId: job.messageId, voiceId: job.voiceId, backendId: job.backendId, deadlineAt: job.deadlineAt });
-        return poll(job, version, true);
-      }).catch(error => fail(`${error.message} No automatic retry was made.`, version));
+      const until = Date.now() + 20 * 60 * 1000;
+      watchdog = setTimeout(() => fail('Waiting for voice capacity ended after 20 minutes. Text is saved; use Replay to try later.', version), 20 * 60 * 1000);
+      admit(messageId, version, { until, checks: 0, posts: 0, nextPost: 0 });
       return;
     }
     if (!synth || !window.SpeechSynthesisUtterance) { status.textContent = 'Browser speech is unavailable. Text chat works normally.'; return; }

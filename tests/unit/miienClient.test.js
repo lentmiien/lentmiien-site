@@ -519,6 +519,7 @@ test.each(['submission', 'status', 'audio'].flatMap(boundary => ['mic', 'send', 
     const audioResponse = { ok: true, headers: { get: () => 'audio/wav' }, blob: async () => ({ size: 100 }) };
     w.Audio = jest.fn(); w.URL.createObjectURL = jest.fn();
     w.fetch.mockImplementation(url => {
+      if (url.includes('/speech-admission/')) return Promise.resolve(response({ state: 'available' }));
       const stage = url.endsWith('/audio') ? 'audio' : url.endsWith('/speech') ? 'submission' : 'status';
       return stage === boundary ? delayed.promise : Promise.resolve(stage === 'audio' ? audioResponse : response(job));
     });
@@ -553,4 +554,170 @@ test('visible recovery guards Replay until fresh history completes, including di
   rejectReplay(w);
   history.resolve(response({ messages: [assistant('old', 'Old reply')], pending: false })); await settle();
   expect(element(w, 'replay').disabled).toBe(false); expect(w.utterances).toHaveLength(0);
+});
+
+// Compose the production room controller + voice adapter + real admission/job
+// service. Only persistence, Gateway and HTML audio are in-memory boundaries.
+describe('Anny turn-taking across occupied server admission', () => {
+  const { MiienSpeechService, MiienSpeechOccupiedError } = require('../../services/miienSpeechService');
+  const { MiienError } = require('../../services/miienChatService');
+  const owner = { _id: 'b'.repeat(24), name: 'fixture' }, conversationId = 'a'.repeat(24);
+  const ids = ['c', 'd', 'e'].map(letter => letter.repeat(24));
+  const flush = async () => { for (let i = 0; i < 100; i++) await Promise.resolve(); };
+  let f;
+  const audioBytes = () => {
+    const bytes = Buffer.alloc(48);
+    bytes.write('RIFF'); bytes.writeUInt32LE(40, 4); bytes.write('WAVEfmt ', 8); bytes.writeUInt32LE(16, 16);
+    bytes.writeUInt16LE(1, 20); bytes.writeUInt16LE(1, 22); bytes.writeUInt32LE(16000, 24);
+    bytes.writeUInt32LE(32000, 28); bytes.writeUInt16LE(2, 32); bytes.writeUInt16LE(16, 34);
+    bytes.write('data', 36); bytes.writeUInt32LE(4, 40); return bytes;
+  };
+  beforeEach(async () => {
+    const w = setup({ timers: true, realVoice: true }); await flush();
+    element(w, 'speech-mode').value = 'anny_en';
+    let slot = null;
+    const requests = [], providers = [], audios = [], rows = new Map();
+    const chat = { speechText: jest.fn(async (user, roomId, messageId) => {
+      if (user._id !== owner._id || roomId !== conversationId || !rows.has(messageId)) throw new MiienError(404, 'Not found.');
+      return rows.get(messageId).text;
+    }) };
+    const service = new MiienSpeechService({ chat,
+      slots: { exists: async () => slot ? { _id: slot._id } : null,
+        create: async value => { if (slot) throw Object.assign(new Error('occupied'), { code: 11000 }); slot = value; },
+        deleteOne: async query => { if (slot?.jobId === query.jobId) slot = null; } },
+      authorize: async () => owner, logger: { warning: jest.fn(), error: jest.fn() },
+      http: { get: async () => ({ data: { voices: [{ voice_id: 'omni_anny_en' }] } }), post: jest.fn((url, body) => {
+        const work = deferred(); providers.push({ ...work, text: body.text }); return work.promise;
+      }) },
+    });
+    w.URL.createObjectURL = jest.fn(() => 'blob:synthetic'); w.URL.revokeObjectURL = jest.fn();
+    w.Audio = class {
+      constructor() { this.play = jest.fn(async () => this.onplaying?.()); this.pause = jest.fn(); this.load = jest.fn(); this.removeAttribute = jest.fn(); audios.push(this); }
+    };
+    f = { w, service, providers, audios, requests, rows, chat, state: { messages: [], pending: false } };
+    f.transport = async (url, options = {}) => {
+      requests.push({ url, options });
+      try {
+        if (url.endsWith('/messages')) return response({ accepted: true });
+        if (url.endsWith('/state')) return response(f.state);
+        if (url.includes('/speech-admission/')) return response(await service.admission(owner, conversationId, url.split('/').at(-1)));
+        if (url.endsWith('/speech')) return response(await service.submit(owner, conversationId, JSON.parse(options.body)));
+        const parts = url.split('/'), binary = parts.at(-1) === 'audio';
+        const result = await service.get(owner, conversationId, parts.at(binary ? -2 : -1), binary);
+        return binary ? { ok: true, headers: { get: () => 'audio/wav' }, blob: async () => ({ size: result.length }) } : response(result);
+      } catch (error) {
+        return { ok: false, status: error.status || 503, json: async () => ({ error: error.message,
+          ...(error instanceof MiienSpeechOccupiedError ? { code: 'speech_admission_occupied' } : {}) }) };
+      }
+    };
+    w.fetch.mockImplementation(f.transport);
+    f.caption = async index => {
+      const row = assistant(ids[index], `Synthetic reply ${index}`); rows.set(row.id, row);
+      f.state = { messages: [...rows.values()], pending: false };
+      await tick(w, f.state); await flush();
+    };
+    f.send = async () => { element(w, 'message').value = 'Explicit synthetic turn'; submit(w); await flush(); };
+    f.voiceTick = async () => {
+      const entry = [...w.fixtureTimers.entries()].find(([, callback]) => callback.fixtureDelay === 5000);
+      if (entry) { w.fixtureTimers.delete(entry[0]); await entry[1](); await flush(); }
+    };
+    f.release = async index => { providers[index].resolve({ data: audioBytes() }); await flush(); };
+    f.posts = () => requests.filter(request => request.options.method === 'POST' && request.url.endsWith('/speech'));
+    f.waitForB = async () => { await f.caption(0); await f.send(); await f.caption(1); };
+  });
+  afterEach(async () => {
+    for (const provider of f.providers) provider.resolve({ data: audioBytes() });
+    await flush();
+  });
+  test('Send B caption waits for held A, then generates and plays B exactly once', async () => {
+    await f.waitForB();
+    expect(f.providers).toHaveLength(1); expect(f.posts()).toHaveLength(1);
+    expect(element(f.w, 'latest-reply').textContent).toBe('Synthetic reply 1');
+    expect(element(f.w, 'speech-status').textContent).toContain('Waiting for previous voice generation');
+    expect(element(f.w, 'send').disabled).toBe(false);
+    await f.voiceTick(); expect(f.posts()).toHaveLength(1);
+    await f.release(0); await f.voiceTick();
+    expect(f.providers.map(work => work.text)).toEqual(['Synthetic reply 0', 'Synthetic reply 1']);
+    expect(f.audios).toHaveLength(0);
+    await f.release(1); await f.voiceTick();
+    expect(f.audios).toHaveLength(1); expect(f.audios[0].play).toHaveBeenCalledTimes(1);
+    await tick(f.w, f.state); await f.voiceTick();
+    expect(f.providers).toHaveLength(2); expect(f.audios[0].play).toHaveBeenCalledTimes(1);
+    expect(f.requests.filter(request => request.url.endsWith('/audio'))).toHaveLength(1);
+  });
+  test('C replaces waiting B; stale B timer cannot submit or overwrite C', async () => {
+    await f.waitForB();
+    const stale = [...f.w.fixtureTimers.values()].find(callback => callback.fixtureDelay === 5000);
+    await f.send(); await f.caption(2); const status = element(f.w, 'speech-status').textContent;
+    await stale(); expect(element(f.w, 'speech-status').textContent).toBe(status);
+    await f.release(0); await f.voiceTick(); await f.release(1); await f.voiceTick();
+    expect(f.providers.map(work => work.text)).toEqual(['Synthetic reply 0', 'Synthetic reply 2']);
+    expect(f.audios).toHaveLength(1); expect(f.posts()).toHaveLength(2);
+  });
+  test.each(['stop', 'hidden', 'mic', 'pagehide', 'disabled', 'off'])('%s revokes waiting B before A releases', async action => {
+    await f.waitForB(); const w = f.w;
+    const stale = [...w.fixtureTimers.values()].find(callback => callback.fixtureDelay === 5000);
+    if (action === 'stop') element(w, 'stop').click();
+    if (action === 'mic') { w.navigator.mediaDevices.getUserMedia.mockRejectedValue(new Error('denied')); element(w, 'mic').click(); }
+    if (action === 'hidden') { Object.defineProperty(w.document, 'hidden', { value: true, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange')); }
+    if (action === 'pagehide') w.dispatchEvent(new w.Event('pagehide'));
+    if (action === 'disabled') { element(w, 'speech-enabled').checked = false; element(w, 'speech-enabled').dispatchEvent(new w.Event('change')); }
+    if (action === 'off') { element(w, 'speech-mode').value = 'off'; element(w, 'speech-mode').dispatchEvent(new w.Event('change')); }
+    await flush(); await f.release(0); await stale(); await f.voiceTick();
+    expect(f.providers).toHaveLength(1); expect(f.audios).toHaveLength(0);
+    expect([...w.fixtureTimers.values()].some(callback => callback.fixtureDelay === 5000)).toBe(false);
+    if (action === 'hidden') {
+      Object.defineProperty(w.document, 'hidden', { value: false, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange')); await flush();
+      expect(f.providers).toHaveLength(1);
+      element(w, 'replay').click(); await flush(); expect(f.providers).toHaveLength(2);
+      await f.release(1); await f.voiceTick(); expect(f.audios).toHaveLength(1);
+    }
+    if (action === 'stop' || action === 'mic') {
+      await f.send(); await f.caption(2); expect(f.providers[1].text).toBe('Synthetic reply 2');
+    }
+  });
+  test('Send while A is already playing stops A and plays B normally', async () => {
+    await f.caption(0); await f.release(0); await f.voiceTick();
+    const old = f.audios[0], stale = old.onplaying;
+    await f.send(); expect(old.pause).toHaveBeenCalled(); expect(f.w.URL.revokeObjectURL).toHaveBeenCalled();
+    await f.caption(1); stale(); await f.release(1); await f.voiceTick();
+    expect(f.audios).toHaveLength(2); expect(f.audios[1].play).toHaveBeenCalledTimes(1);
+    expect(old.play).toHaveBeenCalledTimes(1); expect(f.providers).toHaveLength(2);
+  });
+  test.each([422, 502])('A provider failure %s releases only proven settlement', async status => {
+    await f.waitForB(); f.providers[0].reject({ response: { status } }); await flush(); await f.voiceTick();
+    if (status === 422) {
+      expect(f.providers).toHaveLength(2); await f.release(1); await f.voiceTick(); expect(f.audios).toHaveLength(1);
+    } else {
+      expect(f.providers).toHaveLength(1); expect(f.posts()).toHaveLength(1);
+      expect(element(f.w, 'speech-status').textContent).toContain('operator must check Gateway');
+      await f.voiceTick(); expect(f.providers).toHaveLength(1);
+    }
+  });
+  test('failed B is terminal with no retry and no playback', async () => {
+    await f.waitForB(); await f.release(0); await f.voiceTick();
+    f.providers[1].reject({ response: { status: 422 } }); await flush(); await f.voiceTick(); await f.voiceTick();
+    expect(f.providers).toHaveLength(2); expect(f.audios).toHaveLength(0);
+    expect(element(f.w, 'speech-status').textContent).toContain('failed');
+  });
+  test('late available response/finally cannot submit B or clear newer C request ownership', async () => {
+    await f.waitForB(); await f.release(0);
+    const b = deferred(), c = deferred();
+    f.w.fetch.mockImplementation((url, options) => url.includes('/speech-admission/')
+      ? (url.endsWith(ids[1]) ? b.promise : c.promise) : f.transport(url, options));
+    const polling = f.voiceTick(); await flush(); await f.send(); await f.caption(2);
+    const latest = f.w.fetch.mock.calls.filter(([url]) => url.endsWith('/speech-admission/' + ids[2])).at(-1);
+    b.resolve(response({ state: 'available' })); await polling;
+    element(f.w, 'stop').click(); expect(latest[1].signal.aborted).toBe(true);
+    c.resolve(response({ state: 'available' })); await flush();
+    expect(f.providers).toHaveLength(1); expect(f.audios).toHaveLength(0);
+  });
+  test('waiting deadline clears timer and pending request; late release never resumes', async () => {
+    await f.waitForB();
+    const timeout = [...f.w.fixtureTimers.values()].find(callback => callback.fixtureDelay === 1200000);
+    timeout(); await f.release(0); await f.voiceTick();
+    expect(f.providers).toHaveLength(1); expect(f.audios).toHaveLength(0);
+    expect(element(f.w, 'speech-status').textContent).toContain('20 minutes');
+    expect([...f.w.fixtureTimers.values()].some(callback => callback.fixtureDelay === 5000)).toBe(false);
+  });
 });

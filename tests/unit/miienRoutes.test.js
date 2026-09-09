@@ -156,3 +156,45 @@ test('fresh replay status preserves safe backend attribution and is never cachea
   expect(await r.json()).toMatchObject({ voiceId: 'anny_en', backendId: 'omni_anny_en' });
   expect(speech.get).toHaveBeenCalledWith(principal, id, 'job');
 });
+
+test('admission checks require fresh session and synthesis capability before service access', async () => {
+  speech.admission = jest.fn().mockResolvedValue({ state: 'occupied' });
+  const url = `/${id}/speech-admission/${id}`;
+  expect((await request(url, { headers: { 'x-anonymous': '1' } })).status).toBe(401);
+  roleModel.findOne.mockResolvedValue({ permissions: ['chat.conversation.read'] });
+  for (const role of ['user', 'family']) expect((await request(url, { headers: { 'x-role': role } })).status).toBe(403);
+  expect(speech.admission).not.toHaveBeenCalled();
+  roleModel.findOne.mockResolvedValue({ permissions: ['chat.conversation.read', 'chat.audio.synthesize'] });
+  const result = await request(url, { headers: { 'x-role': 'user' } });
+  expect(result.status).toBe(200); expect(await result.json()).toEqual({ state: 'occupied' });
+  expect(result.headers.get('cache-control')).toContain('no-store');
+  expect(result.headers.get('x-content-type-options')).toBe('nosniff');
+  expect(speech.admission).toHaveBeenCalledWith({ ...principal, type_user: 'user' }, id, id);
+  roleModel.findOne.mockResolvedValue({ permissions: ['chat.conversation.read'] });
+  expect((await request(url, { headers: { 'x-role': 'user' } })).status).toBe(403);
+  expect(speech.admission).toHaveBeenCalledTimes(1);
+  expect(speech.submit).not.toHaveBeenCalled();
+});
+test('admission rejects foreign/missing child and logs sanitized operational read failure', async () => {
+  speech.admission = jest.fn().mockRejectedValue(new MiienError(404, 'Not found.'));
+  const url = `/${id}/speech-admission/${id}`;
+  expect((await request(url)).status).toBe(404);
+  speech.admission.mockRejectedValue(new Error('private database payload'));
+  const result = await request(url);
+  expect(result.status).toBe(503); expect(await result.text()).not.toContain('private database payload');
+  expect(logger.error).toHaveBeenCalled(); expect(JSON.stringify(logger.error.mock.calls)).not.toContain('private database payload');
+});
+test('only occupied service rejection carries safe deferral code; admission GET does not consume speech POST budget', async () => {
+  const { MiienSpeechOccupiedError } = require('../../services/miienSpeechService');
+  speech.admission = jest.fn().mockResolvedValue({ state: 'occupied' });
+  for (let i = 0; i < 12; i++) expect((await request(`/${id}/speech-admission/${id}`)).status).toBe(200);
+  speech.submit.mockRejectedValueOnce(new MiienSpeechOccupiedError());
+  const busy = await post(`/${id}/speech`);
+  expect(busy.status).toBe(429); expect(await busy.json()).toMatchObject({ code: 'speech_admission_occupied' });
+  speech.submit.mockRejectedValueOnce(new MiienError(429, 'Storage full'));
+  expect(await (await post(`/${id}/speech`)).json()).toEqual({ error: 'Storage full' });
+  for (let i = 0; i < 2; i++) expect((await post(`/${id}/speech`)).status).toBe(202);
+  const limited = await post(`/${id}/speech`);
+  expect(limited.status).toBe(429); expect(await limited.text()).not.toContain('speech_admission_occupied');
+  expect(speech.submit).toHaveBeenCalledTimes(4);
+});

@@ -71,6 +71,7 @@ let browser;
   const job = () => ({ id: '11111111-1111-1111-1111-111111111111', messageId: state.messages.at(-1).id,
     voiceId: 'anny_en', backendId: 'omni_anny_en', status: 'ready', deadlineAt: Date.now() + 1200000, spokenCharacters: 20 });
   await page.route('**/speech**', async route => {
+    if (route.request().url().includes('/speech-admission/')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ state: 'available' }) });
     if (route.request().url().endsWith('/audio')) {
       audioCalls++; if (audioGate) await audioGate.promise;
       return route.fulfill({ contentType: 'audio/wav', body: wav });
@@ -135,13 +136,74 @@ let browser;
   const beforeReload = speechCalls; await page.reload();
   await page.waitForFunction(() => !document.querySelector('#replay').disabled);
   assert.equal(speechCalls, beforeReload); assert.equal(await page.evaluate(() => window.fixtureAudios.length), 0);
+
+  // Exercise actual service admission with native browser audio. The provider
+  // promise remains held after the browser aborts A's local polling.
+  await page.unroute('**/speech**');
+  const { MiienSpeechService, MiienSpeechOccupiedError } = require('../services/miienSpeechService');
+  const owner = { _id: 'b'.repeat(24) }, replies = new Map(), generated = [];
+  let slot = null, providerGate = deferred(), admissionReads = 0;
+  const speechService = new MiienSpeechService({
+    chat: { speechText: async (user, roomId, savedId) => {
+      assert.equal(user._id, owner._id); assert.equal(roomId, id); assert.ok(replies.has(savedId));
+      return replies.get(savedId);
+    } }, authorize: async () => owner, logger: require('../utils/logger'),
+    slots: { exists: async () => slot ? { _id: slot._id } : null,
+      create: async value => { if (slot) throw Object.assign(new Error('occupied'), { code: 11000 }); slot = value; },
+      deleteOne: async query => { if (slot?.jobId === query.jobId) slot = null; } },
+    http: { get: async () => ({ data: { voices: [{ voice_id: 'omni_anny_en' }] } }),
+      post: async (url, body) => { generated.push(body.text); if (providerGate) await providerGate.promise; return { data: wav }; } },
+  });
+  await page.route('**/speech**', async route => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    try {
+      let result;
+      if (parts.includes('speech-admission')) { admissionReads++; result = await speechService.admission(owner, id, parts.at(-1)); }
+      else if (route.request().method() === 'POST') result = await speechService.submit(owner, id, route.request().postDataJSON());
+      else {
+        const binary = parts.at(-1) === 'audio';
+        result = await speechService.get(owner, id, parts.at(binary ? -2 : -1), binary);
+        if (binary) return route.fulfill({ contentType: 'audio/wav', body: result });
+      }
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(result) });
+    } catch (error) {
+      return route.fulfill({ status: error.status || 503, contentType: 'application/json', body: JSON.stringify({ error: 'Synthetic speech failure',
+        ...(error instanceof MiienSpeechOccupiedError ? { code: 'speech_admission_occupied' } : {}) }) });
+    }
+  });
+  const nextReply = async (letter, text) => {
+    await page.locator('#message').fill('Synthetic explicit turn'); await page.locator('#send').click();
+    await presence('Waiting for Chat5');
+    const savedId = letter.repeat(24); replies.set(savedId, text);
+    state.messages = [{ id: savedId, role: 'assistant', text, mood: 'thoughtful' }]; state.pending = false;
+    await page.waitForFunction(text => document.querySelector('#latest-reply').textContent === text, text);
+  };
+  await nextReply('f', 'Held synthetic A'); await pollUntil(() => generated.length === 1);
+  await nextReply('9', 'Latest synthetic B');
+  await page.waitForFunction(() => document.querySelector('#speech-status').textContent.includes('Waiting for previous voice generation'));
+  assert.deepEqual(generated, ['Held synthetic A']); await noMouth();
+  assert.equal(await page.evaluate(() => window.fixtureAudios.length), 0);
+  providerGate.resolve(); providerGate = null; await presence('Speaking');
+  assert.deepEqual(generated, ['Held synthetic A', 'Latest synthetic B']);
+  assert.equal(await page.evaluate(() => window.fixtureAudios.length), 1);
+  providerGate = deferred();
+  await nextReply('8', 'Second held synthetic A'); await pollUntil(() => generated.length === 3);
+  await nextReply('7', 'Superseded synthetic B');
+  await page.waitForFunction(() => document.querySelector('#speech-status').textContent.includes('Waiting for previous voice generation'));
+  await nextReply('6', 'Winning synthetic C');
+  await page.waitForFunction(() => document.querySelector('#speech-status').textContent.includes('Waiting for previous voice generation'));
+  providerGate.resolve(); providerGate = null; await presence('Speaking');
+  assert.deepEqual(generated, ['Held synthetic A', 'Latest synthetic B', 'Second held synthetic A', 'Winning synthetic C']);
+  assert.equal(await page.evaluate(() => window.fixtureAudios.length), 2);
+  await page.locator('#stop').click(); await noMouth();
   assert.deepEqual(errors, []);
   process.stdout.write(JSON.stringify({ synthetic: true, checks: [
     'no initial/reload autoplay', 'delayed synthesis interrupted by permission/capture/ASR', 'Replay handler exclusions',
     'retained ASR edits and explicit review', 'no ASR auto-send', 'late permission track cleanup',
     'delayed audio ignored after Stop', 'real synthetic WAV playback and mouth closure on buffering/Send',
     'pending reply exclusion', 'editable captions/history/draft during preparation', 'production CSP',
-  ], speechCalls, audioCalls, asrCalls, sends, browserErrors: errors }, null, 2) + '\n');
+    'real service held A then B admission and native playback once', 'waiting B superseded by C without B generation',
+  ], speechCalls, audioCalls, asrCalls, sends, admissionReads, composedProviderCalls: generated.length, browserErrors: errors }, null, 2) + '\n');
 })().catch(error => {
   require('../utils/logger').error('Miien turn-taking browser review failed', {
     category: 'chat5_miien_lifecycle', metadata: { failure: error.message.slice(0, 500) },

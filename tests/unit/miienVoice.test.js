@@ -17,7 +17,7 @@ function setup({ mode = 'anny_en', savedJob, fetch } = {}) {
   w.timers = new Map(); w.setTimeout = (fn, ms) => { const id = ++timerId; w.timers.set(id, { fn, ms }); return id; }; w.clearTimeout = id => w.timers.delete(id);
   w.sessionStorage.setItem('miienVoice', JSON.stringify({ mode, enabled: true }));
   if (savedJob) w.sessionStorage.setItem('miienSpeech:' + 'a'.repeat(24), JSON.stringify(savedJob));
-  w.fetch = fetch || jest.fn().mockResolvedValue(response(job()));
+  w.fetch = withAdmission(fetch || jest.fn().mockResolvedValue(response(job())));
   w.URL.createObjectURL = jest.fn().mockReturnValue('blob:fixture'); w.URL.revokeObjectURL = jest.fn();
   w.audios = []; w.Audio = class {
     constructor(url) { this.src = url; this.play = jest.fn().mockResolvedValue(); this.pause = jest.fn(); this.load = jest.fn(); this.removeAttribute = jest.fn(); w.audios.push(this); }
@@ -31,15 +31,17 @@ function setup({ mode = 'anny_en', savedJob, fetch } = {}) {
   return w;
 }
 const status = w => w.document.getElementById('speech-status').textContent;
+const withAdmission = transport => jest.fn((url, options) => url.includes('/speech-admission/')
+  ? Promise.resolve(response({ state: 'available' })) : transport(url, options));
 const readyFetch = () => jest.fn().mockResolvedValue(response(job('ready'))).mockResolvedValueOnce(response(job())).mockResolvedValueOnce(response(job('ready'))).mockResolvedValueOnce({ ok: true, headers: { get: () => 'audio/wav' }, blob: async () => ({ size: 100 }) });
 test('slow Anny preparation is thinking, leaves input usable, and Stop discards late job results', async () => {
   const w = setup(); w.MiienVoice.speak('private text', true, messageId); await settle();
   expect(status(w)).toContain('Preparing Anny'); expect(w.phases).not.toContain('playing');
   expect(w.document.getElementById('message').disabled).toBe(false);
-  expect(JSON.parse(w.fetch.mock.calls[0][1].body)).toEqual({ messageId, voiceId: 'anny_en' });
-  expect(w.fetch.mock.calls[0][1].body).not.toContain('private text');
+  expect(JSON.parse(w.fetch.mock.calls[1][1].body)).toEqual({ messageId, voiceId: 'anny_en' });
+  expect(w.fetch.mock.calls[1][1].body).not.toContain('private text');
   const poll = [...w.timers.values()].find(t => t.ms === 5000).fn;
-  w.MiienVoice.stop(); await poll(); expect(w.fetch).toHaveBeenCalledTimes(2);
+  w.MiienVoice.stop(); await poll(); expect(w.fetch).toHaveBeenCalledTimes(3);
   expect(status(w)).toContain('may continue'); expect(w.phases.at(-1)).toBe('idle');
 });
 test('speaking follows actual playing; end, stale events and replay are safe', async () => {
@@ -57,7 +59,7 @@ test('autoplay rejection keeps audio for freshly authorized Replay without resyn
   w.MiienVoice.speak('reply', true, messageId); await settle();
   expect(status(w)).toContain('press Replay'); expect(w.phases.at(-1)).toBe('idle');
   w.MiienVoice.speak('reply', true, messageId); await settle(); expect(w.audios[0].play).toHaveBeenCalledTimes(2);
-  expect(w.fetch).toHaveBeenCalledTimes(4);
+  expect(w.fetch).toHaveBeenCalledTimes(5);
 });
 test('reload resumes status only, never speaks old history or resubmits', async () => {
   const w = setup({ savedJob: job(), fetch: jest.fn().mockResolvedValue(response(job('ready'))) }); await settle();
@@ -67,7 +69,7 @@ test('reload resumes status only, never speaks old history or resubmits', async 
 test.each(['failed', 'timeout'])('terminal %s stops polling and does not retry', async state => {
   const w = setup({ fetch: jest.fn().mockResolvedValueOnce(response(job())).mockResolvedValueOnce(response({ ...job(state), error: 'Terminal fixture failure' })) });
   w.MiienVoice.speak('reply', true, messageId); await settle();
-  expect(w.timers.size).toBe(0); expect(w.fetch).toHaveBeenCalledTimes(2); expect(status(w)).toContain('Terminal fixture');
+  expect(w.timers.size).toBe(0); expect(w.fetch).toHaveBeenCalledTimes(3); expect(status(w)).toContain('Terminal fixture');
 });
 test('restart loss and revoked session terminate with readable fallback', async () => {
   const w = setup({ savedJob: job(), fetch: jest.fn().mockResolvedValue({ ok: false, json: async () => ({ error: 'Speech audio expired or was lost after restart.' }) }) });
@@ -76,10 +78,10 @@ test('restart loss and revoked session terminate with readable fallback', async 
 test('stopped in-flight submission and audio fetch never retain a late URL or start playback', async () => {
   let resolve;
   const w = setup({ fetch: jest.fn().mockImplementation(() => new Promise(r => { resolve = r; })) });
-  w.MiienVoice.speak('reply', true, messageId); w.MiienVoice.stop(); resolve(response(job())); await settle();
-  expect(w.fetch).toHaveBeenCalledTimes(1); expect(w.audios).toHaveLength(0);
-  w.fetch = readyFetch().mockReset().mockResolvedValueOnce(response(job())).mockResolvedValueOnce(response(job('ready')))
-    .mockImplementationOnce(() => new Promise(r => { resolve = r; }));
+  w.MiienVoice.speak('reply', true, messageId); await settle(); w.MiienVoice.stop(); resolve(response(job())); await settle();
+  expect(w.fetch).toHaveBeenCalledTimes(2); expect(w.audios).toHaveLength(0);
+  w.fetch = withAdmission(jest.fn().mockResolvedValueOnce(response(job())).mockResolvedValueOnce(response(job('ready')))
+    .mockImplementationOnce(() => new Promise(r => { resolve = r; })));
   w.MiienVoice.speak('reply', true, messageId); await settle(); w.MiienVoice.stop();
   resolve({ ok: true, headers: { get: () => 'audio/wav' }, blob: async () => ({ size: 100 }) }); await settle();
   expect(w.URL.createObjectURL).not.toHaveBeenCalled();
@@ -195,4 +197,94 @@ test.each(['hidden', 'pagehide', 'latest reply'])('%s invalidates an unresolved 
   if (action === 'latest reply') w.MiienVoice.setLatestMessage('d'.repeat(24));
   const stopped = status(w); rejectPlay(new Error('Late autoplay denial')); oldPlaying(); await settle();
   expect(status(w)).toBe(stopped); expect(w.phases.at(-1)).toBe('idle'); expect(w.URL.revokeObjectURL).toHaveBeenCalled();
+});
+
+const runWait = async w => {
+  const entry = [...w.timers.entries()].find(([, timer]) => timer.ms === 5000);
+  if (entry) { w.timers.delete(entry[0]); await entry[1].fn(); await settle(); }
+};
+test.each([
+  [429, { error: 'Too many requests' }],
+  [429, { error: 'Storage full' }],
+  [403, { error: 'Permission revoked', code: 'speech_admission_occupied' }],
+  [400, { error: 'Invalid message' }],
+  [503, { error: 'Quota unavailable' }],
+  [502, { error: 'Uncertain upstream failure' }],
+])('HTTP %s without exact safe deferral contract never retries', async (code, body) => {
+  const w = setup();
+  w.fetch.mockImplementation(url => Promise.resolve(url.includes('/speech-admission/')
+    ? response({ state: 'available' }) : { ok: false, status: code, json: async () => body }));
+  w.MiienVoice.speak('reply', true, messageId); await settle(); await runWait(w);
+  expect(w.fetch.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1);
+  expect(w.timers.size).toBe(0); expect(status(w)).toContain(body.error);
+});
+test.each(['network', 'session HTML', 'invalid capacity', 'blocked', 'full'])('%s during capacity check is terminal without a speech POST', async outcome => {
+  const w = setup();
+  w.fetch.mockImplementation(async () => {
+    if (outcome === 'network') throw new Error('Network unavailable');
+    if (outcome === 'session HTML') return { ok: false, status: 401, json: async () => { throw new Error('HTML'); } };
+    return response({ state: outcome });
+  });
+  w.MiienVoice.speak('reply', true, messageId); await settle(); await runWait(w);
+  expect(w.fetch).toHaveBeenCalledTimes(1); expect(w.timers.size).toBe(0);
+  expect(w.audios).toHaveLength(0);
+});
+test('racing safe occupied POST defers through GET, spaces one reattempt by a minute, then stops', async () => {
+  const w = setup(); let now = Date.now(); w.Date.now = () => now;
+  w.fetch.mockImplementation(async url => url.includes('/speech-admission/') ? response({ state: 'available' })
+    : { ok: false, status: 429, json: async () => ({ error: 'No job accepted', code: 'speech_admission_occupied' }) });
+  const posts = () => w.fetch.mock.calls.filter(([, options]) => options.method === 'POST');
+  w.MiienVoice.speak('reply', true, messageId); await settle(); expect(posts()).toHaveLength(1);
+  for (let i = 0; i < 11; i++) { now += 5000; await runWait(w); }
+  expect(posts()).toHaveLength(1); expect(status(w)).toContain('Waiting');
+  now += 5000; await runWait(w); expect(posts()).toHaveLength(2);
+  expect(w.timers.size).toBe(0); expect(status(w)).toContain('No further automatic attempt');
+  await runWait(w); expect(posts()).toHaveLength(2);
+});
+test('safe occupied POST can recover once without retrying an accepted job', async () => {
+  const w = setup(); let now = Date.now(), posts = 0; w.Date.now = () => now;
+  w.fetch.mockImplementation(async (url, options) => {
+    if (url.includes('/speech-admission/')) return response({ state: 'available' });
+    if (options.method === 'POST' && ++posts === 1) return { ok: false, status: 429, json: async () => ({ code: 'speech_admission_occupied' }) };
+    return response(job());
+  });
+  w.MiienVoice.speak('reply', true, messageId); await settle();
+  now += 60000; await runWait(w); await runWait(w);
+  expect(posts).toBe(2); expect(status(w)).toContain('Preparing Anny');
+});
+test('a network failure after POST is uncertain and never retried', async () => {
+  const w = setup(); w.fetch.mockImplementation(async url => {
+    if (url.includes('/speech-admission/')) return response({ state: 'available' });
+    throw new Error('Connection lost');
+  });
+  w.MiienVoice.speak('reply', true, messageId); await settle(); await runWait(w);
+  expect(w.fetch).toHaveBeenCalledTimes(2); expect(w.timers.size).toBe(0);
+  expect(status(w)).toContain('No further automatic attempt');
+});
+test('capacity polling has an independent 240-read ceiling even if the clock moves backwards', async () => {
+  const w = setup(); w.fetch.mockResolvedValue(response({ state: 'occupied' }));
+  w.MiienVoice.speak('reply', true, messageId); await settle();
+  w.Date.now = () => 0;
+  for (let i = 0; i < 240; i++) await runWait(w);
+  expect(w.fetch).toHaveBeenCalledTimes(240); expect(w.timers.size).toBe(0);
+  expect(status(w)).toContain('20 minutes');
+});
+test('stopped admission response and timeout callback cannot restart or overwrite a newer wait', async () => {
+  const w = setup(); let resolve;
+  w.fetch.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  w.MiienVoice.speak('reply', true, messageId);
+  const oldTimeout = [...w.timers.values()].find(timer => timer.ms === 1200000).fn;
+  w.MiienVoice.stop(); w.fetch.mockResolvedValue(response({ state: 'occupied' }));
+  w.MiienVoice.speak('reply', true, messageId); await settle(); const text = status(w);
+  resolve(response({ state: 'available' })); await settle(); oldTimeout();
+  expect(status(w)).toBe(text); expect(w.fetch.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
+  expect([...w.timers.values()].filter(timer => timer.ms === 5000)).toHaveLength(1);
+});
+
+test('a capacity response arriving after the wait deadline cannot submit even before the watchdog runs', async () => {
+  const w = setup(); let resolve, now = Date.now(); w.Date.now = () => now;
+  w.fetch.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  w.MiienVoice.speak('reply', true, messageId); now += 1200000;
+  resolve(response({ state: 'available' })); await settle();
+  expect(w.fetch).toHaveBeenCalledTimes(1); expect(w.timers.size).toBe(0); expect(status(w)).toContain('20 minutes');
 });

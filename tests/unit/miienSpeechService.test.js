@@ -13,6 +13,7 @@ function wav() {
 function fixture() {
   let slot = null;
   const slots = {
+    exists: jest.fn(async () => slot ? { _id: slot._id } : null),
     create: jest.fn(async value => { if (slot) throw Object.assign(new Error('duplicate'), { code: 11000 }); slot = value; }),
     deleteOne: jest.fn(async () => { slot = null; }),
   };
@@ -256,4 +257,75 @@ test('content changed during synthesis is discarded after reauthorization', asyn
   expect(await f.service.get(user, conversation, job.id)).toMatchObject({ status: 'failed' });
   await expect(f.service.get(user, conversation, job.id, true)).rejects.toHaveProperty('status', 409);
   expect(f.slots.deleteOne).toHaveBeenCalledTimes(1);
+});
+
+test('admission is an authorized read-only hint with no other job metadata', async () => {
+  const f = fixture(); let resolve;
+  expect(await f.service.admission(user, conversation, body.messageId)).toEqual({ state: 'available' });
+  expect(f.slots.create).not.toHaveBeenCalled(); expect(f.http.get).not.toHaveBeenCalled();
+  f.http.post.mockImplementation(() => new Promise(done => { resolve = done; }));
+  const a = await f.service.submit(user, conversation, body); await flush();
+  expect(await f.service.admission(user, conversation, 'd'.repeat(24))).toEqual({ state: 'occupied' });
+  expect(await f.service.admission(user, conversation, body.messageId)).toEqual({ state: 'available' });
+  const { MiienSpeechOccupiedError } = require('../../services/miienSpeechService');
+  await expect(f.service.submit(user, conversation, { ...body, messageId: 'd'.repeat(24) })).rejects.toBeInstanceOf(MiienSpeechOccupiedError);
+  expect(f.service.jobs.size).toBe(1); expect(f.service.active).toBe(a.id);
+  f.chat.speechText.mockRejectedValueOnce(new MiienError(404, 'Not found.'));
+  await expect(f.service.admission(user, 'f'.repeat(24), body.messageId)).rejects.toHaveProperty('status', 404);
+  resolve({ data: wav() }); await flush();
+  expect(await f.service.admission(user, conversation, 'd'.repeat(24))).toEqual({ state: 'available' });
+});
+test.each(['', '../bad', 'a'.repeat(25), [], null])('admission rejects malformed message %p before authorization or slot reads', async messageId => {
+  const f = fixture(); await expect(f.service.admission(user, conversation, messageId)).rejects.toHaveProperty('status', 400);
+  expect(f.chat.speechText).not.toHaveBeenCalled(); expect(f.slots.exists).not.toHaveBeenCalled();
+});
+test('admission never releases timed-out or uncertain work, including another process slot', async () => {
+  const f = fixture(); let reject;
+  f.http.post.mockImplementation(() => new Promise((resolve, fail) => { reject = fail; }));
+  await f.service.submit(user, conversation, body); await flush();
+  await jest.advanceTimersByTimeAsync(DEADLINE_MS);
+  expect(await f.service.admission(user, conversation, 'd'.repeat(24))).toEqual({ state: 'blocked' });
+  reject(new Error('connection lost')); await flush();
+  expect(f.service.active).toBeNull();
+  expect(await f.service.admission(user, conversation, 'd'.repeat(24))).toEqual({ state: 'blocked' });
+  const other = new MiienSpeechService({ chat: f.chat, slots: f.slots, authorize: f.authorize, logger: f.logger, http: f.http });
+  expect(await other.admission(user, conversation, 'd'.repeat(24))).toEqual({ state: 'blocked' });
+  expect(f.slots.deleteOne).not.toHaveBeenCalled(); expect(f.http.post).toHaveBeenCalledTimes(1);
+});
+test('admission reports full storage, allows retained duplicates, and ignores expired jobs without mutating GET', async () => {
+  const f = fixture();
+  for (let i = 0; i < MAX_JOBS; i++) {
+    await f.service.submit(user, conversation, { ...body, messageId: i.toString(16).repeat(24) }); await flush();
+  }
+  expect(await f.service.admission(user, conversation, body.messageId)).toEqual({ state: 'full' });
+  expect(await f.service.admission(user, conversation, '0'.repeat(24))).toEqual({ state: 'available' });
+  for (const job of f.service.jobs.values()) job.expiresAt = Date.now() - 1;
+  expect(await f.service.admission(user, conversation, body.messageId)).toEqual({ state: 'available' });
+  expect(f.service.jobs.size).toBe(MAX_JOBS);
+});
+test('slot read failure fails closed without provider work or private errors at service boundary', async () => {
+  const f = fixture(); f.slots.exists.mockRejectedValue(new Error('database unavailable'));
+  await expect(f.service.admission(user, conversation, body.messageId)).rejects.toThrow('database unavailable');
+  expect(f.slots.create).not.toHaveBeenCalled(); expect(f.http.post).not.toHaveBeenCalled();
+});
+
+test('a local job admitted during a durable capacity read is occupied, not uncertain', async () => {
+  const f = fixture(); let read, release;
+  f.slots.exists.mockImplementationOnce(() => new Promise(resolve => { read = resolve; }));
+  const pending = f.service.admission(user, conversation, 'd'.repeat(24)); await flush();
+  f.http.post.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  await f.service.submit(user, conversation, body); await flush();
+  read({ _id: 'miien-anny-en' });
+  expect(await pending).toEqual({ state: 'occupied' });
+  release({ data: wav() }); await flush();
+});
+test('full storage still permits replacing an edited ready reply as submit already does', async () => {
+  const f = fixture();
+  for (let i = 0; i < MAX_JOBS; i++) {
+    await f.service.submit(user, conversation, { ...body, messageId: i.toString(16).repeat(24) }); await flush();
+  }
+  f.chat.speechText.mockResolvedValue('An edited synthetic reply');
+  expect(await f.service.admission(user, conversation, '0'.repeat(24))).toEqual({ state: 'available' });
+  await f.service.submit(user, conversation, { ...body, messageId: '0'.repeat(24) }); await flush();
+  expect(f.http.post).toHaveBeenCalledTimes(MAX_JOBS + 1); expect(f.service.jobs.size).toBe(MAX_JOBS);
 });
