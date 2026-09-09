@@ -89,9 +89,26 @@ let browser;
     if (route.request().method() === 'POST' && speechGate) await speechGate.promise;
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(result) });
   });
-  await page.route('**/transcribe', async route => {
-    asrCalls++; await asrGate.promise;
-    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ text: 'Synthetic transcript' }) });
+  let asrReady = false, asrStatusCalls = 0, asrActions = [], loseUpload = false, loseStatus = false, delayedStatus = null;
+  asrGate.promise.then(() => { asrReady = true; });
+  const asrJob = status => ({ id: '22222222-2222-2222-2222-222222222222', status, remainingMs: 2800000 });
+  await page.route('**/transcribe**', async route => {
+    const request = route.request();
+    if (request.url().endsWith('/transcribe')) return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify(asrJob('awaiting_upload')) });
+    if (request.url().endsWith('/audio')) {
+      asrCalls++;
+      if (loseUpload) { loseUpload = false; return route.abort('connectionreset'); }
+      return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify(asrJob('transcribing')) });
+    }
+    if (request.method() === 'POST') {
+      asrActions.push(request.postDataJSON().action);
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(asrJob('cancelled')) });
+    }
+    asrStatusCalls++;
+    if (loseStatus) { loseStatus = false; return route.abort('connectionreset'); }
+    if (delayedStatus) await delayedStatus.promise;
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(asrReady
+      ? { ...asrJob('ready'), text: 'Synthetic transcript' } : asrJob('transcribing')) });
   });
   await page.route('**/messages', async route => {
     sends++; state.pending = true;
@@ -232,6 +249,53 @@ let browser;
   assert.ok(diagnostics.browser.audioFetchMs >= 0);
   assert.ok(diagnostics.browser.playbackStartMs >= 0);
   await page.locator('#stop').click(); await noMouth();
+  // New ASR regressions use virtual browser time and synthetic network responses.
+  // No microphone device or Gateway workload is involved.
+  await page.clock.install();
+  await page.locator('summary').filter({ hasText: 'Settings' }).click();
+  await page.locator('#speech-enabled').uncheck(); await page.keyboard.press('Escape');
+  const startAsr = async () => {
+    asrReady = false;
+    await page.locator('#mic').click(); await page.evaluate(() => window.fixtureGrant()); await presence('Listening');
+    await page.locator('#mic').click();
+    await page.waitForFunction(() => document.querySelector('#mic-status').textContent.includes('Gateway may be waiting')
+      || document.querySelector('#mic-status').textContent.includes('Upload response unavailable'));
+  };
+  const asrBefore = asrCalls, sendsBefore = sends;
+  await startAsr(); await page.clock.fastForward(90000);
+  assert.equal(await page.locator('#mic').isDisabled(), true);
+  assert.equal(await page.locator('#send').isDisabled(), false);
+  assert.ok((await page.locator('#mic-status').textContent()).includes('Gateway may be waiting'));
+  assert.equal(asrCalls, asrBefore + 1);
+  await page.locator('#message').fill('Editable after ninety seconds');
+  asrReady = true; await page.clock.runFor(100);
+  await presence('Review your transcript');
+  assert.equal(await page.locator('#message').inputValue(), 'Editable after ninety seconds\nSynthetic transcript');
+  await page.clock.runFor(300);
+  assert.equal(await page.locator('#message').inputValue(), 'Editable after ninety seconds\nSynthetic transcript');
+  assert.equal(sends, sendsBefore); assert.ok(asrActions.includes('acknowledge'));
+  loseUpload = true; loseStatus = true;
+  await startAsr(); await page.clock.runFor(100);
+  await page.clock.runFor(100);
+  asrReady = true; await page.clock.runFor(100); await presence('Review your transcript');
+  assert.equal(asrCalls, asrBefore + 2); // No re-upload after lost submission/status response.
+  delayedStatus = deferred(); await startAsr(); await page.clock.runFor(100);
+  await page.locator('#stop').click(); await page.locator('#message').fill('New draft after cancel');
+  asrReady = true; delayedStatus.resolve(); delayedStatus = null;
+  await page.clock.runFor(100);
+  assert.equal(await page.locator('#message').inputValue(), 'New draft after cancel');
+  assert.equal(await page.locator('#mic').isDisabled(), false); assert.ok(asrActions.includes('cancel'));
+  await startAsr();
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
+  asrReady = true; await page.clock.runFor(100);
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: false, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.clock.runFor(100);
+  assert.equal(await page.locator('#message').inputValue(), 'New draft after cancel');
+  assert.equal(await page.locator('#mic').isDisabled(), false);
+  await startAsr(); const uploadsBeforeReload = asrCalls;
+  await page.reload(); await page.clock.runFor(100);
+  assert.equal(asrCalls, uploadsBeforeReload);
+  assert.equal(await page.locator('#message').inputValue(), '');
   assert.deepEqual(errors, []);
   process.stdout.write(JSON.stringify({ synthetic: true, checks: [
     'no initial/reload autoplay', 'delayed synthesis interrupted by permission/capture/ASR', 'Replay handler exclusions',
@@ -242,7 +306,13 @@ let browser;
     'PCM silence rests, seeks select small/open, pause closes mouth', 'Replay reuses native audio and envelope',
     'reduced motion stays static during native playback', 'history outage gates Replay and reconnect does not autoplay',
     'content-free browser and authorized server timing diagnostics',
-  ], speechCalls, audioCalls, asrCalls, sends, admissionReads, composedProviderCalls: generated.length, diagnostics, browserErrors: errors }, null, 2) + '\n');
+    'ASR survives ninety seconds with editable draft and accessible Stop',
+    'ASR result applied once and acknowledged without sending',
+    'lost upload and status responses poll same job without resubmission',
+    'cancel rejects delayed result and preserves replacement draft',
+    'hidden tab cancels ASR and return does not insert stale text',
+    'reload never reuploads or restores an unreviewed transcript',
+  ], speechCalls, audioCalls, asrCalls, asrStatusCalls, asrActions, sends, admissionReads, composedProviderCalls: generated.length, diagnostics, browserErrors: errors }, null, 2) + '\n');
 })().catch(error => {
   require('../utils/logger').error('Miien turn-taking browser review failed', {
     category: 'chat5_miien_lifecycle', metadata: { failure: error.message.slice(0, 500) },

@@ -159,3 +159,18 @@ test('Miien ASR requests are cancellable, bounded and do not follow redirects', 
     signal: controller.signal, timeout: 60000, maxContentLength: 1024 * 1024, maxBodyLength: 2 * 1024 * 1024, maxRedirects: 0,
   }));
 });
+
+test('Miien instance allows queue budget without altering ordinary ASR defaults or private payload guards', async () => {
+  const { transcriptionLimits } = require('../../utils/miienTranscriptionJobs');
+  const ordinary = new AsrApiService();
+  const miien = new AsrApiService({ requestTimeoutMs: transcriptionLimits({}).deadlineMs });
+  expect(ordinary.requestTimeoutForModel('whisper-api')).toBe(300000);
+  axios.post.mockResolvedValue({ data: { text: 'Synthetic' } });
+  const controller = new AbortController();
+  await miien.transcribeBuffer({ buffer: Buffer.from('fixture'), privateRequest: true, signal: controller.signal });
+  expect(axios.post).toHaveBeenLastCalledWith(expect.stringContaining('/transcribe'), expect.anything(), expect.objectContaining({
+    timeout: 2800000, signal: controller.signal, maxContentLength: 1024 * 1024, maxBodyLength: 2 * 1024 * 1024, maxRedirects: 0,
+  }));
+  await ordinary.transcribeBuffer({ buffer: Buffer.from('fixture') });
+  expect(axios.post).toHaveBeenLastCalledWith(expect.any(String), expect.anything(), expect.objectContaining({ timeout: 300000, maxContentLength: Infinity, maxBodyLength: Infinity }));
+});

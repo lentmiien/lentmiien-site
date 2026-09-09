@@ -3,6 +3,7 @@ jest.mock('../../services/messageService', () => jest.fn());
 jest.mock('../../services/conversationService', () => jest.fn());
 jest.mock('../../services/asrApiService', () => jest.fn());
 jest.mock('../../services/chat5ModelCatalogService', () => ({ listAvailableChatModels: jest.fn().mockResolvedValue([]) }));
+jest.mock('../../models/miien_asr_slot', () => ({ init: jest.fn(), create: jest.fn(), deleteOne: jest.fn() }));
 jest.mock('../../models/miien_speech_slot', () => ({ create: jest.fn(), deleteOne: jest.fn() }));
 jest.mock('../../utils/logger', () => ({ warning: jest.fn(), error: jest.fn() }));
 jest.mock('axios', () => ({ get: jest.fn(), post: jest.fn() }));

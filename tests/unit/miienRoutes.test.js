@@ -1,10 +1,11 @@
 const express = require('express');
 const path = require('path');
 const { createMiienRouter } = require('../../routes/miien');
+const { MiienTranscriptionJobs } = require('../../utils/miienTranscriptionJobs');
 const { MiienError } = require('../../services/miienChatService');
 const id = 'a'.repeat(24);
 const token = 'A'.repeat(43);
-let server, origin, service, asr, speech, logger, roleModel;
+let server, origin, service, asr, speech, logger, roleModel, transcription;
 const principal = { _id:'b'.repeat(24), name:'owner', type_user:'admin' };
 beforeEach(async () => {
   service = { models:jest.fn().mockResolvedValue([{id:'model',name:'Model',provider:'OpenAI'}]), list:jest.fn().mockResolvedValue([]),
@@ -20,10 +21,12 @@ beforeEach(async () => {
     req.user=req.get('x-anonymous')?null:{...principal,type_user:req.get('x-role')||'admin'};
     req.isAuthenticated=()=>Boolean(req.user);req.session={csrfToken:token};next();
   });
-  app.use('/chat5/miien',createMiienRouter({service,asr,speech,logger,roleModel}));
+  transcription = new MiienTranscriptionJobs({ chat: service, asr, logger, authorize: async () => principal,
+    slots: { init: async () => {}, create: async () => {}, deleteOne: async () => {} } });
+  app.use('/chat5/miien',createMiienRouter({service,transcription,speech,logger,roleModel}));
   await new Promise(resolve=>{server=app.listen(0,'127.0.0.1',resolve);});origin=`http://127.0.0.1:${server.address().port}`;
 });
-afterEach(async()=>{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));});
+afterEach(async()=>{for (const job of transcription.jobs.values()) clearTimeout(job.timer);server.closeAllConnections();await new Promise(resolve=>server.close(resolve));});
 function request(url='',options={}) {return fetch(origin+'/chat5/miien'+url,{...options,headers:{Accept:'application/json',...options.headers}});}
 function post(url,body={},headers={}) {return request(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':token,...headers},body:JSON.stringify(body)});}
 test('anonymous is denied before catalog or storage access',async()=>{
@@ -96,7 +99,8 @@ test('oversized body rejected before service work',async()=>{
   const response=await post(`/${id}/messages`,{text:'a'.repeat(20000)});expect(response.status).toBe(413);expect(service.send).not.toHaveBeenCalled();
 });
 test('malformed WAV is rejected, not passed to ASR',async()=>{
-  const r=await request(`/${id}/transcribe`,{method:'POST',headers:{'Content-Type':'audio/wav','X-CSRF-Token':token},body:Buffer.alloc(100)});
+  const job = await (await post(`/${id}/transcribe`)).json();
+  const r=await request(`/${id}/transcribe/${job.id}/audio`,{method:'POST',headers:{'Content-Type':'audio/wav','X-CSRF-Token':token},body:Buffer.alloc(100)});
   expect(r.status).toBe(400);expect(asr.transcribeBuffer).not.toHaveBeenCalled();
 });
 test('provider errors are generic and logged without private error payload',async()=>{
@@ -113,8 +117,10 @@ test('valid microphone WAV uses the existing private ASR contract and returns ed
   const b=Buffer.alloc(364);b.write('RIFF');b.writeUInt32LE(356,4);b.write('WAVEfmt ',8);
   b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(16000,24);
   b.writeUInt32LE(32000,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(320,40);
-  const r=await request(`/${id}/transcribe`,{method:'POST',headers:{'Content-Type':'audio/wav','X-CSRF-Token':token},body:b});
-  expect(r.status).toBe(200);expect(await r.json()).toEqual({text:'Hello from the microphone'});
+  const job = await (await post(`/${id}/transcribe`)).json();
+  const r=await request(`/${id}/transcribe/${job.id}/audio`,{method:'POST',headers:{'Content-Type':'audio/wav','X-CSRF-Token':token},body:b});
+  expect(r.status).toBe(202);
+  expect(await (await request(`/${id}/transcribe/${job.id}`)).json()).toMatchObject({status:'ready',text:'Hello from the microphone'});
   expect(asr.transcribeBuffer).toHaveBeenCalledWith(expect.objectContaining({buffer:b,privateRequest:true,mimetype:'audio/wav',options:{model:'whisper-api',language:'auto'}}));
   expect(service.send).not.toHaveBeenCalled();
 });
@@ -197,4 +203,48 @@ test('only occupied service rejection carries safe deferral code; admission GET 
   const limited = await post(`/${id}/speech`);
   expect(limited.status).toBe(429); expect(await limited.text()).not.toContain('speech_admission_occupied');
   expect(speech.submit).toHaveBeenCalledTimes(4);
+});
+
+test('ASR reservation, upload, status and discard all require capability/session; mutations require CSRF and same origin', async () => {
+  const job = await (await post(`/${id}/transcribe`)).json();
+  const urls = [`/${id}/transcribe`, `/${id}/transcribe/${job.id}/audio`, `/${id}/transcribe/${job.id}`];
+  roleModel.findOne.mockResolvedValue({ permissions: ['chat.conversation.read', 'chat.conversation.write'] });
+  for (const url of urls) {
+    expect((await post(url, {}, { 'x-anonymous': '1' })).status).toBe(401);
+    expect((await post(url, {}, { 'x-role': 'user' })).status).toBe(403);
+    expect((await post(url, {}, { 'X-CSRF-Token': '' })).status).toBe(403);
+    expect((await post(url, {}, { Origin: 'https://evil.invalid' })).status).toBe(403);
+  }
+  expect((await request(urls[2], { headers: { 'x-anonymous': '1' } })).status).toBe(401);
+  expect((await request(urls[2], { headers: { 'x-role': 'user' } })).status).toBe(403);
+  expect(asr.transcribeBuffer).not.toHaveBeenCalled();
+});
+test('ASR polling is read-only and private; duplicate reservation and failed ownership cannot bypass capacity', async () => {
+  const job = await (await post(`/${id}/transcribe`)).json();
+  expect((await post(`/${id}/transcribe`)).status).toBe(429);
+  for (let i = 0; i < 15; i++) {
+    const result = await request(`/${id}/transcribe/${job.id}`);
+    expect(result.status).toBe(200); expect(result.headers.get('cache-control')).toContain('private, no-store');
+    expect(await result.json()).toMatchObject({ status: 'awaiting_upload' });
+  }
+  expect((await request(`/${id}/transcribe/${job.id}/audio`)).status).toBe(404);
+  expect(asr.transcribeBuffer).not.toHaveBeenCalled();
+  service.owned.mockRejectedValue(new MiienError(404, 'Conversation not found.'));
+  expect((await request(`/${id}/transcribe/${job.id}`)).status).toBe(404);
+  expect((await post(`/${id}/transcribe/${job.id}`, { action: 'cancel' })).status).toBe(404);
+});
+test('ASR upload size/type/content encoding and fields are bounded before dispatch', async () => {
+  expect((await post(`/${id}/transcribe`, { owner: 'other' })).status).toBe(400);
+  for (const [body, contentType, encoding, expected] of [
+    [Buffer.alloc(2000000), 'audio/wav', null, 413],
+    [Buffer.alloc(364), 'application/octet-stream', null, 400],
+    [Buffer.alloc(364), 'audio/wav', 'gzip', 415],
+  ]) {
+    const job = await (await post(`/${id}/transcribe`)).json();
+    const result = await request(`/${id}/transcribe/${job.id}/audio`, { method: 'POST', headers: {
+      'X-CSRF-Token': token, 'Content-Type': contentType, ...(encoding ? { 'Content-Encoding': encoding } : {}),
+    }, body });
+    expect(result.status).toBe(expected);
+  }
+  expect(asr.transcribeBuffer).not.toHaveBeenCalled();
 });

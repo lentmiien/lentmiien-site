@@ -8,7 +8,7 @@ const motionSource = fs.readFileSync('public/js/miien_motion.js', 'utf8');
 const source = fs.readFileSync('public/js/miien.js', 'utf8');
 const { MOODS, classifyMood } = require('../../utils/miienMood');
 const voiceSource = fs.readFileSync('public/js/miien_voice.js', 'utf8');
-const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
+const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 const response = data => ({ ok: true, json: async () => data });
 let dom;
 afterEach(() => { dom?.window.close(); });
@@ -377,6 +377,9 @@ test('real room automatic and manual selectors activate every rig during speech 
 });
 
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
+const asrId = '11111111-1111-1111-1111-111111111111';
+const asrReserved = () => ({ id: asrId, status: 'awaiting_upload', remainingMs: 60000 });
+const asrReady = text => ({ id: asrId, status: 'ready', remainingMs: 2800000, text });
 function microphoneFixture(w) {
   const permission = deferred();
   const track = { stop: jest.fn() };
@@ -432,13 +435,14 @@ test('microphone permission, recording and ASR exclude Replay and delayed replie
   await mic.grant(); rejectReplay(w);
   expect(element(w, 'presence').textContent).toContain('Listening');
   await tick(w, { messages: [assistant('capture', 'Reply during recording')], pending: false });
-  const transcript = deferred(); w.fetch.mockReturnValueOnce(transcript.promise);
+  const transcript = deferred();
+  w.fetch.mockResolvedValueOnce(response(asrReserved())).mockReturnValueOnce(transcript.promise);
   element(w, 'mic').click(); await settle(); rejectReplay(w);
   expect(element(w, 'presence').textContent).toContain('Transcribing');
   expect(mic.track.stop).toHaveBeenCalled();
   element(w, 'message').value = '  Edited while waiting  \n';
   await tick(w, { messages: [assistant('asr', 'Reply during transcription')], pending: false });
-  transcript.resolve(response({ text: 'Recognized speech' })); await settle();
+  transcript.resolve(response(asrReady('Recognized speech'))); await settle();
   expect(element(w, 'message').value).toBe('  Edited while waiting  \n\nRecognized speech');
   expect(element(w, 'presence').textContent).toContain('Review your transcript');
   expect(element(w, 'send').disabled).toBe(false);
@@ -478,9 +482,10 @@ test.each(['stop', 'send', 'pending', 'hidden', 'pagehide'])('%s closes late per
 test.each(['stop', 'send', 'hidden', 'pagehide'])('%s aborts ASR and ignores its late success without losing subsequent edits', async action => {
   const w = setup({ timers: true, realVoice: true }); await settle(); const mic = microphoneFixture(w);
   element(w, 'mic').click(); await mic.grant();
-  const transcript = deferred(); w.fetch.mockReturnValueOnce(transcript.promise);
+  const transcript = deferred();
+  w.fetch.mockResolvedValueOnce(response(asrReserved())).mockReturnValueOnce(transcript.promise);
   element(w, 'mic').click(); await settle();
-  const upload = w.fetch.mock.calls.find(([url]) => url.endsWith('/transcribe'));
+  const upload = w.fetch.mock.calls.find(([url]) => url.endsWith('/audio'));
   expect(upload[1].headers['X-CSRF-Token']).toBe('token');
   expect(upload[1].credentials).toBe('same-origin');
   element(w, 'message').value = 'Draft';
@@ -489,7 +494,7 @@ test.each(['stop', 'send', 'hidden', 'pagehide'])('%s aborts ASR and ignores its
   if (action === 'hidden') { Object.defineProperty(w.document, 'hidden', { value: true, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange')); }
   if (action === 'pagehide') w.dispatchEvent(new w.Event('pagehide'));
   element(w, 'message').value = 'New edits';
-  transcript.resolve(response({ text: 'Stale transcript' })); await settle();
+  transcript.resolve(response(asrReady('Stale transcript'))); await settle();
   expect(upload[1].signal.aborted).toBe(true);
   expect(element(w, 'message').value).toBe('New edits');
   w.recorders[0].onerror();
@@ -501,7 +506,7 @@ test.each(['failed', 'empty', 'oversized'])('ASR %s preserves the draft and reco
   const w = setup({ timers: true, realVoice: true }); await settle(); const mic = microphoneFixture(w);
   element(w, 'mic').click(); await mic.grant(); element(w, 'message').value = 'My draft';
   if (outcome === 'failed') w.fetch.mockRejectedValueOnce(new Error('ASR unavailable'));
-  else w.fetch.mockResolvedValueOnce(response({ text: outcome === 'empty' ? ' ' : 'x'.repeat(4000) }));
+  else w.fetch.mockResolvedValueOnce(response(asrReserved())).mockResolvedValueOnce(response(asrReady(outcome === 'empty' ? ' ' : 'x'.repeat(4000))));
   element(w, 'mic').click(); await settle(); await settle();
   expect(element(w, 'message').value).toBe('My draft'); expect(element(w, 'send').disabled).toBe(false);
   expect(element(w, 'mic').disabled).toBe(false); expect(w.document.querySelector('.stage').dataset.activity).toBe('idle');
@@ -782,4 +787,100 @@ test('window resize without visualViewport restores phone and desktop geometry',
   w.dispatchEvent(new w.Event('resize'));
   expect(room.style.getPropertyValue('--call-height')).toBe('900px');
   expect(room.classList.contains('compact-viewport')).toBe(false);
+});
+
+async function nextAsrPoll(w) {
+  const entry = [...w.fixtureTimers.entries()].find(([, callback]) => callback.fixtureDelay === 5000);
+  expect(entry).toBeDefined(); w.fixtureTimers.delete(entry[0]); entry[1](); await settle();
+}
+async function startPendingAsr(w, { uploadError = false } = {}) {
+  const mic = microphoneFixture(w); element(w, 'mic').click(); await mic.grant();
+  w.fetch.mockResolvedValueOnce(response(asrReserved()));
+  if (uploadError) w.fetch.mockRejectedValueOnce(new Error('connection lost'));
+  else w.fetch.mockResolvedValueOnce(response({ id: asrId, status: 'transcribing', remainingMs: 2800000 }));
+  element(w, 'mic').click(); await settle(); await settle();
+  return mic;
+}
+test('ASR polls queued work past 87 seconds, applies once, acknowledges and retains edits without send', async () => {
+  const w = setup({ timers: true, realVoice: true }); await settle(); await startPendingAsr(w);
+  const now = w.Date.now(); const clock = jest.spyOn(w.Date, 'now').mockReturnValue(now + 90000);
+  try {
+    for (let i = 0; i < 3; i++) {
+      w.fetch.mockResolvedValueOnce(response({ id: asrId, status: 'transcribing', remainingMs: 2700000, elapsedMs: 90000 }));
+      await nextAsrPoll(w);
+    }
+    expect(element(w, 'mic-status').textContent).toContain('Gateway may be waiting');
+    expect(element(w, 'send').disabled).toBe(false); rejectReplay(w);
+    element(w, 'message').value = '  Exact edits\n';
+    w.fetch.mockResolvedValueOnce(response(asrReady('One result')));
+    await nextAsrPoll(w);
+    expect(element(w, 'message').value).toBe('  Exact edits\n\nOne result');
+    expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/audio'))).toHaveLength(1);
+    expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/messages'))).toHaveLength(0);
+    expect(w.fetch.mock.calls.find(([, options]) => options?.body === '{"action":"acknowledge"}')).toBeDefined();
+    expect([...w.fixtureTimers.values()].some(callback => callback.fixtureDelay === 5000)).toBe(false);
+  } finally { clock.mockRestore(); }
+});
+test('uncertain upload and transient polling outage inspect same handle without resubmitting', async () => {
+  const w = setup({ timers: true }); await settle(); await startPendingAsr(w, { uploadError: true });
+  expect(element(w, 'mic-status').textContent).toContain('no upload retry');
+  w.fetch.mockRejectedValueOnce(new Error('network')); await nextAsrPoll(w);
+  expect(element(w, 'mic-status').textContent).toContain('Connection interrupted');
+  w.fetch.mockResolvedValueOnce(response(asrReady('Recovered'))); await nextAsrPoll(w);
+  expect(element(w, 'message').value).toBe('Recovered');
+  expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/transcribe'))).toHaveLength(1);
+  expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/audio'))).toHaveLength(1);
+});
+test.each([401, 403, 404])('poll HTTP %s stops truthfully, preserves draft and cancels without retry', async status => {
+  const w = setup({ timers: true }); await settle(); await startPendingAsr(w);
+  element(w, 'message').value = 'Private draft';
+  w.fetch.mockResolvedValueOnce({ ok: false, status, json: async () => ({ error: 'Session or job unavailable' }) });
+  await nextAsrPoll(w);
+  expect(element(w, 'message').value).toBe('Private draft');
+  expect(element(w, 'mic-status').textContent).toContain('Session or job unavailable');
+  expect(element(w, 'mic').disabled).toBe(false);
+  expect([...w.fixtureTimers.values()].some(callback => callback.fixtureDelay === 5000)).toBe(false);
+});
+test.each(['failed', 'cancelled', 'expired', 'consumed', 'awaiting_upload'])('terminal or missing upload state %s keeps draft and never reuploads', async status => {
+  const w = setup({ timers: true }); await settle(); await startPendingAsr(w);
+  element(w, 'message').value = 'Unsent edits';
+  w.fetch.mockResolvedValueOnce(response({ id: asrId, status, remainingMs: 0 })); await nextAsrPoll(w);
+  expect(element(w, 'message').value).toBe('Unsent edits'); expect(element(w, 'mic').disabled).toBe(false);
+  expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/audio'))).toHaveLength(1);
+});
+test.each(['stop', 'send', 'pending', 'hidden', 'pagehide'])('%s during job polling discards server result and rejects stale ready response', async action => {
+  const w = setup({ timers: true, realVoice: true }); await settle(); await startPendingAsr(w);
+  const late = deferred(); w.fetch.mockReturnValueOnce(late.promise);
+  await nextAsrPoll(w);
+  const read = w.fetch.mock.calls.find(([url, options]) => url.endsWith(asrId) && !options.method);
+  element(w, 'message').value = 'Draft';
+  if (action === 'stop') element(w, 'stop').click();
+  if (action === 'send') submit(w);
+  if (action === 'pending') await tick(w, { messages: [], pending: true });
+  if (action === 'hidden') { Object.defineProperty(w.document, 'hidden', { value: true, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange')); }
+  if (action === 'pagehide') w.dispatchEvent(new w.Event('pagehide'));
+  await settle(); element(w, 'message').value = 'Replacement draft';
+  late.resolve(response(asrReady('Stale result'))); await settle();
+  expect(read[1].signal.aborted).toBe(true); expect(element(w, 'message').value).toBe('Replacement draft');
+  expect(w.fetch.mock.calls.find(([, options]) => options?.body === '{"action":"cancel"}' && options.keepalive)).toBeDefined();
+  expect(w.utterances).toHaveLength(0);
+});
+test('browser watchdog and per-request timeouts are bounded and leave no recurring ASR poll', async () => {
+  const w = setup({ timers: true }); await settle(); await startPendingAsr(w);
+  const deadline = [...w.fixtureTimers.entries()].find(([, callback]) => callback.fixtureDelay === 3660000);
+  expect(deadline).toBeDefined(); deadline[1](); await settle();
+  expect(element(w, 'mic-status').textContent).toContain('wait stopped');
+  expect(element(w, 'mic').disabled).toBe(false);
+  expect([...w.fixtureTimers.values()].some(callback => callback.fixtureDelay === 5000)).toBe(false);
+  expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/audio'))).toHaveLength(1);
+});
+test('a newer microphone generation wins over a cancelled earlier status response', async () => {
+  const w = setup({ timers: true }); await settle(); await startPendingAsr(w);
+  const old = deferred(); w.fetch.mockReturnValueOnce(old.promise); await nextAsrPoll(w);
+  element(w, 'stop').click(); await settle();
+  await startPendingAsr(w);
+  old.resolve(response(asrReady('Old draft'))); await settle();
+  expect(element(w, 'message').value).toBe('');
+  w.fetch.mockResolvedValueOnce(response(asrReady('New draft'))); await nextAsrPoll(w);
+  expect(element(w, 'message').value).toBe('New draft');
 });

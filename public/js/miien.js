@@ -30,7 +30,7 @@
   let gettingMic = false;
   let transcribing = false;
   let reviewTranscript = false;
-  let asrController = null;
+  let asrSession = null;
   let pollController = null;
   const moods = window.MiienMotion.moods;
   const motion = window.MiienMotion.create({ document, still: byId('character'), status: byId('art-status'), Image,
@@ -77,7 +77,7 @@
       headers: { Accept: 'application/json', 'X-CSRF-Token': room.dataset.csrf, ...options.headers } });
     let data;
     try { data = await response.json(); } catch (_) { throw new Error('Session or service unavailable. Reload this page to reconnect.'); }
-    if (!response.ok) throw new Error(data.error || 'Request failed. Please try again.');
+    if (!response.ok) { const error = new Error(data.error || 'Request failed. Please try again.'); error.status = response.status; throw error; }
     return data;
   }
   function mood() {
@@ -166,8 +166,11 @@
     audioVersion += 1;
     gettingMic = false;
     transcribing = false;
-    asrController?.abort();
-    asrController = null;
+    if (asrSession) {
+      asrSession.controller.abort();
+      discardAsr(asrSession, 'cancel');
+      asrSession = null;
+    }
     if (recording) {
       const current = recording;
       recording = null;
@@ -202,6 +205,89 @@
       mono.forEach((sample, index) => view.setInt16(44 + index * 2, Math.max(-1, Math.min(1, sample)) * (sample < 0 ? 32768 : 32767), true));
       return new Blob([buffer], { type: 'audio/wav' });
     } finally { await context.close(); }
+  }
+  function discardAsr(session, action) {
+    if (!session.id || session.discarded) return;
+    session.discarded = true;
+    // Best effort on teardown; server retention still bounds lost acknowledgments.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    void api(`/transcribe/${session.id}`, { method: 'POST', keepalive: true, signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) })
+      .catch(() => {}).finally(() => clearTimeout(timeout));
+  }
+  async function asrRequest(session, path, options = {}) {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    session.controller.signal.addEventListener('abort', abort, { once: true });
+    if (session.controller.signal.aborted) controller.abort();
+    const timeout = setTimeout(abort, options.body instanceof Blob ? 30000 : 15000);
+    try { return await api(path, { ...options, signal: controller.signal }); }
+    finally { clearTimeout(timeout); session.controller.signal.removeEventListener('abort', abort); }
+  }
+  function asrPause(session) {
+    return new Promise(resolve => {
+      const done = () => { clearTimeout(timer); session.controller.signal.removeEventListener('abort', done); resolve(); };
+      const timer = setTimeout(done, 5000);
+      session.controller.signal.addEventListener('abort', done, { once: true });
+      if (session.controller.signal.aborted) done();
+    });
+  }
+  async function transcribe(blob, version) {
+    const session = { controller: new AbortController(), id: null, discarded: false };
+    asrSession = session;
+    let watchdog;
+    try {
+      const reserved = await asrRequest(session, '/transcribe', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (typeof reserved.id !== 'string' || !/^[a-f\d-]{36}$/i.test(reserved.id)) throw new Error('No valid transcription job returned.');
+      session.id = reserved.id;
+      if (version !== audioVersion || session.controller.signal.aborted) return;
+      micStatus('Uploading recording… Stop audio cancels locally.');
+      let result;
+      try {
+        result = await asrRequest(session, `/transcribe/${session.id}/audio`, {
+          method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: blob });
+      } catch (error) {
+        if (error.status && error.status < 500 && error.status !== 429) throw error;
+        // The upload may already be accepted. Only inspect this handle; never re-upload.
+        micStatus('Upload response unavailable. Checking transcription status; no upload retry.');
+      }
+      blob = null;
+      // Maximum configured server deadline plus upload/transport margin. Use the
+      // server's remaining duration when available, never a cross-machine clock.
+      let until = Date.now() + 3660000;
+      watchdog = setTimeout(() => session.controller.abort(), 3660000);
+      while (version === audioVersion && !session.controller.signal.aborted && !disposed) {
+        if (Date.now() >= until) throw new Error('Transcription deadline reached. Upstream work may continue.');
+        if (result) {
+          if (Number.isFinite(result.remainingMs)) until = Math.min(until, Date.now() + Math.max(0, result.remainingMs) + 15000);
+          if (result.status === 'ready') {
+            if (typeof result.text !== 'string' || !result.text.trim()) throw new Error('No valid transcript returned.');
+            return result.text.trim();
+          }
+          if (['failed', 'cancelled', 'expired', 'consumed'].includes(result.status)) throw new Error(result.error || 'Transcription is no longer available. Your draft is kept.');
+          if (result.status === 'awaiting_upload') throw new Error('Audio upload was not accepted. Record again when ready; no upload retry was made.');
+          if (!['uploading', 'transcribing'].includes(result.status)) throw new Error('Invalid transcription status.');
+          micStatus(result.status === 'uploading' ? 'Waiting for audio upload to finish… Stop audio cancels locally.'
+            : 'Transcribing… Gateway may be waiting for other audio work. Keep editing; Stop audio cancels locally.');
+        }
+        await asrPause(session);
+        if (version !== audioVersion || session.controller.signal.aborted || disposed) break;
+        try { result = await asrRequest(session, `/transcribe/${session.id}`); }
+        catch (error) {
+          if (error.status && error.status < 500 && error.status !== 429) throw error;
+          result = null;
+          if (!session.controller.signal.aborted) micStatus('Connection interrupted. Waiting to check the same transcription; no new audio is submitted.');
+        }
+      }
+      if (version === audioVersion && !disposed) throw new Error('Transcription wait stopped. Upstream work may continue.');
+    } finally {
+      clearTimeout(watchdog);
+      blob = null;
+      // A ready result is consumed below, after the draft has actually been updated.
+      if (version !== audioVersion || session.controller.signal.aborted || disposed) discardAsr(session, 'cancel');
+    }
   }
   async function startMic() {
     if (mic.dataset.allowed !== 'true' || !initialized || disposed || document.hidden
@@ -240,29 +326,29 @@
         recording = null;
         transcribing = true;
         controls();
-        micStatus('Transcribing… You can keep editing your message.');
+        micStatus('Preparing recording for upload… You can keep editing your message.');
         try {
-          const blob = await wav(new Blob(current.chunks, { type: recorder.mimeType }));
+          let blob = await wav(new Blob(current.chunks, { type: recorder.mimeType }));
           current.chunks.length = 0;
           if (version !== audioVersion || disposed) return;
-          const controller = new AbortController();
-          asrController = controller;
-          const timeout = setTimeout(() => controller.abort(), 65000);
-          let result;
-          try { result = await api('/transcribe', { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: blob, signal: controller.signal }); }
-          finally { clearTimeout(timeout); if (asrController === controller) asrController = null; }
+          const result = transcribe(blob, version);
+          blob = null;
+          const text = await result;
           if (version !== audioVersion || disposed) return;
-          if (typeof result.text !== 'string') throw new Error('No valid transcript returned.');
-          if (!result.text.trim()) { micStatus('No new speech recognized. Your draft is unchanged.'); return; }
+          if (!text) throw new Error('No valid transcript returned.');
           // Never overwrite edits made while transcription was pending.
-          const next = [message.value, result.text.trim()].filter(Boolean).join('\n');
+          const next = [message.value, text].filter(Boolean).join('\n');
           if (next.length > 4000) { micStatus('Transcript would exceed 4,000 characters. Shorten the draft and record again.'); return; }
           message.value = next;
+          if (asrSession) discardAsr(asrSession, 'acknowledge');
           reviewTranscript = true;
           micStatus('Transcript added. Review and edit it, then press Send.');
           message.focus();
         } catch (error) { if (version === audioVersion && !disposed) micStatus(`Voice input failed. ${error.message} You can still type.`); }
-        finally { current.chunks.length = 0; if (version === audioVersion) { transcribing = false; controls(); } }
+        finally { current.chunks.length = 0; if (version === audioVersion) {
+          if (asrSession) { discardAsr(asrSession, 'cancel'); asrSession = null; }
+          transcribing = false; controls();
+        } }
       };
       recorder.start(250);
       current.timer = setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 59000);

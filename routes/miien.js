@@ -4,12 +4,12 @@ const { createRequireCapabilities } = require('../middleware/requireCapabilities
 const { createSessionCsrf } = require('../middleware/sessionCsrf');
 const { hasCapabilities } = require('../utils/authorization');
 const { READ, WRITE, TRANSCRIBE, SYNTHESIZE, MIIEN_ROLE_CAPABILITY_BUNDLES } = require('../utils/miienAuthorizationPolicy');
-const { MAX_AUDIO_BYTES, validMiienWav } = require('../utils/miienAudio');
+const { MAX_AUDIO_BYTES } = require('../utils/miienAudio');
 const { MiienError, DEFAULT_CONTEXT } = require('../services/miienChatService');
 const { MOODS } = require('../utils/miienMood');
 const { MiienSpeechOccupiedError } = require('../services/miienSpeechService');
 
-function createMiienRouter({ service, asr, speech, roleModel, logger }) {
+function createMiienRouter({ service, transcription, speech, roleModel, logger }) {
   const router = express.Router();
   const csrf = createSessionCsrf({ appLogger: logger });
   const authorization = { roleModel, roleCapabilityBundles: MIIEN_ROLE_CAPABILITY_BUNDLES, logger };
@@ -74,40 +74,38 @@ function createMiienRouter({ service, asr, speech, roleModel, logger }) {
     const audio = await speech.get(req.user, req.params.id, req.params.jobId, true);
     res.set({ 'Content-Type': 'audio/wav', 'Content-Disposition': 'inline; filename="miien-preview.wav"' }).send(audio);
   }));
-  const audioActive = new Set();
-  router.post('/:id/transcribe', requireCap(WRITE, TRANSCRIBE), csrf.requireToken, mutations,
+  router.post('/:id/transcribe', requireCap(WRITE, TRANSCRIBE), csrf.requireToken, mutations, wrap(async (req, res) => {
+    res.status(202).json(await transcription.reserve(req.user, req.params.id, req.body));
+  }));
+  router.get('/:id/transcribe/:jobId', requireCap(WRITE, TRANSCRIBE), wrap(async (req, res) => {
+    res.json(await transcription.get(req.user, req.params.id, req.params.jobId));
+  }));
+  router.post('/:id/transcribe/:jobId', requireCap(WRITE, TRANSCRIBE), csrf.requireToken, mutations, wrap(async (req, res) => {
+    res.json(await transcription.discard(req.user, req.params.id, req.params.jobId, req.body));
+  }));
+  router.post('/:id/transcribe/:jobId/audio', requireCap(WRITE, TRANSCRIBE), csrf.requireToken, mutations,
     wrap(async (req, res) => {
-      await service.owned(req.user, req.params.id);
-      if (audioActive.has(String(req.user._id)) || audioActive.size >= 2) throw new MiienError(429, 'Transcription is busy. Try again shortly.');
-      // Reserve before parsing so concurrent uploads cannot accumulate unbounded buffers.
-      const key = String(req.user._id);
-      audioActive.add(key);
-      const controller = new AbortController();
-      const abort = () => controller.abort();
-      res.on('close', abort);
+      const { job, accepted } = await transcription.beginUpload(req.user, req.params.id, req.params.jobId);
+      if (!accepted) { req.resume(); return res.status(202).json(transcription.view(job)); }
+      job.abortUpload = () => req.destroy();
       try {
-        await new Promise((resolve, reject) => express.raw({ type: 'audio/wav', limit: MAX_AUDIO_BYTES })(req, res, error => error ? reject(error) : resolve()));
-        if (!validMiienWav(req.body)) throw new MiienError(400, 'Record up to 60 seconds of microphone audio.');
-        const result = await asr.transcribeBuffer({ buffer: req.body, originalName: 'miien-recording.wav',
-          mimetype: 'audio/wav', options: { model: 'whisper-api', language: 'auto' }, privateRequest: true, signal: controller.signal });
-        const text = typeof result.data?.text === 'string' ? result.data.text.trim() : '';
-        if (!text) throw new MiienError(422, 'No speech was recognized. Try again or type your message.');
-        if (text.length > 4000) throw new MiienError(422, 'The transcript is too long. Record a shorter message.');
-        res.json({ text });
+        await new Promise((resolve, reject) => express.raw({ type: 'audio/wav', limit: MAX_AUDIO_BYTES, inflate: false })(req, res, error => error ? reject(error) : resolve()));
+        if (req.aborted || res.destroyed) return;
+        res.status(202).json(await transcription.upload(job, req.body));
       } finally {
-        audioActive.delete(key);
-        res.off('close', abort);
         req.body = null;
+        job.abortUpload = null;
+        await transcription.uploadFailed(job, req.aborted || res.destroyed);
       }
     }));
   router.use((error, req, res, next) => {
     if (req.aborted || res.destroyed) return;
     if (res.headersSent) return next(error);
-    const status = error instanceof MiienError ? error.status : error.type === 'entity.too.large' ? 413 : ['entity.parse.failed', 'parameters.too.many'].includes(error.type) ? 400 : 503;
+    const status = error instanceof MiienError ? error.status : error.type === 'entity.too.large' ? 413 : error.type === 'encoding.unsupported' ? 415 : ['entity.parse.failed', 'parameters.too.many'].includes(error.type) ? 400 : 503;
     if (status >= 500) logger.error('Miien operation failed; check Chat5, ASR or speech availability', {
       category: 'chat5_miien', metadata: { operation: req.route?.path || 'request', errorName: error?.name || 'Error' },
     });
-    const message = error instanceof MiienError ? error.message : status === 413 ? 'Request is too large.' : status === 400 ? 'Invalid request.'
+    const message = error instanceof MiienError ? error.message : status === 413 ? 'Request is too large.' : status === 415 ? 'Compressed audio uploads are not supported.' : status === 400 ? 'Invalid request.'
       : 'Miien could not finish this operation. Text chat remains available. Check history before resending a message.';
     if (req.accepts(['html', 'json']) === 'html') return res.status(status).render('miien_error', { message });
     return res.status(status).json({ error: message,
