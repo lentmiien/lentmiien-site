@@ -793,11 +793,11 @@ async function nextAsrPoll(w) {
   const entry = [...w.fixtureTimers.entries()].find(([, callback]) => callback.fixtureDelay === 5000);
   expect(entry).toBeDefined(); w.fixtureTimers.delete(entry[0]); entry[1](); await settle();
 }
-async function startPendingAsr(w, { uploadError = false } = {}) {
+async function startPendingAsr(w, { uploadError = false, remainingMs = 2800000 } = {}) {
   const mic = microphoneFixture(w); element(w, 'mic').click(); await mic.grant();
   w.fetch.mockResolvedValueOnce(response(asrReserved()));
   if (uploadError) w.fetch.mockRejectedValueOnce(new Error('connection lost'));
-  else w.fetch.mockResolvedValueOnce(response({ id: asrId, status: 'transcribing', remainingMs: 2800000 }));
+  else w.fetch.mockResolvedValueOnce(response({ id: asrId, status: 'transcribing', remainingMs }));
   element(w, 'mic').click(); await settle(); await settle();
   return mic;
 }
@@ -830,6 +830,103 @@ test('uncertain upload and transient polling outage inspect same handle without 
   expect(element(w, 'message').value).toBe('Recovered');
   expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/transcribe'))).toHaveLength(1);
   expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/audio'))).toHaveLength(1);
+});
+test('lost upload response advances uploading to transcribing and appends once after 87.177 seconds', async () => {
+  const w = setup({ timers: true, realVoice: true }); await settle();
+  const started = w.Date.now(), clock = jest.spyOn(w.Date, 'now').mockReturnValue(started);
+  try {
+    await startPendingAsr(w, { uploadError: true });
+    clock.mockReturnValue(started + 5000);
+    w.fetch.mockResolvedValueOnce(response({ id: asrId, status: 'uploading', remainingMs: 55000 }));
+    await nextAsrPoll(w);
+    expect(element(w, 'mic-status').textContent).toContain('Waiting for audio upload');
+    clock.mockReturnValue(started + 10000);
+    w.fetch.mockResolvedValueOnce(response({ id: asrId, status: 'transcribing', remainingMs: 2800000 }));
+    await nextAsrPoll(w);
+    clock.mockReturnValue(started + 87177);
+    element(w, 'message').value = 'Exact edits\n';
+    w.fetch.mockResolvedValueOnce(response(asrReady('Recovered after queueing')));
+    await nextAsrPoll(w);
+    expect(element(w, 'message').value).toBe('Exact edits\n\nRecovered after queueing');
+    expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/transcribe'))).toHaveLength(1);
+    expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/audio'))).toHaveLength(1);
+    expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/messages'))).toHaveLength(0);
+    expect(w.fetch.mock.calls.filter(([, options]) => options?.body === '{"action":"acknowledge"}')).toHaveLength(1);
+    expect([...w.fixtureTimers.values()].some(callback => [5000, 3660000].includes(callback.fixtureDelay))).toBe(false);
+    expect(w.utterances).toHaveLength(0);
+  } finally { clock.mockRestore(); }
+});
+test.each(['uploading', 'transcribing', 'unavailable'])('%s without progress expires without extending its phase budget', async phase => {
+  const w = setup({ timers: true }); await settle();
+  const started = w.Date.now(), clock = jest.spyOn(w.Date, 'now').mockReturnValue(started);
+  try {
+    await startPendingAsr(w, { uploadError: phase !== 'transcribing', remainingMs: 60000 });
+    element(w, 'message').value = 'Keep edits';
+    for (const elapsed of [5000, 70000, 75001]) {
+      clock.mockReturnValue(started + elapsed);
+      if (phase === 'unavailable') w.fetch.mockRejectedValueOnce(new Error('network'));
+      else w.fetch.mockResolvedValueOnce(response({ id: asrId, status: phase, remainingMs: 60000 }));
+      await nextAsrPoll(w);
+      if (elapsed < 75000) expect(element(w, 'mic').disabled).toBe(true);
+    }
+    expect(element(w, 'mic-status').textContent).toContain('deadline reached');
+    expect(element(w, 'mic').disabled).toBe(false);
+    expect(element(w, 'message').value).toBe('Keep edits');
+    expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/audio'))).toHaveLength(1);
+    expect(w.fetch.mock.calls.filter(([, options]) => options?.body === '{"action":"cancel"}')).toHaveLength(1);
+    expect([...w.fixtureTimers.values()].some(callback => [5000, 3660000].includes(callback.fixtureDelay))).toBe(false);
+  } finally { clock.mockRestore(); }
+});
+test.each([
+  { status: 'uploading', remainingMs: 60000 },
+  { status: 'transcribing', remainingMs: -1 },
+  { status: 'transcribing', remainingMs: '2800000' },
+  { status: 'transcribing', remainingMs: NaN },
+  { status: 'transcribing', remainingMs: Infinity },
+  { status: 'transcribing', remainingMs: 3600001 },
+  { status: 'transcribing', remainingMs: 2800000, id: '3'.repeat(36) },
+])('invalid phase observation %j cannot reset the wait', async observation => {
+  const w = setup({ timers: true }); await settle(); await startPendingAsr(w);
+  element(w, 'message').value = 'Keep draft';
+  w.fetch.mockResolvedValueOnce(response({ id: asrId, ...observation })); await nextAsrPoll(w);
+  expect(element(w, 'mic-status').textContent).toContain('Invalid transcription');
+  expect(element(w, 'message').value).toBe('Keep draft');
+  expect(element(w, 'mic').disabled).toBe(false);
+  expect([...w.fixtureTimers.values()].some(callback => callback.fixtureDelay === 5000)).toBe(false);
+});
+test('late forward transition and repeated maximum budgets cannot exceed the original absolute cap', async () => {
+  const w = setup({ timers: true }); await settle();
+  const started = w.Date.now(), clock = jest.spyOn(w.Date, 'now').mockReturnValue(started);
+  try {
+    await startPendingAsr(w, { uploadError: true });
+    const watchdog = [...w.fixtureTimers.entries()].find(([, callback]) => callback.fixtureDelay === 3660000);
+    for (const elapsed of [60000, 3600000]) {
+      clock.mockReturnValue(started + elapsed);
+      w.fetch.mockResolvedValueOnce(response({ id: asrId, status: 'transcribing', remainingMs: 3600000 }));
+      await nextAsrPoll(w);
+      expect(element(w, 'mic').disabled).toBe(true);
+      expect(w.fixtureTimers.get(watchdog[0])).toBe(watchdog[1]);
+    }
+    clock.mockReturnValue(started + 3660001);
+    w.fetch.mockResolvedValueOnce(response(asrReady('Too late'))); await nextAsrPoll(w);
+    expect(element(w, 'message').value).toBe('');
+    expect(element(w, 'mic-status').textContent).toContain('deadline reached');
+    expect(element(w, 'mic').disabled).toBe(false);
+  } finally { clock.mockRestore(); }
+});
+test('absolute watchdog aborts an in-flight status read despite a backward wall clock and rejects late text', async () => {
+  const w = setup({ timers: true }); await settle(); await startPendingAsr(w);
+  const late = deferred(); w.fetch.mockReturnValueOnce(late.promise); await nextAsrPoll(w);
+  const read = w.fetch.mock.calls.find(([url, options]) => url.endsWith(asrId) && !options.method);
+  const clock = jest.spyOn(w.Date, 'now').mockReturnValue(0);
+  try {
+    [...w.fixtureTimers.values()].find(callback => callback.fixtureDelay === 3660000)();
+    expect(read[1].signal.aborted).toBe(true);
+    late.resolve(response(asrReady('Late text'))); await settle();
+    expect(element(w, 'message').value).toBe('');
+    expect(element(w, 'mic').disabled).toBe(false);
+    expect([...w.fixtureTimers.values()].some(callback => callback.fixtureDelay === 5000)).toBe(false);
+  } finally { clock.mockRestore(); }
 });
 test.each([401, 403, 404])('poll HTTP %s stops truthfully, preserves draft and cancels without retry', async status => {
   const w = setup({ timers: true }); await settle(); await startPendingAsr(w);

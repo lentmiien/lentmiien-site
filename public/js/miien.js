@@ -236,13 +236,25 @@
   async function transcribe(blob, version) {
     const session = { controller: new AbortController(), id: null, discarded: false };
     asrSession = session;
-    let watchdog;
+    // One absolute cap covers reservation, upload and transcription, including
+    // transport failures. Phase changes and repeated reads never reset it.
+    const absoluteUntil = Date.now() + 3660000;
+    const watchdog = setTimeout(() => session.controller.abort(), 3660000);
+    const phaseDeadline = (result, maximumMs) => {
+      if (!Number.isFinite(result.remainingMs) || result.remainingMs < 0 || result.remainingMs > maximumMs) {
+        throw new Error('Invalid transcription deadline.');
+      }
+      return Math.min(absoluteUntil, Date.now() + result.remainingMs + 15000);
+    };
     try {
       const reserved = await asrRequest(session, '/transcribe', { method: 'POST',
         headers: { 'Content-Type': 'application/json' }, body: '{}' });
       if (typeof reserved.id !== 'string' || !/^[a-f\d-]{36}$/i.test(reserved.id)) throw new Error('No valid transcription job returned.');
       session.id = reserved.id;
       if (version !== audioVersion || session.controller.signal.aborted) return;
+      if (reserved.status !== 'awaiting_upload') throw new Error('Invalid transcription reservation.');
+      let uploadUntil = phaseDeadline(reserved, 60000);
+      let transcriptionUntil = null;
       micStatus('Uploading recording… Stop audio cancels locally.');
       let result;
       try {
@@ -254,14 +266,10 @@
         micStatus('Upload response unavailable. Checking transcription status; no upload retry.');
       }
       blob = null;
-      // Maximum configured server deadline plus upload/transport margin. Use the
-      // server's remaining duration when available, never a cross-machine clock.
-      let until = Date.now() + 3660000;
-      watchdog = setTimeout(() => session.controller.abort(), 3660000);
       while (version === audioVersion && !session.controller.signal.aborted && !disposed) {
-        if (Date.now() >= until) throw new Error('Transcription deadline reached. Upstream work may continue.');
+        if (Date.now() >= (transcriptionUntil ?? uploadUntil)) throw new Error('Transcription deadline reached. Upstream work may continue.');
         if (result) {
-          if (Number.isFinite(result.remainingMs)) until = Math.min(until, Date.now() + Math.max(0, result.remainingMs) + 15000);
+          if (result.id !== session.id) throw new Error('Invalid transcription job returned.');
           if (result.status === 'ready') {
             if (typeof result.text !== 'string' || !result.text.trim()) throw new Error('No valid transcript returned.');
             return result.text.trim();
@@ -269,6 +277,14 @@
           if (['failed', 'cancelled', 'expired', 'consumed'].includes(result.status)) throw new Error(result.error || 'Transcription is no longer available. Your draft is kept.');
           if (result.status === 'awaiting_upload') throw new Error('Audio upload was not accepted. Record again when ready; no upload retry was made.');
           if (!['uploading', 'transcribing'].includes(result.status)) throw new Error('Invalid transcription status.');
+          if (result.status === 'uploading') {
+            if (transcriptionUntil !== null) throw new Error('Invalid transcription phase transition.');
+            uploadUntil = Math.min(uploadUntil, phaseDeadline(result, 60000));
+          } else {
+            // Only the first validated transcribing observation adopts its own
+            // budget. Later reads can shorten it, never extend or reopen upload.
+            transcriptionUntil = Math.min(transcriptionUntil ?? absoluteUntil, phaseDeadline(result, 3600000));
+          }
           micStatus(result.status === 'uploading' ? 'Waiting for audio upload to finish… Stop audio cancels locally.'
             : 'Transcribing… Gateway may be waiting for other audio work. Keep editing; Stop audio cancels locally.');
         }
