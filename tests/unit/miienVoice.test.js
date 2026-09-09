@@ -163,3 +163,36 @@ test('browser speech pause/resume and stale events reset the independent speech 
   utterance.onresume(); expect(w.speechMotion.start).toHaveBeenCalledTimes(count);
   expect(w.phases.at(-1)).toBe('idle');
 });
+
+test('voice adapter checks live local eligibility for manual/automatic entry and delayed audio events', async () => {
+  const w = setup({ fetch: readyFetch() }); let allowed = false;
+  w.MiienVoice.setEligibility(() => allowed);
+  w.MiienVoice.speak('reply', true, messageId); w.MiienVoice.speak('reply', false, messageId);
+  expect(w.fetch).not.toHaveBeenCalled();
+  allowed = true; w.MiienVoice.speak('reply', false, messageId); await settle();
+  const audio = w.audios[0]; allowed = false;
+  audio.onplaying(); expect(w.phases).not.toContain('playing');
+  w.MiienVoice.stop(); allowed = true; audio.onplaying?.();
+  expect(w.phases.at(-1)).toBe('idle');
+});
+
+test('buffering and interrupted playback details never claim synthesis is speaking', async () => {
+  const w = setup({ fetch: readyFetch() }); w.MiienVoice.speak('reply', true, messageId); await settle();
+  const audio = w.audios[0]; expect(w.phases.at(-1)).toBe('preparing');
+  audio.onplaying(); audio.onwaiting(); expect(w.phases.at(-1)).toBe('buffering'); expect(status(w)).toContain('Buffering');
+  audio.onplaying(); audio.onpause(); expect(w.phases.at(-1)).toBe('idle'); expect(status(w)).toContain('paused');
+  audio.paused = false; audio.readyState = 2; audio.onseeked();
+  expect(w.phases.at(-1)).toBe('buffering'); expect(status(w)).toContain('Buffering');
+});
+
+test.each(['hidden', 'pagehide', 'latest reply'])('%s invalidates an unresolved play promise and saved callbacks', async action => {
+  const w = setup({ fetch: readyFetch() }); let rejectPlay;
+  const OriginalAudio = w.Audio;
+  w.Audio = class extends OriginalAudio { constructor(url) { super(url); this.play.mockImplementation(() => new Promise((resolve, reject) => { rejectPlay = reject; })); } };
+  w.MiienVoice.speak('reply', true, messageId); await settle(); const oldPlaying = w.audios[0].onplaying;
+  if (action === 'hidden') { Object.defineProperty(w.document, 'hidden', { value: true }); w.document.dispatchEvent(new w.Event('visibilitychange')); }
+  if (action === 'pagehide') w.dispatchEvent(new w.Event('pagehide'));
+  if (action === 'latest reply') w.MiienVoice.setLatestMessage('d'.repeat(24));
+  const stopped = status(w); rejectPlay(new Error('Late autoplay denial')); oldPlaying(); await settle();
+  expect(status(w)).toBe(stopped); expect(w.phases.at(-1)).toBe('idle'); expect(w.URL.revokeObjectURL).toHaveBeenCalled();
+});

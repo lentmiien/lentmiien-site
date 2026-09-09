@@ -12,19 +12,26 @@ const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(
 const response = data => ({ ok: true, json: async () => data });
 let dom;
 afterEach(() => { dom?.window.close(); });
-function setup({ timers = false, initial = { messages: [], pending: false }, decode, layered = false } = {}) {
-  const html = pug.renderFile('views/miien_room.pug', {conversation:{_id:'a'.repeat(24),title:'Fixture'},moods:MOODS,canWrite:true,canTranscribe:true,csrfToken:'token'});
+function setup({ timers = false, initial = { messages: [], pending: false }, decode, layered = false, realVoice = false } = {}) {
+  const html = pug.renderFile('views/miien_room.pug', {conversation:{_id:'a'.repeat(24),title:'Fixture'},moods:MOODS,canWrite:true,canTranscribe:true,canSynthesize:true,csrfToken:'token'});
   dom = new JSDOM(html, { url:'https://fixture.invalid/chat5/miien/'+ 'a'.repeat(24),runScripts:'outside-only',pretendToBeVisual:true });
   const {window:w}=dom;
   if (timers) {
     let nextTimer = 0;
     w.fixtureTimers = new Map();
-    w.setTimeout = callback => { const id = ++nextTimer; w.fixtureTimers.set(id, callback); return id; };
+    w.setTimeout = (callback, ms) => { const id = ++nextTimer; callback.fixtureDelay = ms; w.fixtureTimers.set(id, callback); return id; };
     w.clearTimeout = id => w.fixtureTimers.delete(id);
   }
   w.fetch=jest.fn().mockImplementation(url => Promise.resolve(layered && url.endsWith('/motion-v1.json')
     ? { ok: true, text: async () => JSON.stringify(require('../../public/i/miien/motion-v1.json')) } : response(initial)));
   w.MiienVoice={stop:jest.fn(),speak:jest.fn(),resume:jest.fn(),setLatestMessage:jest.fn()};
+  if (realVoice) {
+    w.sessionStorage.setItem('miienVoice', JSON.stringify({ mode: 'browser', enabled: true }));
+    w.utterances = [];
+    w.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+    w.speechSynthesis = { cancel: jest.fn(), getVoices: () => [], addEventListener: jest.fn(), speak: jest.fn(value => w.utterances.push(value)) };
+    vm.runInContext(voiceSource, dom.getInternalVMContext());
+  }
   w.Image=class { constructor(){this.src='';} decode(){return decode ? decode(this.src) : Promise.resolve();} };
   w.isSecureContext=true;
   w.AudioContext=class {};
@@ -134,8 +141,8 @@ test('speech waits for pending cleanup and plays a newly saved reply exactly onc
 
 async function tick(w, data) {
   w.fetch.mockResolvedValueOnce(response(data));
-  const poll = [...w.fixtureTimers.values()].pop();
-  w.fixtureTimers.clear();
+  const [id, poll] = [...w.fixtureTimers.entries()].find(([, callback]) => [0, 1500, 2500, 12000].includes(callback.fixtureDelay));
+  w.fixtureTimers.delete(id);
   await poll();
   await settle();
 }
@@ -201,8 +208,10 @@ test('unknown moods and empty history safely restore neutral and clear stale rep
   expect(element(w, 'mood-label').textContent).toBe('Expression: neutral');
   await tick(w, { messages: [], pending: false });
   expect(element(w, 'latest-reply').textContent).toContain('Say hello');
+  w.MiienVoice.speak.mockClear();
   element(w, 'replay').click();
-  expect(w.MiienVoice.speak).toHaveBeenLastCalledWith('', true, '');
+  expect(element(w, 'replay').disabled).toBe(true);
+  expect(w.MiienVoice.speak).not.toHaveBeenCalled();
 });
 test('history, pending-at-open, background replies and older rows never autoplay on later polls', async () => {
   const first = assistant('1', 'You made it!');
@@ -355,4 +364,193 @@ test('real room automatic and manual selectors activate every rig during speech 
   expect(w.document.querySelector('.miien-rig')).toBeNull();
   w.dispatchEvent(new w.CustomEvent('miien:mouth', { detail: { shape: 2 } }));
   expect(w.document.querySelector('.miien-rig')).toBeNull();
+});
+
+const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
+function microphoneFixture(w) {
+  const permission = deferred();
+  const track = { stop: jest.fn() };
+  w.navigator.mediaDevices.getUserMedia.mockReturnValue(permission.promise);
+  w.Blob = Blob;
+  w.AudioContext = class { async decodeAudioData() { return { duration: 0.1 }; } async close() {} };
+  w.OfflineAudioContext = class {
+    createBufferSource() { return { connect() {}, start() {} }; }
+    async startRendering() { return { getChannelData: () => new Float32Array(1600) }; }
+  };
+  w.recorders = [];
+  w.MediaRecorder = class {
+    constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; w.recorders.push(this); }
+    start() { this.state = 'recording'; this.onstart?.(); }
+    stop() { this.state = 'inactive'; this.ondataavailable?.({ data: new Blob(['fixture']) }); this.onstop?.(); }
+  };
+  return { permission, track, grant: async () => { permission.resolve({ getTracks: () => [track] }); await settle(); } };
+}
+function rejectReplay(w) {
+  expect(element(w, 'replay').disabled).toBe(true);
+  const count = w.speechSynthesis.speak.mock.calls.length;
+  // Dispatch bypasses native disabled-button behavior to exercise the handler guard.
+  element(w, 'replay').dispatchEvent(new w.Event('click'));
+  w.MiienVoice.speak('Bypass attempt', true, 'old');
+  expect(w.speechSynthesis.speak).toHaveBeenCalledTimes(count);
+}
+const submit = w => element(w, 'message-form').dispatchEvent(new w.Event('submit', { cancelable: true }));
+
+test('Replay rejects submission and pending work, invalidates prior speech, then permits only the new reply', async () => {
+  const old = assistant('old', 'Old reply');
+  const w = setup({ timers: true, realVoice: true, initial: { messages: [old], pending: false } }); await settle();
+  element(w, 'replay').click(); const utterance = w.utterances[0]; utterance.onstart();
+  expect(element(w, 'presence').textContent).toContain('Speaking');
+  const accepted = deferred(); w.fetch.mockReturnValueOnce(accepted.promise);
+  element(w, 'message').value = 'New turn'; submit(w); rejectReplay(w);
+  for (const callback of ['onstart', 'onresume', 'onerror', 'onend']) utterance[callback]();
+  expect(element(w, 'presence').textContent).toContain('Waiting for Chat5');
+  accepted.resolve(response({ accepted: true })); await settle(); rejectReplay(w);
+  const reply = assistant('new', 'New answer');
+  await tick(w, { messages: [old, reply], pending: false });
+  expect(w.utterances.map(item => item.text)).toEqual(['Old reply', 'New answer']);
+  expect(element(w, 'replay').disabled).toBe(false);
+  await tick(w, { messages: [old, reply], pending: false }); expect(w.utterances).toHaveLength(2);
+});
+
+test('microphone permission, recording and ASR exclude Replay and delayed replies, and retain exact draft edits', async () => {
+  const w = setup({ timers: true, realVoice: true, initial: { messages: [assistant('old', 'Old reply')], pending: false } }); await settle();
+  const mic = microphoneFixture(w);
+  element(w, 'mic').click(); rejectReplay(w);
+  expect(element(w, 'presence').textContent).toContain('Requesting microphone');
+  expect(w.document.querySelector('.stage').dataset.activity).toBe('idle');
+  await tick(w, { messages: [assistant('permission', 'Reply during permission')], pending: false });
+  await mic.grant(); rejectReplay(w);
+  expect(element(w, 'presence').textContent).toContain('Listening');
+  await tick(w, { messages: [assistant('capture', 'Reply during recording')], pending: false });
+  const transcript = deferred(); w.fetch.mockReturnValueOnce(transcript.promise);
+  element(w, 'mic').click(); await settle(); rejectReplay(w);
+  expect(element(w, 'presence').textContent).toContain('Transcribing');
+  expect(mic.track.stop).toHaveBeenCalled();
+  element(w, 'message').value = '  Edited while waiting  \n';
+  await tick(w, { messages: [assistant('asr', 'Reply during transcription')], pending: false });
+  transcript.resolve(response({ text: 'Recognized speech' })); await settle();
+  expect(element(w, 'message').value).toBe('  Edited while waiting  \n\nRecognized speech');
+  expect(element(w, 'presence').textContent).toContain('Review your transcript');
+  expect(element(w, 'send').disabled).toBe(false);
+  expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/messages'))).toHaveLength(0);
+  await tick(w, { messages: [assistant('after', 'Reply after microphone work')], pending: false });
+  expect(w.utterances).toHaveLength(0);
+  element(w, 'replay').click(); expect(w.utterances[0].text).toBe('Reply after microphone work');
+  element(w, 'stop').click();
+  expect(element(w, 'presence').textContent).toContain('Review your transcript');
+  expect(element(w, 'message').value).toContain('Edited while waiting');
+  expect(element(w, 'mic-status').textContent).toContain('may continue');
+});
+
+test.each(['denied', 'cancelled'])('microphone %s never reenables delayed automatic speech until Send', async outcome => {
+  const w = setup({ timers: true, realVoice: true }); await settle(); const mic = microphoneFixture(w);
+  element(w, 'mic').click();
+  if (outcome === 'denied') mic.permission.reject(new Error('denied'));
+  else { element(w, 'stop').click(); await mic.grant(); expect(mic.track.stop).toHaveBeenCalled(); }
+  await settle();
+  await tick(w, { messages: [assistant('late', 'Late answer')], pending: false }); expect(w.utterances).toHaveLength(0);
+  element(w, 'message').value = 'Explicit next turn'; w.fetch.mockResolvedValueOnce(response({ accepted: true })); submit(w); await settle();
+  await tick(w, { messages: [assistant('next', 'Next answer')], pending: false }); expect(w.utterances[0].text).toBe('Next answer');
+});
+
+test.each(['stop', 'send', 'pending', 'hidden', 'pagehide'])('%s closes late permission and prevents stale recorder callbacks', async action => {
+  const w = setup({ timers: true, realVoice: true }); await settle(); const mic = microphoneFixture(w);
+  element(w, 'mic').click();
+  if (action === 'stop') element(w, 'stop').click();
+  if (action === 'send') { element(w, 'message').value = 'Next'; submit(w); await settle(); }
+  if (action === 'pending') await tick(w, { messages: [], pending: true });
+  if (action === 'hidden') { Object.defineProperty(w.document, 'hidden', { value: true, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange')); }
+  if (action === 'pagehide') w.dispatchEvent(new w.Event('pagehide'));
+  await mic.grant(); expect(mic.track.stop).toHaveBeenCalled(); expect(w.recorders).toHaveLength(0);
+  expect(w.utterances).toHaveLength(0);
+});
+
+test.each(['stop', 'send', 'hidden', 'pagehide'])('%s aborts ASR and ignores its late success without losing subsequent edits', async action => {
+  const w = setup({ timers: true, realVoice: true }); await settle(); const mic = microphoneFixture(w);
+  element(w, 'mic').click(); await mic.grant();
+  const transcript = deferred(); w.fetch.mockReturnValueOnce(transcript.promise);
+  element(w, 'mic').click(); await settle();
+  const upload = w.fetch.mock.calls.find(([url]) => url.endsWith('/transcribe'));
+  expect(upload[1].headers['X-CSRF-Token']).toBe('token');
+  expect(upload[1].credentials).toBe('same-origin');
+  element(w, 'message').value = 'Draft';
+  if (action === 'stop') element(w, 'stop').click();
+  if (action === 'send') { submit(w); await settle(); }
+  if (action === 'hidden') { Object.defineProperty(w.document, 'hidden', { value: true, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange')); }
+  if (action === 'pagehide') w.dispatchEvent(new w.Event('pagehide'));
+  element(w, 'message').value = 'New edits';
+  transcript.resolve(response({ text: 'Stale transcript' })); await settle();
+  expect(upload[1].signal.aborted).toBe(true);
+  expect(element(w, 'message').value).toBe('New edits');
+  w.recorders[0].onerror();
+  expect(element(w, 'mic-status').textContent).not.toContain('Recording failed');
+  expect(w.utterances).toHaveLength(0);
+});
+
+test.each(['failed', 'empty', 'oversized'])('ASR %s preserves the draft and recovers controls without automatic speech', async outcome => {
+  const w = setup({ timers: true, realVoice: true }); await settle(); const mic = microphoneFixture(w);
+  element(w, 'mic').click(); await mic.grant(); element(w, 'message').value = 'My draft';
+  if (outcome === 'failed') w.fetch.mockRejectedValueOnce(new Error('ASR unavailable'));
+  else w.fetch.mockResolvedValueOnce(response({ text: outcome === 'empty' ? ' ' : 'x'.repeat(4000) }));
+  element(w, 'mic').click(); await settle(); await settle();
+  expect(element(w, 'message').value).toBe('My draft'); expect(element(w, 'send').disabled).toBe(false);
+  expect(element(w, 'mic').disabled).toBe(false); expect(w.document.querySelector('.stage').dataset.activity).toBe('idle');
+  await tick(w, { messages: [assistant('late', 'Late answer')], pending: false }); expect(w.utterances).toHaveLength(0);
+});
+
+test('aborted pre-send history cannot clear pending or autoplay after submission completes', async () => {
+  const w = setup({ timers: true, realVoice: true }); await settle();
+  const history = deferred(); w.fetch.mockReturnValueOnce(history.promise);
+  const poll = [...w.fixtureTimers.values()].find(callback => callback.fixtureDelay === 12000); const polling = poll();
+  element(w, 'message').value = 'New turn'; w.fetch.mockResolvedValueOnce(response({ accepted: true })); submit(w); await settle();
+  history.resolve(response({ messages: [assistant('stale', 'Old snapshot')], pending: false })); await polling; await settle();
+  expect(element(w, 'send').disabled).toBe(true); rejectReplay(w);
+  expect(element(w, 'history').textContent).not.toContain('Old snapshot'); expect(w.utterances).toHaveLength(0);
+});
+
+test.each(['submission', 'status', 'audio'].flatMap(boundary => ['mic', 'send', 'stop'].map(action => [boundary, action])))(
+  'late Anny %s cannot regain playback after %s, even when microphone work finishes', async (boundary, action) => {
+    const w = setup({ timers: true, realVoice: true }); await settle();
+    element(w, 'speech-mode').value = 'anny_en';
+    const delayed = deferred(), mic = microphoneFixture(w);
+    const messageId = 'c'.repeat(24);
+    const job = { id: '11111111-1111-1111-1111-111111111111', messageId, voiceId: 'anny_en', backendId: 'omni_anny_en',
+      status: 'ready', deadlineAt: Date.now() + 1200000, spokenCharacters: 20 };
+    const audioResponse = { ok: true, headers: { get: () => 'audio/wav' }, blob: async () => ({ size: 100 }) };
+    w.Audio = jest.fn(); w.URL.createObjectURL = jest.fn();
+    w.fetch.mockImplementation(url => {
+      const stage = url.endsWith('/audio') ? 'audio' : url.endsWith('/speech') ? 'submission' : 'status';
+      return stage === boundary ? delayed.promise : Promise.resolve(stage === 'audio' ? audioResponse : response(job));
+    });
+    await tick(w, { messages: [assistant(messageId, 'Delayed automatic reply')], pending: false }); await settle();
+    expect(element(w, 'presence').textContent).toContain('Preparing voice');
+    if (action === 'mic') { element(w, 'mic').click(); mic.permission.reject(new Error('denied')); await settle(); }
+    if (action === 'send') { element(w, 'message').value = 'New turn'; w.fetch.mockResolvedValueOnce(response({ accepted: true })); submit(w); await settle(); }
+    if (action === 'stop') element(w, 'stop').click();
+    delayed.resolve(boundary === 'audio' ? audioResponse : response(job)); await settle(); await settle();
+    expect(w.Audio).not.toHaveBeenCalled(); expect(w.URL.createObjectURL).not.toHaveBeenCalled();
+    expect(element(w, 'presence').textContent).not.toContain('Speaking');
+    expect([...w.fixtureTimers.values()].some(callback => callback.fixtureDelay === 5000)).toBe(false);
+    expect(element(w, 'latest-reply').textContent).toBe('Delayed automatic reply');
+  }
+);
+
+test('a newer reply invalidates paused manual browser speech even with automatic speech off', async () => {
+  const w = setup({ timers: true, realVoice: true, initial: { messages: [assistant('old', 'Old reply')], pending: false } }); await settle();
+  element(w, 'speech-enabled').checked = false;
+  element(w, 'replay').click(); const utterance = w.utterances[0]; utterance.onstart(); utterance.onpause();
+  await tick(w, { messages: [assistant('new', 'New reply')], pending: false });
+  utterance.onresume(); utterance.onstart();
+  expect(w.utterances).toHaveLength(1); expect(w.document.querySelector('.stage').dataset.activity).toBe('idle');
+  expect(element(w, 'speech-status').textContent).toContain('earlier reply');
+});
+
+test('visible recovery guards Replay until fresh history completes, including direct handler dispatch', async () => {
+  const w = setup({ timers: true, realVoice: true, initial: { messages: [assistant('old', 'Old reply')], pending: false } }); await settle();
+  Object.defineProperty(w.document, 'hidden', { value: true, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange'));
+  const history = deferred(); w.fetch.mockReturnValueOnce(history.promise);
+  Object.defineProperty(w.document, 'hidden', { value: false, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange'));
+  rejectReplay(w);
+  history.resolve(response({ messages: [assistant('old', 'Old reply')], pending: false })); await settle();
+  expect(element(w, 'replay').disabled).toBe(false); expect(w.utterances).toHaveLength(0);
 });

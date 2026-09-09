@@ -1,8 +1,66 @@
-# Miien character chat — phase 2 expression animation checkpoint
+# Miien character chat — phase 2 turn-taking and status
 
-**Happy, thoughtful, concerned and surprised now have layered animation, ready for deployment and human review.** The accepted neutral artwork, breathing/blink timing, mouth cadence, speech preparation and Anny integration are preserved. Mouth movement remains approximate playback timing, not phoneme/amplitude lip-sync. This checkpoint has not been deployed or accepted by Lennart. Phase 2 remains open; there are zero registered motion clips and the rejected H3 video remains **REJECTED / DO NOT SHIP**.
+**This bounded slice makes local voice turn-taking coherent and status feedback reflect the actual lifecycle.** The five accepted rigs, artwork, mood classifier and playback-timed mouth animation remain unchanged. Phase 2 remains open pending deployment/device checks and closeout; this slice performs no deployment, production/Gateway operation or artwork generation. There are zero registered motion clips and the rejected H3 video remains **REJECTED / DO NOT SHIP**.
 
-## All existing expressions (2026-09-09)
+## Turn-taking and honest status (2026-09-09)
+
+### Starting state, authorization and visual acceptance
+
+Confirmed a clean checkout on `feat/chat5-miien-phase2-slice1` at `a6747773730de074b99447e937029db077c76bcb`, matching the supplied [read-only planning session](/codex/sessions/tool-session-e2e35dfc86f36008d9de857ccaae3c831d637c3286127974a471dc74b0d51014). The current task supplies Lennart's standing authorization to proceed with phase 2 and to commit/push this bounded slice.
+
+**Visual acceptance:** the current task explicitly reports that prior coordination supplied human visual acceptance for neutral and all four other expressions. This is recorded as user-supplied acceptance, not a newly performed visual review. The prior checked-in expression checkpoint below lacked the exact confirmation link/date for all expressions; neither is invented. The neutral cleanup's linked historical acceptance remains below. `reviewStatus: prototype` is the validator's only accepted rig value and remains unchanged in every rig; it is a schema contract, not the record of human acceptance.
+
+**Deployment and devices:** the exact deployed SHA is not established by this evidence. No real microphone, OS Browser voice, audible Anny quality, phone lifecycle or screen-reader check is claimed for this slice. The accepted art does not imply acceptance of these new lifecycle changes.
+
+### Concrete behavior
+
+- Replay is disabled and its handler rejects calls before fresh history, during submission/pending Chat5 work, microphone permission, capture, conversion/transcription, and while hidden/disposed. Empty history cannot Replay. The voice adapter checks the same live eligibility at entry and delayed result/media callbacks.
+- Send stops prior local playback/synthesis and invalidates its callbacks. It also invalidates any earlier in-flight history snapshot so a late response cannot clear the new pending turn. A newer saved reply invalidates earlier voice work, including paused Browser speech and pending Anny requests.
+- Starting the microphone or pressing Stop suppresses automatic speech until the next explicit Send. Completing, denying or cancelling permission, finishing ASR, changing history or restoring visibility cannot silently restore that eligibility. A later manual Replay is available when chat/microphone work is idle. Initial/reloaded history, seen replies and background snapshots retain the existing no-autoplay/deduplication rules; there is no automatic resubmission, retry, send or listening loop.
+- Microphone capture still requires an explicit gesture. Late permission grants close their tracks after Stop, Send, a newly observed pending turn, hiding or leaving. Stale recorder/error/ASR callbacks cannot change a newer interaction. ASR appends only a valid nonempty transcript to the **current draft**, preserving edits and whitespace made during the request. Empty/failed/oversized results keep the draft. The 4,000-character bound and explicit review/edit → Send flow remain.
+- Captions, history and draft editing stay available during slow voice work. Stop preserves drafts and saved text. Its feedback says it stops local audio and that accepted transcription, voice or reply work may continue upstream; it does not claim upstream cancellation or release the durable uncertain-work slot.
+
+The four activity states remain independent of automatic/manual mood. The existing polite live status exposes these details without repeatedly rewriting unchanged presence text:
+
+| Observed lifecycle | Activity | Detail |
+| --- | --- | --- |
+| Awaiting microphone permission | idle | Requesting microphone |
+| Recorder actively recording | listening | Listening |
+| Recording conversion or ASR pending | thinking | Transcribing |
+| Transcript appended to an editable draft | idle | Review your transcript |
+| Submitting or waiting for saved Chat5 response | thinking | Waiting for Chat5 reply |
+| Voice submission/status/audio load or browser start pending | thinking | Preparing voice |
+| Media waiting/stalled/seeking event | thinking | Buffering voice |
+| Actual media playing / Browser speech start or resume | speaking | Speaking |
+| Pause, finish, error or local Stop | idle, or another active lifecycle above | Paused/finished/error/stopped feedback in the relevant live region |
+
+Media mouths still require an advancing playback clock and close on waiting, pause, Stop, hiding and teardown. No analyser, playback Web Audio graph or timing/rig changes were added. The existing Web Audio recording-to-WAV conversion is unchanged. Browser speech exposes lifecycle events rather than a media clock; its existing approximate envelope cannot establish device audibility, OS mute or silence within speech/audio. These remain explicit limitations, not new audio-reactive animation.
+
+### Security and operational scope
+
+Classification remains **logged in** under the [current security contract](#current-security-contract): private chat and microphone audio, semantic conversation/audio capabilities, validated principal and owner/member checks, no admin bypass, shared CSRF POSTs and private/no-store responses. No new server route, endpoint, permission, settings option, dependency, environment variable, database migration, provider integration or retention store is introduced. Server admission bounds, completion reauthorization and the durable uncertain-work reservation are unchanged. Negative route/admission tests remain in the focused run. The standalone synthetic harness reports actionable failures through `utils/logger` with category `chat5_miien_lifecycle` and no private data.
+
+### Verification
+
+- Focused Miien regressions: command `volta run --node 24.20.0 npm test -- --runInBand --coverage=false tests/unit/miienClient.test.js tests/unit/miienVoice.test.js tests/unit/miienMotion.test.js tests/unit/miienSpeechMotion.test.js tests/unit/miienLayers.test.js tests/unit/miienRoutes.test.js tests/unit/miienSpeechService.test.js tests/unit/miienChatService.test.js tests/unit/miienMood.test.js tests/unit/miienSpeechText.test.js tests/unit/miienExpressionAssets.test.js tests/unit/miienMouthAssets.test.js tests/unit/miienControllerStartup.test.js`. **13 suites / 377 tests passed** on Node 24.20.0.
+- Coverage includes Replay during submission/pending/permission/capture/ASR, delayed Anny submission/status/audio after microphone/Send/Stop, stale Browser voice/play promises/recorder callbacks, late permission cleanup, exact draft edits, ASR empty/error/limit recovery, permission denial/cancel, honest activity/buffering/review, fresh-history recovery, no history/reload autoplay, mood override and all existing rig/static fallbacks.
+- [Synthetic browser lifecycle harness](../scripts/review-miien-turn-taking-browser.js): `volta run --node 24.20.0 node scripts/review-miien-turn-taking-browser.js <installed-playwright-module> <chromium-executable>`. Uses loopback Pug/static content under the production CSP, mocked microphone/provider routes, accelerated **poll intervals only**, and a three-second synthetic WAV through native HTML audio. No configured application or external provider is started. Pass: 11 reported check groups, 5 intercepted speech status/submission requests, 2 audio requests (one discarded after Stop), 1 ASR, 2 explicit Sends, zero page/CSP errors. Buffering is a synthetic media event, not a physical network/device measurement. No artwork/review screenshots are overwritten.
+- Broader suite: `volta run --node 24.20.0 npm test -- --runInBand` — **274 suites / 2,414 tests passed**, with enforced coverage thresholds met (67.35% statements / 43.72% branches for the configured critical files). Jest printed its existing experimental VM Modules warning. Changed JavaScript syntax, rendered Pug, new documentation links, `git diff --check` and complete scoped diff review passed. No OpenAPI YAML changed, so its lint is not required. Accepted artwork, manifest and animation files are byte-identical to the starting revision.
+
+### Phase-2 closeout checklist
+
+- [x] Record user-supplied visual acceptance for neutral and all expressions separately from rig metadata and deployment evidence.
+- [x] Implement bounded local turn/voice eligibility, explicit transcript review, honest details, retained text and interruption cleanup.
+- [x] Exercise synthetic delayed callbacks, browser lifecycle, route/security/admission and rig fallback regressions.
+- [ ] Through a separately authorized normal release, record the **exact deployed SHA** and refresh client JS. Verify `/chat5/miien` remains capability/member protected and private/no-store; ordinary Chat5 still works. No Gateway or slot manipulation is part of release/rollback.
+- [ ] On desktop and physical mobile, check allow/deny/cancel/late microphone grants, capture → editable ASR → explicit Send, slow/failed ASR, Stop during each phase, repeated turns, and Replay exclusion. Check virtual keyboard, captions/history, focus/live-region announcements and screen readers.
+- [ ] Check Browser voice and a bounded Anny preview with a real output device: delayed start, autoplay denial then manual Replay, pause/buffering/end/error, microphone or Send interrupting voice, tab hiding/return and back/forward restoration. Confirm no old answer appears to answer a new turn and no missed-history autoplay.
+- [ ] Confirm all five accepted expressions remain stable during real playback/mood overrides, with mouths resting during preparation/interruption. Check reduced motion, motion off, data saver and failed-art static fallback on target devices.
+- [ ] Record results and remaining limitations for Lennart's explicit phase-2 closeout decision. Approximate playback-timed mouths remain accepted scope; phoneme/audio-reactive animation, new voice settings, continuous listening and phase 3 are separate future work.
+
+Rollback uses the prior application revision; accepted art remains unchanged and the durable uncertain-work slot must not be cleared to force another synthesis attempt. No deploy, restart or real-device acceptance is performed by this slice.
+
+## Historical expression implementation checkpoint (2026-09-09; visual acceptance subsequently supplied)
 
 ### Starting evidence and scope
 
@@ -33,7 +91,7 @@ Every directory contains `character.webp` (768×1024), `blink.webp` (260×85 at 
 
 ### Manifest, switching and loading
 
-`motion-v1.json` reports **`miien-2.5`**. Its neutral `layered` object is unchanged; the optional `expressions` array holds one same-schema rig for each remaining mood, each with `reviewStatus: prototype` pending human review. Legacy still-only and neutral-only manifests remain supported; `clips: []` remains honest.
+`motion-v1.json` reports **`miien-2.5`**. Its neutral `layered` object is unchanged; the optional `expressions` array holds one same-schema rig for each remaining mood, each with `reviewStatus: prototype` under the strict validator contract. Human review was pending at this historical checkpoint; subsequent user-supplied acceptance is recorded above. Legacy still-only and neutral-only manifests remain supported; `clips: []` remains honest.
 
 Both automatic selection from saved replies and manual Expression preview use the same renderer. Activity changes preserve each rig and its idle clocks. During an expression change, the prior rig stays visible with its mouth closed while the incoming still/layers decode; the matching rig swaps in together when ready, avoiding an intermediate still-background flash. The current playback envelope then drives the new mouth. Generation guards reject old decodes, old image errors and timers. Speech preparation never opens the mouth.
 
@@ -63,9 +121,9 @@ The optional [browser review harness](../scripts/review-miien-expressions-browse
 - Final checks: all 11 changed/new JavaScript files pass syntax checking on Node 24.20.0; `git diff --check` passes. All 58 checked public/source/deterministic-review artifacts match byte-for-byte after rebuilding, and an additional pinned-Node runtime rebuild matches too. The accepted neutral manifest object is exactly unchanged. Full diff/security review found only the scoped artwork, renderer, packaging/review tooling, tests and documentation changes.
 - Nine browser screenshots are retained, including [happy](assets/miien-expressions-v1/review-happy.png), [thoughtful](assets/miien-expressions-v1/review-thoughtful.png), [concerned](assets/miien-expressions-v1/review-concerned.png), [surprised](assets/miien-expressions-v1/review-surprised.png), [390×844 mobile](assets/miien-expressions-v1/review-mobile.png) and [844×390 landscape](assets/miien-expressions-v1/review-landscape.png). Offline composites were inspected at normal/enlarged scales for mouth seams, double lips, blink fill and registration.
 
-Approximate playback-timed mouth movement can animate through silence within audio and does not track phonemes, syllables or loudness. Generated facial artwork is a recognizable interpretation of the stills, not pixel-identical extraction. These checks do not establish audible Anny quality, physical phone/browser behavior, screen-reader/OS voice behavior, production deployment or Lennart's visual acceptance. Those remain device review items.
+Approximate playback-timed mouth movement can animate through silence within audio and does not track phonemes, syllables or loudness. Generated facial artwork is a recognizable interpretation of the stills, not pixel-identical extraction. These checks do not establish audible Anny quality, physical phone/browser behavior, screen-reader/OS voice behavior, production deployment or Lennart's visual acceptance. Device/deployment checks remain separate; subsequent user-supplied visual acceptance is recorded above.
 
-### Lennart's concise release/review checklist
+### Historical expression release/review checklist
 
 1. Deploy the pushed revision through the normal release process, then refresh Miien so it loads `miien-2.5`, the updated motion/layer JS and all four new versioned directories together. No configuration, migration, dependency or Gateway change is needed. This implementation session does not deploy or restart anything.
 2. Enable motion and manually preview happy, thoughtful, concerned and surprised at rest and during existing Anny Replay. Inspect blinking and both mouth sizes for rectangles, leftover lips, bright eyelid patches, silhouette jumps or clipping. Switch expressions during playback; Stop must close the mouth immediately. Compare neutral to the accepted appearance.

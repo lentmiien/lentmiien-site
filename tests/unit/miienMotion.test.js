@@ -99,3 +99,14 @@ test('late poster decode after a mood switch cannot resurrect the previous clip'
   const loading = f.adapter.setManifest(m); await settle(); await f.adapter.show('concerned', 'idle');
   resolve(); await loading; expect(f.videos).toHaveLength(0); expect(f.still.src).toBe('/i/miien/concerned.webp');
 });
+
+test('permission, transcript review and buffering are honest details within the four activity states', () => {
+  const activity = activityController(jest.fn());
+  expect(activity.update({ permission: true })).toEqual({ state: 'idle', status: 'Requesting microphone…' });
+  expect(activity.update({ permission: false, recording: true }).state).toBe('listening');
+  expect(activity.update({ recording: false, asr: true }).state).toBe('thinking');
+  expect(activity.update({ asr: false, review: true })).toEqual({ state: 'idle', status: 'Review your transcript · edit, then Send' });
+  expect(activity.update({ voice: 'buffering' })).toEqual({ state: 'thinking', status: 'Buffering voice…' });
+  expect(activity.update({ voice: 'playing', chat: true }).status).toContain('Waiting for Chat5');
+  expect(activity.update({ chat: false, voice: 'idle' }).status).toContain('Review your transcript');
+});

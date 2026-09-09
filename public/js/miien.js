@@ -29,6 +29,7 @@
   let recording = null;
   let gettingMic = false;
   let transcribing = false;
+  let reviewTranscript = false;
   let asrController = null;
   let pollController = null;
   const moods = window.MiienMotion.moods;
@@ -37,7 +38,7 @@
   const activity = window.MiienActivity.create(({ state, status }) => {
     activityState = state;
     room.querySelector('.stage').dataset.activity = state;
-    byId('presence').textContent = status;
+    if (byId('presence').textContent !== status) byId('presence').textContent = status;
     const requested = byId('mood-override').value;
     motion.show(requested === 'auto' ? autoMood : requested, state);
   });
@@ -57,11 +58,19 @@
     .finally(() => clearTimeout(manifestTimeout));
   const chatStatus = text => { byId('chat-status').textContent = text; };
   const micStatus = text => { byId('mic-status').textContent = text; byId('mic-status').classList.add('active-status'); };
+  // This live guard is also consulted by the voice adapter's delayed callbacks.
+  function audioEligible(manual = false) {
+    return initialized && !resumeAfterHistory && !disposed && !document.hidden && !sending && !pending
+      && !gettingMic && !recording && !transcribing && (manual || !suppressAutoVoice);
+  }
+  voice?.setEligibility?.(audioEligible);
   function controls() {
-    byId('send').disabled = !canWrite || sending || pending || !initialized;
-    mic.disabled = mic.dataset.allowed !== 'true' || disposed || gettingMic || transcribing || sending || pending;
+    byId('send').disabled = !canWrite || disposed || document.hidden || sending || pending || !initialized;
+    byId('replay').disabled = !audioEligible(true) || !latestText;
+    mic.disabled = mic.dataset.allowed !== 'true' || !initialized || disposed || document.hidden || gettingMic || transcribing || sending || pending;
     mic.textContent = recording ? 'Stop & transcribe' : gettingMic ? 'Requesting microphone…' : transcribing ? 'Transcribing…' : 'Microphone';
-    activity.update({ recording: recording?.recorder.state === 'recording', asr: transcribing, chat: pending || sending });
+    activity.update({ permission: gettingMic, recording: recording?.recorder.state === 'recording',
+      asr: transcribing, chat: pending || sending, review: reviewTranscript && !!message.value.trim() });
   }
   async function api(path, options = {}) {
     const response = await fetch(base + path, { credentials: 'same-origin', ...options,
@@ -81,6 +90,8 @@
   byId('character').addEventListener('error', () => { byId('character').hidden = true; });
   function render(data) {
     if (data.pending && !pending) stopAudio();
+    const wasPending = pending;
+    pending = data.pending;
     const signature = JSON.stringify(data.messages);
     const history = byId('history');
     if (signature !== transcriptSignature) {
@@ -110,7 +121,7 @@
       if (byId('latest-reply').textContent !== latestText) byId('latest-reply').textContent = latestText;
       const nextMood = moods.includes(assistant.mood) ? assistant.mood : 'neutral';
       if (!initialized || nextMood !== autoMood) { autoMood = nextMood; mood(); }
-      if (initialized && !resumeAfterHistory && !suppressAutoVoice && !seenAssistants.has(assistant.id) && !data.pending && !document.hidden
+      if (audioEligible() && !resumeAfterHistory && !seenAssistants.has(assistant.id)
         && data.messages.at(-1)?.id === assistant.id) voice?.speak(latestText, false, latestId);
     } else {
       latestText = '';
@@ -123,10 +134,9 @@
     if (!initialized || resumeAfterHistory || !data.pending) data.messages.forEach(row => {
       if (row.role === 'assistant') seenAssistants.add(row.id);
     });
-    if (initialized && pending && !data.pending && data.messages[data.messages.length - 1]?.role !== 'assistant') chatStatus('The response finished without text. Review Chat5 or send another message.');
+    if (initialized && wasPending && !data.pending && data.messages[data.messages.length - 1]?.role !== 'assistant') chatStatus('The response finished without text. Review Chat5 or send another message.');
     else if (sendError) chatStatus(sendError);
     else chatStatus(data.pending ? 'Waiting for the saved Chat5 response… You can leave and resume later.' : 'Conversation saved. Ready when you are.');
-    pending = data.pending;
     initialized = true;
     controls();
   }
@@ -134,13 +144,14 @@
     if (disposed || document.hidden || polling || sending) return;
     polling = true;
     const epoch = pollEpoch;
-    pollController = new AbortController();
-    const timeout = setTimeout(() => pollController?.abort(), 15000);
+    const controller = new AbortController();
+    pollController = controller;
+    const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const data = await api('/state', { signal: pollController.signal });
+      const data = await api('/state', { signal: controller.signal });
       if (!disposed && !document.hidden && !sending && epoch === pollEpoch) {
         render(data);
-        if (resumeAfterHistory) { resumeAfterHistory = false; voice?.resume(); }
+        if (resumeAfterHistory) { resumeAfterHistory = false; controls(); if (audioEligible()) voice?.resume(); }
       }
     }
     catch (error) { if (!disposed && !document.hidden && !sending && epoch === pollEpoch) { stopAudio(); chatStatus(`Could not refresh history. ${error.message}`); } }
@@ -161,7 +172,7 @@
       current.chunks.length = 0;
     }
     if (!keepVoice) voice?.stop({ preserve: preserveVoice });
-    micStatus('Audio stopped. Your typed message is unchanged.');
+    micStatus('Local audio stopped. Draft and saved text are kept; accepted transcription, voice or reply work may continue.');
     controls();
   }
   async function wav(blob) {
@@ -188,22 +199,27 @@
     } finally { await context.close(); }
   }
   async function startMic() {
+    if (mic.dataset.allowed !== 'true' || !initialized || disposed || document.hidden
+      || gettingMic || transcribing || sending || pending) return;
     if (recording) {
       if (recording.recorder.state !== 'inactive') recording.recorder.stop();
       return;
     }
-    if (mic.disabled) return;
+    // Do not let an unseen reply or an accepted voice job regain autoplay after capture.
+    suppressAutoVoice = true;
     stopAudio();
     const version = audioVersion;
     gettingMic = true;
     controls();
+    micStatus('Requesting microphone… You can cancel with Stop audio.');
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (version !== audioVersion || disposed) { stream.getTracks().forEach(track => track.stop()); return; }
+      if (version !== audioVersion || disposed || document.hidden) { stream.getTracks().forEach(track => track.stop()); return; }
       const recorder = new MediaRecorder(stream);
       const current = { stream, recorder, chunks: [], bytes: 0, timer: null };
       recording = current;
+      gettingMic = false;
       recorder.ondataavailable = event => {
         if (version !== audioVersion) return;
         current.bytes += event.data.size;
@@ -211,7 +227,7 @@
         current.chunks.push(event.data);
       };
       recorder.onstart = () => { if (version === audioVersion) controls(); };
-      recorder.onerror = () => { stopAudio(); micStatus('Recording failed. Please type your message.'); };
+      recorder.onerror = () => { if (version === audioVersion && !disposed) { stopAudio(); micStatus('Recording failed. Please type your message.'); } };
       recorder.onstop = async () => {
         clearTimeout(current.timer);
         stream.getTracks().forEach(track => track.stop());
@@ -220,22 +236,25 @@
         transcribing = true;
         controls();
         micStatus('Transcribing… You can keep editing your message.');
-        const originalDraft = message.value;
         try {
           const blob = await wav(new Blob(current.chunks, { type: recorder.mimeType }));
           current.chunks.length = 0;
           if (version !== audioVersion || disposed) return;
-          asrController = new AbortController();
-          const timeout = setTimeout(() => asrController?.abort(), 65000);
+          const controller = new AbortController();
+          asrController = controller;
+          const timeout = setTimeout(() => controller.abort(), 65000);
           let result;
-          try { result = await api('/transcribe', { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: blob, signal: asrController.signal }); }
-          finally { clearTimeout(timeout); }
+          try { result = await api('/transcribe', { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: blob, signal: controller.signal }); }
+          finally { clearTimeout(timeout); if (asrController === controller) asrController = null; }
           if (version !== audioVersion || disposed) return;
+          if (typeof result.text !== 'string') throw new Error('No valid transcript returned.');
+          if (!result.text.trim()) { micStatus('No new speech recognized. Your draft is unchanged.'); return; }
           // Never overwrite edits made while transcription was pending.
-          const next = [message.value.trim(), result.text].filter(Boolean).join('\n');
+          const next = [message.value, result.text.trim()].filter(Boolean).join('\n');
           if (next.length > 4000) { micStatus('Transcript would exceed 4,000 characters. Shorten the draft and record again.'); return; }
           message.value = next;
-          micStatus(message.value === originalDraft ? 'No new speech recognized.' : 'Transcript added. Review and edit it, then press Send.');
+          reviewTranscript = true;
+          micStatus('Transcript added. Review and edit it, then press Send.');
           message.focus();
         } catch (error) { if (version === audioVersion && !disposed) micStatus(`Voice input failed. ${error.message} You can still type.`); }
         finally { current.chunks.length = 0; if (version === audioVersion) { transcribing = false; controls(); } }
@@ -257,12 +276,14 @@
   }
   byId('message-form').addEventListener('submit', async event => {
     event.preventDefault();
-    if (sending || pending || !initialized || !canWrite || !message.value.trim()) return;
+    if (disposed || document.hidden || sending || pending || !initialized || !canWrite || !message.value.trim()) return;
     const text = message.value.trim();
     if (!lastSubmission || lastSubmission.text !== text) lastSubmission = { text, requestId: newRequestId() };
     stopAudio();
     suppressAutoVoice = false;
+    reviewTranscript = false;
     sending = true;
+    pollEpoch += 1;
     sendError = '';
     controls();
     clearTimeout(pollTimer);
@@ -283,7 +304,11 @@
   message.addEventListener('keydown', event => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); byId('message-form').requestSubmit(); } });
   mic.addEventListener('click', startMic);
   byId('stop').addEventListener('click', () => { suppressAutoVoice = true; stopAudio(); });
-  byId('replay').addEventListener('click', () => { stopAudio({ keepVoice: true }); voice?.speak(latestText, true, latestId); });
+  byId('replay').addEventListener('click', () => {
+    if (!audioEligible(true) || !latestText) return;
+    stopAudio({ keepVoice: true }); voice?.speak(latestText, true, latestId);
+  });
+  message.addEventListener('input', controls);
   byId('mood-override').addEventListener('change', mood);
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder || !window.AudioContext || !window.OfflineAudioContext) {
     mic.dataset.allowed = 'false';

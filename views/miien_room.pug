@@ -44,7 +44,7 @@ block content
               label.check
                 input#motion-enabled(type='checkbox', checked)
                 | Enable character motion
-              p.hint Neutral layered prototype: subtle breathing, blinking and approximate speaking motion. Other expressions, reduced-motion and data saver use portraits.
+              p.hint All five expressions have subtle breathing, blinking and approximate speaking motion. Reduced motion, motion off and data saver use portraits.
               button#fullscreen(type='button', hidden) Enter fullscreen
       .call-bottom
         #captions.dialogue-panel
@@ -56,7 +56,7 @@ block content
           .button-row
             button#send.primary(type='submit', disabled=!canWrite) Send
             button#mic(type='button', disabled=!canTranscribe, data-allowed=canTranscribe ? 'true' : 'false') Microphone
-            button#replay(type='button', title='Replay latest reply') Replay
+            button#replay(type='button', title='Replay latest reply when chat and microphone are idle', disabled) Replay
             button#stop(type='button') Stop audio
           p#mic-status.hint(role='status')= canTranscribe ? 'Record, review, then send. Ctrl/⌘ + Enter to send text.' : 'Microphone unavailable for this account.'
           p#chat-status(role='status', aria-live='polite') Loading saved conversation…
