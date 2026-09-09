@@ -355,16 +355,22 @@
   drawers.forEach(drawer => drawer.addEventListener('toggle', () => { if (drawer.open) drawers.forEach(other => { if (other !== drawer) other.open = false; }); }));
   room.addEventListener('keydown', event => { if (event.key === 'Escape') drawers.forEach(drawer => { if (drawer.open) { drawer.open = false; drawer.querySelector('summary').focus(); } }); });
   function viewport() {
-    // visualViewport follows the virtual keyboard; CSS dvh handles browsers without it.
+    // Follow keyboard/browser chrome resizes without moving focus or scrolling.
+    // Pinch zoom keeps the last layout size so the browser can pan it normally.
     const view = window.visualViewport;
-    const keyboardOpen = document.activeElement === message && (view?.height || window.innerHeight) < 500;
-    room.classList.toggle('keyboard-open', keyboardOpen);
-    motion.suspend(disposed || document.hidden || keyboardOpen);
-    if (view && view.scale === 1) {
-      room.style.setProperty('--call-height', `${view.height}px`);
-      room.style.setProperty('--call-top', `${view.offsetTop}px`);
+    if (!view || view.scale === 1) {
+      const height = view?.height || window.innerHeight;
+      const width = view?.width || window.innerWidth;
+      room.style.setProperty('--call-height', `${height}px`);
+      room.style.setProperty('--call-top', `${view?.offsetTop || 0}px`);
+      room.classList.toggle('compact-viewport', width <= 1000 && height <= 570);
     }
+    // Keep the existing short-keyboard static-art fallback, but show the portrait.
+    const keyboardOpen = document.activeElement === message && (view?.scale || 1) === 1
+      && (view?.height || window.innerHeight) < 500;
+    motion.suspend(disposed || document.hidden || keyboardOpen);
   }
+  window.addEventListener('resize', viewport);
   window.visualViewport?.addEventListener('resize', viewport);
   window.visualViewport?.addEventListener('scroll', viewport);
   message.addEventListener('focus', viewport);

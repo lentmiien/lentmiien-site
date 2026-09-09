@@ -12,10 +12,15 @@ const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(
 const response = data => ({ ok: true, json: async () => data });
 let dom;
 afterEach(() => { dom?.window.close(); });
-function setup({ timers = false, initial = { messages: [], pending: false }, decode, layered = false, realVoice = false } = {}) {
+function setup({ timers = false, initial = { messages: [], pending: false }, decode, layered = false, realVoice = false, visualViewport = false } = {}) {
   const html = pug.renderFile('views/miien_room.pug', {conversation:{_id:'a'.repeat(24),title:'Fixture'},moods:MOODS,canWrite:true,canTranscribe:true,canSynthesize:true,csrfToken:'token'});
   dom = new JSDOM(html, { url:'https://fixture.invalid/chat5/miien/'+ 'a'.repeat(24),runScripts:'outside-only',pretendToBeVisual:true });
   const {window:w}=dom;
+  if (visualViewport) {
+    const view = new w.EventTarget();
+    Object.assign(view, { width: 390, height: 844, offsetTop: 0, scale: 1 });
+    Object.defineProperty(w, 'visualViewport', { value: view });
+  }
   if (timers) {
     let nextTimer = 0;
     w.fixtureTimers = new Map();
@@ -297,7 +302,8 @@ test('display preferences, caption toggle, Escape and viewport keyboard keep con
   expect(settings.open).toBe(false); expect(w.document.activeElement).toBe(settings.querySelector('summary'));
   expect(element(w, 'fullscreen').hidden).toBe(true);
   Object.defineProperty(w, 'innerHeight', { value: 320 });
-  element(w, 'message').focus(); expect(element(w, 'miien-room').classList.contains('keyboard-open')).toBe(true);
+  Object.defineProperty(w, 'innerWidth', { value: 390 });
+  element(w, 'message').focus(); expect(element(w, 'miien-room').classList.contains('compact-viewport')).toBe(true);
 });
 
 test('restored voice waits for initial history and fresh visible recovery, never missed-reply autoplay', async () => {
@@ -321,13 +327,17 @@ test('a failed visible history refresh cannot restore voice authority', async ()
   Object.defineProperty(w.document, 'hidden', { value: false, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange')); await settle();
   expect(w.MiienVoice.resume).not.toHaveBeenCalled(); expect(w.MiienVoice.stop).toHaveBeenCalled();
 });
-test('short keyboard viewport suspends the hidden stage until focus leaves', async () => {
+test('short keyboard viewport keeps a static portrait and stable layout across focus changes', async () => {
   const w = setup(); await settle(); Object.defineProperty(w, 'innerHeight', { value: 320, configurable: true });
+  Object.defineProperty(w, 'innerWidth', { value: 390, configurable: true });
   element(w, 'message').focus(); await settle();
-  expect(element(w, 'miien-room').classList.contains('keyboard-open')).toBe(true);
+  expect(element(w, 'miien-room').classList.contains('compact-viewport')).toBe(true);
   expect(w.motionAdapter.suspend).toHaveBeenLastCalledWith(true);
   element(w, 'message').blur(); await settle();
   expect(w.motionAdapter.suspend).toHaveBeenLastCalledWith(false);
+  expect(element(w, 'miien-room').classList.contains('compact-viewport')).toBe(true);
+  expect(element(w, 'captions').hidden).toBe(false);
+  expect(element(w, 'character').hidden).toBe(false);
 });
 
 test('history loaded during visible recovery is seen even if that turn is still pending', async () => {
@@ -734,4 +744,42 @@ test('history outage gates Replay and recovery never autoplays replies first obs
   expect(w.utterances).toHaveLength(0); expect(element(w, 'replay').disabled).toBe(false);
   element(w, 'replay').click(); expect(w.utterances).toHaveLength(1);
   expect(w.utterances[0].text).toBe('Missed during outage');
+});
+
+test('visual viewport resize and pan preserve draft, selection, focus and voice', async () => {
+  const x = setup({ visualViewport: true }); await settle();
+  const viewport = x.visualViewport;
+  const input = element(x, 'message'), room = element(x, 'miien-room');
+  input.value = 'An editable draft'; input.focus(); input.setSelectionRange(3, 7);
+  viewport.height = 360; viewport.offsetTop = 42;
+  viewport.dispatchEvent(new x.Event('resize'));
+  expect(room.style.getPropertyValue('--call-height')).toBe('360px');
+  expect(room.style.getPropertyValue('--call-top')).toBe('42px');
+  expect(room.classList.contains('compact-viewport')).toBe(true);
+  expect(x.document.activeElement).toBe(input);
+  expect([input.selectionStart, input.selectionEnd, input.value]).toEqual([3, 7, 'An editable draft']);
+  viewport.offsetTop = 55; viewport.dispatchEvent(new x.Event('scroll'));
+  expect(room.style.getPropertyValue('--call-top')).toBe('55px');
+  viewport.scale = 2; viewport.height = 180; viewport.dispatchEvent(new x.Event('resize'));
+  expect(room.style.getPropertyValue('--call-height')).toBe('360px');
+  viewport.scale = 1; viewport.height = 844; viewport.offsetTop = 0;
+  viewport.dispatchEvent(new x.Event('resize'));
+  expect(room.classList.contains('compact-viewport')).toBe(false);
+  expect(room.style.getPropertyValue('--call-height')).toBe('844px');
+  expect(x.MiienVoice.stop).not.toHaveBeenCalled();
+});
+
+test('window resize without visualViewport restores phone and desktop geometry', async () => {
+  const w = setup(); await settle();
+  Object.defineProperty(w, 'innerWidth', { value: 390, configurable: true });
+  Object.defineProperty(w, 'innerHeight', { value: 320, configurable: true });
+  w.dispatchEvent(new w.Event('resize'));
+  const room = element(w, 'miien-room');
+  expect(room.style.getPropertyValue('--call-height')).toBe('320px');
+  expect(room.classList.contains('compact-viewport')).toBe(true);
+  Object.defineProperty(w, 'innerWidth', { value: 1440 });
+  Object.defineProperty(w, 'innerHeight', { value: 900 });
+  w.dispatchEvent(new w.Event('resize'));
+  expect(room.style.getPropertyValue('--call-height')).toBe('900px');
+  expect(room.classList.contains('compact-viewport')).toBe(false);
 });

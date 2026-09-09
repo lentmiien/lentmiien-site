@@ -58,10 +58,11 @@ block content
             button#mic(type='button', disabled=!canTranscribe, data-allowed=canTranscribe ? 'true' : 'false') Microphone
             button#replay(type='button', title='Replay latest reply when chat and microphone are idle', disabled) Replay
             button#stop(type='button') Stop audio
-          p#mic-status.hint(role='status')= canTranscribe ? 'Record, review, then send. Ctrl/⌘ + Enter to send text.' : 'Microphone unavailable for this account.'
-          p#chat-status(role='status', aria-live='polite') Loading saved conversation…
-          p#speech-status.hint(role='status') Voice is off by default. Choose a voice in Settings, then Replay.
-          p#art-status.hint(role='status')
+          .composer-status(tabindex='0', role='region', aria-label='Message and audio status; scroll for more')
+            p#mic-status.hint(role='status')= canTranscribe ? 'Record, review, then send. Ctrl/⌘ + Enter to send text.' : 'Microphone unavailable for this account.'
+            p#chat-status(role='status', aria-live='polite') Loading saved conversation…
+            p#speech-status.hint(role='status') Voice is off by default. Choose a voice in Settings, then Replay.
+            p#art-status.hint(role='status')
 block scripts
   script(src='/js/miien_activity.js', defer)
   script(src='/js/miien_layers.js', defer)

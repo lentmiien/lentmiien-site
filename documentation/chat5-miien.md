@@ -2,7 +2,49 @@
 
 **Phase 3 implementation is ready for a proper human testing session; acceptance and finalization remain open. Merge into `main` is the FINAL step, only after Lennart accepts the tested feature revision. Do not merge as part of this implementation handoff.** The coordinator owns test deployment and device testing. No production deployment/restart, Gateway changes, new synthesis, microphone capture or artwork generation was performed here. All five approved expression rigs/artwork remain unchanged.
 
-## Phase 3 implementation and release gate (2026-09-09)
+## Phase 3 smartphone acceptance fix (2026-09-09)
+
+**Implementation fix only: phase 3 remains unaccepted and unmerged.** No deployment or production/Gateway operation is included. The requested branch remains `feat/chat5-miien-phase2-slice1`.
+
+Starting evidence: the worktree was clean, local HEAD and a fresh `git ls-remote origin` both reported **`88522ba33ec0cfddb7320c56ffbaf7a676a7ed50`** for the feature branch. Remote main was `b774b10883d087199813ccbdc2c81b2c4f567b7e`. No unrelated changes were present. The user reports audio-reactive animation, expressions/art, Replay/Stop, overlapping turns, history recovery and ordinary Chat5 passed their testing. The remaining reported layout failure was that opening a smartphone keyboard left almost no useful character area.
+
+### Layout and security scope
+
+The old focused-short-viewport rule explicitly hid the character and captions, while the composer could retain multiple paragraphs. The room now uses its actual available size as a CSS container: phones reserve the space between the toolbar and bounded text panels for the contained portrait. At up to 450px available height, narrow phones place the portrait beside a compact editor with two rows of controls; short landscape uses the available height beside the art. Captions remain scrollable and toggleable. The 44–48px textarea keeps its accessible label and 16px input text. Phone buttons/toolbar targets are at least 44px high; long microphone labels wrap. Status messages retain their live announcements in a bounded, keyboard-focusable scroll region. History and Settings keep their existing expandable drawers and Escape/focus behavior.
+
+The existing visualViewport resize/scroll handling now also has a window-resize fallback. Compact layout is based on size, independent of input focus, and uses the visual viewport's height even when the layout viewport stays tall. No focus, selection, input value or scroll commands run in the resize handler. Pinch zoom retains the last unzoomed layout dimensions. Short focused editing retains the existing motion suspension, with the still portrait now visible; blur restores motion without changing composer geometry. Wide desktop and short desktop geometry remain the same in baseline comparisons.
+
+This is a presentation-only correction within the existing **logged-in** [security contract](#current-security-contract). No new feature, route, capability, mutation, provider request, stored data, external dependency, migration or configuration is added. Existing escaping, CSRF/Origin, member authorization, private media, request/work limits and operational logging remain intact. ASR/Gateway concurrency, voice lifecycle/admission, approved artwork/manifest/rig patches, motion algorithms and ordinary Chat5 implementation are unchanged.
+
+### Verification of this fix
+
+Pinned Node **24.20.0** was used. The configured application, MongoDB, schedulers and prestart pipeline were not started; browser fixtures serve synthetic content and existing public assets on loopback.
+
+- Focused: `npm test -- --runInBand --coverage=false tests/unit/miienClient.test.js tests/unit/miienVoice.test.js tests/unit/miienMotion.test.js tests/unit/miienRoutes.test.js` — **4 suites / 161 tests passed**. Updated the short-layout expectation and added visual viewport/pan/zoom and window-resize fallback coverage, including unchanged draft/selection/focus and no voice cancellation.
+- Broader: `npm test -- --runInBand` — **274 suites / 2,481 tests passed**; all configured coverage thresholds met (67.35% statements, 43.72% branches, 77.56% functions, 67.98% lines). Existing experimental VM Modules warning only.
+- New [responsive browser harness](../scripts/review-miien-responsive-browser.js): **19 synthetic check groups passed**, no page/CSP errors. Layout sizes: **390×844, 320×640, 320×568, 390×350, 320×284, 844×390, 667×320, 844×200**, plus **1440×1000**, fullscreen and **1440×500** desktop. Also exercised seven successive focused textarea resizes, a 390×360 visual viewport with 35px offset inside an unchanged 390×844 layout viewport, focus/blur stability, long captions/status/history scrolling, drawer bounds/Escape/focus restoration, caption toggling and long permission/recording button labels. The permission prompt is stubbed; no physical microphone is captured.
+- Existing [turn-taking browser harness](../scripts/review-miien-turn-taking-browser.js): **18 synthetic check groups passed**, no browser errors, including native synthetic WAV playback/mouth timing, Replay/Stop, ASR draft edits, recovery and mock-provider admission. This does not reproduce or clear the outstanding production ASR issue.
+- Rendered screenshots were visually inspected for normal/small phones, keyboard, smallest keyboard, long captions, Settings, shortest landscape and desktop. No document overflow, controls outside the available room, or portrait/editor overlap in the tested phone layouts. A temporary fixture serving the actual `88522ba` Pug/CSS/client confirmed identical measured desktop and short-desktop geometry before/after; the old keyboard screenshot showed the hidden portrait/captions.
+
+Browser discovery returned no connected browser (`[]`), so the installed standalone Playwright/Chromium was used. Reproduce with:
+
+```bash
+volta run --node 24.20.0 node scripts/review-miien-responsive-browser.js /tmp/connectivity-ui-qa/node_modules/playwright /home/lennart/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome /tmp/miien-responsive-review
+```
+
+Use locally installed paths as appropriate. This writes screenshots and `results.json` to the chosen output directory, outside tracked/public media. Key screenshots: `phone.png`, `small-phone-tall.png`, `keyboard.png`, `small-keyboard.png`, `landscape-keyboard.png`, `long-caption-status.png`, `keyboard-settings.png`, `desktop.png`. Temporary artifacts are not assumed to survive the review session.
+
+Changed files (6): [room CSS](../public/css/miien.css), [viewport client](../public/js/miien.js), [room view](../views/miien_room.pug), [client tests](../tests/unit/miienClient.test.js), the responsive browser harness, and this roadmap.
+
+### Outstanding acceptance and separate ASR investigation
+
+Physical phone verification is still required for iOS Safari/Android Chrome keyboard animation, actual visual viewport panning, browser chrome/safe areas, rotation with keyboard open, IME editing, pinch zoom and touch/screen-reader scrolling of bounded captions/status/drawers. Synthetic dimensions and event injection are **not physical mobile acceptance**. The smallest layouts necessarily show a smaller portrait and fewer text lines; full text stays available by scrolling.
+
+The user separately reports **ASR failing while TTS is in progress**. A separate production tool is investigating; root cause, production evidence and that investigation's session link have not yet been supplied. This fix neither changes ASR/Gateway concurrency nor marks that issue resolved. Record the supplied evidence here when available, and handle any fix as a separate scoped task.
+
+Historical references: [voice admission investigation](/codex/sessions/tool-session-5e0a027e368644c8b85c6754b329635adaa4eb7c0aeb015c252e53bbc146b167), [turn-taking planning](/codex/sessions/tool-session-e2e35dfc86f36008d9de857ccaae3c831d637c3286127974a471dc74b0d51014). No current implementation/device-test/ASR-investigation permalink was supplied; none is invented. Acceptance, deployment and any final merge remain separate from this commit/push.
+
+## Initial phase 3 implementation and release gate (2026-09-09)
 
 ### Verified starting point and security scope
 
@@ -533,7 +575,7 @@ The start and model/context pages keep conversation settings in Chat5 and direct
 
 The character stage owns the viewport, with compact translucent caption/composer panels. Navigation, full model/context settings, expression overrides, microphone, history and Stop remain reachable. Captions show the latest reply without word timing and default on; history and room settings default closed. Caption and motion preferences persist in sessionStorage. Text remains editable while Anny prepares; sending a new turn stops local audio/ASR and discards pending local playback without cancelling the saved LLM request. History keeps the full plain-text response and scroll position, including text beyond the speech preview cap. Ctrl/Command+Enter and IME behavior are preserved.
 
-Portraits use a contained foreground over a Graphite stage, never aggressive landscape cropping. Mobile reserves room above the ears; short landscape puts art beside the composer. The canonical 3:4 image remains the source; a future wide composition is an optional framing choice, not a prerequisite for idle motion. The coordinator records waist-up framing as already retained; this slice preserves the existing portrait without reopening that decision. Review how that source fits the fullscreen viewport and future clip aspect ratio, rather than commissioning a new framing here. `dvh`, safe-area insets, viewport-fit and visualViewport resize/scroll handling keep controls within the available viewport. A short focused keyboard viewport temporarily hides the stage/captions/title and suspends its decoder; they return on blur. Physical mobile keyboard and pinch-zoom behavior still need device review. True fullscreen is an optional support-checked gesture button under Settings; failure leaves the viewport room usable.
+Portraits use a contained foreground over a Graphite stage, never aggressive landscape cropping. Mobile reserves room above the ears; short landscape puts art beside the composer. The canonical 3:4 image remains the source; a future wide composition is an optional framing choice, not a prerequisite for idle motion. The coordinator records waist-up framing as already retained; this slice preserves the existing portrait without reopening that decision. Review how that source fits the fullscreen viewport and future clip aspect ratio, rather than commissioning a new framing here. `dvh`, safe-area insets, viewport-fit and visualViewport resize/scroll handling keep controls within the available viewport. The [smartphone acceptance fix](#phase-3-smartphone-acceptance-fix-2026-09-09) keeps the portrait and bounded captions visible during short focused editing, suspends motion until blur, and bases layout on available size instead of focus. Physical mobile keyboard and pinch-zoom behavior still need device review. True fullscreen is an optional support-checked gesture button under Settings; failure leaves the viewport room usable.
 
 `public/js/miien_activity.js` is the testable activity controller, independent of expression/mood:
 
