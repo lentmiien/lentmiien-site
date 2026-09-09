@@ -22,15 +22,16 @@ test('clip metadata, slot count and policies must be bounded', () => {
   m.clips = Array(21).fill(clip()); expect(validate(m)).toBeNull();
   m.clips = []; m.policy.crossfadeMs = 500; expect(validate(m)).toBeNull();
 });
-function fixture() {
+function fixture({ hidden = false, saveData = false, decode } = {}) {
   const still = { src: '', after: jest.fn() }, status = { textContent: '' }, videos = [];
   const mediaQuery = { matches: false, addEventListener: jest.fn(), removeEventListener: jest.fn() };
-  const document = { createElement: () => {
+  const connection = { saveData, addEventListener: jest.fn(), removeEventListener: jest.fn() };
+  const document = { hidden, createElement: () => {
     const video = { pause: jest.fn(), load: jest.fn(), remove: jest.fn(), removeAttribute: jest.fn(), setAttribute: jest.fn(), play: jest.fn().mockResolvedValue() };
     videos.push(video); return video;
   } };
-  const adapter = create({ document, still, status, Image: class { decode() { return Promise.resolve(); } }, mediaQuery });
-  return { adapter, still, status, videos, mediaQuery };
+  const adapter = create({ document, still, status, Image: class { decode() { return decode ? decode(this.src) : Promise.resolve(); } }, mediaQuery, connection });
+  return { adapter, still, status, videos, mediaQuery, connection };
 }
 beforeEach(() => jest.useFakeTimers()); afterEach(() => jest.useRealTimers());
 test('absent clip uses the appropriate still; ready and stale events cannot show a wrong clip', async () => {
@@ -70,4 +71,30 @@ test('activity is orthogonal to mood and reflects real work, then settles centra
   expect(activity.update({ recording: false, asr: false, chat: true })).toMatchObject({ state: 'thinking', status: expect.stringContaining('Chat5') });
   expect(activity.update({ chat: false }).state).toBe('idle');
   expect(activity.update({ voice: 'fake-speaking', mood: 'happy' }).state).toBe('idle');
+});
+
+test('matching poster stays under incoming video and failures restore mood portrait', async () => {
+  const f = fixture(), m = clone(); m.clipStatus = 'reviewed'; m.clips = [{ ...clip(), poster: '/i/miien/v2-2/idle-neutral.webp' }];
+  await f.adapter.setManifest(m); expect(f.still.src).toBe(m.clips[0].poster);
+  f.videos[0].onplaying(); expect(f.still.src).toBe(m.clips[0].poster);
+  f.videos[0].onerror(); expect(f.still.src).toBe('/i/miien/neutral.webp');
+  await f.adapter.show('concerned', 'idle'); expect(f.still.src).toBe('/i/miien/concerned.webp'); expect(f.videos).toHaveLength(1);
+  await f.adapter.show('neutral', 'speaking'); expect(f.still.src).toBe('/i/miien/neutral.webp'); expect(f.videos).toHaveLength(1);
+});
+test.each([{ hidden: true }, { saveData: true }])('initial suspension prevents a decoder: %p', async options => {
+  const f = fixture(options), m = clone(); m.clipStatus = 'reviewed'; m.clips = [clip()];
+  await f.adapter.setManifest(m); expect(f.videos).toHaveLength(0); expect(f.still.src).toBe('/i/miien/neutral.webp');
+});
+test('enabling data saver removes the only decoder and restores the still', async () => {
+  const f = fixture(), m = clone(); m.clipStatus = 'reviewed'; m.clips = [{ ...clip(), poster: '/i/miien/v2-2/idle-neutral.webp' }];
+  await f.adapter.setManifest(m); f.connection.saveData = true;
+  await f.connection.addEventListener.mock.calls[0][1]();
+  expect(f.videos[0].remove).toHaveBeenCalled(); expect(f.still.src).toBe('/i/miien/neutral.webp');
+  f.adapter.dispose(); expect(f.connection.removeEventListener).toHaveBeenCalled();
+});
+test('late poster decode after a mood switch cannot resurrect the previous clip', async () => {
+  let resolve; const f = fixture({ decode: src => src.includes('/v2-2/') ? new Promise(r => { resolve = r; }) : Promise.resolve() });
+  const m = clone(); m.clipStatus = 'reviewed'; m.clips = [{ ...clip(), poster: '/i/miien/v2-2/idle-neutral.webp' }];
+  const loading = f.adapter.setManifest(m); await settle(); await f.adapter.show('concerned', 'idle');
+  resolve(); await loading; expect(f.videos).toHaveLength(0); expect(f.still.src).toBe('/i/miien/concerned.webp');
 });

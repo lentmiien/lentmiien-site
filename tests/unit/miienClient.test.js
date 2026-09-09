@@ -14,7 +14,7 @@ let dom;
 afterEach(() => { dom?.window.close(); });
 function setup({ timers = false, initial = { messages: [], pending: false }, decode } = {}) {
   const html = pug.renderFile('views/miien_room.pug', {conversation:{_id:'a'.repeat(24),title:'Fixture'},moods:MOODS,canWrite:true,canTranscribe:true,csrfToken:'token'});
-  dom = new JSDOM(html, { url:'https://fixture.invalid/chat5/miien/'+ 'a'.repeat(24),runScripts:'outside-only' });
+  dom = new JSDOM(html, { url:'https://fixture.invalid/chat5/miien/'+ 'a'.repeat(24),runScripts:'outside-only',pretendToBeVisual:true });
   const {window:w}=dom;
   if (timers) {
     let nextTimer = 0;
@@ -23,7 +23,7 @@ function setup({ timers = false, initial = { messages: [], pending: false }, dec
     w.clearTimeout = id => w.fixtureTimers.delete(id);
   }
   w.fetch=jest.fn().mockResolvedValue(response(initial));
-  w.MiienVoice={stop:jest.fn(),speak:jest.fn()};
+  w.MiienVoice={stop:jest.fn(),speak:jest.fn(),resume:jest.fn(),setLatestMessage:jest.fn()};
   w.Image=class { constructor(){this.src='';} decode(){return decode ? decode(this.src) : Promise.resolve();} };
   w.isSecureContext=true;
   w.AudioContext=class {};
@@ -32,6 +32,8 @@ function setup({ timers = false, initial = { messages: [], pending: false }, dec
   Object.defineProperty(w.navigator,'mediaDevices',{value:{getUserMedia:jest.fn()}});
   vm.runInContext(activitySource,dom.getInternalVMContext());
   vm.runInContext(motionSource,dom.getInternalVMContext());
+  const createMotion = w.MiienMotion.create;
+  w.MiienMotion.create = options => { w.motionAdapter = createMotion(options); jest.spyOn(w.motionAdapter, 'suspend'); return w.motionAdapter; };
   vm.runInContext(source,dom.getInternalVMContext());
   return w;
 }
@@ -41,7 +43,7 @@ test('text works with unsupported microphone, renders hostile responses inertly'
   // A separate initial render with a malicious response, without relying on implementation helpers.
   dom.window.close();
   const html=pug.renderFile('views/miien_room.pug',{conversation:{_id:'a'.repeat(24),title:'Test'},moods:['neutral'],canWrite:true,canTranscribe:true,csrfToken:'token'});
-  dom=new JSDOM(html,{url:'https://fixture.invalid',runScripts:'outside-only'});
+  dom=new JSDOM(html,{url:'https://fixture.invalid',runScripts:'outside-only',pretendToBeVisual:true});
   const x=dom.window;x.Image=class{decode(){return Promise.resolve();}};
   x.fetch=jest.fn().mockResolvedValue(response({messages:[{id:'1',role:'assistant',text:'<img src=x onerror=alert(1)>',mood:'neutral'}],pending:false}));
   vm.runInContext(activitySource,dom.getInternalVMContext());
@@ -211,9 +213,14 @@ test('history, pending-at-open, background replies and older rows never autoplay
   expect(w.MiienVoice.speak).not.toHaveBeenCalled();
   const third = assistant('3', 'That sounds rough.');
   Object.defineProperty(w.document, 'hidden', { value: true, configurable: true });
-  await tick(w, { messages: [first, second, third], pending: false });
+  w.document.dispatchEvent(new w.Event('visibilitychange'));
+  const calls = w.fetch.mock.calls.length;
+  expect(w.fixtureTimers.size).toBe(0);
+  w.fetch.mockResolvedValue(response({ messages: [first, second, third], pending: false }));
   Object.defineProperty(w.document, 'hidden', { value: false, configurable: true });
-  await tick(w, { messages: [first, second, third], pending: false });
+  w.document.dispatchEvent(new w.Event('visibilitychange'));
+  await settle();
+  expect(w.fetch.mock.calls.length).toBe(calls + 1);
   expect(w.MiienVoice.speak).not.toHaveBeenCalled();
   const fourth = assistant('4', 'It came out of nowhere.');
   await tick(w, { messages: [first, second, third, fourth], pending: true });
@@ -280,4 +287,43 @@ test('display preferences, caption toggle, Escape and viewport keyboard keep con
   expect(element(w, 'fullscreen').hidden).toBe(true);
   Object.defineProperty(w, 'innerHeight', { value: 320 });
   element(w, 'message').focus(); expect(element(w, 'miien-room').classList.contains('keyboard-open')).toBe(true);
+});
+
+test('restored voice waits for initial history and fresh visible recovery, never missed-reply autoplay', async () => {
+  const w = setup({ timers: true, initial: { messages: [assistant('1', 'Hello')], pending: false } });
+  expect(w.MiienVoice.resume).not.toHaveBeenCalled(); await settle();
+  expect(w.MiienVoice.setLatestMessage).toHaveBeenLastCalledWith('1'); expect(w.MiienVoice.resume).toHaveBeenCalledTimes(1);
+  Object.defineProperty(w.document, 'hidden', { value: true, configurable: true });
+  w.document.dispatchEvent(new w.Event('visibilitychange')); expect(w.fixtureTimers.size).toBe(0);
+  let resolve; w.fetch.mockImplementationOnce(() => new Promise(r => { resolve = r; }));
+  Object.defineProperty(w.document, 'hidden', { value: false, configurable: true });
+  w.document.dispatchEvent(new w.Event('visibilitychange'));
+  expect(w.MiienVoice.resume).toHaveBeenCalledTimes(1);
+  resolve(response({ messages: [assistant('2', 'Missed reply')], pending: false })); await settle();
+  expect(w.MiienVoice.setLatestMessage).toHaveBeenLastCalledWith('2'); expect(w.MiienVoice.resume).toHaveBeenCalledTimes(2);
+  expect(w.MiienVoice.speak).not.toHaveBeenCalled();
+});
+test('a failed visible history refresh cannot restore voice authority', async () => {
+  const w = setup({ timers: true }); await settle(); w.MiienVoice.resume.mockClear();
+  Object.defineProperty(w.document, 'hidden', { value: true, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange'));
+  w.fetch.mockRejectedValueOnce(new Error('Session expired'));
+  Object.defineProperty(w.document, 'hidden', { value: false, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange')); await settle();
+  expect(w.MiienVoice.resume).not.toHaveBeenCalled(); expect(w.MiienVoice.stop).toHaveBeenCalled();
+});
+test('short keyboard viewport suspends the hidden stage until focus leaves', async () => {
+  const w = setup(); await settle(); Object.defineProperty(w, 'innerHeight', { value: 320, configurable: true });
+  element(w, 'message').focus(); await settle();
+  expect(element(w, 'miien-room').classList.contains('keyboard-open')).toBe(true);
+  expect(w.motionAdapter.suspend).toHaveBeenLastCalledWith(true);
+  element(w, 'message').blur(); await settle();
+  expect(w.motionAdapter.suspend).toHaveBeenLastCalledWith(false);
+});
+
+test('history loaded during visible recovery is seen even if that turn is still pending', async () => {
+  const w = setup({ timers: true }); await settle();
+  Object.defineProperty(w.document, 'hidden', { value: true, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange'));
+  const missed = assistant('1', 'A saved response while away');
+  w.fetch.mockResolvedValue(response({ messages: [missed], pending: true }));
+  Object.defineProperty(w.document, 'hidden', { value: false, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange')); await settle();
+  await tick(w, { messages: [missed], pending: false }); expect(w.MiienVoice.speak).not.toHaveBeenCalled();
 });

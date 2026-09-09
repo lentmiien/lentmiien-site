@@ -6,6 +6,7 @@ const DEADLINE_MS = 20 * 60 * 1000;
 const RETENTION_MS = 15 * 60 * 1000;
 const MAX_JOBS = 8;
 const SLOT = 'miien-anny-en';
+const BACKEND = 'omni_anny_en';
 const ID = /^[a-f\d]{24}$/i;
 const HANDLE = /^[a-f\d-]{36}$/i;
 
@@ -38,7 +39,7 @@ class MiienSpeechService {
     }
   }
   view(job) {
-    return { id: job.id, messageId: job.messageId, voiceId: 'anny_en', status: job.status,
+    return { id: job.id, messageId: job.messageId, voiceId: 'anny_en', backendId: job.backendId, status: job.status,
       truncated: job.truncated, spokenCharacters: job.spokenCharacters, deadlineAt: job.deadlineAt,
       expiresAt: job.expiresAt || null, error: job.error || null };
   }
@@ -56,7 +57,7 @@ class MiienSpeechService {
     if (this.active || this.jobs.size >= MAX_JOBS) throw new MiienError(429, 'Anny is busy or audio storage is full. Try later; text chat is ready.');
     const characters = Array.from(text);
     const job = { id: randomUUID(), owner, conversationId, messageId: body.messageId,
-      status: 'preparing', spokenCharacters: Math.min(characters.length, 600), truncated: characters.length > 600,
+      backendId: BACKEND, status: 'preparing', spokenCharacters: Math.min(characters.length, 600), truncated: characters.length > 600,
       deadlineAt: Date.now() + DEADLINE_MS, audio: null };
     this.jobs.set(job.id, job);
     this.active = job.id;
@@ -79,6 +80,7 @@ class MiienSpeechService {
     let claimed = false;
     let dispatched = false;
     let settled = false;
+    let stage = 'admission';
     const controller = new AbortController();
     const finish = (status, error) => {
       job.status = status;
@@ -101,7 +103,9 @@ class MiienSpeechService {
         if (error.code === 11000) throw new MiienError(409, 'Anny has outstanding work. If it persists, an operator must check Gateway.');
         throw error;
       }
-      if (!(await this.voices(controller.signal)).includes('anny_en')) throw new MiienError(503, 'Anny English is unavailable in the voice catalog.');
+      stage = 'catalog';
+      if (!(await this.voices(controller.signal)).includes(job.backendId)) throw new MiienError(503, 'Anny English is unavailable in the voice catalog.');
+      stage = 'authorization';
       const principal = await this.authorize(job.owner);
       if (!principal) throw new MiienError(403, 'Speech permission is no longer available.');
       const text = await this.chat.speechText(principal, job.conversationId, job.messageId);
@@ -109,16 +113,18 @@ class MiienSpeechService {
       const preview = Array.from(text).slice(0, 600).join('');
       job.truncated = Array.from(text).length > 600;
       job.spokenCharacters = Array.from(preview).length;
+      stage = 'synthesis';
       dispatched = true;
       const response = await this.http.post(`${this.requireOrigin()}/tts`, {
-        text: preview, voice_id: 'anny_en', params: { format: 'wav' },
-        timeout_sec: Math.max(1, Math.floor((job.deadlineAt - Date.now()) / 1000)),
+        text: preview, voice_id: job.backendId, timeout_sec: 600,
       }, { responseType: 'arraybuffer', signal: controller.signal,
         timeout: Math.max(1, job.deadlineAt - Date.now()), maxRedirects: 0,
         maxContentLength: MAX_SPEECH_BYTES, maxBodyLength: 8192 });
       settled = true; // A complete HTTP success is settlement, not browser Stop.
       if (controller.signal.aborted) return;
+      stage = 'audio_validation';
       if (!validSpeechWav(response.data)) throw new Error('Invalid WAV');
+      stage = 'retention_authorization';
       const current = await this.authorize(job.owner);
       if (!current) throw new MiienError(403, 'Speech permission is no longer available.');
       await this.chat.speechText(current, job.conversationId, job.messageId);
@@ -131,7 +137,10 @@ class MiienSpeechService {
       if ([400, 404, 422].includes(error.response?.status)) settled = true;
       if (job.status !== 'timeout') finish('failed', error instanceof MiienError ? error.message : 'Anny failed. Text is saved; no automatic retry was made.');
       this.logger.warning('Miien speech failed; inspect Gateway availability or outstanding admission slot', {
-        category: 'chat5_miien_speech', metadata: { outcome: job.status, upstreamUncertain: dispatched && !settled },
+        category: 'chat5_miien_speech', metadata: { backendId: job.backendId, stage, outcome: job.status,
+          httpStatus: Number.isInteger(error.response?.status) && error.response.status >= 400 && error.response.status <= 599 ? error.response.status : null,
+          failure: controller.signal.aborted ? 'deadline' : error instanceof MiienError ? 'rejected' : 'provider_or_transport',
+          upstreamUncertain: dispatched && !settled },
       });
     } finally {
       clearTimeout(timeout);

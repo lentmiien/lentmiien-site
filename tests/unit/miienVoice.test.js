@@ -6,7 +6,7 @@ beforeAll(async () => { ({ JSDOM } = await import('jsdom')); });
 afterEach(() => dom?.window.close());
 const source = fs.readFileSync('public/js/miien_voice.js', 'utf8');
 const messageId = 'c'.repeat(24), handle = '11111111-1111-1111-1111-111111111111';
-const job = (status = 'preparing') => ({ id: handle, messageId, status, deadlineAt: Date.now() + 1200000, truncated: true, spokenCharacters: 600 });
+const job = (status = 'preparing') => ({ id: handle, messageId, voiceId: 'anny_en', backendId: 'omni_anny_en', status, deadlineAt: Date.now() + 1200000, truncated: true, spokenCharacters: 600 });
 const response = data => ({ ok: true, json: async () => data });
 const settle = async () => { for (let n = 0; n < 40; n++) await Promise.resolve(); };
 function setup({ mode = 'anny_en', savedJob, fetch } = {}) {
@@ -23,10 +23,13 @@ function setup({ mode = 'anny_en', savedJob, fetch } = {}) {
     constructor(url) { this.src = url; this.play = jest.fn().mockResolvedValue(); this.pause = jest.fn(); this.load = jest.fn(); this.removeAttribute = jest.fn(); w.audios.push(this); }
   };
   w.phases = []; w.addEventListener('miien:voice', event => w.phases.push(event.detail.phase));
-  vm.runInContext(source, dom.getInternalVMContext()); return w;
+  vm.runInContext(source, dom.getInternalVMContext());
+  w.MiienVoice.setLatestMessage(messageId);
+  if (savedJob) w.MiienVoice.resume();
+  return w;
 }
 const status = w => w.document.getElementById('speech-status').textContent;
-const readyFetch = () => jest.fn().mockResolvedValueOnce(response(job())).mockResolvedValueOnce(response(job('ready'))).mockResolvedValueOnce({ ok: true, headers: { get: () => 'audio/wav' }, blob: async () => ({ size: 100 }) });
+const readyFetch = () => jest.fn().mockResolvedValue(response(job('ready'))).mockResolvedValueOnce(response(job())).mockResolvedValueOnce(response(job('ready'))).mockResolvedValueOnce({ ok: true, headers: { get: () => 'audio/wav' }, blob: async () => ({ size: 100 }) });
 test('slow Anny preparation is thinking, leaves input usable, and Stop discards late job results', async () => {
   const w = setup(); w.MiienVoice.speak('private text', true, messageId); await settle();
   expect(status(w)).toContain('Preparing Anny'); expect(w.phases).not.toContain('playing');
@@ -42,17 +45,17 @@ test('speaking follows actual playing; end, stale events and replay are safe', a
   const audio = w.audios[0]; expect(audio.play).toHaveBeenCalled(); expect(w.phases).not.toContain('playing');
   const oldPlaying = audio.onplaying; audio.onplaying(); expect(w.phases.at(-1)).toBe('playing');
   audio.onended(); expect(w.phases.at(-1)).toBe('idle'); oldPlaying(); expect(w.phases.at(-1)).toBe('idle');
-  w.MiienVoice.speak('reply', true, messageId); expect(audio.play).toHaveBeenCalledTimes(2);
+  w.MiienVoice.speak('reply', true, messageId); await settle(); expect(audio.play).toHaveBeenCalledTimes(2);
   w.MiienVoice.stop(); expect(w.URL.revokeObjectURL).toHaveBeenCalledWith('blob:fixture'); oldPlaying(); expect(w.phases.at(-1)).toBe('idle');
 });
-test('autoplay rejection keeps audio for immediate gesture Replay without resynthesis', async () => {
+test('autoplay rejection keeps audio for freshly authorized Replay without resynthesis', async () => {
   const w = setup({ fetch: readyFetch() });
   const original = w.Audio;
   w.Audio = class extends original { constructor(url) { super(url); this.play.mockRejectedValueOnce(new Error('blocked')); } };
   w.MiienVoice.speak('reply', true, messageId); await settle();
   expect(status(w)).toContain('press Replay'); expect(w.phases.at(-1)).toBe('idle');
-  w.MiienVoice.speak('reply', true, messageId); expect(w.audios[0].play).toHaveBeenCalledTimes(2);
-  expect(w.fetch).toHaveBeenCalledTimes(3);
+  w.MiienVoice.speak('reply', true, messageId); await settle(); expect(w.audios[0].play).toHaveBeenCalledTimes(2);
+  expect(w.fetch).toHaveBeenCalledTimes(4);
 });
 test('reload resumes status only, never speaks old history or resubmits', async () => {
   const w = setup({ savedJob: job(), fetch: jest.fn().mockResolvedValue(response(job('ready'))) }); await settle();
@@ -87,14 +90,41 @@ test('Off never speaks even on Replay and opting out stops pending work locally'
 });
 test('expired preparing handle terminates while completed late audio remains recoverable by status', async () => {
   const expired = { ...job(), deadlineAt: Date.now() - 60000 };
-  const w = setup({ savedJob: { id: handle, deadlineAt: expired.deadlineAt }, fetch: jest.fn().mockResolvedValue(response(expired)) });
+  const w = setup({ savedJob: { ...job(), status: undefined, deadlineAt: expired.deadlineAt }, fetch: jest.fn().mockResolvedValue(response(expired)) });
   await settle(); expect(w.timers.size).toBe(0); expect(status(w)).toContain('deadline');
   dom.window.close();
-  const x = setup({ savedJob: { id: handle, deadlineAt: expired.deadlineAt }, fetch: jest.fn().mockResolvedValue(response({ ...expired, status: 'ready' })) });
+  const x = setup({ savedJob: { ...job(), status: undefined, deadlineAt: expired.deadlineAt }, fetch: jest.fn().mockResolvedValue(response({ ...expired, status: 'ready' })) });
   await settle(); expect(status(x)).toContain('Press Replay'); expect(x.audios).toHaveLength(0);
 });
 test('a restored result for an older reply is discarded after history advances', async () => {
   const w = setup({ savedJob: job(), fetch: jest.fn().mockResolvedValue(response(job('ready'))) });
   w.MiienVoice.setLatestMessage('d'.repeat(24)); await settle();
-  expect(w.audios).toHaveLength(0); expect(status(w)).toContain('earlier reply'); expect(w.timers.size).toBe(0);
+  expect(w.audios).toHaveLength(0); expect(status(w)).toMatch(/latest reply|earlier reply/); expect(w.timers.size).toBe(0);
+});
+
+test.each([{ id: '22222222-2222-2222-2222-222222222222' }, { messageId: 'd'.repeat(24) }, { backendId: 'anny_en' }, { backendId: undefined }, { voiceId: 'omni_anny_en' }])('rejects a mismatched status result: %p', async patch => {
+  const w = setup({ fetch: jest.fn().mockResolvedValueOnce(response(job())).mockResolvedValueOnce(response({ ...job('ready'), ...patch })) });
+  w.MiienVoice.speak('reply', true, messageId); await settle();
+  expect(w.audios).toHaveLength(0); expect(w.URL.createObjectURL).not.toHaveBeenCalled();
+  expect(status(w)).toContain('does not match'); expect(w.timers.size).toBe(0);
+});
+test('cached Replay reauthorizes and destroys audio if access was revoked', async () => {
+  const w = setup({ fetch: readyFetch() }); w.MiienVoice.speak('reply', true, messageId); await settle();
+  const audio = w.audios[0]; audio.onended();
+  w.fetch.mockResolvedValue({ ok: false, json: async () => ({ error: 'Permission revoked' }) });
+  w.MiienVoice.speak('reply', true, messageId);
+  expect(audio.play).toHaveBeenCalledTimes(1); await settle();
+  expect(audio.play).toHaveBeenCalledTimes(1); expect(w.URL.revokeObjectURL).toHaveBeenCalled();
+  expect(w.fetch.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1);
+  expect(status(w)).toContain('permission could not be verified');
+});
+test('Stop during cached Replay authorization discards a late success', async () => {
+  const w = setup({ fetch: readyFetch() }); w.MiienVoice.speak('reply', true, messageId); await settle();
+  let resolve; w.fetch.mockImplementation(() => new Promise(r => { resolve = r; }));
+  const audio = w.audios[0]; w.MiienVoice.speak('reply', true, messageId); w.MiienVoice.stop();
+  resolve(response(job('ready'))); await settle(); expect(audio.play).toHaveBeenCalledTimes(1);
+});
+test('legacy restored handles lacking backend/message attribution fail closed without fetching', async () => {
+  const w = setup({ savedJob: { id: handle, deadlineAt: Date.now() + 1200000 } }); await settle();
+  expect(w.fetch).not.toHaveBeenCalled(); expect(status(w)).toContain('does not match');
 });

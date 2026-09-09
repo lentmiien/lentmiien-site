@@ -26,14 +26,14 @@ block content
               select#speech-mode
                 option(value='off') Off
                 option(value='browser') Browser voice
-                option(value='anny_en', disabled=!canSynthesize) Anny English · slow preview
+                option(value='anny_en', disabled=!canSynthesize) Anny English · OmniVoice preview
               label.check
                 input#speech-enabled(type='checkbox')
                 | Speak new replies automatically
               label(for='speech-voice') Browser voice
               select#speech-voice
                 option(value='') Browser default
-              p.hint Voice is optional. Browser/OS voices may process text online. Anny sends up to 600 characters to the configured Gateway and can take minutes. Full replies stay saved.
+              p.hint Voice is optional. Browser/OS voices may process text online. Anny uses OmniVoice and sends up to 600 characters to the configured Gateway. Measured previews took 12–23 seconds; timing is not guaranteed and may take minutes. Full replies stay saved.
               label(for='mood-override') Expression preview
               select#mood-override
                 option(value='auto') Automatic from conversation
@@ -44,7 +44,7 @@ block content
               label.check
                 input#motion-enabled(type='checkbox', checked)
                 | Enable approved motion clips
-              p.hint No motion clips produced yet. Reduced-motion always uses portraits.
+              p.hint Reviewed matching clips play when available. Reduced-motion and data saver use portraits.
               button#fullscreen(type='button', hidden) Enter fullscreen
       .call-bottom
         #captions.dialogue-panel

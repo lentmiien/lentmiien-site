@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-09",
+  "outcome": "no-asset-produced",
+  "gatewayStatus": "error",
+  "workflow": "video_minimax_h3_i2v.json",
+  "jobId": "2f7bf006-9e54-4f54-90b9-d37452b26ff7",
+  "uploadedPath": "miien-neutral-contained-20260909.png",
+  "source": {
+    "path": "public/i/miien/neutral.webp",
+    "sha256": "a96d921b3afea4022ffab1c3b2292b35ac6c62db78367f2f1c980997936d9978",
+    "width": 768,
+    "height": 1024
+  },
+  "input": {
+    "sha256": "a45867e514703aa501179f94e5553fb15d6e58804e5c03b0ec37d2f0d5d5c296",
+    "width": 640,
+    "height": 640,
+    "processing": "Sharp contain resize: 480x640 portrait centered in a 640x640 Graphite (#20242A) canvas; no crop or artwork generation"
+  },
+  "graph": {
+    "sha256": "70a6c48b735cc58ccdb4c2a24537b1845e419017465f81122058a6bce7643e10",
+    "imageNode": "114",
+    "promptNode": "105:104",
+    "resolutionNode": "115",
+    "aspectRatio": "1:1 (Square)",
+    "megapixels": 0.4,
+    "multiple": 32,
+    "steps": 20,
+    "fps": 24,
+    "frames": 124,
+    "seed": 168866841893410,
+    "model": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+    "lastFrame": "unconnected, unchanged; support and closure benefit not verified"
+  },
+  "motionInstructions": "Same adult Miien identity, graphite twin tails/cat ears, amber eyes, modest zipped graphite/orange hoodie; retain background and contained upper-torso framing. Locked camera, very subtle breathing, occasional natural blink, tiny ear/hair motion, closed mouth, no speech/waving/cuts/scene changes; return near initial pose with eyes open.",
+  "failure": "Gateway terminal error reported a 30-second ComfyUI ReadTimeout; no video returned. No service changes or retry.",
+  "review": {
+    "sourcePortrait": "visually inspected",
+    "video": "unavailable; no frame, seam or playback quality review possible",
+    "humanApproval": false
+  },
+  "cleanup": {
+    "checkedAt": "2026-09-09T00:47:13.338Z",
+    "comfyRunning": false,
+    "omniRunning": false,
+    "qwenRunning": false,
+    "active": false,
+    "queueDepth": 0,
+    "reserved": false,
+    "cleanupError": false,
+    "confirmedSeparately": "Gateway health and queue confirm no remaining request from this attempt"
+  },
+  "handoff": "Uploaded input persists as uploadedPath. Coordinator can fetch the current graph and use this existing input after investigating the upstream timeout. If transferring from this workspace is needed, the contained PNG and submitted graph are in private staging /tmp/miien-slice2-private. No output artifact exists to transfer."
+}

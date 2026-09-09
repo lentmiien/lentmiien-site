@@ -19,7 +19,7 @@ function fixture() {
   const chat = { speechText: jest.fn().mockResolvedValue('private preview '.repeat(70)) };
   const authorize = jest.fn().mockResolvedValue(user);
   const logger = { warning: jest.fn(), error: jest.fn() };
-  const http = { get: jest.fn().mockResolvedValue({ data: { voices: [{ voice_id: 'anny_en' }] } }), post: jest.fn().mockResolvedValue({ data: wav() }) };
+  const http = { get: jest.fn().mockResolvedValue({ data: { voices: [{ voice_id: 'omni_anny_en' }] } }), post: jest.fn().mockResolvedValue({ data: wav() }) };
   const service = new MiienSpeechService({ chat, slots, authorize, logger, http });
   return { service, slots, chat, authorize, logger, http };
 }
@@ -28,13 +28,15 @@ afterEach(() => jest.useRealTimers());
 test('short submission, bounded preview, exact voice, private memory audio and dedupe', async () => {
   const f = fixture(); const job = await f.service.submit(user, conversation, body);
   expect(job.status).toBe('preparing');
+  expect(job).toMatchObject({ voiceId: 'anny_en', backendId: 'omni_anny_en' });
   await flush();
   expect(f.http.post).toHaveBeenCalledTimes(1);
-  expect(f.http.post.mock.calls[0][1]).toEqual({ text: ('private preview '.repeat(70)).slice(0, 600), voice_id: 'anny_en', params: { format: 'wav' }, timeout_sec: 1200 });
+  expect(f.http.post.mock.calls[0][1]).toEqual({ text: ('private preview '.repeat(70)).slice(0, 600), voice_id: 'omni_anny_en', timeout_sec: 600 });
   expect(f.http.post.mock.calls[0][2]).toMatchObject({ maxRedirects: 0, maxContentLength: MAX_SPEECH_BYTES, timeout: DEADLINE_MS });
   expect(await f.service.get(user, conversation, job.id, true)).toEqual(wav());
   expect(await f.service.submit(user, conversation, body)).toMatchObject({ id: job.id, status: 'ready', truncated: true });
   expect(f.slots.create.mock.calls[0][0]).not.toHaveProperty('text');
+  expect(f.slots.create.mock.calls[0][0]._id).toBe('miien-anny-en');
   expect(f.slots.deleteOne).toHaveBeenCalled();
   expect(f.authorize).toHaveBeenCalledTimes(2);
 });
@@ -80,8 +82,8 @@ test.each([400, 404, 422])('explicit upstream validation %s releases admission w
   await f.service.submit(user, conversation, body); await flush();
   expect(f.slots.deleteOne).toHaveBeenCalledTimes(1); expect(f.http.post).toHaveBeenCalledTimes(1);
 });
-test('catalog absence cannot silently substitute other backends', async () => {
-  const f = fixture(); f.http.get.mockResolvedValue({ data: { voices: [{ voice_id: 'qwen_anny_en' }] } });
+test.each(['anny_en', 'qwen_anny_en'])('catalog absence cannot silently substitute %s', async selector => {
+  const f = fixture(); f.http.get.mockResolvedValue({ data: { voices: [{ voice_id: selector }] } });
   const job = await f.service.submit(user, conversation, body); await flush();
   expect(await f.service.get(user, conversation, job.id)).toMatchObject({ status: 'failed' });
   expect(f.http.post).not.toHaveBeenCalled(); expect(f.slots.deleteOne).toHaveBeenCalled();
@@ -153,4 +155,14 @@ test.each(['http://gateway.invalid:8080', 'https://gateway.invalid/'])('valid or
   await service.submit(user, conversation, body); await flush();
   expect(f.http.get).toHaveBeenCalledWith(`${new URL(apiBase).origin}/tts/voices`, expect.objectContaining({ maxRedirects: 0 }));
   expect(f.http.post).toHaveBeenCalledWith(`${new URL(apiBase).origin}/tts`, expect.any(Object), expect.objectContaining({ maxRedirects: 0 }));
+});
+
+test('failure attribution is bounded and never copies arbitrary provider fields', async () => {
+  const f = fixture();
+  f.http.post.mockRejectedValue({ code: 'SECRET_TOKEN', message: 'private speech', response: { status: 502, data: 'audio secret' } });
+  await f.service.submit(user, conversation, body); await flush();
+  expect(f.logger.warning).toHaveBeenCalledWith(expect.any(String), {
+    category: 'chat5_miien_speech', metadata: { backendId: 'omni_anny_en', stage: 'synthesis', outcome: 'failed', httpStatus: 502, failure: 'provider_or_transport', upstreamUncertain: true },
+  });
+  expect(JSON.stringify(f.logger.warning.mock.calls)).not.toMatch(/SECRET_TOKEN|private speech|audio secret/);
 });

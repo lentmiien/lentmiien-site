@@ -62,6 +62,11 @@
       return await response.json();
     } finally { clearTimeout(timeout); if (version === generation) request = null; }
   }
+  const validJob = (job, expected) => job && /^[a-f\d-]{36}$/i.test(job.id)
+    && /^[a-f\d]{24}$/i.test(job.messageId) && job.voiceId === 'anny_en' && job.backendId === 'omni_anny_en'
+    && ['preparing', 'ready', 'failed', 'timeout'].includes(job.status)
+    && (!expected || (job.id === expected.id && job.messageId === expected.messageId && job.backendId === expected.backendId))
+    && (latestMessage === null || job.messageId === latestMessage);
   const notice = job => job.truncated
     ? 'Preview: first 600 characters only. The full reply remains in captions and history.'
     : `Preview: ${job.spokenCharacters} characters. Full reply retained.`;
@@ -97,15 +102,15 @@
     try {
       const result = await api(`/speech/${encodeURIComponent(job.id)}`, {}, version);
       if (version !== generation || disposed) return;
-      if (latestMessage !== null && result.messageId !== latestMessage) {
-        fail('Anny preview belongs to an earlier reply. Use Replay for the latest reply.', version); return;
+      if (!validJob(result, job)) {
+        fail('Anny preview does not match this job, backend or latest reply. Use Replay for the latest reply.', version); return;
       }
       currentJob = result;
       if (result.status === 'preparing') {
         if (!Number.isFinite(result.deadlineAt) || Date.now() > result.deadlineAt + 15000) {
           fail('Anny polling deadline reached. Upstream generation may continue. Full reply is saved.', version); return;
         }
-        activity('preparing'); status.textContent = `Preparing Anny English · this CPU voice can take minutes (20 minute limit). ${notice(result)}`;
+        activity('preparing'); status.textContent = `Preparing Anny English · OmniVoice preview (20 minute limit). ${notice(result)}`;
         pollTimer = setTimeout(() => poll(result, version, autoplay), 5000);
       } else if (result.status === 'ready') {
         activity('idle');
@@ -121,7 +126,21 @@
   }
   function speak(text, manual = false, messageId = '') {
     if (!manual && (mode.value === 'off' || !enabled.checked)) return;
-    if (mode.value === 'anny_en' && manual && audio && audioMessage === messageId) { try { audio.currentTime = 0; } catch (_) { /* Metadata may still be loading. */ } play(generation); return; }
+    if (mode.value === 'anny_en' && manual && audio && audioMessage === messageId && currentJob) {
+      const version = ++generation, expected = currentJob;
+      clearTimeout(watchdog); clearTimeout(pollTimer); request?.abort(); audio.pause();
+      activity('preparing'); status.textContent = 'Checking Anny playback permission…';
+      api(`/speech/${encodeURIComponent(expected.id)}`, {}, version).then(result => {
+        if (version !== generation || disposed || document.hidden) return;
+        if (!validJob(result, expected) || result.status !== 'ready') {
+          fail('Anny replay is no longer available for this reply. Text is saved.', version); return;
+        }
+        currentJob = result;
+        try { audio.currentTime = 0; } catch (_) { /* Metadata may still be loading. */ }
+        play(version);
+      }).catch(() => fail('Anny replay permission could not be verified. Reload to check your session.', version));
+      return;
+    }
     stop();
     if (mode.value === 'off') { status.textContent = 'Voice is off. Choose a voice in Settings to use Replay.'; return; }
     if (disposed || !text) return;
@@ -132,7 +151,8 @@
       api('/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messageId, voiceId: 'anny_en' }) }, version).then(job => {
         if (version !== generation || disposed) return;
-        storage(handleKey, { id: job.id, deadlineAt: job.deadlineAt });
+        if (!validJob(job) || job.messageId !== messageId) { fail('Anny returned a mismatched preview. Text is saved.', version); return; }
+        storage(handleKey, { id: job.id, messageId: job.messageId, voiceId: job.voiceId, backendId: job.backendId, deadlineAt: job.deadlineAt });
         return poll(job, version, true);
       }).catch(error => fail(`${error.message} No automatic retry was made.`, version));
       return;
@@ -149,10 +169,12 @@
     try { synth.speak(utterance); } catch (_) { fail('Browser voice was blocked. Press Replay.', version); }
   }
   function resume() {
-    if (mode.value !== 'anny_en' || disposed || document.hidden) return;
+    if (mode.value !== 'anny_en' || disposed || document.hidden || latestMessage === null) return;
     try {
       const job = JSON.parse(sessionStorage.getItem(handleKey) || 'null');
-      if (job && /^[a-f\d-]{36}$/i.test(job.id)) { stop({ preserve: true }); poll(job, generation, false); }
+      if (!job) return;
+      if (!validJob({ ...job, status: 'preparing' })) { stop(); status.textContent = 'Saved Anny preview does not match the latest reply or backend. Use Replay.'; return; }
+      stop({ preserve: true }); poll(job, generation, false);
     } catch (_) { /* A lost handle never regenerates audio. */ }
   }
   if (synth && window.SpeechSynthesisUtterance) { populate(); synth.addEventListener('voiceschanged', populate); }
@@ -161,7 +183,7 @@
   mode.addEventListener('change', () => { stop(); save(); });
   select.addEventListener('change', () => { preferred = select.value; save(); stop(); });
   window.addEventListener('pagehide', () => { disposed = true; stop({ preserve: true }); });
-  window.addEventListener('pageshow', event => { if (event.persisted) { disposed = false; resume(); } });
+  window.addEventListener('pageshow', event => { if (event.persisted) { disposed = false; } });
   window.MiienVoice = { speak, stop, resume,
     setLatestMessage(id) {
       latestMessage = id;
@@ -170,5 +192,5 @@
     get phase() { return phase; },
   };
   // History initialization never calls speak(); restored jobs only expose status.
-  resume();
+  // The room validates fresh history before calling resume().
 })();

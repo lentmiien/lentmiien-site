@@ -14,6 +14,8 @@
   let initialized = false;
   let polling = false;
   let pollTimer;
+  let pollEpoch = 0;
+  let resumeAfterHistory = true;
   const seenAssistants = new Set();
   let latestText = '';
   let latestId = '';
@@ -31,7 +33,7 @@
   let pollController = null;
   const moods = window.MiienMotion.moods;
   const motion = window.MiienMotion.create({ document, still: byId('character'), status: byId('art-status'), Image,
-    mediaQuery: window.matchMedia?.('(prefers-reduced-motion: reduce)') || { matches: false } });
+    connection: navigator.connection, mediaQuery: window.matchMedia?.('(prefers-reduced-motion: reduce)') || { matches: false } });
   const activity = window.MiienActivity.create(({ state, status }) => {
     activityState = state;
     room.querySelector('.stage').dataset.activity = state;
@@ -107,7 +109,7 @@
       if (byId('latest-reply').textContent !== latestText) byId('latest-reply').textContent = latestText;
       const nextMood = moods.includes(assistant.mood) ? assistant.mood : 'neutral';
       if (!initialized || nextMood !== autoMood) { autoMood = nextMood; mood(); }
-      if (initialized && !suppressAutoVoice && !seenAssistants.has(assistant.id) && !data.pending && !document.hidden
+      if (initialized && !resumeAfterHistory && !suppressAutoVoice && !seenAssistants.has(assistant.id) && !data.pending && !document.hidden
         && data.messages.at(-1)?.id === assistant.id) voice?.speak(latestText, false, latestId);
     } else {
       latestText = '';
@@ -117,7 +119,7 @@
       if (autoMood !== 'neutral') { autoMood = 'neutral'; mood(); }
     }
     // Mark all loaded history as seen; pending new replies remain eligible until final.
-    if (!initialized || !data.pending) data.messages.forEach(row => {
+    if (!initialized || resumeAfterHistory || !data.pending) data.messages.forEach(row => {
       if (row.role === 'assistant') seenAssistants.add(row.id);
     });
     if (initialized && pending && !data.pending && data.messages[data.messages.length - 1]?.role !== 'assistant') chatStatus('The response finished without text. Review Chat5 or send another message.');
@@ -128,13 +130,20 @@
     controls();
   }
   async function poll() {
-    if (disposed || polling || sending) return;
+    if (disposed || document.hidden || polling || sending) return;
     polling = true;
+    const epoch = pollEpoch;
     pollController = new AbortController();
     const timeout = setTimeout(() => pollController?.abort(), 15000);
-    try { const data = await api('/state', { signal: pollController.signal }); if (!disposed && !sending) render(data); }
-    catch (error) { if (!disposed && !sending) { stopAudio(); chatStatus(`Could not refresh history. ${error.message}`); } }
-    finally { clearTimeout(timeout); polling = false; if (!disposed) pollTimer = setTimeout(poll, pending ? 2500 : 12000); }
+    try {
+      const data = await api('/state', { signal: pollController.signal });
+      if (!disposed && !document.hidden && !sending && epoch === pollEpoch) {
+        render(data);
+        if (resumeAfterHistory) { resumeAfterHistory = false; voice?.resume(); }
+      }
+    }
+    catch (error) { if (!disposed && !document.hidden && !sending && epoch === pollEpoch) { stopAudio(); chatStatus(`Could not refresh history. ${error.message}`); } }
+    finally { clearTimeout(timeout); polling = false; if (!disposed && !document.hidden) pollTimer = setTimeout(poll, epoch !== pollEpoch ? 0 : pending ? 2500 : 12000); }
   }
   function stopAudio({ preserveVoice = false, keepVoice = false } = {}) {
     audioVersion += 1;
@@ -279,9 +288,14 @@
     mic.dataset.allowed = 'false';
     micStatus('Microphone input requires a supported browser over HTTPS. Text input is ready.');
   }
-  window.addEventListener('pagehide', () => { disposed = true; clearTimeout(pollTimer); pollController?.abort(); manifestController.abort(); motion.suspend(true); stopAudio({ preserveVoice: true }); });
-  window.addEventListener('pageshow', event => { if (event.persisted) { disposed = false; motion.suspend(false); poll(); } });
-  document.addEventListener('visibilitychange', () => { motion.suspend(document.hidden); if (document.hidden) stopAudio({ preserveVoice: true }); else voice?.resume(); });
+  window.addEventListener('pagehide', () => { disposed = true; pollEpoch += 1; resumeAfterHistory = true; clearTimeout(pollTimer); pollController?.abort(); manifestController.abort(); motion.suspend(true); stopAudio({ preserveVoice: true }); });
+  window.addEventListener('pageshow', event => { if (event.persisted) { disposed = false; resumeAfterHistory = true; viewport(); poll(); } });
+  document.addEventListener('visibilitychange', () => {
+    pollEpoch += 1; resumeAfterHistory = true;
+    clearTimeout(pollTimer); pollController?.abort(); viewport();
+    if (document.hidden) stopAudio({ preserveVoice: true });
+    else poll();
+  });
   const captions = byId('captions-toggle');
   const motionToggle = byId('motion-enabled');
   function saveDisplay() {
@@ -312,7 +326,9 @@
   function viewport() {
     // visualViewport follows the virtual keyboard; CSS dvh handles browsers without it.
     const view = window.visualViewport;
-    room.classList.toggle('keyboard-open', document.activeElement === message && (view?.height || window.innerHeight) < 500);
+    const keyboardOpen = document.activeElement === message && (view?.height || window.innerHeight) < 500;
+    room.classList.toggle('keyboard-open', keyboardOpen);
+    motion.suspend(disposed || document.hidden || keyboardOpen);
     if (view && view.scale === 1) {
       room.style.setProperty('--call-height', `${view.height}px`);
       room.style.setProperty('--call-top', `${view.offsetTop}px`);

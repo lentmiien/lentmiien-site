@@ -148,3 +148,11 @@ test('speech cannot mutate through GET and submission rate limit bounds jobs', a
   expect((await post(`/${id}/speech`)).status).toBe(429);
   expect(speech.submit).toHaveBeenCalledTimes(4);
 });
+
+test('fresh replay status preserves safe backend attribution and is never cacheable', async () => {
+  speech.get.mockResolvedValue({ id: 'job', messageId: id, voiceId: 'anny_en', backendId: 'omni_anny_en', status: 'ready' });
+  const r = await request(`/${id}/speech/job`);
+  expect(r.headers.get('cache-control')).toContain('no-store');
+  expect(await r.json()).toMatchObject({ voiceId: 'anny_en', backendId: 'omni_anny_en' });
+  expect(speech.get).toHaveBeenCalledWith(principal, id, 'job');
+});

@@ -36,9 +36,9 @@
     return manifest;
   }
   // Clips are approved build assets, never generated or selected from user text.
-  function create({ document, still, status, Image, mediaQuery }) {
+  function create({ document, still, status, Image, mediaQuery, connection }) {
     let manifest = null, generation = 0, video = null, timer, enabled = true;
-    let mood = 'neutral', state = 'idle', hidden = false, currentKey = '';
+    let mood = 'neutral', state = 'idle', hidden = Boolean(document.hidden), currentKey = '';
     const preload = new Map();
     const halt = () => {
       generation += 1;
@@ -49,7 +49,7 @@
     async function show(nextMood = mood, nextState = state, force = false) {
       mood = moods.includes(nextMood) ? nextMood : 'neutral';
       state = states.includes(nextState) ? nextState : 'idle';
-      const key = `${mood}:${state}:${enabled}:${mediaQuery.matches}:${hidden}`;
+      const key = `${mood}:${state}:${enabled}:${mediaQuery.matches}:${hidden}:${Boolean(connection?.saveData)}`;
       if (!force && key === currentKey) return;
       halt(); currentKey = key;
       const version = generation;
@@ -65,9 +65,19 @@
         if (version === generation) status.textContent = 'Expression image unavailable; keeping the current portrait.';
         return;
       }
-      if (!enabled || mediaQuery.matches || hidden) return;
+      if (!enabled || mediaQuery.matches || hidden || connection?.saveData) return;
       const clip = manifest?.clips.find(item => item.mood === mood && item.state === state);
       if (!clip) return;
+      // The incoming first frame sits below the decoder, avoiding a portrait jump.
+      if (!preload.has(clip.poster)) { const image = new Image(); image.src = clip.poster; preload.set(clip.poster, image); }
+      try {
+        await preload.get(clip.poster).decode();
+        if (version !== generation) return;
+        still.src = clip.poster;
+      } catch (_) {
+        if (version === generation) status.textContent = 'Motion poster unavailable; showing the expression portrait.';
+        return;
+      }
       const candidate = document.createElement('video');
       video = candidate;
       candidate.className = 'character-motion'; candidate.hidden = true;
@@ -76,7 +86,7 @@
       candidate.loop = manifest.policy.loop; candidate.preload = 'auto'; candidate.poster = clip.poster;
       const fail = () => {
         if (version !== generation) return;
-        halt(); status.textContent = 'Motion unavailable; showing the expression portrait.';
+        halt(); still.src = src; status.textContent = 'Motion unavailable; showing the expression portrait.';
       };
       candidate.onerror = fail;
       candidate.onplaying = () => { if (version === generation) { clearTimeout(timer); candidate.hidden = false; } };
@@ -90,12 +100,13 @@
     }
     const refresh = () => show(mood, state, true);
     mediaQuery.addEventListener?.('change', refresh);
+    connection?.addEventListener?.('change', refresh);
     return {
       show,
       setManifest(value) { manifest = validate(value); return refresh(); },
       enable(value) { enabled = Boolean(value); return refresh(); },
-      suspend(value) { hidden = Boolean(value); return refresh(); },
-      dispose() { halt(); mediaQuery.removeEventListener?.('change', refresh); },
+      suspend(value) { if (hidden === Boolean(value)) return; hidden = Boolean(value); return refresh(); },
+      dispose() { halt(); mediaQuery.removeEventListener?.('change', refresh); connection?.removeEventListener?.('change', refresh); },
     };
   }
   return { moods, states, local, validate, create };
