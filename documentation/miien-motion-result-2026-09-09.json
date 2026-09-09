@@ -130,8 +130,23 @@
     "stagedSnapshotAt": "2026-09-09T04:06:59.684436Z",
     "activeAtStagedSnapshot": true,
     "normalReleaseRequestedSeparately": true,
-    "releaseConfirmedByThisCheckpoint": false,
-    "scope": "Historical evidence, not a live service or reservation inspection."
+    "releaseConfirmedByThisCheckpoint": true,
+    "scope": "Historical staged active snapshot followed by human-confirmed release/inactive report. No agent execution of release, live reservation inspection or current service-health assertion.",
+    "releaseConfirmationBasis": "HUMAN-CONFIRMED: Lennart reports running the normal reservation release script; not independently observed by the agent.",
+    "releaseConfirmationReceivedAt": "2026-09-09T04:55:43.049Z",
+    "releaseConfirmationRequest": "/admin/ask-lennart#request-47c379c5-1f98-49b5-829e-9acd7b0c7bd9",
+    "releaseStatus": "released-inactive-human-confirmed",
+    "releaseIndependentlyObservedByAgent": false,
+    "humanReportedReleaseResult": {
+      "active": false,
+      "service": null,
+      "phase": null,
+      "container_state": null,
+      "remaining_sec": null,
+      "idle_timeout_sec": null,
+      "dispatch_paused": null,
+      "blocked_queue_depth": 0
+    }
   },
   "integration": {
     "siteAssetVersionObserved": "miien-2.1",
@@ -140,7 +155,27 @@
     "candidateVersionStatus": "miien-2.2 proposed only; not activated",
     "siteAssetsChangedInGatewaySession": false,
     "gatewayWorktreeReportedClean": true,
-    "instruction": "Keep rejected media private. Do not copy, register, activate or regenerate blindly. Keep corresponding mood portraits; any future clip must match exact activity and mood and preserve reduced-motion/failure fallback. Direction choices remain pending."
+    "instruction": "Keep rejected media private. Do not copy, register, activate or regenerate blindly. Keep corresponding mood portraits; any future clip must match exact activity and mood and preserve reduced-motion/failure fallback. Layered/hybrid direction is now approved as a plan; no animation implementation or asset acceptance/shipping occurred in this documentation follow-up."
   },
-  "reproducibilityLimit": "Public-safe fingerprints and settings, not a runnable graph or guarantee of deterministic output. Raw prompts/graphs and rejected media remain private. Later technical success does not establish the earlier GPU fault root cause."
+  "reproducibilityLimit": "Public-safe fingerprints and settings, not a runnable graph or guarantee of deterministic output. Raw prompts/graphs and rejected media remain private. Later technical success does not establish the earlier GPU fault root cause.",
+  "directionApproval": {
+    "status": "approved-plan-not-implemented",
+    "request": "/admin/ask-lennart#request-47c379c5-1f98-49b5-829e-9acd7b0c7bd9",
+    "respondedAt": "2026-09-09T04:55:43.049Z",
+    "evidenceBasis": "Lennart response supplied by the human for this documentation-only follow-up; not independently fetched by the agent.",
+    "previousDocumentationSession": "/codex/sessions/tool-session-95da05317454798b10ba01636e178bbb6971cd7c087d63ab36872171650fec34",
+    "previousDocumentationCommit": "0e8a2ab960231650f31d850f9f31499e80146efc",
+    "direction": "Layered/hybrid art, with a lightweight 2D rig potentially preferable; no proprietary stack or mandatory Live2D/paid tooling selected.",
+    "nextVisualCheckpoint": "PLANNED ONLY: ONE neutral layered Miien preserving existing framing/identity, separate plain background/character, coherent eye/mouth variants and modest breathing/blinking/approximate speaking. Review visual artifacts, variant alignment and layer seams with Lennart before expanding expressions or investing in a richer lightweight 2D rig.",
+    "reviewAuthority": "Lennart reviews and approves suitable checkpoints and the final result; direction approval does not accept unmade art.",
+    "integrationPlan": "Later prefer a small isolated proof in the existing motion/audio controller, preserving separate activity/mood and Chat5 architecture, reduced-motion and portrait/failure fallbacks. Flattened portraits are not rigged; whole-image pan/zoom is not articulated animation.",
+    "captionAudioPolicy": "Show reply/captions immediately while synthesis is pending; play audio delayed when ready with configured opt-in/user interaction. Voice remains default Off; history/reload must not autoplay. Speaking activity and mouth timing follow actual audio playback, never network response or caption arrival; close/stop the mouth on silence, pause, buffering, Stop, interruption or end.",
+    "accurateLipSync": "Optional stretch goal or future improvement; approximate mouth movement is sufficient and accurate lip-sync is not a phase-2 or phase-3 acceptance blocker.",
+    "generatedClips": "Optional, separately reviewed; this rejected candidate remains REJECTED / DO NOT SHIP.",
+    "animationAssetsAccepted": false,
+    "animationAssetsShipped": false,
+    "featureImplementationPerformed": false,
+    "artOrVideoGenerationPerformed": false,
+    "deploymentOrHumanActionRequiredForDocumentationCheckpoint": false
+  }
 }
