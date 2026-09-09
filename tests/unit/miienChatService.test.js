@@ -161,3 +161,23 @@ test('speech loads only a saved visible assistant child of the scoped conversati
   f.conversations.findOne.mockResolvedValue(null);
   await expect(f.service.speechText(user, id, messageId)).rejects.toHaveProperty('status', 404);
 });
+
+test('speech preparation leaves saved Markdown and snapshot captions/history unchanged', async () => {
+  const { prepareSpeechText } = require('../../utils/miienSpeechText');
+  const f = fixture(); const messageId = 'c'.repeat(24);
+  const text = '# Welcome\n\n**Hello** [friend](https://example.invalid).';
+  const row = Object.freeze({ _id: messageId, user_id: 'bot', contentType: 'text', content: Object.freeze({ text }) });
+  f.conversation.messages = [messageId];
+  f.messages.findOne = jest.fn().mockReturnValue({ select: () => ({ lean: async () => row }) });
+  f.messages.find = jest.fn().mockReturnValue({ select: () => ({ lean: async () => [row] }) });
+  expect(prepareSpeechText(await f.service.speechText(user, id, messageId)).preview).toBe('Welcome\nHello friend.');
+  expect((await f.service.snapshot(user, id)).messages[0].text).toBe(text);
+  expect(row.content.text).toBe(text);
+  expect(f.conversations.updateOne).not.toHaveBeenCalled();
+  expect(f.conversationService.postToConversationNew).not.toHaveBeenCalled();
+});
+test('raw saved reply bound applies before removable Markdown can shrink the text', async () => {
+  const f = fixture(); const messageId = 'c'.repeat(24); f.conversation.messages = [messageId];
+  f.messages.findOne = jest.fn().mockReturnValue({ select: () => ({ lean: async () => ({ content: { text: '```\n' + 'x'.repeat(64000) + '\n```\nHello' } }) }) });
+  await expect(f.service.speechText(user, id, messageId)).rejects.toHaveProperty('status', 404);
+});

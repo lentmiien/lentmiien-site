@@ -1,4 +1,5 @@
 const { randomUUID } = require('crypto');
+const { prepareSpeechText } = require('../utils/miienSpeechText');
 const axios = require('axios');
 const { MiienError, fields } = require('./miienChatService');
 const { validSpeechWav, MAX_SPEECH_BYTES } = require('../utils/miienAudio');
@@ -35,30 +36,51 @@ class MiienSpeechService {
   }
   prune() {
     for (const [id, job] of this.jobs) {
-      if (job.expiresAt && job.expiresAt <= Date.now()) { job.audio = null; this.jobs.delete(id); }
+      if (id !== this.active && job.expiresAt && job.expiresAt <= Date.now()) { job.audio = null; this.jobs.delete(id); }
     }
   }
   view(job) {
     return { id: job.id, messageId: job.messageId, voiceId: 'anny_en', backendId: job.backendId, status: job.status,
-      truncated: job.truncated, spokenCharacters: job.spokenCharacters, deadlineAt: job.deadlineAt,
+      preparationVersion: job.preparationVersion, truncated: job.truncated, spokenCharacters: job.spokenCharacters, deadlineAt: job.deadlineAt,
       expiresAt: job.expiresAt || null, error: job.error || null };
+  }
+  prepare(text) {
+    let prepared;
+    try { prepared = prepareSpeechText(text); }
+    catch (_) {
+      this.logger.warning('Miien speech text preparation failed; inspect parser or input bounds', {
+        category: 'chat5_miien_speech', metadata: { stage: 'text_preparation' },
+      });
+      throw new MiienError(422, 'This reply could not be prepared for speech. Text is saved.');
+    }
+    if (!/[\p{L}\p{N}\p{So}]/u.test(prepared.preview)) throw new MiienError(422, 'This reply has no speakable text. Text is saved.');
+    return prepared;
+  }
+  recordPreparation(job, prepared) {
+    const { preview, ...metadata } = prepared;
+    Object.assign(job, metadata); // No raw text or preview retained in job metadata.
   }
   async submit(user, conversationId, body) {
     fields(body, ['messageId', 'voiceId']);
     if (typeof body.messageId !== 'string' || !ID.test(body.messageId) || body.voiceId !== 'anny_en') throw new MiienError(400, 'Choose a saved assistant reply and Anny English.');
-    const text = await this.chat.speechText(user, conversationId, body.messageId);
+    const prepared = this.prepare(await this.chat.speechText(user, conversationId, body.messageId));
     // This optional integration must not prevent route startup or text chat.
     // Validate before admission, even when a previous job could be reused.
     this.requireOrigin();
     this.prune();
     const owner = String(user._id);
     const duplicate = [...this.jobs.values()].find(job => job.owner === owner && job.conversationId === conversationId && job.messageId === body.messageId);
-    if (duplicate) return this.view(duplicate);
+    // Active/failed/timeout identity is deliberately independent of content. An
+    // edit or preparation-version change must never bypass outstanding work.
+    if (duplicate && (duplicate.status !== 'ready' || this.active === duplicate.id
+      || (duplicate.audio && duplicate.fingerprint === prepared.fingerprint
+        && duplicate.preparationVersion === prepared.preparationVersion))) return this.view(duplicate);
+    if (duplicate) { duplicate.audio = null; this.jobs.delete(duplicate.id); }
     if (this.active || this.jobs.size >= MAX_JOBS) throw new MiienError(429, 'Anny is busy or audio storage is full. Try later; text chat is ready.');
-    const characters = Array.from(text);
     const job = { id: randomUUID(), owner, conversationId, messageId: body.messageId,
-      backendId: BACKEND, status: 'preparing', spokenCharacters: Math.min(characters.length, 600), truncated: characters.length > 600,
+      backendId: BACKEND, status: 'preparing',
       deadlineAt: Date.now() + DEADLINE_MS, audio: null };
+    this.recordPreparation(job, prepared);
     this.jobs.set(job.id, job);
     this.active = job.id;
     // No provider request is awaited by the browser submission. Authorization and
@@ -108,15 +130,13 @@ class MiienSpeechService {
       stage = 'authorization';
       const principal = await this.authorize(job.owner);
       if (!principal) throw new MiienError(403, 'Speech permission is no longer available.');
-      const text = await this.chat.speechText(principal, job.conversationId, job.messageId);
+      const prepared = this.prepare(await this.chat.speechText(principal, job.conversationId, job.messageId));
       if (controller.signal.aborted) throw new Error('Deadline');
-      const preview = Array.from(text).slice(0, 600).join('');
-      job.truncated = Array.from(text).length > 600;
-      job.spokenCharacters = Array.from(preview).length;
+      this.recordPreparation(job, prepared);
       stage = 'synthesis';
       dispatched = true;
       const response = await this.http.post(`${this.requireOrigin()}/tts`, {
-        text: preview, voice_id: job.backendId, timeout_sec: 600,
+        text: prepared.preview, voice_id: job.backendId, timeout_sec: 600,
       }, { responseType: 'arraybuffer', signal: controller.signal,
         timeout: Math.max(1, job.deadlineAt - Date.now()), maxRedirects: 0,
         maxContentLength: MAX_SPEECH_BYTES, maxBodyLength: 8192 });
@@ -127,7 +147,8 @@ class MiienSpeechService {
       stage = 'retention_authorization';
       const current = await this.authorize(job.owner);
       if (!current) throw new MiienError(403, 'Speech permission is no longer available.');
-      await this.chat.speechText(current, job.conversationId, job.messageId);
+      const retained = this.prepare(await this.chat.speechText(current, job.conversationId, job.messageId));
+      if (retained.fingerprint !== job.fingerprint) throw new MiienError(409, 'The saved reply changed. Speech audio is no longer available.');
       if (controller.signal.aborted) return;
       job.audio = response.data;
       finish('ready');
@@ -159,7 +180,13 @@ class MiienSpeechService {
     const job = this.jobs.get(id);
     if (!job) throw new MiienError(410, 'Speech audio expired or was lost after restart. Text is saved.');
     if (job.owner !== String(user._id) || job.conversationId !== conversationId) throw new MiienError(404, 'Speech job not found.');
-    try { await this.chat.speechText(user, conversationId, job.messageId); }
+    try {
+      const prepared = this.prepare(await this.chat.speechText(user, conversationId, job.messageId));
+      if (job.status === 'ready' && (prepared.fingerprint !== job.fingerprint
+        || prepared.preparationVersion !== job.preparationVersion)) {
+        throw new MiienError(409, 'The saved reply changed. Request speech again.');
+      }
+    }
     catch (error) { job.audio = null; throw error; }
     if (!audio) return this.view(job);
     if (job.status !== 'ready' || !job.audio) throw new MiienError(409, 'Speech audio is not available.');

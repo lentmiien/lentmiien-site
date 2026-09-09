@@ -1,8 +1,98 @@
-# Miien character chat — phase 2 progress checkpoint
+# Miien character chat — phase 2 cleanup checkpoint
 
-The **neutral layered visual checkpoint is implemented for Lennart's review**: separate transparent character and fixed Graphite background, independent breathing/blinking, and three mouth states driven only during voice playback. This is a provisional sprite prototype, not human-accepted final art or a deformable character rig. Other moods keep their existing portraits. Phase 2 as a whole remains open pending visual/device review; there are still **zero accepted or registered motion clips**. The rejected H3 video remains **REJECTED / DO NOT SHIP**.
+**The Markdown speech and mouth-patch cleanup is implemented for Lennart's deployment/device review.** Breathing, blinking and mouth cadence are preserved. Mouth movement remains approximate playback timing, not phoneme/amplitude lip-sync. Finish the listening and visual checklist below before expanding expressions. Phase 2 remains open; there are zero accepted/registered motion clips and the rejected H3 video remains **REJECTED / DO NOT SHIP**.
 
-## Neutral layered checkpoint implemented (2026-09-09)
+## Speech and mouth cleanup (2026-09-09)
+
+### Scope and evidence
+
+Starting checkout and remote feature ref both matched `9c708035bf7cb974e47cedd9c210c9ed6398f25d` on `feat/chat5-miien-phase2-slice1`; the worktree was clean. Read repository/security guidance and inspected the actual speech service, parser utilities, renderer, source masters and tests. The scope follows [human review 4862e693-5a6a-4090-ae7b-422e5f2ba46b](/admin/ask-lennart#request-4862e693-5a6a-4090-ae7b-422e5f2ba46b): preserve the liked idle/playback motion, clean up Markdown speech and dark mouth rectangles first. The supplied [read-only investigation](/codex/sessions/tool-session-3ca4e086cc3d8b7825aa0b36b5586bb08a321a9d0e5df282d0525f04fe3e8b51) did not establish the actual running production revision or the model-level cause of unintelligibility. Neither is claimed here.
+
+This change adds no route, capability, dependency, environment setting, database migration, provider call, Gateway operation or animation expansion. Normal Chat5 Markdown rendering, saved replies, immediate full captions/history, voice-off default, stop/replay/fallback behavior, breathing and blink timing are unchanged. No live TTS/ASR/model call, configured app startup, deployment or production restart was performed.
+
+### Miien-only speech preparation policy
+
+[`utils/miienSpeechText.js`](../utils/miienSpeechText.js) uses an isolated instance of the already installed **Marked** and **sanitize-html**. The shared Chat5 Markdown renderer was inspected, but is an HTML/math renderer with different policies; it is neither changed nor used to mutate saved messages.
+
+The service first reloads through the existing authorized `chat.speechText`: principal/capability at the route, owner/member conversation scope, message membership, visible assistant/text selection, and the **64,000 UTF-16-unit raw bound** all precede preparation. Preparation handles the **entire bounded reply** before taking the first **600 Unicode code points** for the sole `/tts` request to `omni_anny_en`. It repeats after final principal authorization and saved-content reload, immediately before dispatch; preview counts and fingerprint are replaced together. There is no chunking or multi-request synthesis.
+
+| Construct | Spoken policy |
+| --- | --- |
+| Prose, emphasis, strikeout, nested emphasis | Keep text; strip delimiters, including literal/escaped/unmatched asterisks so `**` cannot reach Anny. Strikeout text is still spoken. |
+| Headings, paragraphs, lists, quotes, tables | Keep text in source order with newline boundaries; discard markers, checkbox controls and table formatting. Quotes are prose, not instructions to execute. |
+| Markdown/reference links, HTML anchors | Keep meaningful labels; discard destinations and bare/autolink URL or email tokens. Nothing is fetched. |
+| Images | Omit image markup, alt text and destinations; image-only replies cannot admit speech. |
+| Fenced/indented code and HTML code/pre | Omit the whole block, including an unclosed fence. Prose after a closed large code block remains eligible for the preview. |
+| Inline code | Keep short simple names/phrases (at most 80 UTF-16 units); omit long spans or ones containing code operators/braces/angle brackets/newlines/URL prefixes. This is not a code or equation reader. |
+| HTML and entities | Keep ordinary visible text and block boundaries; omit script/style/textarea/option/xmp/pre/code/svg/math/iframe/object content. Decode named/numeric entities once through the sanitizer, then undo its text escaping without reparsing HTML. Tags/attributes never execute and image/link URLs never load. |
+| Malformed markup and controls | Best-effort parser text with residual formatting characters removed; normalize whitespace and remove control/directional formatting characters. Unmatched punctuation may remain. Tokens containing `://`, `www.` or `@` are omitted, including malformed URL-like tokens. |
+| Excessive complexity | Before parsing, reject over 2,048 Markdown syntax characters, bracket/parenthesis nesting over 32, blockquote prefixes over 32 or leading indentation over 128 spaces/32 tabs. Code and URLs count toward this conservative syntax budget too. Reject rather than truncate raw Markdown or send it as a fallback. |
+
+Dense malformed emphasis was observed to take disproportionate time in the installed parser; the syntax budget prevents that input reaching it. Bounds/parser errors produce a generic 422 and an actionable metadata-only logger warning. Empty/non-speakable previews also produce 422 **before claiming the durable slot, allocating a job or requesting the voice catalog**. Code-point slicing does not split a valid surrogate pair. Word/grapheme/sentence boundaries and pronunciation are not guaranteed at the 600-point cutoff.
+
+### Job identity, retention and security review
+
+Each private in-memory job stores `preparationVersion: miien-spoken-v1` and a SHA-256 fingerprint of that version, the entire authorized source and prepared text. The fingerprint is internal; APIs expose only the version and existing counts/status, never the fingerprint, preview or raw reply as diagnostics. No text or fingerprint is written to the durable admission slot or logs. The preparation version must be bumped when speech policy changes.
+
+A ready result is reusable only for the same owner/conversation/message, version and content with retained audio. Changed content (even beyond the preview or formatting-only) invalidates ready reuse and both status/audio delivery. Every access still authorizes and reloads. A content change while synthesis runs discards the returned WAV after completion reauthorization. **Preparing/failed/timed-out jobs continue deduplicating by the original identity regardless of content/version**, preserving retry suppression. Active jobs are not pruned merely because timeout retention elapsed. The eight-job capacity, one active synthesis and durable single-slot exclusion still apply to new submissions and edited replies. Ambiguous upstream failure retains quarantine; neither edits nor reloads nor restart can clear its durable reservation. The existing 20-minute deadline, 15-minute completed-result retention, no auto-retry and browser Stop semantics remain.
+
+Security classification remains **logged in**, private chat/audio, with existing semantic conversation/audio capabilities, principal-derived identity, owner/member scope, no admin override, shared CSRF, private/no-store responses and bounded in-memory audio. Only the build artwork is public. No new outbound hosts or external services are introduced. Negative tests cover authorization before admission, final reload/revocation, foreign owners/conversations, source edits, unsafe/empty/oversized input, concurrent duplicates, capacity, timeout expiry and ambiguous-failure quarantine. Logger payloads remain bounded and content-free.
+
+### Corrected mouth assets and art review
+
+Only the two mouth replacement files have new runtime artwork. Manifest **`miien-2.4`** points to `/i/miien/neutral-v2/mouth-small.webp` and `/i/miien/neutral-v2/mouth-open.webp`, each still **86×51 at (350,409)**. The approved character and blink retain their original `neutral-v1` paths and exact hashes. All five portraits and every animation/renderer JS/CSS file retain their checkpoint bytes. Old versioned assets remain available for rollback.
+
+The original generated source crops and old composites visibly differ in surrounding skin illumination. [`miien-mouth-correction.js`](../scripts/miien-mouth-correction.js) samples clean skin above/below the lips to correct each existing variant against the base, applies a localized smooth elliptical mask encompassing both the open shape and the wider resting lip endpoints, and solves for minimum source-over opacity. It accounts for the base's partial alpha using its composited appearance on Graphite `#17191c`. This removes the opaque rectangular skin replacement and covers the resting mouth cleanly. No new image generation or likeness redesign occurred. Full source history and correction provenance are in [source provenance](assets/miien-neutral-v1/provenance.json) and [runtime provenance](../public/i/miien/neutral-v2/provenance.json).
+
+Source-over cannot exactly preserve base alpha inside changed mouth pixels. The correction minimizes added opacity: outside the mouth mask every pixel stays unchanged on all backgrounds; the outer transition changes less than **1 RGB level** on tested black, Graphite, lighter Graphite, light and white backgrounds. The theoretical extra-opacity difference inside the mouth remains below **5 RGB levels** even on black/white stress backgrounds. These are bounded compositing differences, not promises of perceptual equivalence on every display.
+
+Offline artifacts, visually inspected at portrait scale and magnified scale:
+
+- [Resting / old-small / corrected-small / old-open / corrected-open comparisons](assets/miien-mouth-cleanup-v2/mouth-comparison.png), on the actual room gradient endpoints `#0e0f13` (`--bg`) / `#20242a` (`--surface-3`) and light `#e8dfd2`.
+- [Full portraits: resting, small, open on those three backgrounds](assets/miien-mouth-cleanup-v2/portrait-backgrounds.png).
+- [Eight-frame mouth cycle](assets/miien-mouth-cleanup-v2/mouth-cycle.webp), for repeatable visual review; an illustrative offline cycle, not a measurement of live playback cadence.
+
+The inspected composites no longer show a rectangular seam; the generated lip shapes remain recognizable and the resting corners are covered. Subtle local shading/shape changes remain when switching mouths. These artifacts are image composites, **not new browser/device screenshots, audible Anny verification or human visual acceptance**. The approved browser idle motion was not restyled or retimed.
+
+Reproduce without app/database/network/provider startup (pinned Node and installed Sharp/lockfile):
+
+```bash
+volta run --node 24.20.0 node scripts/build-miien-neutral-assets.js
+volta run --node 24.20.0 node scripts/review-miien-mouth-assets.js
+```
+
+The packager verifies regenerated base/blink bytes against the immutable approved files and fails if they drift. It writes only new mouth assets, version metadata and public-safe provenance. Tests verify dimensions, hashes, allowlisted paths, repeatability, outside-mask equivalence, soft seam/alpha behavior, resting-lip removal and review-animation frames/timing. Pixel tests do not substitute for Lennart's acceptance.
+
+### Validation and continuation
+
+- Focused Miien run: **12 suites / 303 tests passed** on Node 24.20.0, including mocked dispatch, real Express authorization/CSRF ordering, client stop/replay, motion and asset regressions.
+- Full Jest run: **273 suites / 2,340 tests passed**, including enforced coverage thresholds (67.35% statements / 43.72% branches in the configured critical-file set). Runtime was 57.68 seconds; Jest emitted its existing experimental VM Modules warning.
+- Final focused rerun after review refinements: **5 suites / 133 tests passed**. Syntax checks for 10 JavaScript files, byte-for-byte rebuild of seven packaged/review artifacts and `git diff --check` passed. Diff/security review found no unrelated application, renderer, authorization, dependency or Gateway changes.
+- No dependency/OpenAPI change; no `npm start`, `setup.js`, production access or live synthesis.
+
+Continue only after Lennart deploys and accepts both cleanup issues on the actual device. Then resume the approved small phase-2 expression/rig checkpoints. Keep mouth timing approximate unless separately scoped; accurate phonetic/amplitude lip-sync remains optional. Do not reopen rejected H3 clips or expand expressions in this cleanup.
+
+### Lennart's deployment and human verification checklist
+
+1. Deploy the pushed feature-branch revision through the normal application release process. Release the speech service/helper, `motion-v1.json` and both `neutral-v2` mouths/provenance together. Keep the original `neutral-v1` base/blink available. No new dependency, configuration, migration or Gateway change is required. Retain private/no-store on `/chat5/miien`; refresh the page/manifest so it reports `miien-2.4` and requests the new mouth URLs. Normal application restart during your release loses old in-memory audio; do not clear any outstanding durable speech slot without verifying upstream settlement.
+2. In an owned review conversation, obtain a saved assistant reply containing the synthetic Markdown below (ask the assistant to reproduce it without an enclosing code fence). Verify full Markdown captions/history remain unchanged. Select Anny English / OmniVoice preview and explicitly Replay. Listen for intelligible prose, link labels and sensible list boundaries, **without audible `**` glitches**. Expected dispatched text is `Welcome\nHello friend.\nRead the guide.\nEnjoy tea.` This development session did not synthesize or listen to it.
+3. Pin **neutral** in Expression preview, enable character motion and inspect resting/small/open states on the real target desktop/mobile device. There should be no rectangular skin block, dark patch edge or leftover resting lip endpoints. Observe several unchanged breathing/blink cycles. If reduced-motion/data saver/motion-off applies, expect the existing still fallback.
+4. Check Stop while preparing and during playback, completed Replay, autoplay denial/replay, pause/buffering/end, a new turn and tab hide/return. Mouth must close when playback stops and remain closed during synthesis. Reload/history must not autoplay old speech. Confirm changed/unavailable/expired audio fails safely and text stays usable; no automatic GPU retry should occur.
+5. Check immediate full captions, captions off/on, history, settings, other moods and failed-mouth-image fallback. Verify normal Chat5 text functionality and existing microphone/browser-voice workflows. Report listening or seam issues with device/browser and state; approve these fixes before expression expansion.
+
+Synthetic saved assistant reply for step 2:
+
+```markdown
+# Welcome
+
+**Hello** friend.
+- Read [the guide](https://example.invalid).
+- Enjoy `tea`.
+```
+
+If rollback is needed, release the prior reviewed application revision and its `miien-2.3` manifest together; the original mouth assets remain intact. Do not use rollback as a reason to delete speech quarantine records or alter Gateway services.
+
+## Historical neutral layered checkpoint implemented (2026-09-09)
 
 ### Verified starting point and scope
 

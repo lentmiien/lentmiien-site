@@ -54,5 +54,23 @@
       "file": "mouth-open.webp",
       "sha256": "7fa4a45af56173b99885101f24669813fd1218749760faf9f39d1771f9c78f07"
     }
-  ]
+  ],
+  "mouthCorrection": {
+    "date": "2026-09-09",
+    "version": "miien-2.4",
+    "status": "Corrected mouth assets pending human device review",
+    "method": "No new generation. Existing mouth source masters are resized, corrected against base skin sampled above/below lips, restricted by a local soft elliptical mask including the wider resting mouth, and converted into minimum-alpha source-over patches compensated for the base partial alpha on Graphite #17191c.",
+    "scripts": [
+      "scripts/build-miien-neutral-assets.js",
+      "scripts/miien-mouth-correction.js",
+      "scripts/review-miien-mouth-assets.js"
+    ],
+    "runtimeProvenance": "public/i/miien/neutral-v2/provenance.json",
+    "reviewDirectory": "documentation/assets/miien-mouth-cleanup-v2",
+    "preserved": "All original source masters; runtime neutral-v1 character and blink bytes; blink/breath timing; mouth cadence; all other portraits.",
+    "limitations": [
+      "Source-over cannot keep the base alpha exactly inside changed mouth pixels. Minimum opacity and reference-background compensation minimize the discrepancy; tests bound background-dependent RGB error below 5 on black/white stress backgrounds and outer seam changes below 1.",
+      "Composites were visually inspected. Pixel assertions and an offline cycle are not human acceptance, actual device rendering, or phonetic lip-sync."
+    ]
+  }
 }

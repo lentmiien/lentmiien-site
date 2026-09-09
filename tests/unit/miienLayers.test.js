@@ -24,7 +24,8 @@ test('registered neutral assets are decodable, bounded, hashed and actually mask
     expect(crypto.createHash('sha256').update(data).digest('hex')).toBe(item.sha256);
     const metadata = await sharp(data).metadata(), stats = await sharp(data).stats();
     expect(metadata).toMatchObject({ width: item.width, height: item.height, hasAlpha: true });
-    expect(stats.channels[3].min).toBe(0); expect(stats.channels[3].max).toBeGreaterThanOrEqual(254);
+    expect(stats.channels[3].min).toBe(0);
+    expect(stats.channels[3].max).toBeGreaterThanOrEqual(item.src.includes('neutral-v2/mouth-') ? 200 : 254);
     expect(metadata.exif).toBeUndefined();
   }
   expect(bytes).toBeLessThan(1024 * 1024);

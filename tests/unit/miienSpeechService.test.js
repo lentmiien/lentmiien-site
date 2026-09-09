@@ -166,3 +166,94 @@ test('failure attribution is bounded and never copies arbitrary provider fields'
   });
   expect(JSON.stringify(f.logger.warning.mock.calls)).not.toMatch(/SECRET_TOKEN|private speech|audio secret/);
 });
+
+test('dispatches prepared saved Markdown exactly and keeps payloads/fingerprints out of diagnostics', async () => {
+  const f = fixture(); const saved = '# Welcome\n\n**Hello** friend.\n- Read [the guide](https://example.invalid).\n- Enjoy `tea`.';
+  f.chat.speechText.mockResolvedValue(saved);
+  const job = await f.service.submit(user, conversation, body); await flush();
+  expect(f.http.post.mock.calls[0][1]).toEqual({ text: 'Welcome\nHello friend.\nRead the guide.\nEnjoy tea.', voice_id: 'omni_anny_en', timeout_sec: 600 });
+  expect(job.preparationVersion).toBe('miien-spoken-v1');
+  expect(job).not.toHaveProperty('fingerprint');
+  expect(job).not.toHaveProperty('preview');
+  expect(JSON.stringify([...f.logger.warning.mock.calls, ...f.logger.error.mock.calls])).not.toContain(saved);
+  await expect(f.chat.speechText.mock.results[0].value).resolves.toBe(saved);
+});
+test.each(['```\ncode only\n```', '![only image](https://example.invalid)', '**', '<script>private secret</script>', '*a '.repeat(3000)])('rejects unspeakable/complex input before all costly admission: %#', async raw => {
+  const f = fixture(); f.chat.speechText.mockResolvedValue(raw);
+  await expect(f.service.submit(user, conversation, body)).rejects.toHaveProperty('status', 422);
+  expect(f.service.jobs.size).toBe(0); expect(f.service.active).toBeNull();
+  expect(f.slots.create).not.toHaveBeenCalled(); expect(f.http.get).not.toHaveBeenCalled(); expect(f.http.post).not.toHaveBeenCalled();
+  expect(JSON.stringify(f.logger.warning.mock.calls)).not.toContain('private secret');
+});
+test('final authorized reload replaces preview, count and fingerprint consistently', async () => {
+  const f = fixture();
+  f.chat.speechText.mockResolvedValueOnce('old').mockResolvedValue('```\n' + 'x'.repeat(10000) + '\n```\n**' + '🐱'.repeat(601) + '**');
+  const job = await f.service.submit(user, conversation, body); await flush();
+  expect(f.chat.speechText).toHaveBeenNthCalledWith(2, user, conversation, body.messageId);
+  expect(f.http.post.mock.calls[0][1].text).toBe('🐱'.repeat(600));
+  expect(await f.service.get(user, conversation, job.id)).toMatchObject({ spokenCharacters: 600, truncated: true, status: 'ready' });
+  expect(await f.service.submit(user, conversation, body)).toMatchObject({ id: job.id });
+  expect(f.http.post).toHaveBeenCalledTimes(1);
+});
+test.each(['```\ncode\n```', null])('no synthesis when final reload becomes empty or unauthorized: %p', async changed => {
+  const f = fixture();
+  f.chat.speechText.mockResolvedValueOnce('allowed');
+  if (changed === null) f.chat.speechText.mockRejectedValue(new MiienError(404, 'Assistant reply not found.'));
+  else f.chat.speechText.mockResolvedValue(changed);
+  const job = await f.service.submit(user, conversation, body); await flush();
+  expect(f.http.post).not.toHaveBeenCalled(); expect(f.slots.deleteOne).toHaveBeenCalledTimes(1);
+  expect(f.service.jobs.get(job.id).status).toBe('failed');
+});
+test.each(['markup', 'beyond preview', 'version'])('completed reuse invalidates for %s changes', async change => {
+  const f = fixture(); const original = 'a'.repeat(601); f.chat.speechText.mockResolvedValue(original);
+  const first = await f.service.submit(user, conversation, body); await flush();
+  if (change === 'version') f.service.jobs.get(first.id).preparationVersion = 'old-preparation';
+  else f.chat.speechText.mockResolvedValue(change === 'markup' ? '**' + original + '**' : original + 'b');
+  await expect(f.service.get(user, conversation, first.id, true)).rejects.toHaveProperty('status', 409);
+  expect(f.service.jobs.get(first.id).audio).toBeNull();
+  const second = await f.service.submit(user, conversation, body); await flush();
+  expect(second.id).not.toBe(first.id); expect(f.http.post).toHaveBeenCalledTimes(2);
+  expect(f.service.jobs.size).toBe(1);
+  expect(await f.service.get(user, conversation, second.id, true)).toEqual(wav());
+});
+test('changed content cannot create a duplicate active job, even concurrently or after timeout expiry', async () => {
+  const f = fixture(); let resolve;
+  f.http.post.mockImplementation(() => new Promise(r => { resolve = r; }));
+  const first = await f.service.submit(user, conversation, body); await flush();
+  f.chat.speechText.mockResolvedValue('**changed**');
+  const duplicates = await Promise.all(Array.from({ length: 5 }, () => f.service.submit(user, conversation, body)));
+  expect(duplicates.every(job => job.id === first.id)).toBe(true);
+  await jest.advanceTimersByTimeAsync(DEADLINE_MS + RETENTION_MS + 1001);
+  expect(await f.service.submit(user, conversation, body)).toMatchObject({ id: first.id, status: 'timeout' });
+  expect(f.http.post).toHaveBeenCalledTimes(1); expect(f.slots.deleteOne).not.toHaveBeenCalled();
+  resolve({ data: wav() }); await flush();
+  expect(f.slots.deleteOne).toHaveBeenCalledTimes(1);
+});
+test('ambiguous failure and changed content retain quarantine and dedupe', async () => {
+  const f = fixture(); f.http.post.mockRejectedValue({ response: { status: 502 } });
+  const first = await f.service.submit(user, conversation, body); await flush();
+  f.chat.speechText.mockResolvedValue('changed');
+  expect(await f.service.submit(user, conversation, body)).toMatchObject({ id: first.id, status: 'failed' });
+  expect(f.http.post).toHaveBeenCalledTimes(1); expect(f.slots.deleteOne).not.toHaveBeenCalled();
+  await jest.advanceTimersByTimeAsync(RETENTION_MS + 1001);
+  await f.service.submit(user, conversation, body); await flush();
+  expect(f.http.post).toHaveBeenCalledTimes(1);
+});
+test('edited completed job cannot evade active capacity and foreign user cannot reuse its audio', async () => {
+  const f = fixture(); const first = await f.service.submit(user, conversation, body); await flush();
+  await expect(f.service.get(user, 'd'.repeat(24), first.id, true)).rejects.toHaveProperty('status', 404);
+  f.http.post.mockImplementation(() => new Promise(() => {}));
+  await f.service.submit(user, conversation, { ...body, messageId: 'd'.repeat(24) }); await flush();
+  f.chat.speechText.mockResolvedValue('edited');
+  await expect(f.service.submit(user, conversation, body)).rejects.toHaveProperty('status', 429);
+  await expect(f.service.submit({ ...user, _id: 'e'.repeat(24) }, conversation, body)).rejects.toHaveProperty('status', 429);
+  expect(f.http.post).toHaveBeenCalledTimes(2);
+});
+test('content changed during synthesis is discarded after reauthorization', async () => {
+  const f = fixture(); let resolve; f.http.post.mockImplementation(() => new Promise(r => { resolve = r; }));
+  const job = await f.service.submit(user, conversation, body); await flush();
+  f.chat.speechText.mockResolvedValue('new reply'); resolve({ data: wav() }); await flush();
+  expect(await f.service.get(user, conversation, job.id)).toMatchObject({ status: 'failed' });
+  await expect(f.service.get(user, conversation, job.id, true)).rejects.toHaveProperty('status', 409);
+  expect(f.slots.deleteOne).toHaveBeenCalledTimes(1);
+});
