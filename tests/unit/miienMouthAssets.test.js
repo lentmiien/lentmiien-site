@@ -6,7 +6,7 @@ const manifest = require('../../public/i/miien/motion-v1.json');
 let base;
 beforeAll(async () => { base = await sharp('public' + manifest.layered.base.src).raw().toBuffer(); });
 test('approved character, blink and all still portraits keep their checkpoint hashes/paths', () => {
-  expect(manifest.assetVersion).toBe('miien-2.4');
+  expect(manifest.assetVersion).toBe('miien-2.5');
   expect(manifest.layered.base).toMatchObject({ src: '/i/miien/neutral-v1/character.webp', sha256: '6c84d93a90366088748df1b0e78b17c7ed22ec82c5958e2fa21cca255cfc34ac' });
   expect(manifest.layered.blink).toMatchObject({ src: '/i/miien/neutral-v1/blink.webp', sha256: 'f9901ab469c087bc8d91349edcf33c640dc10e8f25ff767446e4061341509fb1' });
   expect(manifest.stills.map(item => item.sha256)).toEqual([

@@ -9,7 +9,7 @@
     const element = document.createElement('div');
     element.className = 'character-layers';
     element.setAttribute('role', 'img');
-    element.setAttribute('aria-label', 'Miien with a neutral expression');
+    element.setAttribute('aria-label', `Miien with a ${asset.mood} expression`);
     const frame = document.createElement('div');
     frame.className = 'miien-rig';
     element.append(frame);

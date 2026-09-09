@@ -33,10 +33,16 @@
       slots.add(key);
     }
     if (manifest.clips.length && manifest.clipStatus !== 'reviewed') return null;
-    if (manifest.layered !== undefined) {
-      const rig = manifest.layered;
-      if (!rig || rig.version !== 1 || rig.mood !== 'neutral' || rig.reviewStatus !== 'prototype'
+    // Keep the original neutral contract; optional additional rigs are bounded
+    // and unique, so legacy still-only manifests continue to work.
+    if (manifest.expressions !== undefined && (!Array.isArray(manifest.expressions) || manifest.expressions.length > 4)) return null;
+    const rigs = [...(manifest.layered !== undefined ? [manifest.layered] : []), ...(manifest.expressions || [])];
+    const rigMoods = new Set();
+    for (const rig of rigs) {
+      if (!rig || rig.version !== 1 || !moods.includes(rig.mood) || rigMoods.has(rig.mood) || rig.reviewStatus !== 'prototype'
         || rig.width !== 768 || rig.height !== 1024 || !local(rig.provenance, 'json') || !rig.mouths) return null;
+      if ((rig === manifest.layered) !== (rig.mood === 'neutral')) return null;
+      rigMoods.add(rig.mood);
       for (const item of [rig.base, rig.blink, rig.mouths.small, rig.mouths.open]) {
         if (!item || !local(item.src, 'webp') || !hash(item.sha256)
           || !Number.isInteger(item.x) || item.x < 0 || !Number.isInteger(item.y) || item.y < 0
@@ -50,14 +56,27 @@
   // Clips are approved build assets, never generated or selected from user text.
   function create({ document, still, status, Image, mediaQuery, connection }) {
     let manifest = null, generation = 0, video = null, timer, enabled = true, rig = null, disposed = false;
-    let mouthShape = 0;
+    let mouthShape = 0, rigMood = '';
     let mood = 'neutral', state = 'idle', hidden = Boolean(document.hidden), currentKey = '';
     const preload = new Map();
-    const halt = () => {
+    const load = src => {
+      let entry = preload.get(src);
+      if (!entry) {
+        const image = new Image(); image.src = src;
+        entry = { image, ready: Promise.resolve().then(() => image.decode()) };
+        entry.ready.catch(() => { if (preload.get(src) === entry) preload.delete(src); });
+      }
+      preload.delete(src); preload.set(src, entry);
+      // At most two complete expression sets retained by this controller.
+      // Browser HTTP/decoded-image caching remains browser managed.
+      while (preload.size > 10) preload.delete(preload.keys().next().value);
+      return entry.ready;
+    };
+    const halt = (keepRig = false) => {
       generation += 1;
       clearTimeout(timer);
-      rig?.dispose(); rig = null;
-      still.hidden = false;
+      rig?.mouth(0);
+      if (!keepRig) { rig?.dispose(); rig = null; rigMood = ''; still.hidden = false; }
       if (video) { video.pause(); video.removeAttribute('src'); video.load(); video.remove(); video = null; }
       currentKey = '';
     };
@@ -67,56 +86,59 @@
       state = states.includes(nextState) ? nextState : 'idle';
       if (state !== 'speaking') { mouthShape = 0; rig?.mouth(0); }
       // Activity changes must not restart the independent breathing/blink clocks.
-      const layered = manifest?.layered && mood === 'neutral' && Layers;
+      const layered = Layers && (mood === 'neutral' ? manifest?.layered : manifest?.expressions?.find(item => item.mood === mood));
       const key = `${mood}:${layered ? 'layered' : state}:${enabled}:${mediaQuery.matches}:${hidden}:${Boolean(connection?.saveData)}`;
       if (!force && key === currentKey) return;
-      halt(); currentKey = key;
+      const animate = enabled && !mediaQuery.matches && !hidden && !connection?.saveData;
+      halt(Boolean(layered && animate && rig)); currentKey = key;
       const version = generation;
       const asset = manifest?.stills.find(item => item.mood === mood);
       const src = asset?.src || `/i/miien/${mood}.webp`;
-      if (!preload.has(src)) { const image = new Image(); image.src = src; preload.set(src, image); }
-      try {
-        await preload.get(src).decode();
+      if (!hidden) timer = setTimeout(() => {
         if (version !== generation) return;
-        still.src = src; still.hidden = false; still.alt = `Miien with a ${mood} expression`;
+        // A never-settling decode must not poison subsequent explicit retries.
+        for (const path of [src, layered?.base.src, layered?.blink.src, layered?.mouths.small.src, layered?.mouths.open.src]) preload.delete(path);
+        halt(); status.textContent = 'Expression loading timed out; showing the current portrait.';
+      }, 10000);
+      try {
+        await load(src);
+        if (version !== generation) return;
+        still.src = src; still.hidden = Boolean(rig); still.alt = `Miien with a ${mood} expression`;
         status.textContent = '';
       } catch (_) {
-        if (version === generation) status.textContent = 'Expression image unavailable; keeping the current portrait.';
+        if (version === generation) { halt(); status.textContent = 'Expression image unavailable; keeping the current portrait.'; }
         return;
       }
-      if (!enabled || mediaQuery.matches || hidden || connection?.saveData) return;
+      if (!animate) { clearTimeout(timer); return; }
       if (layered) {
-        const asset = manifest.layered;
+        const asset = layered;
         const items = [asset.base, asset.blink, asset.mouths.small, asset.mouths.open];
         const fail = () => {
           if (version !== generation) return;
           halt(); still.src = src;
           status.textContent = 'Character layers unavailable; showing the expression portrait.';
         };
-        timer = setTimeout(fail, 10000);
         try {
-          await Promise.all(items.map(item => {
-            if (!preload.has(item.src)) { const image = new Image(); image.src = item.src; preload.set(item.src, image); }
-            return preload.get(item.src).decode();
-          }));
+          await Promise.all(items.map(item => load(item.src)));
           if (version !== generation) return;
           clearTimeout(timer);
+          rig?.dispose();
           rig = Layers.create({ document, still, asset, onError: fail });
+          rigMood = asset.mood;
           rig.mouth(state === 'speaking' ? mouthShape : 0);
           still.hidden = true;
         } catch (_) { fail(); }
         return;
       }
       const clip = manifest?.clips.find(item => item.mood === mood && item.state === state);
-      if (!clip) return;
+      if (!clip) { clearTimeout(timer); return; }
       // The incoming first frame sits below the decoder, avoiding a portrait jump.
-      if (!preload.has(clip.poster)) { const image = new Image(); image.src = clip.poster; preload.set(clip.poster, image); }
       try {
-        await preload.get(clip.poster).decode();
+        await load(clip.poster);
         if (version !== generation) return;
         still.src = clip.poster;
       } catch (_) {
-        if (version === generation) status.textContent = 'Motion poster unavailable; showing the expression portrait.';
+        if (version === generation) { clearTimeout(timer); status.textContent = 'Motion poster unavailable; showing the expression portrait.'; }
         return;
       }
       const candidate = document.createElement('video');
@@ -136,7 +158,7 @@
         Promise.resolve(candidate.play()).catch(fail);
       };
       candidate.onended = fail;
-      timer = setTimeout(fail, 10000);
+      clearTimeout(timer); timer = setTimeout(fail, 10000);
       still.after(candidate); candidate.src = clip.src;
     }
     const refresh = () => show(mood, state, true);
@@ -144,7 +166,7 @@
     connection?.addEventListener?.('change', refresh);
     return {
       show,
-      mouth(value) { mouthShape = state === 'speaking' && [1, 2].includes(value) ? value : 0; rig?.mouth(mouthShape); },
+      mouth(value) { mouthShape = state === 'speaking' && [1, 2].includes(value) ? value : 0; rig?.mouth(rigMood === mood ? mouthShape : 0); },
       setManifest(value) { manifest = validate(value); return refresh(); },
       enable(value) { enabled = Boolean(value); return refresh(); },
       suspend(value) { if (hidden === Boolean(value)) return; hidden = Boolean(value); return refresh(); },

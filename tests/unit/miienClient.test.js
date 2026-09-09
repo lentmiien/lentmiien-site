@@ -12,7 +12,7 @@ const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(
 const response = data => ({ ok: true, json: async () => data });
 let dom;
 afterEach(() => { dom?.window.close(); });
-function setup({ timers = false, initial = { messages: [], pending: false }, decode } = {}) {
+function setup({ timers = false, initial = { messages: [], pending: false }, decode, layered = false } = {}) {
   const html = pug.renderFile('views/miien_room.pug', {conversation:{_id:'a'.repeat(24),title:'Fixture'},moods:MOODS,canWrite:true,canTranscribe:true,csrfToken:'token'});
   dom = new JSDOM(html, { url:'https://fixture.invalid/chat5/miien/'+ 'a'.repeat(24),runScripts:'outside-only',pretendToBeVisual:true });
   const {window:w}=dom;
@@ -22,7 +22,8 @@ function setup({ timers = false, initial = { messages: [], pending: false }, dec
     w.setTimeout = callback => { const id = ++nextTimer; w.fixtureTimers.set(id, callback); return id; };
     w.clearTimeout = id => w.fixtureTimers.delete(id);
   }
-  w.fetch=jest.fn().mockResolvedValue(response(initial));
+  w.fetch=jest.fn().mockImplementation(url => Promise.resolve(layered && url.endsWith('/motion-v1.json')
+    ? { ok: true, text: async () => JSON.stringify(require('../../public/i/miien/motion-v1.json')) } : response(initial)));
   w.MiienVoice={stop:jest.fn(),speak:jest.fn(),resume:jest.fn(),setLatestMessage:jest.fn()};
   w.Image=class { constructor(){this.src='';} decode(){return decode ? decode(this.src) : Promise.resolve();} };
   w.isSecureContext=true;
@@ -31,6 +32,7 @@ function setup({ timers = false, initial = { messages: [], pending: false }, dec
   w.MediaRecorder=class {};
   Object.defineProperty(w.navigator,'mediaDevices',{value:{getUserMedia:jest.fn()}});
   vm.runInContext(activitySource,dom.getInternalVMContext());
+  if (layered) vm.runInContext(fs.readFileSync('public/js/miien_layers.js', 'utf8'), dom.getInternalVMContext());
   vm.runInContext(motionSource,dom.getInternalVMContext());
   const createMotion = w.MiienMotion.create;
   w.MiienMotion.create = options => { w.motionAdapter = createMotion(options); jest.spyOn(w.motionAdapter, 'suspend'); return w.motionAdapter; };
@@ -326,4 +328,31 @@ test('history loaded during visible recovery is seen even if that turn is still 
   w.fetch.mockResolvedValue(response({ messages: [missed], pending: true }));
   Object.defineProperty(w.document, 'hidden', { value: false, configurable: true }); w.document.dispatchEvent(new w.Event('visibilitychange')); await settle();
   await tick(w, { messages: [missed], pending: false }); expect(w.MiienVoice.speak).not.toHaveBeenCalled();
+});
+
+test('real room automatic and manual selectors activate every rig during speech without changing captions', async () => {
+  const w = setup({ timers: true, layered: true }); await settle(); await settle();
+  const messages = [];
+  for (const [text, expected] of [
+    ['It means the value stays in memory.', 'thoughtful'], ['You made it!', 'happy'],
+    ['That sounds rough.', 'concerned'], ['It came out of nowhere.', 'surprised'],
+  ]) {
+    messages.push(assistant(String(messages.length), text));
+    await tick(w, { messages, pending: false }); await settle();
+    expect(w.document.querySelector('.miien-base').src).toContain('/' + expected + '-v1/');
+    expect(element(w, 'latest-reply').textContent).toBe(text);
+    w.dispatchEvent(new w.CustomEvent('miien:voice', { detail: { phase: 'playing' } }));
+    w.dispatchEvent(new w.CustomEvent('miien:mouth', { detail: { shape: 2 } }));
+    preview(w, 'happy'); await settle(); await settle();
+    expect(w.document.querySelector('.miien-base').src).toContain('/happy-v1/');
+    expect(w.document.querySelectorAll('.miien-mouth')[1].hidden).toBe(false);
+    preview(w, 'auto'); await settle(); await settle();
+    expect(w.document.querySelector('.miien-base').src).toContain('/' + expected + '-v1/');
+    w.dispatchEvent(new w.CustomEvent('miien:voice', { detail: { phase: 'idle' } }));
+    expect(w.document.querySelector('.miien-mouth:not([hidden])')).toBeNull();
+  }
+  w.dispatchEvent(new w.Event('pagehide')); await settle();
+  expect(w.document.querySelector('.miien-rig')).toBeNull();
+  w.dispatchEvent(new w.CustomEvent('miien:mouth', { detail: { shape: 2 } }));
+  expect(w.document.querySelector('.miien-rig')).toBeNull();
 });

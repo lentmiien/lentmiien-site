@@ -1,8 +1,80 @@
-# Miien character chat — phase 2 cleanup checkpoint
+# Miien character chat — phase 2 expression animation checkpoint
 
-**The Markdown speech and mouth-patch cleanup is implemented for Lennart's deployment/device review.** Breathing, blinking and mouth cadence are preserved. Mouth movement remains approximate playback timing, not phoneme/amplitude lip-sync. Finish the listening and visual checklist below before expanding expressions. Phase 2 remains open; there are zero accepted/registered motion clips and the rejected H3 video remains **REJECTED / DO NOT SHIP**.
+**Happy, thoughtful, concerned and surprised now have layered animation, ready for deployment and human review.** The accepted neutral artwork, breathing/blink timing, mouth cadence, speech preparation and Anny integration are preserved. Mouth movement remains approximate playback timing, not phoneme/amplitude lip-sync. This checkpoint has not been deployed or accepted by Lennart. Phase 2 remains open; there are zero registered motion clips and the rejected H3 video remains **REJECTED / DO NOT SHIP**.
 
-## Speech and mouth cleanup (2026-09-09)
+## All existing expressions (2026-09-09)
+
+### Starting evidence and scope
+
+The initial worktree was clean on `feat/chat5-miien-phase2-slice1`; local HEAD and the remote feature ref both matched `772fb2838ad83a0ab004f0d606b75dc663a77f48`. The user supplied Lennart's verified response to [request b326cce1-6a50-43c3-8551-7a0442197658](/admin/ask-lennart#request-b326cce1-6a50-43c3-8551-7a0442197658): “Great! That fixed the remaining issues, and everything looks good so far. We still need to add animations to the other expressions. So, please proceed with the next step.” This accepts the preceding cleanup and authorizes expression expansion. **The response supplies no exact production SHA; none is inferred.** The [preceding implementation session](/codex/sessions/tool-session-1705b37a0a55d66a3ee8dbcbafd43119569d479eaa824080f55ef735ff00d70a) remains useful context. No current-session link was supplied.
+
+Actual source/manifests enumerate exactly five moods: neutral, happy, thoughtful, concerned, surprised. This slice adds the four remaining rigs. Normal Chat5, captions, saved replies, history, the mood classifier, voice/Gateway selection, speech cleanup and every neutral runtime image retain their previous implementation/bytes. No production access, deployment, restart, configured app startup, live synthesis/ASR, video generation, GPU reservation, service change, dependency, environment variable or migration was needed.
+
+Security classification remains **logged in**, using the [existing security contract](#current-security-contract): semantic capabilities, principal-derived identity, owner/member scope, no admin override, shared CSRF and private/no-store conversation/audio delivery. This is a public build-artwork and browser-renderer extension with no new application route, browser mutation, outbound service, personal-data store or retention policy. Manifest entries retain strict local path/hash/geometry validation, reject duplicate/unknown moods and bound the new list to four entries. Packaging/review failures use `utils/logger` under `chat5_miien_assets`. Existing negative route/speech authorization and CSRF tests remain in the focused run.
+
+### Artwork anatomy and provenance
+
+**Generated:** sixteen built-in `image_gen.imagegen` calls, one resting facial source plus matching blink/small/open sources per expression. No CLI/API-key fallback or procedural eyes/lips were used. Resting variants reference both the accepted neutral foreground (geometry/identity) and the corresponding original still (expression). Each subsequent variant edits its own generated resting reference. Exact prompts, reference hashes, generated PNG basenames/hashes and packaged source hashes are in [source provenance](assets/miien-expressions-v1/provenance.json).
+
+**Composited:** only the generated facial regions are used. Each PNG is resized to 768×1024 and a lossless 264×222 facial master at (256,245) is retained outside `public`. Generated backgrounds contain painted checkerboards, so the background, silhouette and outfit portions of those outputs are discarded. The existing accepted foreground supplies all pixels outside the eye/brow/mouth masks and its entire original alpha channel. This preserves the registered ears, hair outline, clothing, shoulders and canvas across every animated expression. Open eyes and resting lips are baked into each new base; no separate open-eye image is needed.
+
+Clean skin below the nose supplies a small illumination correction. Smooth elliptical masks encompass both resting and replacement features. Blink/mouth changes are corrected against their own generated resting master before applying the difference to the packaged base. Minimum source-over opacity, compensated on Graphite `#17191c`, follows the accepted neutral mouth lesson: no opaque rectangular skin patch and no untouched resting lip underneath an open shape. The neutral correction algorithm/files are unchanged. A bright concerned-blink artifact found during development was removed before this checkpoint. Tests bound remaining extra-opacity response below eight RGB levels on black/white stress backgrounds; this is not a guarantee of perceptual equivalence on every display.
+
+**Shared/authored:** all rigs use the existing CSS Graphite background, 5.8-second subtle breathing and 6.7-second blink cycle. Neither the background nor the animation timing was regenerated. No skeletal animation or head/body pose changes were added.
+
+| Expression | Runtime directory | Generated facial character | Runtime WebP bytes |
+| --- | --- | --- | ---: |
+| Happy | `public/i/miien/happy-v1/` | Warm closed smile, lifted cheeks, smiling open eyes; cheerful blink and two speaking smiles | 830,258 |
+| Thoughtful | `public/i/miien/thoughtful-v1/` | Drawn brows, sideward gaze, composed lips; relaxed blink and restrained speaking openings | 821,722 |
+| Concerned | `public/i/miien/concerned-v1/` | Raised inner brows, sympathetic eyes, gentle frown; soft blink and concerned speaking shapes | 824,080 |
+| Surprised | `public/i/miien/surprised-v1/` | Wide eyes and raised brows; resting lips closed, blink and two rounded “oh” speaking shapes | 823,570 |
+
+Every directory contains `character.webp` (768×1024), `blink.webp` (260×85 at 258,293), `mouth-small.webp` and `mouth-open.webp` (both 106×70 at 340,395), plus `provenance.json`. Sixteen runtime WebPs total **3,299,630 bytes**. Surprised retains its recognizable wide eyes; its animated base deliberately closes the mouth at rest, while the original surprised still retains its static open “oh”. All five original stills and the four accepted neutral layer files remain byte-identical.
+
+### Manifest, switching and loading
+
+`motion-v1.json` reports **`miien-2.5`**. Its neutral `layered` object is unchanged; the optional `expressions` array holds one same-schema rig for each remaining mood, each with `reviewStatus: prototype` pending human review. Legacy still-only and neutral-only manifests remain supported; `clips: []` remains honest.
+
+Both automatic selection from saved replies and manual Expression preview use the same renderer. Activity changes preserve each rig and its idle clocks. During an expression change, the prior rig stays visible with its mouth closed while the incoming still/layers decode; the matching rig swaps in together when ready, avoiding an intermediate still-background flash. The current playback envelope then drives the new mouth. Generation guards reject old decodes, old image errors and timers. Speech preparation never opens the mouth.
+
+Only selected assets load. Successful decoding is reused, failed entries can retry on a later selection, and a ten-entry LRU bounds controller-held image references to about two complete sets. HTTP caching, image decoding memory and already-started requests remain browser managed; this is not a claim that total browser memory is capped at that amount. A ten-second visible loading deadline and any optional-layer failure restore the available portrait. Motion off, reduced motion, save-data, hidden tabs, short keyboard stage and disposal remove layers through the existing lifecycle. Audio/conversation controls remain independent of image success. The neutral build command now preserves a later manifest version instead of downgrading it.
+
+### Rebuild and change an expression
+
+With the pinned Node and installed lockfile dependencies, these commands require no provider/database/application startup:
+
+```bash
+volta run --node 24.20.0 node scripts/build-miien-expression-assets.js
+volta run --node 24.20.0 node scripts/review-miien-expression-assets.js
+volta run --node 24.20.0 npm test -- --runInBand --coverage=false tests/unit/miien*.test.js
+```
+
+To change an expression, create a new versioned directory instead of overwriting released files. Use its still for expression and the accepted foreground for geometry; generate and inspect all four facial sources. Retain the normalized face crops and exact prompts/source hashes. Update the builder's reviewed region/mask geometry only if necessary, checking that clean-skin samples remain outside facial marks and masks cover both old/new lips and eyelids. Rebuild, update manifest/provenance hashes, inspect every composite, and exercise slow/failed loads and expression switching during speech. Adding a genuinely new mood would also require intentionally updating the bounded mood/schema/classifier/selector contracts; this checkpoint adds none.
+
+Deterministic review sheets: rows are **happy, thoughtful, concerned, surprised**; columns are **resting, blink, small, open**. Inspect [faces at 1.5×](assets/miien-expressions-v1/faces.png), [mouths on a light stress background at 4×](assets/miien-expressions-v1/mouths-light.png), and full-pose sheets for [happy](assets/miien-expressions-v1/happy-poses.webp), [thoughtful](assets/miien-expressions-v1/thoughtful-poses.webp), [concerned](assets/miien-expressions-v1/concerned-poses.webp), [surprised](assets/miien-expressions-v1/surprised-poses.webp). These are deterministic composites, not recordings of real voice playback.
+
+The optional [browser review harness](../scripts/review-miien-expressions-browser.js) accepts an installed Playwright module path and Chromium executable path as its two arguments. It serves synthetic Pug/static content only on an ephemeral loopback port, mocks private speech endpoints with a generated three-second test tone, and closes the browser/server afterward. Playwright is a local QA prerequisite, not a new application dependency. Do not substitute `npm start` or `app.js` for this harness.
+
+### Validation and limits
+
+- Focused Miien run: **13 suites / 343 tests passed**, including resting-lip removal and retry after an abandoned decode. The new tests cover every rig/source hash and geometry, preserved silhouette/alpha, transparent patch edges, background compensation, automatic/manual room selection during speech, atomic swap, lazy/reused/bounded decode caching, retry, invalid manifests and late callbacks after mood/off/reduced-motion/save-data/suspension/disposal/timeout.
+- Full suite on Node 24.20.0: **274 suites / 2,380 tests passed**, including enforced coverage thresholds (67.35% statements / 43.72% branches for configured critical files); 64.38 seconds. Jest printed its existing experimental VM Modules warning. No dependency or OpenAPI change.
+- Browser connector setup/discovery reported `No browser is available` and `[]`. Installed local headless Chromium was used instead. Actual Pug/CSS/JS under the production CSP passed lazy-load, all four automatic transitions, all five manual selections during decoded synthetic WAV playback, pause/seek/end/replay/Stop, CSS breathing/timed blink, motion-off, reduced-motion, missing-blink fallback, history/settings/Escape and desktop/mobile/landscape checks. The run reported **zero page/CSP errors** and 19 intercepted synthetic speech requests; no request reached Anny/Gateway.
+- Final checks: all 11 changed/new JavaScript files pass syntax checking on Node 24.20.0; `git diff --check` passes. All 58 checked public/source/deterministic-review artifacts match byte-for-byte after rebuilding, and an additional pinned-Node runtime rebuild matches too. The accepted neutral manifest object is exactly unchanged. Full diff/security review found only the scoped artwork, renderer, packaging/review tooling, tests and documentation changes.
+- Nine browser screenshots are retained, including [happy](assets/miien-expressions-v1/review-happy.png), [thoughtful](assets/miien-expressions-v1/review-thoughtful.png), [concerned](assets/miien-expressions-v1/review-concerned.png), [surprised](assets/miien-expressions-v1/review-surprised.png), [390×844 mobile](assets/miien-expressions-v1/review-mobile.png) and [844×390 landscape](assets/miien-expressions-v1/review-landscape.png). Offline composites were inspected at normal/enlarged scales for mouth seams, double lips, blink fill and registration.
+
+Approximate playback-timed mouth movement can animate through silence within audio and does not track phonemes, syllables or loudness. Generated facial artwork is a recognizable interpretation of the stills, not pixel-identical extraction. These checks do not establish audible Anny quality, physical phone/browser behavior, screen-reader/OS voice behavior, production deployment or Lennart's visual acceptance. Those remain device review items.
+
+### Lennart's concise release/review checklist
+
+1. Deploy the pushed revision through the normal release process, then refresh Miien so it loads `miien-2.5`, the updated motion/layer JS and all four new versioned directories together. No configuration, migration, dependency or Gateway change is needed. This implementation session does not deploy or restart anything.
+2. Enable motion and manually preview happy, thoughtful, concerned and surprised at rest and during existing Anny Replay. Inspect blinking and both mouth sizes for rectangles, leftover lips, bright eyelid patches, silhouette jumps or clipping. Switch expressions during playback; Stop must close the mouth immediately. Compare neutral to the accepted appearance.
+3. Restore Automatic and receive replies with different moods. Full captions/history must appear immediately while TTS prepares, and mouths must remain resting until playback. Check Stop/replay/end/error and tab hide/return, plus switching motion/reduced-motion during speech. A failed art request must leave text/audio usable with a still fallback.
+4. Review desktop and actual mobile portrait/landscape, captions on/off, history/settings, keyboard and short viewport. Check ordinary Chat5 still works. Report expression/device/state for any visual issue before accepting this slice.
+
+Rollback is the prior reviewed revision plus its `miien-2.4` manifest/client; original stills and neutral assets remain available. Do not clear durable speech quarantine records or change services as part of artwork rollback.
+
+## Historical speech and mouth cleanup (2026-09-09; subsequently accepted)
 
 ### Scope and evidence
 

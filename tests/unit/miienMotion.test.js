@@ -4,7 +4,7 @@ const { validate, create } = require('../../public/js/miien_motion');
 const { create: activityController } = require('../../public/js/miien_activity');
 const manifest = require('../../public/i/miien/motion-v1.json');
 // Preserve coverage of legacy clip manifests alongside the new layered schema.
-const clone = () => { const value = JSON.parse(JSON.stringify(manifest)); delete value.layered; return value; };
+const clone = () => { const value = JSON.parse(JSON.stringify(manifest)); delete value.layered; delete value.expressions; return value; };
 const clip = () => ({ state: 'idle', mood: 'neutral', src: '/i/miien/v1/idle-neutral.mp4', poster: '/i/miien/neutral.webp',
   sha256: 'a'.repeat(64), posterSha256: manifest.stills[0].sha256, provenance: '/i/miien/v1/provenance.json', width: 1280, height: 704, fps: 25, durationSeconds: 4.84, silent: true });
 const settle = async () => { for (let n = 0; n < 12; n++) await Promise.resolve(); };

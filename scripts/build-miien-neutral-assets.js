@@ -49,14 +49,15 @@ async function build() {
   }
   const manifestPath = path.join(root, 'public/i/miien/motion-v1.json');
   const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
-  manifest.assetVersion = 'miien-2.4';
+  // Rebuilding the accepted neutral must not downgrade a later expression pack.
+  if (!manifest.expressions?.length) manifest.assetVersion = 'miien-2.4';
   manifest.layered = { version: 1, mood: 'neutral', reviewStatus: 'prototype', width, height,
     provenance: '/i/miien/neutral-v2/provenance.json', base: assets.character, blink: assets.blink,
     mouths: { small: assets['mouth-small'], open: assets['mouth-open'] } };
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   const provenance = JSON.parse(await fs.readFile(path.join(source, 'provenance.json'), 'utf8'));
   await fs.writeFile(path.join(output, 'provenance.json'), JSON.stringify({
-    assetVersion: manifest.assetVersion, status: 'prototype-human-review-pending', tool: provenance.tool,
+    assetVersion: 'miien-2.4', status: 'prototype-human-review-pending', tool: provenance.tool,
     referenceSha256: provenance.referenceSha256, sourceCanvas: { width: 1086, height: 1448 }, canvas: { width, height },
     processing: 'Base/blink unchanged. Existing generated mouth masters: local skin illumination correction, soft elliptical mask covering resting lips, minimum source-over alpha with Graphite compositing compensation. Sharp lossless WebP.',
     correction: { script: 'scripts/miien-mouth-correction.js', referenceBackground: '#17191c', sourceProvenance: 'documentation/assets/miien-neutral-v1/provenance.json', newGeneration: false },
