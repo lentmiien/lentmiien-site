@@ -16,10 +16,29 @@
     "sha256": "a45867e514703aa501179f94e5553fb15d6e58804e5c03b0ec37d2f0d5d5c296",
     "width": 640,
     "height": 640,
-    "processing": "Sharp contain resize: 480x640 portrait centered in a 640x640 Graphite (#20242A) canvas; no crop or artwork generation"
+    "processing": "Sharp contain resize: 480x640 portrait centered in a 640x640 Graphite (#20242A) canvas; no crop or artwork generation",
+    "colorMode": "RGB"
   },
-  "graph": {
-    "sha256": "70a6c48b735cc58ccdb4c2a24537b1845e419017465f81122058a6bce7643e10",
+  "failure": "ComfyUI native sampling failed with a GPU memory-access fault and Python abort/segfault at 0/20 steps. Gateway subsequently reported lost execution with ReadTimeout on its last probe. Not a 30-second submission/readiness timeout; output download was never reached. Underlying GPU fault cause remains unresolved.",
+  "review": {
+    "sourcePortrait": "visually inspected",
+    "video": "unavailable; no frame, seam or playback quality review possible",
+    "humanApproval": false
+  },
+  "cleanup": {
+    "checkedAt": "2026-09-09T00:53:53Z",
+    "comfyRunning": false,
+    "active": false,
+    "queueDepth": 0,
+    "reserved": false,
+    "cleanupError": false,
+    "degraded": false,
+    "evidenceScope": "Diagnostic-session snapshot at 09:53:53 JST, not current live health. Docker termination is separately recorded in timelineUtc."
+  },
+  "handoff": "No usable video exists and no retry is authorized by this wrap-up. Investigate the native ComfyUI sampling fault against the deployed ROCm/Torch/quantized H3 stack, rather than increasing timeouts. Before any separately authorized retry, freeze the exact reviewed graph, use one durable attempt record, retain the ComfyUI prompt ID, and disable automatic resubmission after ambiguous errors: Gateway has no submit deduplication. Verify availability of the existing uploaded input; do not assume private staging persists.",
+  "diagnosticSource": "/codex/sessions/tool-session-1ad561f3e350549dded63fca6bd63c6db15c9c1f0c3bbe03dd3809d502065a68",
+  "evidenceBasis": "Verified diagnostic findings supplied by the coordinator; no new Gateway inspection or attempt in this wrap-up.",
+  "catalogGraphSnapshot": {
     "imageNode": "114",
     "promptNode": "105:104",
     "resolutionNode": "115",
@@ -29,27 +48,51 @@
     "steps": 20,
     "fps": 24,
     "frames": 124,
-    "seed": 168866841893410,
     "model": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
-    "lastFrame": "unconnected, unchanged; support and closure benefit not verified"
+    "lastFrame": "unconnected in catalog snapshot; support and closure benefit not verified",
+    "evidenceScope": "Catalog snapshot, not proof of exact submitted settings; Gateway diagnostics did not retain the exact submitted graph.",
+    "width": 640,
+    "height": 640,
+    "frameGrid": "17k+5"
   },
-  "motionInstructions": "Same adult Miien identity, graphite twin tails/cat ears, amber eyes, modest zipped graphite/orange hoodie; retain background and contained upper-torso framing. Locked camera, very subtle breathing, occasional natural blink, tiny ear/hair motion, closed mouth, no speech/waving/cuts/scene changes; return near initial pose with eyes open.",
-  "failure": "Gateway terminal error reported a 30-second ComfyUI ReadTimeout; no video returned. No service changes or retry.",
-  "review": {
-    "sourcePortrait": "visually inspected",
-    "video": "unavailable; no frame, seam or playback quality review possible",
-    "humanApproval": false
+  "submittedGraph": {
+    "retainedInGatewayDiagnostics": false,
+    "promptId": null,
+    "note": "Job ID is known; ComfyUI prompt ID is not supplied by the diagnostic handoff. Earlier graph hash/seed claims are not treated as verified submission evidence."
   },
-  "cleanup": {
-    "checkedAt": "2026-09-09T00:47:13.338Z",
-    "comfyRunning": false,
-    "omniRunning": false,
-    "qwenRunning": false,
-    "active": false,
-    "queueDepth": 0,
-    "reserved": false,
-    "cleanupError": false,
-    "confirmedSeparately": "Gateway health and queue confirm no remaining request from this attempt"
+  "motionIntentSummary": "One silent, restrained neutral idle loop from the existing portrait; no usable output or visual acceptance.",
+  "timelineUtc": [
+    {
+      "at": "2026-09-09T00:35:30.490Z",
+      "observed": "ComfyUI received prompt."
+    },
+    {
+      "at": "2026-09-09T00:35:30.493Z",
+      "observed": "Gateway submission succeeded; preparation/submission took 19.32 seconds."
+    },
+    {
+      "at": "2026-09-09T00:36:27.938Z",
+      "observed": "At 0/20 sampling steps, ComfyUI logged GPU memory-access fault then Python abort/segfault."
+    },
+    {
+      "at": "2026-09-09T00:37:09.891Z",
+      "observed": "Gateway reported lost execution after repeated 10-second history/queue probes and a 30-second unavailability grace. Last probe reported ReadTimeout; exact failed endpoint unrecoverable. Zero outputs."
+    },
+    {
+      "at": "2026-09-09T00:37:21.024Z",
+      "observed": "Docker confirmed ComfyUI stopped, PID 0, exit 137, OOMKilled=false; termination confirmed about 11 seconds after terminal Gateway error."
+    }
+  ],
+  "interpretation": {
+    "supported": "Native sampling failure preceded Gateway loss detection. Terminal Gateway error alone did not prove backend termination.",
+    "unresolved": "Kernel, quantization, driver or other ROCm/Torch/H3-stack cause is not established; exit 137 does not establish an OOM cause."
   },
-  "handoff": "Uploaded input persists as uploadedPath. Coordinator can fetch the current graph and use this existing input after investigating the upstream timeout. If transferring from this workspace is needed, the contained PNG and submitted graph are in private staging /tmp/miien-slice2-private. No output artifact exists to transfer."
+  "diagnosticSessionActions": {
+    "newAttempt": false,
+    "generation": false,
+    "restart": false,
+    "codeChange": false,
+    "gatewaySourceMatchedDeployed": true,
+    "tests": "Gateway host lacked pytest; no tests passed there."
+  }
 }
