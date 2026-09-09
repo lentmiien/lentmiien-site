@@ -1,8 +1,73 @@
-# Miien character chat — phase 2, second bounded slice
+# Miien character chat — phase 2 progress checkpoint
 
-This slice builds on `2295409724a1bc0b1d84f035f502250287f86207`. It keeps the fullscreen call-style room, optional latest-reply captions, expandable history and record/review/send flow, switches the private Anny preview to the measured OmniVoice backend, and hardens playback/recovery. One actual ComfyUI idle generation was attempted but failed upstream; **the motion manifest remains truthfully empty and inactive**. Phase 2 is not complete: no clip library, talking animation, lip-sync, continuous listening or deployment is included. Historical validation records below are explicitly historical.
+The implemented foundation is a fullscreen call-style Chat5 room with optional captions/history, separate activity and mood, still/motion routing and opt-in English Anny speech. **No accepted animation asset has shipped.** The earlier GPU failure remains historical evidence; a later single prepared H3 image-to-video job completed technically but was **REJECTED / DO NOT SHIP** for visual defects. Phase 2 remains incomplete. The proposed animation direction below awaits human choices and authorizes no implementation or further generation.
 
-## Bounded wrap-up for Lennart review (2026-09-09)
+## Documentation/inspection checkpoint (2026-09-09)
+
+Inspected a clean worktree on `feat/chat5-miien-phase2-slice1` at `64619f450710314b0f2bb65ae2041f625336de75` (`Correct Miien motion diagnosis and review handoff`). A read-only `git ls-remote` confirmed the remote branch at the same SHA before this documentation commit. Runtime groundwork is from `bd9e9ad1ae7c0235aceba369491219c6cb63199c` and its ancestors; `64619f4` was a documentation correction. This is repository verification, not a deployed-revision assertion.
+
+| Area | Observed implementation | Remaining gap / boundary |
+| --- | --- | --- |
+| Room and persistence | [Room template](../views/miien_room.pug), [CSS](../public/css/miien.css) and [client](../public/js/miien.js) provide a viewport stage, contained portrait, compact composer, captions on by default, collapsed History/Settings and optional gesture fullscreen. [Controller](../controllers/miienController.js) and [chat adapter](../services/miienChatService.js) retain Chat5 conversations/messages and pending recovery. | This is a call-like interface with record → review/edit → Send, not continuous listening. Device layout, real microphone/audio and deployed behavior were not checked in this turn. |
+| Activity and mood | [Activity controller](../public/js/miien_activity.js) routes idle/listening/thinking/speaking independently from the classifier/manual expression. `playing` / utterance `onstart` drive speaking; preparation/buffering is thinking. | No mouth shapes, articulated idle, phoneme timing or shared animation/audio clock is implemented. |
+| Animation and fallback | [Manifest](../public/i/miien/motion-v1.json) is schema 1, `assetVersion: miien-2.1`, `clipStatus: not-produced`, `clips: []`. Five 768×1024 mood portraits remain: neutral, happy, thoughtful, concerned, surprised. [Motion adapter](../public/js/miien_motion.js) requires an exact activity/mood match; missing/invalid clips use the corresponding portrait. | All animation slots are empty. Reduced-motion, data saver, motion-off and hidden-stage/background handling use/suspend to stills. No rig, video library, crossfade or lip-sync is active. Existing flattened stills are not a rig. |
+| Voice and settings | [Room voice client](../public/js/miien_voice.js) offers Off (default), Browser voice (device catalog/default), and **Anny English · OmniVoice preview**. Stable UI `anny_en` maps exclusively to backend `omni_anny_en` in the [speech service](../services/miienSpeechService.js). Automatic new-reply speech is a separate opt-in; Replay is explicit; history/reload never autoplay. [Model/context settings](../views/miien_settings.pug) remain separate from tab-local room preferences. | Anny previews at most 600 Unicode code points; captions/history retain the full visible reply. No other Gateway voice/language is supported by this Miien endpoint. Latency and clone similarity are not newly validated; browser voice is a manual alternative, never automatic fallback. |
+| Private boundary | [Routes](../routes/miien.js) enforce semantic capabilities, shared CSRF for POSTs and private/no-store responses. Conversation scope is the existing single-member Chat5 scope; speech adds immutable principal ownership and saved-assistant-message checks. Audio is bounded and memory-only. | Stop interrupts local playback/retrieval, not accepted upstream synthesis. Memory audio is lost on restart; uncertain durable admission slots need settlement evidence. Future animation must preserve the [security contract](#current-security-contract) and [security framework](security-framework.md). |
+
+No production inspection, deployment, restart, installation, live TTS/ASR call, browser validation or generation occurred in this checkpoint. Historical synthetic-browser and full-suite records below remain historical; the supplied human rejection concerns the experimental clip, not acceptance of a deployed room.
+
+### One later image-conditioned result: technically successful, visually rejected
+
+Read the staged result handoff, public-safe candidate provenance and final checksums. Source sessions: [preparation](/codex/sessions/tool-session-66b3a56878bdeb024a045e699858117b0f5ebdd2108b5489d3a06f16b127ef17) and [completed Gateway experiment](/codex/sessions/tool-session-e73eeca0c98250de5f1c70e6d2debf7e03741e55ff1901412003848b6e72ee84), whose supplied completion timestamp is **2026-09-09T04:07:48Z**. These are evidence references, not work executed here. A public-safe reproducibility record is [miien-motion-result-2026-09-09.json](miien-motion-result-2026-09-09.json); private evidence/media paths and raw prompts/graphs are intentionally absent.
+
+Exactly **one prepared job** (`d2b915ba-d67a-460a-84df-00b8c86e474e`) completed in that session; no second generation occurred there. Canonical `public/i/miien/neutral.webp` (768×1024, SHA-256 `a96d921b3afea4022ffab1c3b2292b35ac6c62db78367f2f1c980997936d9978`) was downsampled with Pillow LANCZOS to a pixel-only RGB PNG at 288×384, with unchanged aspect/composition and no crop, padding or outpaint. Derivative SHA-256: `1ec07d44eefad5fec2094593b5f22c5d7e5aa5edd2893e0271643eb1a07f1020`.
+
+`video_minimax_h3_i2v.json` used all four installed models listed in the result record, seed `164821162508038`, 20 steps, `simple` scheduler, `res_multistep` sampler and denoise 1. Completed history matched the prepared 15-node graph, including connected `first_frame` and no `last_frame`. **Image conditioning is now technically demonstrated**; the previous successful baseline was text-only. This does not resolve the earlier native GPU fault's root cause or prove general reliability.
+
+The sanitized result was 288×384, 124 frames / 24 fps = 5.166667 seconds (~5.167 s), silent H.264/yuv420p, faststart, 314,533 bytes, one video stream and no other streams/chapters. Full decode passed in the Gateway evidence. SHA-256: `7142bfe0f6afdf168290fd519df3c98315938d5a0d4882ad2bc41edd99fbc329`. Audio/workflow metadata were removed; color signalling is unspecified and browser/device color/playback review was not performed. These checks establish a technically valid candidate, not acceptable animation.
+
+**Visual suitability FAILED; human decision: REJECTED / DO NOT SHIP.** Identity remained recognizable, but conspicuous moving colored flares crossed the character/background, the mouth opened, and pose/scale/framing shifted. Lennart rejected the flickering lights: the requirement is only the character's restrained idle motion on a plain background. Sampled frame review is not full playback acceptance. First/last RGB mean absolute difference was 11.3617/255, about 3.06× the median adjacent-frame difference, with pose/effect mismatch; **seamlessness is not established**. This is neither an acceptable idle nor a lip-sync animation.
+
+No site assets changed in that Gateway session; its worktree was reported clean. Rejected video/poster remain private and must not be copied, registered or activated. `miien-2.2` was only a proposed candidate version; the site remains `miien-2.1` with zero clips. The human reservation was acquired through the supported Gateway helper during preparation. The staged final snapshot still reported it active; normal release has been requested separately, but **release is not confirmed here**. This inspection neither releases it nor asserts current service health.
+
+### Acceptance gates for any future animation
+
+- Preserve Miien's face, ears, hair, outfit and identity. Keep character scale/framing and a plain fixed background/lighting stable: no camera drift, colored flares, flicker or added effects. Existing portrait composition remains the reference.
+- Neutral idle must have a closed mouth, restrained breathing/blinks and no speaking gestures. Inspect the entire clip and repeated loop boundary on desktop/mobile; require a visually smooth seam. Frame metrics alone cannot establish acceptance.
+- A clip must be sanitized silent video with zero audio tracks, bounded dimensions/duration/transfer size, matching poster and public-safe provenance. TTS remains separate; looping video is not lip-sync.
+- Select only the reviewed exact activity + mood. Never show neutral idle over another mood, listening, thinking or speaking; use that mood's portrait when no suitable asset exists.
+- Preserve reduced-motion, motion-off, data-saver and load/decode/playback-failure fallbacks, one-decoder limits and background/keyboard suspension. Review full-stage fit, low-motion comfort and device playback before acceptance.
+- Record technical review and human visual acceptance separately before any later integration. **Keep this rejection in the roadmap: do not ship this candidate or regenerate blindly.** Any next experiment needs a selected direction, a bounded scope and separate authorization; this checkpoint requests none.
+
+### Animation directions for discussion — not approved or implemented
+
+A practical proposal is **hybrid animation**: prepare layered character art with foreground separate from a plain background, eye open/blink variants and closed/small/open mouth variants, or a real deformable rig. Use those authored controls for predictable idle and simple audio-driven speaking; optionally add separately vetted silent ComfyUI clips for exact states/moods later. Layer separation includes filling hidden areas and aligning variants; the five flattened stills cannot provide those controls without new art/rigging work. Global pan/zoom moves the whole image and is not articulated character motion.
+
+These are project planning estimates, not benchmark results or a selected SDK:
+
+| Direction | Art / rigging required | Control and limits | Browser work / complexity estimate |
+| --- | --- | --- | --- |
+| Generated silent clips | Reference portrait plus offline generation, sanitation and review for every accepted state/mood; no runtime rig. | Rich baked motion, but identity/framing/mouth/seam adherence needs vetting; poor control of individual parts and utterance timing. This rejected H3 result illustrates that risk. | Lowest integration work with the existing adapter once an asset passes; decoding, transfer, transitions and state coverage still need review. |
+| Layered 2D / Live2D-style | Prepared foreground/background and aligned eye/mouth layers for simple swaps; meshes/deformers and authored parameters for a real 2D rig. | Predictable blink, breathing, mouth opening and expression control; appearance and deformation quality depend on prepared art. | Small sprite/canvas renderer for variants, or a model/runtime integration for a full rig. Cubism provides a Web SDK for programmatic model control; choosing it would be a separate decision. [Official SDK overview](https://docs.live2d.com/en/cubism-sdk-manual/cubism-sdk-for-web/). |
+| 3D / VRM | A Miien 3D mesh, textures/materials, humanoid skeleton and facial expressions/mouth shapes; stills alone are insufficient. | Explicit pose, face and gaze control; a substantial art/style-matching task. VRM standardizes avatar pose/expression/gaze operations. [Official VRM overview](https://vrm.dev/en/vrm/vrm_features/). | Largest proposed integration: avatar loader/render loop, camera/lighting, expression/animation coordination and mobile GPU/memory review. An existing general `three` dependency does not constitute a Miien VRM implementation. |
+
+For a first speaking layer, a smoothed audio envelope could drive approximate closed/small/open mouth shapes against **actual playback time**, returning to closed at silence, buffering, Stop or end. Volume does not identify phonemes; this is approximate audio-driven mouth motion, not accurate pronunciation or phoneme lip-sync. Live2D's [lip-sync documentation](https://docs.live2d.com/en/cubism-sdk-manual/lipsync/) describes volume-driven parameter control; that does not provide Miien with aligned speech timing. Phoneme/viseme timing or a dedicated lip-sync stage is a later option if required. The present Anny contract returns WAV without alignment; browser speech currently exposes playback events to Miien, not a PCM envelope or shared animation clock.
+
+Keep the controller boundary stable: Chat5 owns persisted text/context/history; activity owns idle/listening/thinking/speaking; mood owns expression; the audio layer owns real playback timing and interruption. A future renderer consumes those signals without changing Chat5 persistence, inferring speech from a pending synthesis request, or overriding mood with an unrelated clip. A future timing/envelope adapter belongs at that audio/rendering boundary; it is not implemented by this documentation.
+
+The human is being asked three direction choices separately. **No answers or approval are recorded yet.** Retain the existing Anny and portrait-framing decisions, then append the answers only when received. Pause here; no rig/art production, playback changes, manifest activation/version bump, Gateway edits or second generation is authorized by this checkpoint.
+
+### Checkpoint validation
+
+Fresh rerun on pinned **Node 24.20.0**: **8 suites / 228 tests passed**, with mocked database/provider boundaries and coverage disabled for this focused inspection:
+
+```bash
+volta run --node 24.20.0 npm test -- --runInBand --coverage=false tests/unit/miienMotion.test.js tests/unit/miienVoice.test.js tests/unit/miienSpeechService.test.js tests/unit/miienClient.test.js tests/unit/miienRoutes.test.js tests/unit/miienControllerStartup.test.js tests/unit/miienMood.test.js tests/unit/miienChatService.test.js
+```
+
+The existing experimental VM Modules warning remains. JSON parsing/evidence cross-checks, repository-relative Markdown references, manifest validation with zero clips, all five still hashes/dimensions and `git diff --check` passed. No new tests were added. The historical **269 suites / 2,265 tests** full-suite result below was **not rerun**; docs-only changes do not affect curated OpenAPI YAML, so OpenAPI lint is not applicable. No runtime files, assets, dependencies or configuration changed.
+
+## Earlier bounded wrap-up for Lennart review (2026-09-09, historical)
 
 Inspected clean worktree, history, routes, templates, speech/activity/motion controllers and live remote branch: implementation HEAD and `origin/feat/chat5-miien-phase2-slice1` both matched `bd9e9ad1ae7c0235aceba369491219c6cb63199c` before this documentation-only follow-up. This verifies repository state, **not which revision is deployed**. No production inspection, deployment, backend restart, configuration change, generation or benchmark was performed by this wrap-up.
 
@@ -20,7 +85,7 @@ Human deployment/access steps for the newest documentation head:
 
 The remaining review questions are below the operator checklist. Existing waist-up and English Anny decisions stand; focus on actual newly deployed behavior and the next bounded animation direction.
 
-New wrap-up validation: pinned Node 24.20.0, `npm test -- --runInBand --coverage=false` with the six Miien Motion/Voice/SpeechService/Client/Routes/ControllerStartup suites passed **121 tests / 6 suites** using mocked boundaries. Attempt JSON parsing, timestamp order and evidence fields, manifest validation with zero clips, all five still SHA-256 hashes and exclusion of private staging paths/raw motion instructions passed; `git diff --check` passed. Coverage was disabled for this focused run; the earlier **269 suites / 2,265 tests** and coverage results remain commit-record evidence, not newly reproduced full-suite results. No new browser/device or live-provider acceptance is claimed.
+Historical wrap-up validation: pinned Node 24.20.0, `npm test -- --runInBand --coverage=false` with the six Miien Motion/Voice/SpeechService/Client/Routes/ControllerStartup suites passed **121 tests / 6 suites** using mocked boundaries. Attempt JSON parsing, timestamp order and evidence fields, manifest validation with zero clips, all five still SHA-256 hashes and exclusion of private staging paths/raw motion instructions passed; `git diff --check` passed. Coverage was disabled for this focused run; the earlier **269 suites / 2,265 tests** and coverage results remain commit-record evidence, not newly reproduced full-suite results. No new browser/device or live-provider acceptance is claimed.
 
 ## Current security contract
 
@@ -105,6 +170,8 @@ Example **future reviewed** slot (illustrative only, paths/hashes must come from
 }
 ```
 
+The following offline procedure is retained for a future separately authorized, accepted asset. It is not a work order; the later rejected H3 candidate above must not be published.
+
 Offline generation → visual/loop review → silent versioned assets → runtime state routing:
 
 1. Use the canonical `public/i/miien/neutral.webp` portrait, consistent with `README-Prompts.md`: adult Miien, cat ears, twin tails, amber eyes, Graphite/Ember hoodie. Preserve ears, hair, identity, outfit and stable composition. Start with **one subtle neutral idle breathing/blinking loop**, then review it before multiplying moods/states. Keep raw references, prompts, workflow graphs and generation provenance outside public assets.
@@ -126,7 +193,7 @@ Offline generation → visual/loop review → silent versioned assets → runtim
 
 ## Validation, deployment handoff and next decisions
 
-Local validation uses mock database/Gateway boundaries and synthetic browser content. It does not establish real voice quality/latency, upstream cancellation, actual generated-video quality or physical microphone/OS behavior. No real Anny calls, production startup, production data mutation, deployment or service reconfiguration occurred. The single offline ComfyUI attempt below was explicitly authorized and failed without an output asset.
+Local validation uses mock database/Gateway boundaries and synthetic browser content. It does not establish real voice quality/latency, upstream cancellation, actual generated-video quality or physical microphone/OS behavior. No real Anny calls, production startup, production data mutation, deployment or service reconfiguration occurred. The earlier offline ComfyUI attempt below failed without an output asset; the later separately authorized experiment above produced a technically valid but visually rejected private candidate. Neither supplied an accepted site animation.
 
 Browser acceptance checklist for Lennart's chosen review environment:
 
@@ -145,7 +212,7 @@ Release through the normal reviewed application process only. There are no new d
 3. Preserve private/no-store for **all** `/chat5/miien` responses at Cloudflare; no broad cache/WAF/Access exemption. Refresh local JS/CSS/manifest and the role-management form with the release. Complete the browser/device and separately authorized short-Anny acceptance checks above before release acceptance.
 4. Do not clear an outstanding speech slot as part of routine restart. Follow the existing settlement/recovery procedure above only when needed. Rollback may restore phase 1 while preserving saved conversations and any uncertain admission slot for operator recovery.
 
-Focused questions after Lennart deploys and reviews the current behavior (waist-up and English Anny are settled; earlier listening was checked, while the new OmniVoice backend still needs deployed-behavior review):
+Historical review questions (superseded by the pending direction choices in the checkpoint above) after Lennart deploys and reviews the current behavior (waist-up and English Anny are settled; earlier listening was checked, while the new OmniVoice backend still needs deployed-behavior review):
 
 - Does the deployed call-style layout and slow-voice feedback work on your main browser/device? **Recommended:** keep captions on, history/settings collapsed, automatic voice opt-in and record → review/edit → Send; fix only concrete review friction.
 - After the sampling fault is understood and a retry is separately authorized, should the next asset remain one restrained neutral idle breathing/blinking loop? **Recommended:** yes; review identity, portrait/fullscreen fit and loop seams before expanding states or moods.
@@ -153,7 +220,7 @@ Focused questions after Lennart deploys and reviews the current behavior (waist-
 
 Future choices include conservative transitions, a 2D/3D rig, streaming/timing support and distributed audio recovery if justified. None is required by this slice.
 
-## Actual idle attempt (2026-09-09)
+## Earlier idle attempt: GPU failure (2026-09-09, historical)
 
 Public-safe attempt metadata: [miien-motion-attempt-2026-09-09.json](miien-motion-attempt-2026-09-09.json). The existing 768×1024 neutral portrait was contain-resized to 480×640 and centered in a 640×640 Graphite RGB canvas; no new artwork was generated. Uploaded input: `miien-neutral-contained-20260909.png`. Raw prompts, private staging paths and credentials are omitted.
 
@@ -173,7 +240,7 @@ The catalog snapshot `video_minimax_h3_i2v.json` accepts image input `114` and p
 
 No usable output was found; no frame/seam/playback review or human acceptance is possible. At **09:53:53 JST** the diagnostic session observed no active job, queue, reservation, cleanup error or degradation; ComfyUI was stopped. This is a historical snapshot, not a current health assertion. Gateway source matched deployed source. That session made no new attempt, generation, restart or code change; its host lacked pytest, so **no tests passed there**.
 
-Before any separately authorized retry: investigate the deployed ROCm/Torch/quantized H3 stack, freeze the exact reviewed graph, maintain one durable attempt record, retain the returned ComfyUI prompt ID and disable automatic resubmission after ambiguous errors (Gateway lacks submit deduplication). Verify the existing upload is still available; do not assume private staging survives. **No retry or GPU fix is part of this wrap-up.** The live manifest remains `miien-2.1`, `clipStatus: not-produced`, `clips: []`; there is no video to transfer or register.
+Historical handoff at that time (the later successful-but-rejected experiment is recorded above): before any separately authorized retry, investigate the deployed ROCm/Torch/quantized H3 stack, freeze the exact reviewed graph, maintain one durable attempt record, retain the returned ComfyUI prompt ID and disable automatic resubmission after ambiguous errors (Gateway lacks submit deduplication). Verify the existing upload is still available; do not assume private staging survives. **No retry or GPU fix is part of this wrap-up.** The repository manifest remained `miien-2.1`, `clipStatus: not-produced`, `clips: []`; that failed attempt had no video to transfer or register. The later candidate is also prohibited from integration because it was rejected.
 
 ## Second-slice validation (2026-09-09)
 
