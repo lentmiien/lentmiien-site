@@ -793,6 +793,31 @@ async function nextAsrPoll(w) {
   const entry = [...w.fixtureTimers.entries()].find(([, callback]) => callback.fixtureDelay === 5000);
   expect(entry).toBeDefined(); w.fixtureTimers.delete(entry[0]); entry[1](); await settle();
 }
+test('reservation readiness failure preserves draft, stops capture and permits explicit re-recording without upload retry', async () => {
+  const w = setup({ timers: true }); await settle();
+  const mic = microphoneFixture(w);
+  element(w, 'message').value = '  Keep my exact draft\n';
+  element(w, 'mic').click(); await mic.grant();
+  w.fetch.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({
+    code: 'asr_database_not_ready', error: 'Recording/transcription could not start. Try recording again shortly or type instead.',
+  }) });
+  element(w, 'mic').click(); await settle(); await settle();
+  expect(element(w, 'mic-status').textContent).toContain('Recording/transcription could not start');
+  expect(element(w, 'mic-status').textContent).not.toMatch(/history|resending/);
+  expect(element(w, 'message').value).toBe('  Keep my exact draft\n');
+  expect(element(w, 'mic').disabled).toBe(false); expect(element(w, 'send').disabled).toBe(false);
+  expect(mic.track.stop).toHaveBeenCalled();
+  expect(w.fetch.mock.calls.filter(([url]) => url.includes('/transcribe'))).toHaveLength(1);
+  expect([...w.fixtureTimers.values()].some(callback => [5000, 3660000].includes(callback.fixtureDelay))).toBe(false);
+  const fresh = microphoneFixture(w);
+  element(w, 'mic').click(); await fresh.grant();
+  w.fetch.mockResolvedValueOnce(response(asrReserved())).mockResolvedValueOnce(response(asrReady('Fresh recording')));
+  element(w, 'mic').click(); await settle(); await settle();
+  expect(element(w, 'message').value).toBe('  Keep my exact draft\n\nFresh recording');
+  expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/transcribe'))).toHaveLength(2);
+  expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/audio'))).toHaveLength(1);
+  expect(w.fetch.mock.calls.filter(([url]) => url.endsWith('/messages'))).toHaveLength(0);
+});
 async function startPendingAsr(w, { uploadError = false, remainingMs = 2800000 } = {}) {
   const mic = microphoneFixture(w); element(w, 'mic').click(); await mic.grant();
   w.fetch.mockResolvedValueOnce(response(asrReserved()));

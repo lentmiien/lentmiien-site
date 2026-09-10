@@ -8,6 +8,7 @@ const { MAX_AUDIO_BYTES } = require('../utils/miienAudio');
 const { MiienError, DEFAULT_CONTEXT } = require('../services/miienChatService');
 const { MOODS } = require('../utils/miienMood');
 const { MiienSpeechOccupiedError } = require('../services/miienSpeechService');
+const { MiienAsrAdmissionError } = require('../utils/miienAsrAdmission');
 
 function createMiienRouter({ service, transcription, speech, roleModel, logger }) {
   const router = express.Router();
@@ -102,14 +103,23 @@ function createMiienRouter({ service, transcription, speech, roleModel, logger }
     if (req.aborted || res.destroyed) return;
     if (res.headersSent) return next(error);
     const status = error instanceof MiienError ? error.status : error.type === 'entity.too.large' ? 413 : error.type === 'encoding.unsupported' ? 415 : ['entity.parse.failed', 'parameters.too.many'].includes(error.type) ? 400 : 503;
-    if (status >= 500) logger.error('Miien operation failed; check Chat5, ASR or speech availability', {
-      category: 'chat5_miien', metadata: { operation: req.route?.path || 'request', errorName: error?.name || 'Error' },
+    const asrAdmission = error instanceof MiienAsrAdmissionError;
+    const reservationFailure = status >= 500 && req.method === 'POST' && req.route?.path === '/:id/transcribe';
+    if (status >= 500) logger.error(asrAdmission ? 'Miien ASR admission failed; check database readiness and admission index metadata'
+      : 'Miien operation failed; check Chat5, ASR or speech availability', {
+      category: asrAdmission ? 'chat5_miien_asr' : 'chat5_miien', metadata: {
+        operation: req.route?.path || 'request',
+        errorName: error instanceof TypeError ? 'TypeError' : 'Error',
+        ...(asrAdmission ? { stage: error.stage, code: error.code } : reservationFailure ? { stage: 'reservation', code: 'asr_reservation_unexpected' } : {}),
+      },
     });
     const message = error instanceof MiienError ? error.message : status === 413 ? 'Request is too large.' : status === 415 ? 'Compressed audio uploads are not supported.' : status === 400 ? 'Invalid request.'
-      : 'Miien could not finish this operation. Text chat remains available. Check history before resending a message.';
+      : reservationFailure ? 'Recording/transcription could not start. Try recording again shortly or type instead.'
+        : 'Miien could not finish this operation. Text chat remains available. Check history before resending a message.';
     if (req.accepts(['html', 'json']) === 'html') return res.status(status).render('miien_error', { message });
     return res.status(status).json({ error: message,
-      ...(error instanceof MiienSpeechOccupiedError ? { code: 'speech_admission_occupied' } : {}) });
+      ...(asrAdmission ? { code: error.code } : reservationFailure ? { code: 'asr_reservation_unexpected' }
+        : error instanceof MiienSpeechOccupiedError ? { code: 'speech_admission_occupied' } : {}) });
   });
   return router;
 }

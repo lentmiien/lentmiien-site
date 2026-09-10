@@ -1,11 +1,12 @@
-// Optional offline browser QA. Pass installed Playwright module and Chromium paths.
+// Optional offline browser QA. Pass installed Playwright module, Chromium path,
+// and optionally a temporary screenshot output directory.
 // Serves only synthetic state and allowlisted static assets on loopback.
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const root = path.resolve(__dirname, '..');
 const pug = require('pug');
-const output = root + '/documentation/assets/miien-expressions-v1';
+const output = path.resolve(process.argv[4] || root + '/documentation/assets/miien-expressions-v1');
 const id = 'a'.repeat(24);
 const html = pug.renderFile(root + '/views/miien_room.pug', {
   conversation: {
@@ -50,6 +51,7 @@ const server = http.createServer((req, res) => {
 });
 let browser;
 (async () => {
+  fs.mkdirSync(output, { recursive: true });
   const { chromium } = require(process.argv[2] || 'playwright');
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   browser = await chromium.launch({
@@ -204,6 +206,9 @@ let browser;
   wav.writeUInt32LE(wav.length - 44, 40);
   for (let i = 0; i < 48000; i++) wav.writeInt16LE(Math.round(1500 * Math.sin(i * 2 * Math.PI * 180 / 16000)), 44 + i * 2);
   await page.route('**/speech**', async route => {
+    if (route.request().url().includes('/speech-admission/')) {
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ state: 'available' }) });
+    }
     calls++;
     await route.fulfill(route.request().url().endsWith('/audio') ? {
       contentType: 'audio/wav',

@@ -3,7 +3,6 @@ jest.mock('../../services/messageService', () => jest.fn());
 jest.mock('../../services/conversationService', () => jest.fn());
 jest.mock('../../services/asrApiService', () => jest.fn());
 jest.mock('../../services/chat5ModelCatalogService', () => ({ listAvailableChatModels: jest.fn().mockResolvedValue([]) }));
-jest.mock('../../models/miien_asr_slot', () => ({ init: jest.fn(), create: jest.fn(), deleteOne: jest.fn() }));
 jest.mock('../../models/miien_speech_slot', () => ({ create: jest.fn(), deleteOne: jest.fn() }));
 jest.mock('../../utils/logger', () => ({ warning: jest.fn(), error: jest.fn() }));
 jest.mock('axios', () => ({ get: jest.fn(), post: jest.fn() }));
@@ -26,6 +25,7 @@ test.each(['not-an-origin', 'http://gateway.invalid/tts/', 'https://user:secret@
   try {
     process.env.TTS_API_BASE = apiBase;
     jest.isolateModules(() => {
+      require('mongoose').set('bufferCommands', false);
       const { MiienChatService } = require('../../services/miienChatService');
       jest.spyOn(MiienChatService.prototype, 'list').mockResolvedValue([]);
       jest.spyOn(MiienChatService.prototype, 'owned').mockResolvedValue({ _id: id, title: 'Fixture', metadata: {} });
@@ -57,4 +57,10 @@ test.each(['not-an-origin', 'http://gateway.invalid/tts/', 'https://user:secret@
   expect(await response.json()).toMatchObject({ error: expect.stringContaining('Anny is unavailable') });
   expect(http.get).not.toHaveBeenCalled(); expect(http.post).not.toHaveBeenCalled();
   expect(slots.create).not.toHaveBeenCalled();
+  // Real ASR model compiled while disconnected, through actual controller wiring.
+  const reservation = await fetch(`${base}/${id}/transcribe`, {
+    method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }, body: '{}',
+  });
+  expect(reservation.status).toBe(503);
+  expect(await reservation.json()).toMatchObject({ code: 'asr_database_not_ready', error: expect.stringContaining('could not start') });
 });

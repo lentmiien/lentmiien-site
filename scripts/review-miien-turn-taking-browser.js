@@ -91,12 +91,15 @@ let browser;
   });
   let asrReady = false, asrStatusCalls = 0, asrActions = [], loseUpload = false, loseStatus = false, delayedStatus = null;
   asrGate.promise.then(() => { asrReady = true; });
-  let asrPhase = 'transcribing', asrRemaining = null;
+  let asrPhase = 'transcribing', asrRemaining = null, reservationUnavailable = false;
   const asrJob = status => ({ id: '22222222-2222-2222-2222-222222222222', status,
     remainingMs: asrRemaining ?? (['awaiting_upload', 'uploading'].includes(status) ? 60000 : 2800000) });
   await page.route('**/transcribe**', async route => {
     const request = route.request();
-    if (request.url().endsWith('/transcribe')) return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify(asrJob('awaiting_upload')) });
+    if (request.url().endsWith('/transcribe')) return reservationUnavailable
+      ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'asr_database_not_ready',
+        error: 'Recording/transcription could not start. Try recording again shortly or type instead.' }) })
+      : route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify(asrJob('awaiting_upload')) });
     if (request.url().endsWith('/audio')) {
       asrCalls++;
       if (loseUpload) { loseUpload = false; return route.abort('connectionreset'); }
@@ -256,6 +259,18 @@ let browser;
   await page.clock.install();
   await page.locator('summary').filter({ hasText: 'Settings' }).click();
   await page.locator('#speech-enabled').uncheck(); await page.keyboard.press('Escape');
+  reservationUnavailable = true;
+  const uploadsBeforeFailure = asrCalls;
+  await page.locator('#message').fill('Keep draft through startup');
+  await page.locator('#mic').click(); await page.evaluate(() => window.fixtureGrant()); await presence('Listening');
+  await page.locator('#mic').click();
+  await page.waitForFunction(() => document.querySelector('#mic-status').textContent.includes('Recording/transcription could not start'));
+  assert.equal(await page.locator('#message').inputValue(), 'Keep draft through startup');
+  assert.equal(await page.locator('#mic').isDisabled(), false);
+  assert.equal(await page.locator('#send').isDisabled(), false);
+  assert.equal(asrCalls, uploadsBeforeFailure);
+  assert.doesNotMatch(await page.locator('#mic-status').textContent(), /history|resending/);
+  reservationUnavailable = false; // The next explicit recording exercises recovery.
   const startAsr = async () => {
     asrReady = false;
     await page.locator('#mic').click(); await page.evaluate(() => window.fixtureGrant()); await presence('Listening');
@@ -336,6 +351,7 @@ let browser;
     'PCM silence rests, seeks select small/open, pause closes mouth', 'Replay reuses native audio and envelope',
     'reduced motion stays static during native playback', 'history outage gates Replay and reconnect does not autoplay',
     'content-free browser and authorized server timing diagnostics',
+    'ASR startup failure preserves draft, sends no upload and permits explicit re-recording',
     'ASR survives ninety seconds with editable draft and accessible Stop',
     'ASR result applied once and acknowledged without sending',
     'lost upload and status responses poll same job without resubmission',

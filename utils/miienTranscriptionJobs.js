@@ -1,6 +1,7 @@
 const { randomUUID } = require('crypto');
 const { MiienError, fields } = require('../services/miienChatService');
 const { validMiienWav } = require('./miienAudio');
+const { MiienAsrAdmissionError, requireAsrAdmission } = require('./miienAsrAdmission');
 const HANDLE = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
 const UPLOAD_MS = 60000;
 const MAX_JOBS = 8;
@@ -39,14 +40,16 @@ class MiienTranscriptionJobs {
     // Reserve local memory before asynchronous database admission.
     this.jobs.set(job.id, job);
     try {
-      await this.slots.init(); // The unique principal index is an admission requirement.
+      await requireAsrAdmission(this.slots);
       for (let slot = 0; slot < 2; slot++) {
         try {
           await this.slots.create({ _id: `miien-asr-${slot}`, jobId: job.id, principalId: owner,
             conversationId, startedAt: new Date() });
           job.slot = `miien-asr-${slot}`;
           break;
-        } catch (error) { if (error.code !== 11000) throw error; }
+        } catch (error) {
+          if (error.code !== 11000) throw new MiienAsrAdmissionError('reservation', 'asr_reservation_failed');
+        }
       }
       if (!job.slot) throw new MiienError(429, 'Transcription capacity is occupied. If it persists, an operator must check outstanding Gateway work.');
       job.deadlineAt = Date.now() + UPLOAD_MS;

@@ -2,7 +2,117 @@
 
 **Phase 3 implementation is ready for a proper human testing session; acceptance and finalization remain open. Merge into `main` is the FINAL step, only after Lennart accepts the tested feature revision. Do not merge as part of this implementation handoff.** The coordinator owns test deployment and device testing. No production deployment/restart, Gateway changes, new synthesis, microphone capture or artwork generation was performed here. All five approved expression rigs/artwork remain unchanged.
 
-## Phase 3 ASR client deadline release fix (2026-09-09)
+## Phase 3 cold-start ASR reservation blocker (2026-09-10)
+
+**Feature-branch release candidate; live acceptance and merge to `main` remain pending.** This fix starts from clean `2c1c9f075dbefa5aa5cf9f05de29708f4e93f434` on `feat/chat5-miien-phase2-slice1`. It preserves the accepted phone layout, animation, queued-ASR client deadlines, latest-reply voice behavior and existing logged-in ASR security contract below. No dependencies, environment variables, app schedulers, global buffering, worker counts, Gateway behavior, recordings or artwork change.
+
+### Cause and focused fix
+
+The supplied [read-only production investigation](/codex/sessions/tool-session-d26be495693e8a82256a4a822fa8ebfdae27a586b5a36d7a40bd3c5c98786daa) reports six September 9 failures between 23:20 and 23:45 UTC, all TypeError at **reservation** `POST /chat5/miien/:id/transcribe`, before upload or Gateway dispatch. The exact production exception was not logged, and the running artifact/worker topology was not verified. The inspected checkout matched `2c1c9f0`. Startup at 23:16:53.776 preceded DB readiness at 23:16:53.853.
+
+Source inspection agrees with the supplied isolated reproduction on Node 24.20.0 / Mongoose 9.7.4: `database.js` disables buffering; the Miien controller compiles the ASR slot model before database lifecycle startup; implicit model initialization tries `connection.db.createCollection` while `connection.db` is undefined. Mongoose retains that rejected `Model.init()` promise. Every later reservation awaits the same failure, even after connection readiness. Earlier controller tests mocked the slot model and could not catch this lifecycle defect. This is a reproduced causal path consistent with the production symptoms, not a newly captured production stack trace.
+
+The [slot schema](../models/miien_asr_slot.js) now explicitly sets **`autoCreate: false`, `autoIndex: false`, `bufferCommands: false`**. The schema still declares the unique principal index. [Admission readiness](../utils/miienAsrAdmission.js) checks a connected DB and reads **actual** collection index metadata before each reservation. It uses neither `Model.init()` nor automatic index synchronization. The driver metadata read has a five-second `timeoutMS` and `maxTimeMS`. There is no unbounded wait for connection, per-feature connection loop, cached success or cached failure: existing database lifecycle infrastructure reconnects; a subsequent explicit user recording checks afresh. Connection loss during the metadata read is rechecked before insertion. A DB write failure never triggers speculative slot cleanup or Gateway work.
+
+Required metadata: `_id_` exactly `{_id: 1}` (MongoDB may omit its inherent `unique` option), and `principalId_1` exactly `{principalId: 1}` with `unique: true`. Missing/incomplete/wrong metadata fails closed. Any TTL, sparse or partial index on this collection is rejected; additional ordinary full indexes are allowed. Index configuration must remain stable while admission runs: an operator changing indexes must first quiesce every app worker. This metadata precheck is not transactional protection against concurrent administrator DDL.
+
+Two fixed global slots, one outstanding request per principal, eight local retained jobs, scoped CSRF/capability/member checks, private result retention, duplicate upload protection, and uncertain-work durable locks remain intact. A failed readiness attempt releases only its provisional local memory entry. No app path creates/drops indexes or deletes live records to repair readiness. **Existing healthy databases need no migration. A fresh or missing-index database now requires explicit operator provisioning** as below; the app DB account needs `listIndexes` plus its existing slot insert/delete permissions, not DDL permission.
+
+HTTP 503 now returns the existing `error` convention plus a stable `code`, with a pre-upload message: **“Recording/transcription could not start. Try recording again shortly or type instead.”** The actual client already stops capture, preserves draft edits, clears the wait and permits explicit re-recording. It never uploads or sends chat after a failed reservation. There is no warning about duplicate chat messages at this stage.
+
+| Stage | Code | Operator meaning |
+| --- | --- | --- |
+| database | `asr_database_not_ready` | Lifecycle has not connected, or connection was lost before admission. |
+| indexes | `asr_index_check_failed` | Metadata read failed: check collection existence, `listIndexes` permission, connectivity and timeout. |
+| indexes | `asr_indexes_unsafe` | Metadata was read but the required uniqueness/no-expiry invariant failed. |
+| reservation | `asr_reservation_failed` | Slot insertion failed for a reason other than duplicate-key capacity; inspect DB availability/write permission. An uncertain write may have left a lock. |
+| reservation | `asr_reservation_unexpected` | Unexpected reservation-path failure, distinguished from the explicit readiness checks. |
+
+The shared logger records fixed operation/stage/code and a sanitized error type. Explicit admission failures use category `chat5_miien_asr`; generic unexpected reservation failures retain `chat5_miien`. No raw exception, DB URL, principal ID, recording, transcript or request body is logged. Existing capacity denials remain 429 and do not gain an automatic retry.
+
+### Validation and review
+
+Validation uses pinned Node 24.20.0, installed dependencies, real Mongoose with fake driver/connection stubs, and loopback Chromium with synthetic audio/provider responses. No configured app startup, production change, real microphone capture or live ASR/TTS workload was performed. No isolated MongoDB server was available (no installed mongod/mongosh, no MongoDB Docker image/container); **actual development/production MongoDB metadata has not been audited in this run**. No credential files were read or dependency installation hooks invoked.
+
+- Focused Jest: **8 suites / 304 tests passed**. The new [real-Mongoose regressions](../tests/unit/miienAsrAdmission.test.js) cover disconnected import with buffering off, delayed readiness, pending/rejected metadata, concurrent local admission, reconnection, missing/wrong/nonunique/sparse/partial/TTL indexes, insertion failure and no Gateway work before valid admission. The [controller startup test](../tests/unit/miienControllerStartup.test.js) now uses the real ASR model. Route tests check sanitized 503 JSON/HTML mapping; actual-client tests check failure, retained draft, zero upload and fresh-recording recovery.
+- Original-candidate control: isolated real Mongoose compilation of the `2c1c9f0` slot model reproduced TypeError and the identical rejected init promise after simulated connection readiness, with zero slot writes. The fixed actual-model regression succeeds after readiness.
+- Full Jest: **276 suites / 2,572 tests passed** in 70.364 seconds; all configured coverage thresholds met (67.35% statements, 43.72% branches, 77.56% functions, 67.98% lines for the critical-file set). Existing experimental VM Modules warning only. The final real-model controller assertions were also rerun separately: **1 suite / 3 tests passed**.
+- Voice/ASR Chromium: **28 synthetic groups passed**, zero page/CSP errors. Includes reservation-readiness failure/re-recording recovery, retained edits and no upload on rejection, queued/lost-response success beyond 90 seconds, no duplicate upload/automatic Send, cancellation, latest-reply admission and native synthetic WAV mouth behavior.
+- Responsive Chromium: **19 groups passed**, zero page/CSP errors. Covers accepted phone/keyboard/landscape behavior including 320×284, 844×200, focus/viewport panning and desktop. The smallest keyboard screenshot was visually inspected; no CSS/UI change was needed.
+- Expression Chromium: **13 groups passed**, zero page/CSP errors, with nine temporary screenshots. The first run exposed a stale harness response: `/speech-admission/` was incorrectly returning a speech job. The test fixture now returns `{state: "available"}` and accepts a temporary screenshot output directory. Its generated tracked screenshots were restored; accepted artwork/review assets are unchanged. All five moods, native synthetic audio, fallback, reduced motion and drawers pass.
+- Scope/security review: admission remains fail-closed, no automatic DDL/lock deletion, no authentication/ownership/CSRF changes, no new route or private-data output, no production mutation. Browser assets/CSS/artwork remain unchanged. `git diff --check`, syntax checks for all 11 changed/new JavaScript files, and repository-relative documentation links pass.
+
+Reproduce focused validation:
+
+```bash
+volta run --node 24.20.0 npm test -- --runInBand --coverage=false tests/unit/miienAsrAdmission.test.js tests/unit/miienClient.test.js tests/unit/miienVoice.test.js tests/unit/miienTranscriptionJobs.test.js tests/unit/miienRoutes.test.js tests/unit/miienControllerStartup.test.js tests/unit/miienSpeechService.test.js tests/unit/asrApiService.test.js
+volta run --node 24.20.0 npm test -- --runInBand
+```
+
+Existing browser commands: `node scripts/review-miien-turn-taking-browser.js <installed-playwright-module> <chromium-executable>`, `node scripts/review-miien-responsive-browser.js <installed-playwright-module> <chromium-executable> <temporary-output-directory>` and `node scripts/review-miien-expressions-browser.js <installed-playwright-module> <chromium-executable> <temporary-output-directory>`. This run used `/tmp/connectivity-ui-qa/node_modules/playwright` and `/home/lennart/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome`, without installing packages.
+
+### Lennart's deployment and index checks
+
+These are operator instructions, **not actions performed by this change**. They supersede the historical `autoIndex: true` / cached-init restart advice below.
+
+1. In the intended deployment checkout, first verify a clean worktree and the feature branch. Preserve any local changes; do not reset them. Fetch/update only this feature branch and compare the resulting SHA with the exact pushed SHA in the handoff. Do not merge main:
+
+   ```bash
+   git status --short
+   git branch --show-current
+   git fetch origin feat/chat5-miien-phase2-slice1
+   git switch feat/chat5-miien-phase2-slice1
+   git pull --ff-only origin feat/chat5-miien-phase2-slice1
+   git rev-parse HEAD
+   git status --short
+   ```
+
+2. Deploy/restart that exact checkout or immutable artifact using the existing reviewed service/task/container procedure. Inspect its configured working directory/artifact, entrypoint and replica/cluster settings, then confirm the new process start time and corresponding startup/DB-ready logs. Record the artifact SHA plus its association with that restarted process; **`git rev-parse HEAD` alone cannot prove the running SHA**. Do not publish raw process command lines/environment. On Windows, identify actual app listeners and their start times using:
+
+   ```powershell
+   Get-NetTCPConnection -State Listen -LocalPort <actual-app-port> | Select-Object LocalAddress,LocalPort,OwningProcess
+   Get-Process -Id <listener-pid> | Select-Object Id,ProcessName,StartTime,Path
+   ```
+
+   Confirm **one Express app worker**, or verified sticky routing for reservation, upload, status and discard, including reconnects. Classify other Node processes separately. Do not enable multiple workers as part of this fix. Check `/apphealth` and the existing database lifecycle logs; `/apphealth` does not prove ASR indexes, SHA or worker affinity. Refresh the browser. `npm start` is not a smoke test (prestart runs database/setup/Dropbox work); direct `node app` also starts background workers.
+
+3. In an already authorized `mongosh` session with the correct application database selected, inspect **only index metadata**, without reading slot documents or displaying partial-filter values:
+
+   ```javascript
+   db.getCollection('miien_asr_slots').getIndexes().map(index => ({
+     name: index.name,
+     key: index.key,
+     unique: index.unique === true,
+     sparse: index.sparse === true,
+     hasPartialFilter: Object.prototype.hasOwnProperty.call(index, 'partialFilterExpression'),
+     hasTTL: Object.prototype.hasOwnProperty.call(index, 'expireAfterSeconds')
+   }))
+   ```
+
+   Require the two exact indexes described above and no TTL/sparse/partial entries. `_id_` can show `unique: false` in this projection when MongoDB omits the property; its uniqueness is inherent. An absent collection, permission denial or incomplete audit is not a pass. Verify `listIndexes` using the application DB account's authorized access, not only a more privileged operator account. The first successful reservation also exercises this check using app credentials.
+
+4. **Only if metadata confirms the collection or required index is missing**, quiesce all app workers capable of admitting/dispatching ASR first. Confirm any outstanding Gateway work has settled under the existing recovery rules before repairing an unsafe admission configuration. With authorized operator credentials in that same DB, propose these narrow additive steps:
+
+   ```javascript
+   // Only when the collection is confirmed absent:
+   db.createCollection('miien_asr_slots')
+   // Only when principalId_1 is absent and remaining metadata is safe:
+   db.getCollection('miien_asr_slots').createIndex({ principalId: 1 }, { name: 'principalId_1', unique: true })
+   ```
+
+   Re-audit metadata before resuming. If unique creation fails because of duplicate records, or an existing index is wrongly configured, stop and arrange a separately reviewed repair with proven Gateway settlement. Do not drop conflicting indexes, bulk-delete records, run `syncIndexes()`, add TTL, or modify speech slots. Privilege/connection fixes are picked up on the next explicit reservation in the fixed code; they no longer require restarting merely to clear Mongoose's failed init cache. Deploying this code does require the normal restart.
+
+### Focused live acceptance gate
+
+After verifying SHA/process, worker affinity and index/readiness prerequisites, Lennart should record results against the exact feature SHA:
+
+1. **Cold start → immediately record and transcribe** in an owned HTTPS room. Once DB readiness is reached, expect reservation 202, exactly one upload, same-handle status polling and one editable transcript, with no automatic Send. A genuinely not-ready request must fail safely; a fresh explicit recording after readiness must recover without another restart.
+2. While an already accepted slow Anny generation is naturally queued/running, record one short microphone message and continue editing for a legitimate **greater-than-60-second** ASR wait. Confirm completion, exact draft retention, one append, no duplicate recording submission and no chat auto-send. Do not manufacture production queue load.
+3. Verify Stop/cancel, re-record after proven completion, late results, hide/return, latest-reply voice/Replay, and normal text chat. Stop/hide never proves upstream cancellation; uncertain durable locks still require the recovery procedure below. Restart loses in-memory handles/results and does not clear locks.
+4. Recheck the already accepted physical-phone keyboard, rotation, textarea focus/IME, captions/history and touch controls. Automated Chromium simulations do not replace device acceptance.
+5. Record safe response codes, observed waits, upload/append/send counts and Lennart's explicit acceptance. **Complete phase 3 acceptance first; merge to main only as the separate final step after acceptance.**
+
+## Phase 3 ASR client deadline release fix (2026-09-09, historical)
 
 **Feature-branch implementation only. Human acceptance, phase 3 finalization and the final merge to `main` remain pending, in that order.** Starting revision: `ce45e2f03a53132fd6b4d491901b1a8e8884c921` on `feat/chat5-miien-phase2-slice1`, with a clean worktree. The [read-only release review](/codex/sessions/tool-session-a911db8fc662a1f1a8891599122f89a5f81e966230c58696776bd13ea357e46d) reproduced this specific blocker in the actual client: after a lost upload response, an `uploading` GET permanently shortened the shared polling deadline to roughly 75 seconds. A later `transcribing` response could not restore the legitimate Gateway budget.
 

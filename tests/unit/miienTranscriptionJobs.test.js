@@ -12,7 +12,9 @@ function wav() {
 }
 function slotStore() {
   const rows = new Map();
-  return { rows, init: jest.fn().mockResolvedValue(), create: jest.fn(async row => {
+  return { rows, db: { readyState: 1, db: {} }, collection: { listIndexes: jest.fn(() => ({ toArray: async () => [
+    { name: '_id_', key: { _id: 1 } }, { name: 'principalId_1', key: { principalId: 1 }, unique: true },
+  ] })) }, create: jest.fn(async row => {
     if (rows.has(row._id) || [...rows.values()].some(r => r.principalId === row.principalId)) throw Object.assign(new Error('duplicate'), { code: 11000 });
     rows.set(row._id, row);
   }), deleteOne: jest.fn(async query => { if (rows.get(query._id)?.jobId === query.jobId) rows.delete(query._id); }) };
@@ -156,8 +158,8 @@ test.each(['', 'x'.repeat(4001), null])('invalid transcript is not retained', as
   expect(job.status).toBe('failed'); expect(job.text).toBeNull(); expect(slots.rows.size).toBe(0);
 });
 test('admission initialization/cleanup fails closed and logs actionable failure', async () => {
-  slots.init.mockRejectedValueOnce(new Error('db unavailable'));
-  await expect(jobs.reserve(principal, conversation, {})).rejects.toThrow('db unavailable');
+  slots.collection.listIndexes.mockImplementationOnce(() => { throw new Error('db unavailable'); });
+  await expect(jobs.reserve(principal, conversation, {})).rejects.toMatchObject({ code: 'asr_index_check_failed' });
   expect(jobs.jobs.size).toBe(0); expect(asr.transcribeBuffer).not.toHaveBeenCalled();
   const job = await start(); slots.deleteOne.mockRejectedValue(new Error('private db'));
   gateway.resolve({ data: { text: 'Draft' } }); await job.task;
@@ -189,9 +191,9 @@ test('disconnected and locally cancelled uploads release unused admission with s
   expect(uploading.job.abortUpload).toHaveBeenCalledTimes(1); expect(slots.rows.size).toBe(0);
   await jobs.upload(uploading.job, wav()); expect(asr.transcribeBuffer).not.toHaveBeenCalled();
 });
-test('durable slot model explicitly builds unique per-principal admission index and never expires uncertain work', () => {
+test('durable slot model declares admission index without import-time DDL or expiry', () => {
   const model = MiienAsrSlot;
-  expect(model.schema.options.autoIndex).toBe(true);
+  expect(model.schema.options).toMatchObject({ autoIndex: false, autoCreate: false, bufferCommands: false });
   expect(model.schema.indexes()).toContainEqual([{ principalId: 1 }, expect.objectContaining({ unique: true })]);
   expect(model.schema.indexes().some(([, options]) => 'expireAfterSeconds' in options)).toBe(false);
   expect(Object.keys(model.schema.paths)).toEqual(['_id', 'jobId', 'principalId', 'conversationId', 'startedAt']);

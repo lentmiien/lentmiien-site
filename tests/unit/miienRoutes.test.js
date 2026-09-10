@@ -22,7 +22,9 @@ beforeEach(async () => {
     req.isAuthenticated=()=>Boolean(req.user);req.session={csrfToken:token};next();
   });
   transcription = new MiienTranscriptionJobs({ chat: service, asr, logger, authorize: async () => principal,
-    slots: { init: async () => {}, create: async () => {}, deleteOne: async () => {} } });
+    slots: { db: { readyState: 1, db: {} }, collection: { listIndexes: () => ({ toArray: async () => [
+      { name: '_id_', key: { _id: 1 } }, { name: 'principalId_1', key: { principalId: 1 }, unique: true },
+    ] }) }, create: async () => {}, deleteOne: async () => {} } });
   app.use('/chat5/miien',createMiienRouter({service,transcription,speech,logger,roleModel}));
   await new Promise(resolve=>{server=app.listen(0,'127.0.0.1',resolve);});origin=`http://127.0.0.1:${server.address().port}`;
 });
@@ -232,6 +234,35 @@ test('ASR polling is read-only and private; duplicate reservation and failed own
   service.owned.mockRejectedValue(new MiienError(404, 'Conversation not found.'));
   expect((await request(`/${id}/transcribe/${job.id}`)).status).toBe(404);
   expect((await post(`/${id}/transcribe/${job.id}`, { action: 'cancel' })).status).toBe(404);
+});
+test.each([
+  ['database', 'asr_database_not_ready'],
+  ['indexes', 'asr_index_check_failed'],
+  ['indexes', 'asr_indexes_unsafe'],
+  ['reservation', 'asr_reservation_failed'],
+  ['reservation', 'asr_reservation_unexpected'],
+])('ASR %s failure maps safe code %s and accurate pre-upload recovery', async (stage, code) => {
+  const secret = 'mongodb://secret:password@private/recordings';
+  if (code === 'asr_database_not_ready') transcription.slots.db.readyState = 0;
+  if (code === 'asr_index_check_failed') transcription.slots.collection.listIndexes = () => { throw new Error(secret); };
+  if (code === 'asr_indexes_unsafe') transcription.slots.collection.listIndexes = () => ({ toArray: async () => [] });
+  if (code === 'asr_reservation_failed') transcription.slots.create = async () => { throw new Error(secret); };
+  if (code === 'asr_reservation_unexpected') service.owned.mockRejectedValue(Object.assign(new TypeError(secret), { name: secret, code: secret }));
+  const result = await post(`/${id}/transcribe`);
+  expect(result.status).toBe(503);
+  expect(await result.json()).toEqual({ code, error: 'Recording/transcription could not start. Try recording again shortly or type instead.' });
+  expect(result.headers.get('cache-control')).toContain('no-store');
+  expect(logger.error).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+    metadata: expect.objectContaining({ operation: '/:id/transcribe', stage, code }),
+  }));
+  const logged = JSON.stringify(logger.error.mock.calls);
+  expect(logged).not.toContain(secret); expect(logged).not.toContain(principal._id);
+  expect(asr.transcribeBuffer).not.toHaveBeenCalled();
+  expect(transcription.jobs.size).toBe(0);
+  // The same error is safe in the server-rendered fallback, too.
+  const html = await post(`/${id}/transcribe`, {}, { Accept: 'text/html' });
+  expect(html.status).toBe(503);
+  expect(await html.text()).toContain('Recording/transcription could not start');
 });
 test('ASR upload size/type/content encoding and fields are bounded before dispatch', async () => {
   expect((await post(`/${id}/transcribe`, { owner: 'other' })).status).toBe(400);
