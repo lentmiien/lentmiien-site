@@ -4,7 +4,8 @@ const Account = require('../models/account_db');
 const Transaction = require('../models/transaction_db');
 const logger = require('../utils/logger');
 
-function conflict(message) { return Object.assign(new Error(message), { status: 409 }); }
+// These fixed messages contain no ledger data and must reach legacy write UIs.
+function conflict(message) { return Object.assign(new Error(message), { status: 409, expose: true }); }
 async function withLedgerWrite(work) {
   const token = randomUUID();
   try {

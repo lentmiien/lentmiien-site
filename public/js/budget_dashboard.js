@@ -3,23 +3,19 @@ async function DeleteTransaction(id, thisButtonElement) {
   thisButtonElement.classList.remove("btn-outline-danger");
   thisButtonElement.classList.add("btn-secondary");
 
-  // /budget/delete/${id}
-  await fetch(`/budget/delete/${id}`, {
-    method: "GET",
-    mode: "cors",
-    cache: "no-cache",
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    redirect: "follow",
-    referrerPolicy: "no-referrer",
-  });
-
-  // Delete from page
-  const element = document.getElementsByClassName(id);
-  for (let i = element.length-1; i >= 0; i--) {
-    element[i].parentNode.removeChild(element[i]);
+  try {
+    const result = await api(`/budget/delete/${id}`, { cache: 'no-cache', referrerPolicy: 'no-referrer' });
+    if (result.deletedId !== id) throw new Error('Deletion was not confirmed. Refresh before retrying.');
+    const element = document.getElementsByClassName(id);
+    for (let i = element.length-1; i >= 0; i--) {
+      element[i].parentNode.removeChild(element[i]);
+    }
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    thisButtonElement.disabled = false;
+    thisButtonElement.classList.remove('btn-secondary');
+    thisButtonElement.classList.add('btn-outline-danger');
   }
 }
 
@@ -28,11 +24,15 @@ async function DeleteTransaction(id, thisButtonElement) {
    ────────────────────────────────────────────────────────────────*/
    async function api(path, opts={}) {
     const res = await fetch(path, {
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type':'application/json', Accept: 'application/json'},
       credentials:'same-origin',
       ...opts
     });
-    return res.json();
+    const data = await res.json().catch(() => null);
+    if (!res.ok || res.redirected || !data) {
+      throw new Error(data?.error || 'The request was not confirmed. Refresh and check the ledger before retrying.');
+    }
+    return data;
   }
   
   /* ────────────────────────────────────────────────────────────────
@@ -330,10 +330,15 @@ async function fetchDefaults(name){
      data.from_fee   = parseFloat(data.from_fee||0);
      data.to_fee     = parseFloat(data.to_fee||0);
      data.date       = parseInt(data.date);
-     const res = await api('/budget/api/transaction',{
-          method:'POST',
-          body: JSON.stringify(data)
-     });
-     alert('saved!');
-     ev.target.reset();
+     try {
+       const res = await api('/budget/api/transaction',{
+         method:'POST',
+         body: JSON.stringify(data)
+       });
+       if (!res._id) throw new Error('Saving was not confirmed. Check the ledger before retrying.');
+       alert('saved!');
+       ev.target.reset();
+     } catch (error) {
+       alert(error.message);
+     }
   });  

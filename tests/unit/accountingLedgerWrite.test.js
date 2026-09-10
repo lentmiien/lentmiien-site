@@ -48,3 +48,15 @@ test('open-period deletes are allowed under the lock', async () => {
   expect(Transaction.deleteOne).toHaveBeenCalledWith({ _id: id });
   expect(Account.deleteOne).toHaveBeenCalledWith({ _id: id });
 });
+test.each(['busy', 'closed'])('shared HTTP handler exposes safe %s guidance to ordinary ledger clients', async reason => {
+  if (reason === 'busy') Lock.create.mockRejectedValue({ code: 11000 });
+  else Account.exists.mockReturnValue(query({ _id: id }));
+  const error = await ledger.insertTransaction(tx).catch(e => e);
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  require('../../middleware/errorHandler')(logger)(error, {
+    originalUrl: '/budget/api/transaction', get: () => 'application/json',
+  }, res, jest.fn());
+  expect(res.status).toHaveBeenCalledWith(409);
+  expect(res.json).toHaveBeenCalledWith({ error: expect.stringContaining(reason === 'busy' ? 'Retry shortly' : 'open-period correction') });
+  expect(tx.save).not.toHaveBeenCalled();
+});
