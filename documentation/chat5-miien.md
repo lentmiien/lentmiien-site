@@ -2,6 +2,127 @@
 
 **Phase 3 implementation is ready for a proper human testing session; acceptance and finalization remain open. Merge into `main` is the FINAL step, only after Lennart accepts the tested feature revision. Do not merge as part of this implementation handoff.** The coordinator owns test deployment and device testing. No production deployment/restart, Gateway changes, new synthesis, microphone capture or artwork generation was performed here. All five approved expression rigs/artwork remain unchanged.
 
+## Phase 3 explicit ASR database provisioning (2026-09-10)
+
+**This is a narrow, operator-run prerequisite for the feature branch, not a production action or permission to merge main.** Implementation started with a clean worktree at `41407fecc53071b0e1b8ba2178ac8e08cf7cf4ec` on `feat/chat5-miien-phase2-slice1`. The supplied Windows investigation confirms a restart at that revision, one app worker on port 3000 and database-ready `/apphealth`. Its index-only query returned **`NamespaceNotFound`, code 26, for `miien_asr_slots` using the checkout configuration**. It did not establish the live process's inherited `MONGOOSE_URL`, effective target or authenticated DB account. The missing collection is proven for the queried DB; applying that finding to the service is conditional on the confirmation below. No production connection or mutation was made during this implementation.
+
+### Exact cause, scope and supported behavior
+
+The current model disables `autoCreate` and `autoIndex`; reservation checks actual indexes before its first insert. Therefore a fresh DB cannot create the collection through ASR traffic. `setup.js` does not provision this collection. Existing `scripts/setup-connectivity-indexes.js` targets `connectivity_samples`, lacks this target guard/data preflight and must not be repurposed or run for ASR. There was no suitable Miien provisioning command. The new [standalone command](../scripts/setup-miien-asr-indexes.js) fills that gap without changing any runtime code, dependencies or app configuration.
+
+The required ordinary collection is **`miien_asr_slots`** (Mongoose model `miien_asr_slot`). Its exact required indexes are:
+
+| Name | Key | Uniqueness/options |
+| --- | --- | --- |
+| `_id_` | `{ _id: 1 }` | MongoDB's inherent unique index; `listIndexes` normally omits `unique`. Omission or `true` is accepted; explicit `false` is rejected. The command lets `createCollection` create this index. |
+| `principalId_1` | `{ principalId: 1 }` | Explicit `unique: true`; ordinary full index, no TTL, sparse or partial filter. |
+
+Runtime rejects **any** TTL, sparse or partial index on this collection. Its two fixed `_id` values enforce two global ASR reservations; the principal index enforces one per principal. Missing schema fails at reservation before audio upload/Gateway dispatch, so `/apphealth` may be 200 while Miien microphone ASR returns 503. Text chat, other ASR routes, TTS/speech slots and all other app collections do not depend on this admission check and need no database reconfiguration.
+
+Installed/locked versions inspected: Mongoose **9.7.4**, its MongoDB driver **7.2.0**, pinned Node **24.20.0**. The [Mongoose compatibility table](https://mongoosejs.com/docs/compatibility.html) lists Mongoose 9 for MongoDB 6/7/8. The existing server version was not supplied or remotely inspected; this work does not require a server upgrade. Real verification used **MongoDB 8.0.30** in a disposable authenticated loopback container. MongoDB [creates `_id_` automatically and refuses uniqueness-violating index builds](https://www.mongodb.com/docs/manual/core/index-unique/); do not request a second `_id` index or treat an omitted option as nonunique. Use ordinary collections on a standalone or unsharded replica set. The CLI rejects mongos; do not point it directly at a shard or use it for a MongoDB-compatible substitute without separate review.
+
+### Security and operation contract
+
+This maintenance command belongs to the **logged-in/private machine-principal** scope of the existing Miien ASR contract. Its principal is an authorized MongoDB operator account, scoped through MongoDB privilege actions to this namespace; it adds no web route, browser mutation, application capability, role bundle or admin bypass. Browser authentication/capability/member/CSRF controls remain unchanged. Private slot records stay in place; configuration is secret. It never exports records, connection strings, hostnames, usernames, auth-source values, raw exceptions or index-option payloads. Output contains a sanitized database name, configuration source, non-secret target/configured-account fingerprints, fixed status codes and sanitized index metadata. Fingerprints do not include passwords and are comparison hints, not proof of live environment or actual authentication identity.
+
+Default `--check` is read-only against MongoDB. `--runtime-check` performs the same index predicate as runtime using only `listIndexes` (plus connection/hello), so it works with the minimal runtime account. Full `--check`/`--apply` additionally inspect collection options and conservatively reject views, capped/time-series/clustered collections, validators, collation/default options, hidden/nonstandard indexes, wrong names/shapes/options, competing principal indexes and extra unique constraints. Ordinary extra nonunique indexes are retained. This stricter provisioning preflight does not change runtime admission behavior.
+
+**No writes occur until preflight and `--expected-db` match.** If a required principal index is missing on an existing collection, a bounded `countDocuments` with limit 1 checks emptiness without returning documents. Any populated incomplete schema is refused, including duplicates, missing/null principals and apparently valid outstanding locks. It does not scan private values to decide which records to keep. An empty incomplete collection receives only the exact principal index. An absent collection receives only `createCollection` and that index. Existing correct state is a no-op even with records. Collection/index conflicts never trigger replacement, conversion, deletion, role changes or automatic repair. Quiesce all ASR workers and prevent concurrent administrator DDL before applying; preflight is not a transactional DDL lock.
+
+Reads have five-second server/client deadlines. Writes use majority acknowledgement, a 60-second server limit and 65-second client deadline. DDL is additive and not transactional: a failure can leave just the collection or a completed index despite a timeout. **Rerun `--check`, then the same guarded apply when safe. Never undo partial completion automatically.** Operational failures/missing prerequisites go through `utils/logger`, category `chat5_miien_asr`, using sanitized fixed diagnostics; read-only here means no database mutation, not no local operational log entry.
+
+Minimum MongoDB privileges (names are MongoDB privilege actions, not application roles):
+
+| Account/use | Resource and actions |
+| --- | --- |
+| Existing application / `--runtime-check` | `{ db: '<confirmed DB>', collection: 'miien_asr_slots' }`: `listIndexes`, `insert`, `remove`. Runtime does not query/update slot records or need DDL. The read-only check exercises `listIndexes` only; an actual successful reservation/release proves insert/remove. |
+| Operator full `--check` | Same collection: `listIndexes`, `find` (bounded existence count only when principal index is missing); database resource `{ db: '<confirmed DB>', collection: '' }`: `listCollections` (required to inspect options). |
+| Operator `--apply` | Full-check permissions plus `createCollection` and `createIndex` on **only** `miien_asr_slots`. No insert/update/remove, drop, collMod, role-management or access to other records is needed. |
+
+These scopes follow MongoDB's [privilege actions](https://www.mongodb.com/docs/manual/reference/privilege-actions/) and [listCollections access rules](https://www.mongodb.com/docs/manual/reference/command/listCollections/#required-access). Prefer an existing authorized operator or temporary separate provisioning principal with these permissions. **Do not broaden or replace existing app roles, grant the app dbOwner/root, or change the app's DB URL for this repair.** If the runtime lacks an action, report that exact namespace/action for separately authorized account administration; this command cannot grant it.
+
+### Copy-paste Windows procedure for Lennart
+
+These commands are for the human operator; they were not run against LennartWeb here. Preserve local work. In the deployment checkout, substitute the exact pushed repair SHA from the handoff:
+
+```powershell
+Set-Location 'C:\Projects\lentmiien-site'
+$ReleaseSha = '<PUSHED_REPAIR_SHA>'
+if (git status --porcelain) { throw 'Preserve local work before updating.' }
+if ((git branch --show-current) -ne 'feat/chat5-miien-phase2-slice1') { throw 'Use the existing feature checkout; do not update main.' }
+git pull --ff-only origin feat/chat5-miien-phase2-slice1
+if ($LASTEXITCODE -ne 0) { throw 'Feature update failed.' }
+if ((git rev-parse HEAD) -ne $ReleaseSha) { throw 'Unexpected revision; stop and review.' }
+node --version # Expected v24.20.0 (use the installed Volta pin if available).
+node .\scripts\setup-miien-asr-indexes.js --help
+```
+
+**First independently confirm the service target.** Privately inspect LennartWeb's service-account identity, app working directory, launch wrapper and effective/inherited configuration through authorized Windows administration. `app.js` loads working-directory `.env` without overriding inherited variables, and database lifecycle passes `MONGOOSE_URL` without a `dbName` override. This CLI follows that precedence. A checkout query or identical DB name on another server is not proof. Confirm host/replica set, selected database, authentication source and effective DB principal against the service using authorized process/service diagnostics or DB-side connection/authentication evidence. Share only the conclusion and sanitized fingerprints, never raw environment/command lines or credentials. If the live environment remains inaccessible, **leave apply pending** until an authorized administrator can establish it; do not guess from the checkout or `/apphealth`.
+
+In a PowerShell session whose configuration has been independently matched to the runtime account, run the read-only runtime check. The placeholder intentionally fails validation until replaced:
+
+```powershell
+$ExpectedDb = '<CONFIRMED_RUNTIME_DATABASE>'
+node .\scripts\setup-miien-asr-indexes.js --runtime-check --expected-db $ExpectedDb
+$LASTEXITCODE
+```
+
+Expected before repair: sanitized `target` followed by `state: "missing_collection"`, `ready: false`, exit **2**, or a sanitized permission error (exit **1**). Confirm its `configurationSource` and `targetFingerprint` against the independently established service configuration. An inherited value wins over `.env`, including when `--env-file` is specified. The configured-account fingerprint describes the CLI configuration, not an observed live Windows-service account. A successful operator check cannot establish runtime-account permissions.
+
+For provisioning with a separate account, have the authorized administrator supply a protected `.env`-format file **outside the repository**, containing `MONGOOSE_URL` for the **same server/database** with the narrowly scoped operator credentials. Never put a URI/password on the command line or in the report. Open a **separate disposable PowerShell window**, so the runtime-verification session remains intact. Clearing the inherited variable below affects only this diagnostic shell, not the service/system or application `.env`:
+
+```powershell
+Set-Location 'C:\Projects\lentmiien-site'
+$ExpectedDb = '<CONFIRMED_RUNTIME_DATABASE>'
+$OperatorEnvFile = '<ABSOLUTE_PATH_TO_PROTECTED_OPERATOR_ENV_FILE>'
+Remove-Item Env:MONGOOSE_URL -ErrorAction SilentlyContinue
+node .\scripts\setup-miien-asr-indexes.js --check --expected-db $ExpectedDb --env-file $OperatorEnvFile
+$LASTEXITCODE
+```
+
+Expected: exit **2** with `missing_collection` (or `missing_principal_index` for an empty incomplete collection), or **0** with `ready`. Compare the operator's `targetFingerprint` with the matched runtime check; different host aliases/seed lists can produce different fingerprints and require private operator reconciliation. The account fingerprint should differ for a separate operator. Exit **1** means stop and follow the sanitized error; it is never permission to drop/repair schema or records.
+
+**Only after target/account confirmation, a missing-only preflight and proven settlement of outstanding Gateway work**, quiesce every ASR-capable worker. For the verified single-worker LennartWeb service, an authorized operator can use this brief maintenance sequence. Stopping the service alone does not prove Gateway settlement and loses process-local result handles.
+
+```powershell
+Stop-Service -Name 'LennartWeb'
+(Get-Service -Name 'LennartWeb').WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+$Listeners = @(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object LocalPort -eq 3000)
+if ($Listeners.Count -gt 0) { throw 'App listener remains; confirm all ASR workers are quiesced.' }
+node .\scripts\setup-miien-asr-indexes.js --apply --expected-db $ExpectedDb --env-file $OperatorEnvFile
+if ($LASTEXITCODE -ne 0) { throw 'Keep ASR quiesced; run check and review the sanitized failure. Do not undo additions.' }
+node .\scripts\setup-miien-asr-indexes.js --check --expected-db $ExpectedDb --env-file $OperatorEnvFile
+if ($LASTEXITCODE -ne 0) { throw 'Verification failed; keep ASR quiesced for review.' }
+```
+
+Expected after apply: `before: "missing_collection"` or `"missing_principal_index"`, `state: "ready"`, `ready: true`, exit **0**, and exactly the two required index summaries on a fresh collection. `_id_` reports `unique: true, uniqueness: "inherent"`; principal reports `unique: true, uniqueness: "explicit"`; both have `sparse: false`, `hasPartialFilter: false`, `hasTTL: false`, `hasNonstandardOptions: false`. Subsequent check/apply reports `before: "ready"` and performs no DDL. `populated`, `schema`, `topology`, permission, duplicate-key or timeout errors require the stated review/check; none triggers cleanup.
+
+Return to the **original runtime-account PowerShell window** and verify with its unchanged matched configuration before resuming:
+
+```powershell
+node .\scripts\setup-miien-asr-indexes.js --runtime-check --expected-db $ExpectedDb
+if ($LASTEXITCODE -ne 0) { throw 'Runtime-account index verification failed; keep ASR quiesced.' }
+Start-Service -Name 'LennartWeb'
+(Get-Service -Name 'LennartWeb').WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+Get-NetTCPConnection -State Listen -LocalPort 3000 | Select-Object LocalAddress,LocalPort,OwningProcess
+Invoke-RestMethod 'http://127.0.0.1:3000/apphealth'
+```
+
+Wait for the normal database-ready log/health result; service `Running` alone does not prove Node/database readiness. Associate the listener/process start with the feature checkout SHA using the existing deployment procedure. Retain one worker, refresh the browser and explicitly record again in an owned HTTPS Miien room. Expect reservation **202**, one upload, same-handle polling, one editable transcript and **no automatic Send**. Test a legitimate naturally occurring >60-second wait, draft edits, Stop/late-result recovery, mobile behavior and normal text chat using the acceptance gate below. Report safe HTTP/error codes if it still fails; 429 can indicate retained locks and is not permission to delete them.
+
+**No restart is technically required to pick up these indexes on already-running `41407fe` or later code:** every explicit reservation checks anew. This revision changes only the CLI/tests/docs. The stop/start above is for safe DDL quiescence and the human deployment process, not to reset a cached Mongoose initializer. Existing app settings need no reconfiguration. Rollback means leave the additive collection/indexes and all locks intact; do not drop indexes/collections, add TTL, clear speech/ASR slots, run broad `syncIndexes`/`autoIndex` or run `setup.js`/`npm start` as a check. Dispose of temporary operator credentials through the existing secret-management process. Real-device acceptance and the final merge to main remain separate, pending Lennart's acceptance.
+
+### Provisioning validation
+
+Focused Jest: **6 suites / 169 tests passed**, including **70 provisioning tests**. Tests use synthetic/mock boundaries; the real MongoDB exercise used a new, authenticated MongoDB 8.0.30 container bound only to loopback with temporary in-memory data directories. It verified absent/default check, expected-DB refusal, exact `_id` representation and principal uniqueness, idempotency, narrowly scoped operator/runtime permissions, populated/duplicate conflicts, wrong options, TTL refusal, incomplete-schema rerun, sanitized CLI output and an unchanged unrelated synthetic collection. The **12 real-MongoDB groups passed**; the temporary container and its in-memory data were then removed. No app `.env` or production connection/data was accessed; no application startup, scheduler, provider or real-device workload was run.
+
+Full final Jest: **277 suites / 2,642 tests passed**, with all coverage thresholds met (67.35% statements, 43.72% branches, 77.56% functions, 67.98% lines for the configured critical-file set). Syntax checks, standalone `--help` and `git diff --check` passed. Browser/UI files were unchanged; previous Chromium results are historical, not rerun or claimed as real-device acceptance here.
+
+```bash
+volta run --node 24.20.0 npm test -- --runInBand --coverage=false tests/unit/setupMiienAsrIndexes.test.js tests/unit/miienAsrAdmission.test.js tests/unit/miienControllerStartup.test.js tests/unit/miienTranscriptionJobs.test.js tests/unit/miienRoutes.test.js tests/unit/asrApiService.test.js
+volta run --node 24.20.0 npm test -- --runInBand
+```
+
 ## Phase 3 cold-start ASR reservation blocker (2026-09-10)
 
 **Feature-branch release candidate; live acceptance and merge to `main` remain pending.** This fix starts from clean `2c1c9f075dbefa5aa5cf9f05de29708f4e93f434` on `feat/chat5-miien-phase2-slice1`. It preserves the accepted phone layout, animation, queued-ASR client deadlines, latest-reply voice behavior and existing logged-in ASR security contract below. No dependencies, environment variables, app schedulers, global buffering, worker counts, Gateway behavior, recordings or artwork change.
@@ -53,54 +174,7 @@ Existing browser commands: `node scripts/review-miien-turn-taking-browser.js <in
 
 ### Lennart's deployment and index checks
 
-These are operator instructions, **not actions performed by this change**. They supersede the historical `autoIndex: true` / cached-init restart advice below.
-
-1. In the intended deployment checkout, first verify a clean worktree and the feature branch. Preserve any local changes; do not reset them. Fetch/update only this feature branch and compare the resulting SHA with the exact pushed SHA in the handoff. Do not merge main:
-
-   ```bash
-   git status --short
-   git branch --show-current
-   git fetch origin feat/chat5-miien-phase2-slice1
-   git switch feat/chat5-miien-phase2-slice1
-   git pull --ff-only origin feat/chat5-miien-phase2-slice1
-   git rev-parse HEAD
-   git status --short
-   ```
-
-2. Deploy/restart that exact checkout or immutable artifact using the existing reviewed service/task/container procedure. Inspect its configured working directory/artifact, entrypoint and replica/cluster settings, then confirm the new process start time and corresponding startup/DB-ready logs. Record the artifact SHA plus its association with that restarted process; **`git rev-parse HEAD` alone cannot prove the running SHA**. Do not publish raw process command lines/environment. On Windows, identify actual app listeners and their start times using:
-
-   ```powershell
-   Get-NetTCPConnection -State Listen -LocalPort <actual-app-port> | Select-Object LocalAddress,LocalPort,OwningProcess
-   Get-Process -Id <listener-pid> | Select-Object Id,ProcessName,StartTime,Path
-   ```
-
-   Confirm **one Express app worker**, or verified sticky routing for reservation, upload, status and discard, including reconnects. Classify other Node processes separately. Do not enable multiple workers as part of this fix. Check `/apphealth` and the existing database lifecycle logs; `/apphealth` does not prove ASR indexes, SHA or worker affinity. Refresh the browser. `npm start` is not a smoke test (prestart runs database/setup/Dropbox work); direct `node app` also starts background workers.
-
-3. In an already authorized `mongosh` session with the correct application database selected, inspect **only index metadata**, without reading slot documents or displaying partial-filter values:
-
-   ```javascript
-   db.getCollection('miien_asr_slots').getIndexes().map(index => ({
-     name: index.name,
-     key: index.key,
-     unique: index.unique === true,
-     sparse: index.sparse === true,
-     hasPartialFilter: Object.prototype.hasOwnProperty.call(index, 'partialFilterExpression'),
-     hasTTL: Object.prototype.hasOwnProperty.call(index, 'expireAfterSeconds')
-   }))
-   ```
-
-   Require the two exact indexes described above and no TTL/sparse/partial entries. `_id_` can show `unique: false` in this projection when MongoDB omits the property; its uniqueness is inherent. An absent collection, permission denial or incomplete audit is not a pass. Verify `listIndexes` using the application DB account's authorized access, not only a more privileged operator account. The first successful reservation also exercises this check using app credentials.
-
-4. **Only if metadata confirms the collection or required index is missing**, quiesce all app workers capable of admitting/dispatching ASR first. Confirm any outstanding Gateway work has settled under the existing recovery rules before repairing an unsafe admission configuration. With authorized operator credentials in that same DB, propose these narrow additive steps:
-
-   ```javascript
-   // Only when the collection is confirmed absent:
-   db.createCollection('miien_asr_slots')
-   // Only when principalId_1 is absent and remaining metadata is safe:
-   db.getCollection('miien_asr_slots').createIndex({ principalId: 1 }, { name: 'principalId_1', unique: true })
-   ```
-
-   Re-audit metadata before resuming. If unique creation fails because of duplicate records, or an existing index is wrongly configured, stop and arrange a separately reviewed repair with proven Gateway settlement. Do not drop conflicting indexes, bulk-delete records, run `syncIndexes()`, add TTL, or modify speech slots. Privilege/connection fixes are picked up on the next explicit reservation in the fixed code; they no longer require restarting merely to clear Mongoose's failed init cache. Deploying this code does require the normal restart.
+Use the [explicit provisioning procedure above](#copy-paste-windows-procedure-for-lennart), which supersedes the earlier manual mongosh DDL and historical auto-index/restart advice. The current runtime never provisions indexes automatically; the separate command defaults to a read-only check and requires an independently confirmed target before explicit apply.
 
 ### Focused live acceptance gate
 
