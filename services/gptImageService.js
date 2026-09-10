@@ -1,13 +1,12 @@
-const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const { randomUUID } = require('crypto');
-const mongoose = require('mongoose');
 const OpenAI = require('openai');
 const logger = require('../utils/logger');
 const GptImageGeneration = require('../models/gpt_image_generation');
 
-const MODEL_NAME = 'gpt-image-2';
+const { MODEL_NAME, MODEL_CONTRACTS, modelMetadata } = require('./gptImageModels');
+const imageStorage = require('./gptImageStorageService');
 const PAGE_SIZE = 20;
 const MAX_PROMPT_LENGTH = 32000;
 const MAX_INPUT_IMAGE_COUNT = 16;
@@ -39,7 +38,8 @@ const RETRYABLE_EDIT_PARAMETERS = [
   'moderation',
   'n',
 ];
-const IMAGE_DIR = path.join(__dirname, '../public/img');
+const activeGenerations = new Set();
+const MAX_ACTIVE_GENERATIONS = 2;
 const TOOL_CREATED_BY = 'Tool';
 
 let openaiClient = null;
@@ -163,13 +163,13 @@ function buildPromptFilter(rawKeyword) {
 }
 
 function parseCustomSize(widthInput, heightInput) {
-  const width = clampInt(widthInput, 0, 100000, 0);
-  const height = clampInt(heightInput, 0, 100000, 0);
-  if (!width || !height) {
-    return {
-      ok: false,
-      message: 'Custom width and height are required.',
-    };
+  if (![widthInput, heightInput].every(value => typeof value === 'number' || typeof value === 'string')) {
+    return { ok: false, message: 'Custom dimensions must be positive integers.' };
+  }
+  const width = Number(widthInput);
+  const height = Number(heightInput);
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) {
+    return { ok: false, message: 'Custom dimensions must be positive integers.' };
   }
   if ((width % 16) !== 0 || (height % 16) !== 0) {
     return {
@@ -259,18 +259,38 @@ function resolveRequestedSize(raw = {}) {
 }
 
 function normalizeGenerationForm(raw = {}) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, message: 'Invalid image options.' };
+  const model = raw.model === undefined ? MODEL_NAME : raw.model;
+  const contract = typeof model === 'string' && Object.hasOwn(MODEL_CONTRACTS, model) ? MODEL_CONTRACTS[model] : null;
+  if (!contract) return { ok: false, message: 'Unsupported image model.' };
+  const allowed = ['model', 'prompt', 'n', 'quality', 'background', 'outputFormat', 'outputCompression', 'moderation', 'sizeMode', 'sizePreset', 'customWidth', 'customHeight', 'selectedImageIds', '_csrf'];
+  if (Object.keys(raw).some(key => !allowed.includes(key))) return { ok: false, message: 'Unsupported image option.' };
+  const enums = { quality: contract.qualities, background: contract.backgrounds, outputFormat: OUTPUT_FORMAT_OPTIONS, moderation: MODERATION_OPTIONS, sizeMode: SIZE_MODE_OPTIONS };
+  for (const [key, values] of Object.entries(enums)) {
+    if (raw[key] !== undefined && !values.includes(raw[key])) return { ok: false, message: `Unsupported ${key} for ${model}.` };
+  }
+  for (const [key, min, max] of [['n', 1, 10], ['outputCompression', 0, 100]]) {
+    if (raw[key] !== undefined && (typeof raw[key] !== 'number' && typeof raw[key] !== 'string' || raw[key] === '' || !Number.isInteger(Number(raw[key])) || Number(raw[key]) < min || Number(raw[key]) > max)) {
+      return { ok: false, message: `${key} must be an integer from ${min} to ${max}.` };
+    }
+  }
+  if ((raw.sizeMode || 'preset') === 'preset' && raw.sizePreset !== undefined && !SIZE_PRESETS.some(option => option.value === raw.sizePreset)) return { ok: false, message: 'Unsupported preset size.' };
+  if (raw.background === 'transparent' && raw.outputFormat === 'jpeg') return { ok: false, message: 'Transparent backgrounds require PNG or WebP.' };
+  if (model !== MODEL_NAME && (raw.outputFormat || 'png') === 'png' && raw.outputCompression !== undefined) return { ok: false, message: 'Compression is supported only for JPEG or WebP.' };
+
   const prompt = typeof raw.prompt === 'string' ? raw.prompt.trim() : '';
-  const n = clampInt(raw.n, 1, 10, DEFAULT_FORM_VALUES.n);
-  const quality = QUALITY_OPTIONS.includes(raw.quality) ? raw.quality : DEFAULT_FORM_VALUES.quality;
-  const background = BACKGROUND_OPTIONS.includes(raw.background) ? raw.background : DEFAULT_FORM_VALUES.background;
+  const n = raw.n === undefined ? DEFAULT_FORM_VALUES.n : Number(raw.n);
+  const quality = contract.qualities.includes(raw.quality) ? raw.quality : DEFAULT_FORM_VALUES.quality;
+  const background = contract.backgrounds.includes(raw.background) ? raw.background : DEFAULT_FORM_VALUES.background;
   const outputFormat = OUTPUT_FORMAT_OPTIONS.includes(raw.outputFormat) ? raw.outputFormat : DEFAULT_FORM_VALUES.outputFormat;
   const moderation = MODERATION_OPTIONS.includes(raw.moderation) ? raw.moderation : DEFAULT_FORM_VALUES.moderation;
   const size = resolveRequestedSize(raw);
   const outputCompression = outputFormat === 'png'
     ? null
-    : clampInt(raw.outputCompression, 0, 100, DEFAULT_FORM_VALUES.outputCompression);
+    : raw.outputCompression === undefined ? DEFAULT_FORM_VALUES.outputCompression : Number(raw.outputCompression);
 
   const formValues = {
+    model,
     prompt,
     n,
     quality,
@@ -312,6 +332,7 @@ function normalizeGenerationForm(raw = {}) {
     ok: true,
     formValues,
     requestOptions: {
+      model,
       prompt,
       n,
       quality,
@@ -419,6 +440,7 @@ function fileNameFromOriginal(originalName, mimeType = '') {
 function createServiceError(message, status) {
   const error = new Error(message);
   error.status = status;
+  error.expose = status < 500;
   return error;
 }
 
@@ -435,7 +457,7 @@ function getOpenAIClient() {
 }
 
 async function ensureImageDir() {
-  await fsp.mkdir(IMAGE_DIR, { recursive: true });
+  await imageStorage.ensureStorage();
 }
 
 async function cleanupFiles(paths = []) {
@@ -449,7 +471,7 @@ async function cleanupFiles(paths = []) {
       if (error.code !== 'ENOENT') {
         logger.warning('Failed to remove GPT Image file during cleanup', {
           category: 'gpt_image',
-          metadata: { targetPath, error: error.message },
+          metadata: { code: error.code || 'UNKNOWN' },
         });
       }
     }
@@ -457,31 +479,32 @@ async function cleanupFiles(paths = []) {
 }
 
 function buildImageUrl(fileName) {
-  return `/img/${encodeURIComponent(fileName)}`;
+  return `${imageStorage.MEDIA_PREFIX}${encodeURIComponent(fileName)}`;
 }
 
-async function persistUploadedInputFiles(files = [], prompt) {
+async function persistUploadedInputFiles(files = []) {
   await ensureImageDir();
   const savedInputs = [];
   const savedPaths = [];
 
   try {
     for (const file of files) {
-      const extension = fileNameFromOriginal(file.originalname, file.mimetype);
-      const storedFileName = buildStoredFileName('gpt-image2-input', prompt, extension);
-      const destinationPath = path.join(IMAGE_DIR, storedFileName);
-      await fsp.rename(file.path, destinationPath);
-      savedPaths.push(destinationPath);
+      const buffer = file.buffer || await fsp.readFile(file.path);
+      if (buffer.length > MAX_UPLOAD_FILE_SIZE_BYTES) throw createServiceError('Reference upload is too large.', 400);
+      let stored;
+      try {
+        stored = await imageStorage.writeImage(buffer);
+      } catch (error) {
+        if (error.status === 400) throw createServiceError(error.message, 400);
+        throw error;
+      }
+      savedPaths.push(stored.absolutePath);
       savedInputs.push({
-        fileName: storedFileName,
-        url: buildImageUrl(storedFileName),
-        originalName: file.originalname || storedFileName,
-        mimeType: file.mimetype || '',
-        sizeBytes: file.size || 0,
+        ...stored,
+        originalName: stored.fileName,
         sourceType: 'upload',
         sourceImageId: null,
         sourceGenerationId: null,
-        absolutePath: destinationPath,
       });
     }
   } catch (error) {
@@ -496,7 +519,8 @@ async function persistUploadedInputFiles(files = [], prompt) {
 }
 
 async function loadSelectedGalleryInputs(selectedIds = []) {
-  const validIds = dedupeStrings(selectedIds).filter((id) => mongoose.Types.ObjectId.isValid(id));
+  const validIds = dedupeStrings(selectedIds);
+  if (validIds.some(id => !/^[a-f0-9]{24}$/i.test(id))) throw createServiceError('Invalid gallery reference ID.', 400);
   if (validIds.length === 0) {
     return [];
   }
@@ -523,22 +547,24 @@ async function loadSelectedGalleryInputs(selectedIds = []) {
 
   for (const id of validIds) {
     const doc = byId.get(id);
-    const absolutePath = path.join(IMAGE_DIR, doc.outputFileName);
+    let buffer;
     try {
-      await fsp.access(absolutePath, fs.constants.R_OK);
-    } catch (_error) {
-      throw createServiceError('A selected gallery image file is missing. Please refresh the page.', 400);
+      buffer = await imageStorage.readLibraryImage({ fileName: doc.outputFileName, url: doc.outputUrl });
+      await imageStorage.validateRaster(buffer);
+    } catch (error) {
+      logger.warning('GPT Image library reference is unavailable or invalid', { category: 'gpt_image', metadata: { code: error.code || 'INVALID_IMAGE' } });
+      throw createServiceError('A selected gallery image is unavailable. Please refresh the page.', 400);
     }
     ordered.push({
       fileName: doc.outputFileName,
-      url: doc.outputUrl || buildImageUrl(doc.outputFileName),
+      url: doc.outputUrl,
       originalName: doc.outputFileName,
       mimeType: doc.outputMimeType || 'image/png',
       sizeBytes: doc.outputSizeBytes || 0,
       sourceType: 'gallery',
       sourceImageId: doc._id,
       sourceGenerationId: doc.generationId || null,
-      absolutePath,
+      buffer,
     });
   }
 
@@ -562,7 +588,7 @@ async function buildOpenAIEditImages(inputImages = []) {
   const uploadables = [];
 
   for (const image of inputImages) {
-    const fileBuffer = await fsp.readFile(image.absolutePath);
+    const fileBuffer = image.buffer || await imageStorage.readLibraryImage(image);
     const fileOptions = image.mimeType ? { type: image.mimeType } : undefined;
     uploadables.push(await OpenAI.toFile(
       fileBuffer,
@@ -584,7 +610,8 @@ async function executeCompatibleEditRequest(baseRequest, inputImages) {
         ...request,
         image: uploadables.length === 1 ? uploadables[0] : uploadables,
       });
-    }
+    },
+    baseRequest.model === MODEL_NAME ? RETRYABLE_EDIT_PARAMETERS : []
   );
 
   if (removedParameters.length > 0) {
@@ -592,7 +619,7 @@ async function executeCompatibleEditRequest(baseRequest, inputImages) {
       category: 'gpt_image',
       metadata: {
         removedParameters,
-        model: MODEL_NAME,
+        model: baseRequest.model,
       },
     });
   }
@@ -621,7 +648,11 @@ function resolveOpenAIUser(user, fallback = 'tool') {
 }
 
 function normalizeToolImageArguments(args = {}) {
-  const rawSize = args.size || args.requestedSize || args.sizePreset || DEFAULT_FORM_VALUES.sizePreset;
+  if (!args || typeof args !== 'object' || Array.isArray(args)) throw createServiceError('Invalid tool image options.', 400);
+  const allowed = ['prompt', 'n', 'quality', 'background', 'output_format', 'outputFormat', 'output_compression', 'outputCompression', 'moderation', 'size', 'requestedSize', 'sizePreset', 'selected_image_ids', 'selectedImageIds'];
+  if (Object.keys(args).some(key => !allowed.includes(key))) throw createServiceError('Unsupported tool image option.', 400);
+
+  const rawSize = args.size ?? args.requestedSize ?? args.sizePreset ?? DEFAULT_FORM_VALUES.sizePreset;
   const rawOptions = {
     prompt: args.prompt,
     n: args.n,
@@ -643,22 +674,24 @@ function normalizeToolImageArguments(args = {}) {
     rawOptions.customWidth = width;
     rawOptions.customHeight = height;
   } else {
-    rawOptions.sizeMode = DEFAULT_FORM_VALUES.sizeMode;
-    rawOptions.sizePreset = DEFAULT_FORM_VALUES.sizePreset;
+    throw createServiceError('Unsupported image size.', 400);
   }
 
   return rawOptions;
 }
 
 function buildToolImageRequest(args = {}) {
+  const selected = toArray(args.selected_image_ids || args.selectedImageIds || []);
+  if (selected.length > MAX_GALLERY_INPUT_SELECTIONS || selected.some(id => typeof id !== 'string' || !/^[a-f0-9]{24}$/i.test(id))) throw createServiceError('Invalid gallery references.', 400);
   return {
     rawOptions: normalizeToolImageArguments(args),
-    selectedImageIds: dedupeStrings(toArray(args.selected_image_ids || args.selectedImageIds || [])),
+    selectedImageIds: dedupeStrings(selected),
   };
 }
 
 function formatGeneratedImageDoc(doc) {
   return {
+    ...modelMetadata(doc.model),
     id: doc._id ? doc._id.toString() : '',
     generationId: doc.generationId,
     outputIndex: doc.outputIndex,
@@ -678,7 +711,7 @@ function formatGeneratedImageDoc(doc) {
   };
 }
 
-async function createImageGeneration({
+async function performImageGeneration({
   rawOptions = {},
   uploadedFiles = [],
   selectedImageIds = [],
@@ -691,19 +724,24 @@ async function createImageGeneration({
     throw createServiceError(validation.message, 400);
   }
 
-  const normalizedSelectedIds = dedupeStrings(toArray(selectedImageIds));
+  const selections = toArray(selectedImageIds);
+  if (selections.length > MAX_GALLERY_INPUT_SELECTIONS || selections.some(id => typeof id !== 'string' || !/^[a-f0-9]{24}$/i.test(id))) throw createServiceError('Invalid gallery references.', 400);
+  const normalizedSelectedIds = dedupeStrings(selections.map(id => id.toLowerCase()));
   if (normalizedSelectedIds.length > MAX_GALLERY_INPUT_SELECTIONS) {
     throw createServiceError(`Please select no more than ${MAX_GALLERY_INPUT_SELECTIONS} gallery images.`, 400);
   }
 
   const safeUploadedFiles = Array.isArray(uploadedFiles) ? uploadedFiles : [];
+  if (safeUploadedFiles.length > MAX_UPLOAD_IMAGE_COUNT || safeUploadedFiles.length + normalizedSelectedIds.length > MAX_INPUT_IMAGE_COUNT) throw createServiceError('Too many reference images.', 400);
   const tempUploadPaths = safeUploadedFiles.map((file) => file.path).filter(Boolean);
   const newInputPaths = [];
   const outputPaths = [];
+  const generationId = randomUUID();
+  let persistenceAttempted = false;
 
   try {
     const galleryInputs = await loadSelectedGalleryInputs(normalizedSelectedIds);
-    const persistedUploads = await persistUploadedInputFiles(safeUploadedFiles, validation.requestOptions.prompt);
+    const persistedUploads = await persistUploadedInputFiles(safeUploadedFiles);
     const uploadedInputs = persistedUploads.savedInputs;
     const combinedInputs = [...galleryInputs, ...uploadedInputs];
     newInputPaths.push(...persistedUploads.savedPaths);
@@ -714,9 +752,8 @@ async function createImageGeneration({
 
     await ensureImageDir();
 
-    const generationId = randomUUID();
     const baseRequest = {
-      model: MODEL_NAME,
+      model: validation.requestOptions.model,
       prompt: validation.requestOptions.prompt,
       n: validation.requestOptions.n,
       quality: validation.requestOptions.quality,
@@ -747,12 +784,13 @@ async function createImageGeneration({
     const outputFormat = response && response.output_format
       ? response.output_format
       : validation.requestOptions.outputFormat;
-    const outputExtension = getOutputExtension(outputFormat);
     const outputMimeType = getMimeTypeForFormat(outputFormat);
     const promptKeywords = extractPromptKeywords(validation.requestOptions.prompt);
     const storedInputImages = stripAbsolutePaths(combinedInputs);
     const data = Array.isArray(response && response.data) ? response.data : [];
 
+    if (data.length > validation.requestOptions.n) throw new Error('Unexpected output count from image provider.');
+    if (!OUTPUT_FORMAT_OPTIONS.includes(outputFormat)) throw new Error('Unexpected output format from image provider.');
     if (data.length === 0) {
       throw new Error('The OpenAI image response did not contain any images.');
     }
@@ -764,17 +802,17 @@ async function createImageGeneration({
         continue;
       }
 
+      if (typeof item.b64_json !== 'string' || item.b64_json.length > Math.ceil(imageStorage.MAX_STORED_BYTES / 3) * 4) throw new Error('Image provider output exceeds storage limits.');
       const buffer = Buffer.from(item.b64_json, 'base64');
-      const storedFileName = buildStoredFileName('gpt-image2-output', validation.requestOptions.prompt, outputExtension);
-      const outputPath = path.join(IMAGE_DIR, storedFileName);
-      await fsp.writeFile(outputPath, buffer);
-      outputPaths.push(outputPath);
+      const stored = await imageStorage.writeImage(buffer, outputFormat);
+      const storedFileName = stored.fileName;
+      outputPaths.push(stored.absolutePath);
 
       docsToInsert.push({
         generationId,
         outputIndex,
         createdBy: createdBy || resolveCreatedBy(user),
-        model: MODEL_NAME,
+        model: validation.requestOptions.model,
         requestType,
         prompt: validation.requestOptions.prompt,
         promptKeywords,
@@ -804,19 +842,8 @@ async function createImageGeneration({
       throw new Error('The OpenAI image response did not contain usable image data.');
     }
 
+    persistenceAttempted = true;
     const insertedDocs = await GptImageGeneration.insertMany(docsToInsert, { ordered: true });
-
-    logger.notice('GPT Image generation saved', {
-      category: 'gpt_image',
-      metadata: {
-        generationId,
-        requestType,
-        outputCount: insertedDocs.length,
-        inputCount: storedInputImages.length,
-        promptLength: validation.requestOptions.prompt.length,
-        user: createdBy || resolveCreatedBy(user),
-      },
-    });
 
     return {
       ok: true,
@@ -828,10 +855,42 @@ async function createImageGeneration({
       validation,
     };
   } catch (error) {
+    if (persistenceAttempted) {
+      try {
+        await GptImageGeneration.deleteMany({ generationId }).exec();
+      } catch (rollbackError) {
+        logger.error('GPT Image partial save needs reconciliation; media retained', {
+          category: 'gpt_image', metadata: { generationId, code: rollbackError.code || 'UNKNOWN' },
+        });
+        throw error;
+      }
+    }
     await cleanupFiles(outputPaths);
     await cleanupFiles(newInputPaths);
     await cleanupFiles(tempUploadPaths);
     throw error;
+  }
+}
+
+async function createImageGeneration(options = {}) {
+  const principalKey = String(options.user?._id || options.user?.name || 'legacy-tool');
+  if (activeGenerations.has(principalKey) || activeGenerations.size >= MAX_ACTIVE_GENERATIONS) {
+    throw createServiceError('Image generation is busy. Please try again shortly.', 429);
+  }
+  activeGenerations.add(principalKey);
+  try {
+    return await performImageGeneration(options);
+  } catch (error) {
+    if (!error.expose) {
+      logger.error('GPT Image generation or persistence failed', {
+        category: 'gpt_image', metadata: { code: error.code || 'UNKNOWN', status: Number(error.status) || 500 },
+      });
+      throw createServiceError('Unable to generate an image right now.', 502);
+    }
+    throw error;
+  } finally {
+    activeGenerations.delete(principalKey);
+    await cleanupFiles((options.uploadedFiles || []).map(file => file.path).filter(Boolean));
   }
 }
 

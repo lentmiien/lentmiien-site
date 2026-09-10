@@ -1,3 +1,4 @@
+const imageStorage = require('./gptImageStorageService');
 const path = require('path');
 const fs = require('fs/promises');
 const logger = require('../utils/logger');
@@ -114,7 +115,7 @@ class Pixal3dJobService {
 
   async removeJobFiles(job) {
     const removals = await Promise.allSettled([
-      this.removeInputImage(job?.inputImage?.fileName),
+      job?.inputImage?.storage === 'gpt-image' ? Promise.resolve() : this.removeInputImage(job?.inputImage?.fileName),
       this.removeOutputModel(job?.outputModel?.fileName),
     ]);
     const failedRemoval = removals.find((result) => result.status === 'rejected');
@@ -170,8 +171,11 @@ class Pixal3dJobService {
       outputFileName = randomAssetFileName('.glb');
       outputFilePath = this.outputPath(outputFileName);
       const parameters = plainSubdocument(job.parameters);
+      const imageInput = job.inputImage.storage === 'gpt-image'
+        ? { inputBuffer: await imageStorage.readLibraryImage({ fileName: job.inputImage.fileName, url: job.inputImage.publicUrl }) }
+        : { inputPath: this.inputPath(job.inputImage.fileName) };
       const result = await this.gateway.generateToFile({
-        inputPath: this.inputPath(job.inputImage.fileName),
+        ...imageInput,
         inputFileName: job.inputImage.fileName,
         inputMimeType: job.inputImage.mimeType,
         outputPath: outputFilePath,

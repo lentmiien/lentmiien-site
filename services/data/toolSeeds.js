@@ -74,7 +74,7 @@ module.exports = [
   {
     name: 'generate_image',
     displayName: 'GPT Image Generation',
-    description: 'Generate images with GPT Image 2, save them in public/img, and record the results in GptImageGeneration.',
+    description: 'Generate images with GPT Image 2 and save them in the shared authenticated GPT Image library.',
     enabled: true,
     handlerKey: 'gptImage.generate',
     sourcePath: 'controllers/gptImageController.js',
@@ -82,7 +82,7 @@ module.exports = [
     toolDefinition: {
       type: 'function',
       name: 'generate_image',
-      description: 'Generate one or more images from a text prompt. The tool returns saved /img URLs and markdown for displaying the generated images.',
+      description: 'Generate one or more images from a text prompt. The tool returns authenticated image URLs and markdown for displaying the generated images.',
       parameters: {
         type: 'object',
         additionalProperties: false,
@@ -143,7 +143,7 @@ module.exports = [
     metadata: {
       model: MODEL_NAME,
       createdByDefault: 'Tool',
-      storesFilesIn: 'public/img',
+      storesFilesIn: 'GPT_IMAGE_STORAGE_DIR (private_data/gpt-image by default)',
       storesRecordsIn: 'GptImageGeneration',
     },
   },
@@ -816,3 +816,35 @@ module.exports = [
     },
   },
 ];
+
+// Distinct names/handlers are inserted by seedMissingDefaultTools at startup.
+// Clone before extending so neither original schema nor customized DB tools change.
+const { MODEL_CONTRACTS } = require('../gptImageModels');
+const originalImageTool = module.exports.find(tool => tool.handlerKey === 'gptImage.generate');
+for (const [variant, handlerSuffix] of [['sunburst', 'Sunburst'], ['flare', 'Flare']]) {
+  const model = `gpt-image-2.5-${variant}`;
+  const contract = MODEL_CONTRACTS[model];
+  const seed = structuredClone(originalImageTool);
+  seed.name = `${originalImageTool.name}_${variant}`;
+  seed.displayName = `GPT Image Generation (${handlerSuffix})`;
+  seed.description = `Generate or edit images with ${contract.label} in the shared authenticated GPT Image library.`;
+  seed.handlerKey = `gptImage.generate${handlerSuffix}`;
+  seed.sourcePath = 'services/gptImageToolService.js';
+  seed.toolDefinition.name = seed.name;
+  seed.toolDefinition.description = seed.description;
+  const properties = seed.toolDefinition.parameters.properties;
+  properties.prompt.maxLength = 32000;
+  properties.prompt.minLength = 1;
+  properties.quality.enum = [...contract.qualities];
+  properties.background.enum = [...contract.backgrounds];
+  properties.background.description = 'auto, opaque, or transparent. Transparent requires PNG or WebP.';
+  properties.output_compression.description = 'JPEG/WebP only (0–100). Omit for PNG.';
+  delete properties.output_compression.default;
+  delete properties.size.enum;
+  properties.size.maxLength = 9;
+  properties.size.pattern = '^(auto|[0-9]{1,4}x[0-9]{1,4})$';
+  properties.size.description = 'auto or WIDTHxHEIGHT: multiples of 16, maximum edge 3840, aspect ratio 1:3–3:1, 655360–8294400 pixels. Above 3686400 pixels is experimental.';
+  properties.selected_image_ids = { type: 'array', maxItems: 16, items: { type: 'string', pattern: '^[a-fA-F0-9]{24}$' }, description: 'Optional shared-gallery image IDs to reuse as edit references (legacy or private).' };
+  seed.metadata.model = model;
+  module.exports.push(seed);
+}

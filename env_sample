@@ -221,3 +221,6 @@ DASHBOARD_PERSONAL_OWNER_USER_ID=
 # Server-selected Minute Logger deviceId (never sent to the browser). Blank disables
 # this summary. The owner binding above is also required.
 DASHBOARD_MINUTE_LOGGER_DEVICE_ID=
+
+# Optional absolute durable directory outside all static roots; default: private_data/gpt-image
+# GPT_IMAGE_STORAGE_DIR=/srv/lentmiien-private/gpt-image

@@ -277,14 +277,14 @@ class Pixal3dGatewayService {
     return this.startContainer();
   }
 
-  async generateToFile({ inputPath, inputFileName, inputMimeType, outputPath, parameters }) {
-    if (!inputPath || !outputPath) {
+  async generateToFile({ inputPath, inputBuffer, inputFileName, inputMimeType, outputPath, parameters }) {
+    if ((!inputPath && !Buffer.isBuffer(inputBuffer)) || !outputPath) {
       throw new Error('Input and output file paths are required for Pixal3D generation.');
     }
 
     const requestUrl = this.url(this.servicePath('/generate'));
     const formData = new FormData();
-    formData.append('image', fs.createReadStream(inputPath), {
+    formData.append('image', inputBuffer || fs.createReadStream(inputPath), {
       filename: inputFileName || 'image.png',
       contentType: inputMimeType || 'application/octet-stream',
     });

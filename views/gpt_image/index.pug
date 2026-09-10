@@ -7,9 +7,9 @@ block content
   .gpt-image-page
     section.gpt-image-hero
       .gpt-image-hero__text
-        p.gpt-image-hero__eyebrow GPT Image 2 Studio
+        p.gpt-image-hero__eyebrow GPT Image Studio
         h1.gpt-image-hero__title Text-to-image and reference-image generation in one page
-        p.gpt-image-hero__copy Generate fresh images from a prompt, optionally add uploaded or previously generated references, and keep everything searchable in the gallery.
+        p.gpt-image-hero__copy Generate fresh images from a prompt, optionally add uploaded or previously generated references, and keep everything searchable in the shared gallery. New images and references are visible to all logged-in users. Older public links remain public.
       .gpt-image-hero__meta
         .gpt-image-hero__metric
           span.gpt-image-hero__metric-value= gallery.totalCount
@@ -29,6 +29,11 @@ block content
             p.gpt-image-panel__copy= modelInfo.quickNote
           form#gptImageForm.gpt-image-form(method='post', action=pageConfig.generateEndpoint, enctype='multipart/form-data')
             label.gpt-image-field
+              span.gpt-image-field__label Model
+              select#gptImageModel.gpt-image-field__input(name='model')
+                each model in options.models
+                  option(value=model.value, selected=formDefaults.model === model.value)= model.label
+            label.gpt-image-field
               span.gpt-image-field__label Prompt
               textarea.gpt-image-field__input.gpt-image-field__input--textarea(name='prompt', rows='6', maxlength='32000', required, placeholder='Describe the image you want to create or the edit you want to apply.')= formDefaults.prompt
 
@@ -40,7 +45,7 @@ block content
                     option(value=count, selected=formDefaults.n === count)= count
               label.gpt-image-field
                 span.gpt-image-field__label Quality
-                select.gpt-image-field__input(name='quality')
+                select#gptImageQuality.gpt-image-field__input(name='quality')
                   each quality in options.qualities
                     option(value=quality, selected=formDefaults.quality === quality)= quality
 
@@ -68,7 +73,7 @@ block content
             .gpt-image-field-grid
               label.gpt-image-field
                 span.gpt-image-field__label Background
-                select.gpt-image-field__input(name='background')
+                select#gptImageBackground.gpt-image-field__input(name='background')
                   each background in options.backgrounds
                     option(value=background, selected=formDefaults.background === background)= background
               label.gpt-image-field
@@ -103,6 +108,7 @@ block content
               #gptImageSelectedInputs.gpt-image-selection__items
               p#gptImageSelectedCount.gpt-image-selection__count 0 selected
 
+            small.gpt-image-field__hint Sizes require edges divisible by 16, at most 3840px, a ratio within 3:1 and 655,360–8,294,400 pixels. Above 3,686,400 pixels is experimental.
             #gptImageStatus.gpt-image-status(aria-live='polite')
             .gpt-image-actions
               button#gptImageSubmit.btn.btn-primary(type='submit') Generate image
@@ -136,6 +142,9 @@ block content
                   p.gpt-image-card__prompt= promptPreview
                   dl.gpt-image-card__meta
                     div
+                      dt Model
+                      dd= item.modelLabel
+                    div
                       dt Type
                       dd= item.requestType
                     div
@@ -155,6 +164,7 @@ block content
                       dd= new Date(item.createdAt).toLocaleString()
                   p.gpt-image-card__byline= `By ${item.createdBy}`
                 .gpt-image-card__actions
+                  a.btn.btn-sm.btn-outline-secondary(href=item.outputUrl, target='_blank', rel='noopener') Open image
                   button.btn.btn-sm.btn-outline-danger(type='button', data-like-button='1', data-image-id=item.id, data-liked=item.likedByCurrentUser ? 'true' : 'false')
                     = item.likedByCurrentUser ? 'Unlike' : 'Like'
                   button.btn.btn-sm.btn-outline-primary(type='button', data-select-input='1', data-image-id=item.id)
@@ -179,7 +189,7 @@ block content
             if gallery.pagination.nextUrl
               a.btn.btn-outline-secondary(href=gallery.pagination.nextUrl) Next
 
-  script(type='application/json', id='gptImagePageConfig') !{safeJson(pageConfig)}
+  script(type='application/json', id='gptImagePageConfig') !{safeJson({ ...pageConfig, csrfToken })}
 
 block script
   script(src='/js/gpt_image.js', defer)

@@ -336,10 +336,15 @@ app.get('/', (req, res, next) => {
   return next();
 });
 
+// Keep every static mount from exposing new GPT Image storage via aliases/symlinks.
+const { guardStaticMedia } = require('./services/gptImageStorageService');
+const imageSafeStatic = (root, options) => guardStaticMedia(root, express.static(root, options));
+const imageSafeStaticGzip = (root, options) => guardStaticMedia(root, expressStaticGzip(root, options));
+
 // ----- VUE APP -----
 app.use((req, res, next) => {
   if ("VUE_PATH" in process.env && req.isAuthenticated && req.isAuthenticated()) {
-    express.static(process.env.VUE_PATH)(req, res, next);
+    imageSafeStatic(process.env.VUE_PATH)(req, res, next);
   } else {
     next();
   }
@@ -384,7 +389,7 @@ app.use((req, res, next) => {
   });
 });
 protectedStaticDirectories.forEach((directory) => {
-  app.use(`/${directory}`, isAuthenticated, express.static(path.join(__dirname, 'public', directory), {
+  app.use(`/${directory}`, isAuthenticated, imageSafeStatic(path.join(__dirname, 'public', directory), {
     setHeaders: (res) => {
       res.setHeader('Cache-Control', 'private, no-store, max-age=0');
       res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
@@ -394,24 +399,24 @@ protectedStaticDirectories.forEach((directory) => {
 
 // Serve static files
 app.get('/assets/forms/:revision/:filename', formAssets.serve);
-app.use(express.static(path.join(__dirname, 'public')));
-app.use('/vendor/katex', express.static(path.join(__dirname, 'node_modules', 'katex', 'dist')));
-app.use('/vendor/mermaid', express.static(path.join(__dirname, 'node_modules', 'mermaid', 'dist')));
-app.use('/vendor/dompurify', express.static(path.join(__dirname, 'node_modules', 'dompurify', 'dist')));
+app.use(imageSafeStatic(path.join(__dirname, 'public')));
+app.use('/vendor/katex', imageSafeStatic(path.join(__dirname, 'node_modules', 'katex', 'dist')));
+app.use('/vendor/mermaid', imageSafeStatic(path.join(__dirname, 'node_modules', 'mermaid', 'dist')));
+app.use('/vendor/dompurify', imageSafeStatic(path.join(__dirname, 'node_modules', 'dompurify', 'dist')));
 const immutableVendorOptions = { immutable: true, maxAge: '1y' };
-app.use(`${THREE_VENDOR_BASE_URL}/build`, express.static(THREE_BUILD_PATH, immutableVendorOptions));
-app.use(`${THREE_VENDOR_BASE_URL}/addons`, express.static(THREE_ADDONS_PATH, immutableVendorOptions));
+app.use(`${THREE_VENDOR_BASE_URL}/build`, imageSafeStatic(THREE_BUILD_PATH, immutableVendorOptions));
+app.use(`${THREE_VENDOR_BASE_URL}/addons`, imageSafeStatic(THREE_ADDONS_PATH, immutableVendorOptions));
 
 // Keep the original URLs available for preview pages opened before the versioned asset rollout.
-app.use('/vendor/three/build', express.static(THREE_BUILD_PATH));
-app.use('/vendor/three/addons', express.static(THREE_ADDONS_PATH));
+app.use('/vendor/three/build', imageSafeStatic(THREE_BUILD_PATH));
+app.use('/vendor/three/addons', imageSafeStatic(THREE_ADDONS_PATH));
 
 // Middleware for caching static files
-app.use('/img', express.static(path.join(__dirname, 'public', 'img'), {
+app.use('/img', imageSafeStatic(path.join(__dirname, 'public', 'img'), {
   maxAge: '1y',
   immutable: true,
 }));
-app.use('/mp3', express.static(path.join(__dirname, 'public', 'mp3'), {
+app.use('/mp3', imageSafeStatic(path.join(__dirname, 'public', 'mp3'), {
   maxAge: '1y',
   immutable: true,
 }));
@@ -517,7 +522,7 @@ app.use('/shopping-list', isAuthenticated, authorize("shoppinglist"), shoppingLi
 app.use('/bookmarks', isAuthenticated, bookmarkRouter);
 app.use('/reminders', isAuthenticated, pushoverReminderRouter);
 app.use('/image_gen', isAuthenticated, authorize("image_gen"), imageGenRouter);
-app.use('/gpt-image', isAuthenticated, gptImageRouter);
+app.use('/gpt-image', gptImageRouter);
 app.use('/music', isAuthenticated, authorize("music"), musicRouter);
 app.use('/ocr', isAuthenticated, authorize("ocr"), ocrRouter);
 app.use('/ocr-tts', isAuthenticated, authorize("ocr"), ocrTtsRouter);
@@ -671,9 +676,9 @@ const serveGames = () => {
           }
         }
       };
-      app.use(`/${gameFolder}`, expressStaticGzip(gamePath, staticOptions));
+      app.use(`/${gameFolder}`, imageSafeStaticGzip(gamePath, staticOptions));
       if (gameFolder === 'lentmanc_game') {
-        app.use(`/games/${gameFolder}`, expressStaticGzip(gamePath, staticOptions));
+        app.use(`/games/${gameFolder}`, imageSafeStaticGzip(gamePath, staticOptions));
       }
     }
   });

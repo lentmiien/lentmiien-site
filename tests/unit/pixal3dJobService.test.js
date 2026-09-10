@@ -166,3 +166,23 @@ describe('Pixal3dJobService', () => {
     });
   });
 });
+
+test('private GPT Image references reach gateway as bytes and survive Pixal3D job deletion', async () => {
+  const storage = require('../../services/gptImageStorageService');
+  const buffer = Buffer.from('synthetic image bytes');
+  const read = jest.spyOn(storage, 'readLibraryImage').mockResolvedValue(buffer);
+  const job = buildJob();
+  job.inputImage = { storage: 'gpt-image', fileName: 'gpt-image-private-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.png', publicUrl: '/gpt-image/media/test', mimeType: 'image/png' };
+  const JobModel = { findOneAndUpdate: jest.fn(() => queryResult(job)), updateOne: jest.fn(() => queryResult({})) };
+  const gateway = { ensureContainerRunning: jest.fn(), generateToFile: jest.fn().mockResolvedValue({ headers: {}, sizeBytes: 100 }), getLastJob: jest.fn().mockResolvedValue({}) };
+  const service = new Pixal3dJobService({ JobModel, gateway });
+  jest.spyOn(service, 'ensureStorageDirectories').mockResolvedValue();
+  const remove = jest.spyOn(service, 'removeInputImage').mockResolvedValue();
+  try {
+    await service.processJob(job._id);
+    expect(gateway.generateToFile).toHaveBeenCalledWith(expect.objectContaining({ inputBuffer: buffer }));
+    expect(gateway.generateToFile.mock.calls[0][0]).not.toHaveProperty('inputPath');
+    await service.removeJobFiles({ inputImage: job.inputImage });
+    expect(remove).not.toHaveBeenCalled();
+  } finally { read.mockRestore(); }
+});

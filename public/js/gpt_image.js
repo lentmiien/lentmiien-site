@@ -13,6 +13,9 @@
   }
 
   const STORAGE_KEY = 'gpt-image-selected-inputs';
+  const modelInput = document.getElementById('gptImageModel');
+  const qualityInput = document.getElementById('gptImageQuality');
+  const backgroundInput = document.getElementById('gptImageBackground');
   const form = document.getElementById('gptImageForm');
   const statusElement = document.getElementById('gptImageStatus');
   const selectedInputsElement = document.getElementById('gptImageSelectedInputs');
@@ -45,7 +48,7 @@
       if (!Array.isArray(parsed)) {
         return [];
       }
-      return parsed.filter((entry) => entry && typeof entry.id === 'string');
+      return parsed.filter((entry) => entry && /^[a-f0-9]{24}$/i.test(entry.id) && typeof entry.previewUrl === 'string' && /^\/(img\/[^/?#]+|gpt-image\/media\/gpt-image-private-[0-9a-f-]{36}\.(png|jpg|webp))$/.test(entry.previewUrl)).slice(0, 16);
     } catch (_error) {
       return [];
     }
@@ -158,6 +161,33 @@
       return;
     }
     compressionField.hidden = outputFormatInput.value === 'png';
+    document.getElementById('gptImageCompression').disabled = compressionField.hidden;
+    updateBackgroundOptions();
+  }
+
+  function populateOptions(input, options) {
+    if (!input) return;
+    const previous = input.value;
+    input.replaceChildren(...options.map(value => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value;
+      return option;
+    }));
+    input.value = options.includes(previous) ? previous : 'auto';
+  }
+
+  function updateBackgroundOptions() {
+    const contract = pageConfig.models?.[modelInput?.value];
+    if (!contract) return;
+    populateOptions(backgroundInput, contract.backgrounds.filter(value => value !== 'transparent' || outputFormatInput.value !== 'jpeg'));
+  }
+
+  function updateModelOptions() {
+    const contract = pageConfig.models?.[modelInput?.value];
+    if (!contract) return;
+    populateOptions(qualityInput, contract.qualities);
+    updateBackgroundOptions();
   }
 
   function updateUploadSummary() {
@@ -185,6 +215,7 @@
         method: 'POST',
         headers: {
           Accept: 'application/json',
+          'X-CSRF-Token': pageConfig.csrfToken,
         },
       });
       const payload = await readJsonResponse(response);
@@ -229,6 +260,7 @@
       const response = await fetch(pageConfig.generateEndpoint, {
         method: 'POST',
         body: formData,
+        headers: { Accept: 'application/json', 'X-CSRF-Token': pageConfig.csrfToken },
       });
       const payload = await readJsonResponse(response);
       if (!response.ok || !payload.ok) {
@@ -277,6 +309,9 @@
       renderSelectedInputs();
     });
   }
+
+  if (modelInput) modelInput.addEventListener('change', updateModelOptions);
+  updateModelOptions();
 
   if (sizeModeInput) {
     sizeModeInput.addEventListener('change', updateSizeFields);

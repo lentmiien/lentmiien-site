@@ -324,3 +324,24 @@ describe('Prompt to 3D page', () => {
     expect(configScript).not.toContain('<script>window.injected');
   });
 });
+
+test('private GPT Image handoff reuses storage without creating a public Pixal3D copy', async () => {
+  const storage = require('../../services/gptImageStorageService');
+  const buffer = await sharp({ create: { width: 16, height: 16, channels: 3, background: 'red' } }).png().toBuffer();
+  const read = jest.spyOn(storage, 'readLibraryImage').mockResolvedValue(buffer);
+  const fileName = 'gpt-image-private-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.png';
+  const url = `/gpt-image/media/${fileName}`;
+  const job = { _id: 'wrapper', owner: { id: 'owner', name: 'Owner' }, prompt: 'Test', imageOptions: DEFAULT_FORM_VALUES, pixal3dParameters: DEFAULT_PIXAL3D_PARAMETERS };
+  const JobModel = { findOneAndUpdate: jest.fn(() => queryResult(job)), updateOne: jest.fn(() => ({ exec: async () => ({}) })) };
+  const Pixal3dJobModel = { create: jest.fn().mockResolvedValue({ _id: 'pixal' }) };
+  const pixal3dJobService = { storeInputImage: jest.fn(), enqueue: jest.fn(), removeInputImage: jest.fn() };
+  const service = new PromptTo3dJobService({ JobModel, Pixal3dJobModel, pixal3dJobService, imageGenerator: async () => ({ images: [{ outputFileName: fileName, outputUrl: url }] }) });
+  service.startMonitor = jest.fn();
+  try {
+    await service.processJob('wrapper');
+    expect(read).toHaveBeenCalledWith({ fileName, url });
+    expect(pixal3dJobService.storeInputImage).not.toHaveBeenCalled();
+    expect(Pixal3dJobModel.create).toHaveBeenCalledWith(expect.objectContaining({ inputImage: expect.objectContaining({ storage: 'gpt-image', publicUrl: url, fileName }) }));
+    expect(pixal3dJobService.enqueue).toHaveBeenCalledWith('pixal');
+  } finally { read.mockRestore(); }
+});

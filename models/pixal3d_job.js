@@ -9,6 +9,7 @@ const OwnerSchema = new Schema({
 }, { _id: false });
 
 const InputImageSchema = new Schema({
+  storage: { type: String, enum: ['public', 'gpt-image'], default: 'public' },
   fileName: { type: String, required: true },
   publicUrl: { type: String, required: true },
   originalName: { type: String, default: '', maxlength: 255 },

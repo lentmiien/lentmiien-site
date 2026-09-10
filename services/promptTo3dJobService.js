@@ -1,3 +1,4 @@
+const imageStorage = require('./gptImageStorageService');
 const fs = require('fs/promises');
 const path = require('path');
 const sharp = require('sharp');
@@ -47,7 +48,7 @@ function activeKeyForUser(user) {
 function normalizeSubmission(raw = {}, user = {}) {
   const prompt = typeof raw.prompt === 'string' ? raw.prompt : '';
   const imageValidation = normalizeGenerationForm({
-    ...raw,
+    ...Object.fromEntries(Object.keys(DEFAULT_FORM_VALUES).filter(key => raw[key] !== undefined).map(key => [key, raw[key]])),
     prompt,
     n: 1,
   });
@@ -284,9 +285,14 @@ class PromptTo3dJobService {
       }
 
       const imageFileName = assertGeneratedImageFileName(image.outputFileName);
-      const imageBuffer = await fs.readFile(path.join(this.imageDirectory, imageFileName));
+      const privateImage = image.outputUrl?.startsWith(imageStorage.MEDIA_PREFIX);
+      const imageBuffer = privateImage
+        ? await imageStorage.readLibraryImage({ fileName: imageFileName, url: image.outputUrl })
+        : await fs.readFile(path.join(this.imageDirectory, imageFileName));
       const metadata = await inspectGeneratedImage(imageBuffer);
-      storedInput = await this.pixal3dJobService.storeInputImage(imageBuffer, metadata.format);
+      storedInput = privateImage
+        ? { fileName: imageFileName, publicUrl: image.outputUrl, mimeType: metadata.mimeType, storage: 'gpt-image' }
+        : await this.pixal3dJobService.storeInputImage(imageBuffer, metadata.format);
 
       pixal3dJob = await this.Pixal3dJobModel.create({
         owner: plainObject(job.owner),
@@ -330,7 +336,7 @@ class PromptTo3dJobService {
       if (pixal3dJob && !pixal3dQueued) {
         this.pixal3dJobService.enqueue(pixal3dJob._id);
       }
-      if (storedInput?.fileName && !pixal3dJob) {
+      if (storedInput?.fileName && storedInput.storage !== 'gpt-image' && !pixal3dJob) {
         await this.pixal3dJobService.removeInputImage(storedInput.fileName).catch((cleanupError) => {
           logger.warning('Unable to remove rejected Prompt to 3D Pixal3D input', {
             category: 'prompt_to_3d',

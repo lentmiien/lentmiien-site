@@ -82,6 +82,7 @@ describe('gptImageService', () => {
     })).toEqual({
       ok: true,
       formValues: {
+        model: 'gpt-image-2',
         prompt: 'A marmot reading a map',
         n: 1,
         quality: 'medium',
@@ -95,6 +96,7 @@ describe('gptImageService', () => {
         moderation: 'auto',
       },
       requestOptions: {
+        model: 'gpt-image-2',
         prompt: 'A marmot reading a map',
         n: 1,
         quality: 'medium',
@@ -130,9 +132,9 @@ describe('gptImageService', () => {
   test('buildToolImageRequest normalizes selected gallery image ids', () => {
     expect(buildToolImageRequest({
       prompt: 'A reference edit',
-      selected_image_ids: ['abc', 'abc', 'def'],
+      selected_image_ids: ['a'.repeat(24), 'a'.repeat(24), 'b'.repeat(24)],
     })).toMatchObject({
-      selectedImageIds: ['abc', 'def'],
+      selectedImageIds: ['a'.repeat(24), 'b'.repeat(24)],
       rawOptions: {
         prompt: 'A reference edit',
       },

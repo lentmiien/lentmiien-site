@@ -75,6 +75,12 @@ module.exports = {
   'humanRequest.askGeneral': {
     execute: (args, context) => getHumanToolRequestService().execute(args, context, 'general'),
   },
+  'gptImage.generateSunburst': {
+    execute: (args, context) => getGptImageToolService().execute(args, context, 'gpt-image-2.5-sunburst'),
+  },
+  'gptImage.generateFlare': {
+    execute: (args, context) => getGptImageToolService().execute(args, context, 'gpt-image-2.5-flare'),
+  },
   'gptImage.generate': {
     execute: (args, context) => getGptImageToolService().execute(args, context),
   },
