@@ -1,5 +1,6 @@
 // Dashboard adapters never import database.js, controllers, workers or provider SDKs.
-const { allows, SECTIONS } = require('./accountSurfacePolicy');
+const { allows, SECTIONS, canCloseAccounts } = require('./accountSurfacePolicy');
+const accountBalances = require('../utils/accountBalances');
 const { jobTypesFor } = require('./accountPreferencesService');
 const logger = require('../utils/logger');
 const { tokyoDay, dashboardTaskStartFilter, taskDates, TASK_STATES } = require('../utils/scheduleTaskDates');
@@ -66,10 +67,26 @@ function createDashboardData({ model = name => require(`../models/${name}`), now
       const tasks = groups.flat().map(t => ({ ...t, dates: taskDates(t, instant) }))
         .sort((a, b) => TASK_STATES.indexOf(a.dates.status) - TASK_STATES.indexOf(b.dates.status)
           || a.dates.planningDate - b.dates.planningDate || String(a._id).localeCompare(String(b._id)));
-      return { rows: tasks.map(t => ({ ...row(t.title, `${t.type === 'tobuy' ? 'Buy' : 'To do'} · ${t.dates.status}`, '/scheduleTask/upcoming', t.end),
+      let automatic = []; let automaticUnavailable = false;
+      if (canCloseAccounts(policy)) {
+        try {
+          const dates = accountBalances.period(instant);
+          const accounts = await read('account_db', {}, 'name balance_date', { _id: 1 }, 101);
+          if (accounts.length > 100) throw new Error('Account limit reached');
+          const href = policy.capabilities.includes('accounting') ? '/accounting' : '/budget';
+          automatic = accounts.filter(a => accountBalances.eligible(a, dates)).map(a => ({
+            ...row(`Finalize previous month · ${a.name}`, `Review and confirm balances through today; save at ${dates.closeDate}.`, `${href}/close-month/#account-${a._id}`),
+            group: 'Automatic accounting', canComplete: false,
+          }));
+        } catch (_) {
+          automaticUnavailable = true;
+          logger.warning('Automatic accounting close reminders unavailable', { category: 'accounting' });
+        }
+      }
+      return { state: automaticUnavailable ? 'stale' : undefined, rows: [...tasks.map(t => ({ ...row(t.title, `${t.type === 'tobuy' ? 'Buy' : 'To do'} · ${t.dates.status}`, '/scheduleTask/upcoming', t.end),
         group: t.dates.status, start: iso(t.start), end: iso(t.end),
-        taskId: String(t._id), canComplete: policy.capabilities.includes('schedule.task.complete') || ['admin', 'family', 'user'].includes(policy.user.type_user) })),
-      note: 'Up to 40 incomplete tasks available now or starting within 14 days. Dates: Asia/Tokyo. Open all tasks for the full plan.' };
+        taskId: String(t._id), canComplete: policy.capabilities.includes('schedule.task.complete') || ['admin', 'family', 'user'].includes(policy.user.type_user) })), ...automatic],
+      note: `${automaticUnavailable ? 'Accounting reminders unavailable. ' : ''}Up to 40 incomplete tasks available now or starting within 14 days. Dates: Asia/Tokyo. Automatic accounting reminders require review and confirmation; they cannot be completed by holding a task.` };
     },
     async agenda(policy) {
       const day = tokyoDay(now());
@@ -102,7 +119,9 @@ function createDashboardData({ model = name => require(`../models/${name}`), now
     },
     async accounting(policy) {
       const href = policy.capabilities.includes('accounting') ? '/accounting' : '/budget';
-      const day = tokyoDay(now()); const [year, month] = day.key.split('-').map(Number);
+      const instant = now();
+      const dates = accountBalances.period(instant);
+      const day = tokyoDay(instant); const [year, month] = day.key.split('-').map(Number);
       const prior = new Date(Date.UTC(year, month - 2, 1));
       const begin = prior.getUTCFullYear() * 10000 + (prior.getUTCMonth() + 1) * 100 + 1;
       const current = year * 10000 + month * 100 + 1;
@@ -112,9 +131,27 @@ function createDashboardData({ model = name => require(`../models/${name}`), now
       ]);
       if (accounts.length > 100 || transactions.length > 2000) return { state: 'unavailable', rows: [], note: 'Summary limit reached. Open Accounting for complete figures.' };
       const totals = spendingByCurrency(transactions, accounts, current);
+      const olderAccounts = accounts.filter(a => accountBalances.validDate(a.balance_date) && a.balance_date < begin);
+      const older = olderAccounts.length ? await read('transaction_db', { date: { $lt: begin }, $or: olderAccounts.map(a => ({
+        date: { $gt: a.balance_date }, $or: [{ from_account: String(a._id) }, { to_account: String(a._id) }],
+      })) }, 'amount from_fee to_fee from_account to_account date', { _id: 1 }, 50001) : [];
+      if (older.length > 50000) {
+        logger.warning('Dashboard accounting balance history limit reached', { category: 'accounting' });
+        return { state: 'unavailable', rows: [], note: 'Balance history limit reached. Open Accounting for complete figures.' };
+      }
+      const balanceTransactions = [...older, ...transactions];
+      const balanceRows = accounts.map(a => {
+        try {
+          const calculated = accountBalances.balances(a, balanceTransactions, dates);
+          return row(a.name, `${a.currency} ${calculated.current} · current through ${dates.todayLabel} · baseline ${a.balance_date}`, href);
+        } catch (_) {
+          logger.warning('Dashboard account balance requires ledger review', { category: 'accounting' });
+          return row(a.name, 'Current balance unavailable. Review the baseline and ledger in Accounting.', href);
+        }
+      });
       return { rows: [...totals.map(t => row(`${t.currency} ${t.current.toFixed(2)} this month`, `Prior full month ${t.prior.toFixed(2)} · difference ${(t.current - t.prior).toFixed(2)}`, href)),
-        ...accounts.slice(0, 5).map(a => row(a.name, `${a.currency} ${Number(a.balance).toFixed(2)} · recorded balance as of ${a.balance_date}`, href))],
-      note: 'Budget ledger expenses including both fees, by payer currency. Prior full month comparison; transfers and credit-card ledgers excluded to avoid double counting. Balances are dated snapshots.' };
+        ...balanceRows, ...(canCloseAccounts(policy) ? [row('Finalize previous month', 'Compare official balances and confirm each account.', `${href}/close-month/`)] : [])],
+      note: 'Spend includes budget expenses and both fees by payer currency; transfers and the separate credit-card ledger are excluded from spend. Current balances include all ledger movements after each baseline through today (Asia/Tokyo).' };
     },
     async life() {
       const entries = await read('my_life_log_entry', {}, 'type label value text timestamp', { timestamp: -1, _id: -1 }, 8);

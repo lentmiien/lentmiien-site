@@ -1,3 +1,7 @@
+jest.mock('../../services/accountingLedgerWrite', () => ({
+  insertTransaction: jest.fn(document => document.save()),
+  deleteTransaction: jest.fn(id => require('../../models/transaction_db').deleteOne({ _id: id })),
+}));
 jest.mock('../../models/account', () => ({ find: jest.fn() }));
 jest.mock('../../models/transaction', () => ({ find: jest.fn() }));
 jest.mock('../../models/typecategory', () => ({ find: jest.fn() }));
@@ -468,4 +472,26 @@ describe('budgetService', () => {
       });
     });
   });
+});
+
+test('Accounting balances and prior-month incoming history remain continuous after a close', async () => {
+  jest.useFakeTimers().setSystemTime(new Date('2026-09-10T00:00:00Z'));
+  try {
+    AccountModel.find.mockResolvedValue([]);
+    Receipt.find.mockReturnValue({ sort: async () => [] }); Payroll.find.mockResolvedValue([]);
+    const account = { _id: createObjectId('a'), name: 'Synthetic', balance: 100, balance_date: 20220101 };
+    AccountDBModel.find.mockImplementation(async () => [account]);
+    const transactions = [
+      { _id: createObjectId('t1'), from_account: 'EXT', to_account: 'a', amount: 20, from_fee: 0, to_fee: 2, date: 20260831 },
+      { _id: createObjectId('t2'), from_account: 'a', to_account: 'EXT', amount: 10, from_fee: 1, to_fee: 0, date: 20260901 },
+    ];
+    TransactionDBModel.find.mockResolvedValue(transactions);
+    const before = (await budgetService.getDashboardData()).accounts[0];
+    account.balance = 118; account.balance_date = 20260831;
+    const after = (await budgetService.getDashboardData()).accounts[0];
+    expect(before.balance).toBe(107); expect(after.balance).toBe(107);
+    expect(before.change_last_month).toBe(18); expect(after.change_last_month).toBe(18);
+    expect(after.last_30_days_transactions).toEqual(before.last_30_days_transactions);
+    expect(TransactionDBModel.find).toHaveBeenLastCalledWith({ date: { $lte: 20260910 } });
+  } finally { jest.useRealTimers(); }
 });

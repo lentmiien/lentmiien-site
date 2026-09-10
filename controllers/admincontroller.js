@@ -487,6 +487,10 @@ const PERFORMANCE_RANGE_OPTIONS = [
 const DB_VIEWER_DEFAULT_LIMIT = 25;
 const DB_VIEWER_MAX_LIMIT = 200;
 const DB_VIEWER_SYSTEM_PREFIX = 'system.';
+// Raw mutations cannot enforce the ledger mutex, closed periods or close audit.
+// Apply this deny list to any future generic edit/import/update operation too.
+const DB_VIEWER_READ_ONLY_COLLECTIONS = new Set(['account_dbs', 'transaction_dbs', 'accounting_write_locks']);
+const DB_VIEWER_ACCOUNTING_READ_ONLY = 'Accounting collections are read-only here. Use audited Accounting operations. Lock recovery requires the offline operator procedure in documentation/accounting-month-close.md.';
 const API_DEBUG_PRUNE_DEFAULT_DAYS = 30;
 const DISASTER_ALERT_PRUNE_DEFAULT_DAYS = 7;
 const MIN_PRUNE_DAYS = 1;
@@ -4366,6 +4370,7 @@ exports.api_debug_logs = async (req, res) => {
 };
 
 exports.database_viewer_page = async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
   try {
     const collections = await listVisibleCollections();
     const requestedCollection = typeof req.query.collection === 'string' ? req.query.collection : '';
@@ -4393,6 +4398,7 @@ exports.database_viewer_page = async (req, res) => {
 };
 
 exports.database_viewer_data = async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
   try {
     const availableCollections = await listVisibleCollections();
     const collection = typeof req.query.collection === 'string' ? req.query.collection : '';
@@ -4411,6 +4417,8 @@ exports.database_viewer_data = async (req, res) => {
 
     return res.json({
       collection,
+      canDelete: !DB_VIEWER_READ_ONLY_COLLECTIONS.has(collection),
+      readOnlyReason: DB_VIEWER_READ_ONLY_COLLECTIONS.has(collection) ? DB_VIEWER_ACCOUNTING_READ_ONLY : null,
       limit,
       count: entries.length,
       entries,
@@ -4426,10 +4434,19 @@ exports.database_viewer_data = async (req, res) => {
 };
 
 exports.database_viewer_delete = async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
   try {
-    const availableCollections = await listVisibleCollections();
     const collection = typeof req.body?.collection === 'string' ? req.body.collection.trim() : '';
     const id = typeof req.body?.id === 'string' ? req.body.id : '';
+
+    // Deny even for admins and even when the collection/record does not yet exist.
+    if (DB_VIEWER_READ_ONLY_COLLECTIONS.has(collection)) {
+      logger.warning('Blocked generic accounting collection deletion; use Accounting operations', {
+        category: 'accounting', metadata: { collection },
+      });
+      return res.status(403).json({ error: DB_VIEWER_ACCOUNTING_READ_ONLY });
+    }
+    const availableCollections = await listVisibleCollections();
 
     if (!collection || !availableCollections.includes(collection)) {
       return res.status(400).json({ error: 'Invalid collection.' });

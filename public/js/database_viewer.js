@@ -67,7 +67,7 @@
     resultsContainer.appendChild(placeholder);
   }
 
-  function renderEntries(entries, collectionName) {
+  function renderEntries(entries, collectionName, canDelete) {
     clearResults();
 
     if (!entries || entries.length === 0) {
@@ -110,7 +110,7 @@
       deleteBtn.addEventListener('click', () => handleDelete(entry, card, deleteBtn));
 
       header.appendChild(meta);
-      header.appendChild(deleteBtn);
+      if (canDelete) header.appendChild(deleteBtn);
 
       const code = document.createElement('pre');
       code.className = 'db-viewer__code';
@@ -147,10 +147,10 @@
         throw new Error(payload.error || `Request failed with status ${response.status}`);
       }
 
-      renderEntries(payload.entries || [], collection);
+      renderEntries(payload.entries || [], collection, payload.canDelete === true);
       const count = Array.isArray(payload.entries) ? payload.entries.length : 0;
       activeCollection = collection;
-      setStatus(`Loaded ${count} entr${count === 1 ? 'y' : 'ies'} from ${collection}.`, 'success');
+      setStatus(payload.readOnlyReason || `Loaded ${count} entr${count === 1 ? 'y' : 'ies'} from ${collection}.`, payload.canDelete === true ? 'success' : 'info');
     } catch (error) {
       setStatus(error.message || 'Unable to load entries.', 'error');
     } finally {

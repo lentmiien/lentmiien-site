@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const router = express.Router();
+router.use('/close-month', require('./accountingClose').createAccountingClose());
 
 // Require controller modules.
 const controller = require('../controllers/accountingController');
