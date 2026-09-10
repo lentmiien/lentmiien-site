@@ -77,6 +77,61 @@ function createJob(overrides = {}) {
 }
 
 describe('EmbeddingQueueService', () => {
+  function pendingSourceFixture(ageMs, modified = 1) {
+    const now = new Date('2026-09-10T03:00:00Z');
+    const message = { _id: '507f191e810c19729de860ea', contentType: 'text',
+      timestamp: new Date(+now - ageMs), embeddingStatus: 'pending',
+      content: { text: 'private conversation content' }, embeddingContentHash: 'old-hash' };
+    const chatModel = { updateOne: jest.fn().mockResolvedValue({ modifiedCount: modified }) };
+    const conversationModel = { findOne: jest.fn().mockResolvedValue(null) };
+    const logger = createLogger();
+    const service = new EmbeddingQueueService({ jobModel: {}, chatModel, conversationModel,
+      embeddingService: createEmbeddingService(), loggerImpl: logger });
+    service.findLimited = jest.fn(async (Model, filter) => Model === chatModel && filter.embeddingStatus === 'pending' ? [message] : []);
+    service.enqueue = jest.fn();
+    return { now, message, chatModel, conversationModel, logger, service };
+  }
+
+  test('a recently saved message waits for conversation attachment and is queued on a later pass', async () => {
+    const f = pendingSourceFixture(1000);
+    expect((await f.service.reconcilePendingSources(f.now)).markedFailed).toBe(0);
+    expect(f.chatModel.updateOne).not.toHaveBeenCalled();
+    expect(f.logger.warning).not.toHaveBeenCalled();
+    f.conversationModel.findOne.mockResolvedValue({ _id: 'conversation-1' });
+    expect((await f.service.reconcilePendingSources(new Date(+f.now + 300_000))).queued).toBe(1);
+    expect(f.service.enqueue).toHaveBeenCalled();
+    expect(f.chatModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  test('an older unattached source logs its opaque ID and reason without content', async () => {
+    const f = pendingSourceFixture(300_000);
+    expect((await f.service.reconcilePendingSources(f.now)).markedFailed).toBe(1);
+    expect(f.logger.warning).toHaveBeenCalledWith(expect.any(String), {
+      category: 'embedding_queue', metadata: { documentId: f.message._id, reason: 'conversation_reference_missing', sourceAgeMs: 300_000 },
+    });
+    expect(JSON.stringify(f.logger.warning.mock.calls)).not.toContain('private conversation');
+    expect(f.chatModel.updateOne).toHaveBeenCalledWith({
+      _id: f.message._id, embeddingStatus: 'pending', embeddingRequested: { $ne: false },
+      'content.text': f.message.content.text, embeddingContentHash: 'old-hash',
+    }, { $set: { embeddingStatus: 'failed' } });
+  });
+
+  test('a concurrently changed or deleted source is not counted or logged as failed', async () => {
+    const f = pendingSourceFixture(600_000, 0);
+    expect((await f.service.reconcilePendingSources(f.now)).markedFailed).toBe(0);
+    expect(f.logger.warning).not.toHaveBeenCalled();
+  });
+
+  test('an explicit deletion intent bypasses orphan failure handling', async () => {
+    const f = pendingSourceFixture(600_000);
+    f.message.embeddingRequested = false;
+    expect((await f.service.reconcilePendingSources(f.now)).markedFailed).toBe(0);
+    expect(f.conversationModel.findOne).not.toHaveBeenCalled();
+    expect(f.logger.warning).not.toHaveBeenCalled();
+    expect(f.chatModel.updateOne).toHaveBeenCalledWith(expect.any(Object), {
+      $set: { embeddingStatus: 'delete_pending', embeddingContentHash: null },
+    });
+  });
   test('silently skips a drain while the queue database connection is unavailable', async () => {
     const logger = createLogger();
     const service = new EmbeddingQueueService({

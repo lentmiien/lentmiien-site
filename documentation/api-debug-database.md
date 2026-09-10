@@ -13,9 +13,15 @@ Documents are stored in the `api_debug_logs` collection with the following field
 - `responseBody` (`Mixed`, nullable): Sanitized response body or error payload.
 - `jsFileName` (`String`, required): Source file that initiated the request.
 - `functionName` (`String`, required): Function that initiated the request.
-- `createdAt` (`Date`): Timestamp automatically assigned by Mongoose.
+- `createdAt` (`Date`): Time captured by the logging helper, including when persistence waits for MongoDB. Direct model writes default to the Mongoose timestamp.
 
 The model is defined in `models/api_debug_log.js` and registered through `database.js` as `ApiDebugLog`.
+
+## Database readiness
+
+The helper holds sanitized records in memory while the model connection is unavailable, then flushes them on connection. Voice discovery and other callers do not wait for the database. This buffer is limited to 50 records, 1 MiB of serialized entries and 60 seconds per entry; excess or expired entries produce a content-free warning summary. A process exit loses buffered records. Diagnostic records are best effort, not a durable audit queue.
+
+Once a database write has been attempted, an acknowledgement failure is logged as a warning and the write is not replayed. Genuine API/service failures are reported separately by the caller. See the [September 10 production review](production-log-review-2026-09-10.md).
 
 ## Retention policy
 

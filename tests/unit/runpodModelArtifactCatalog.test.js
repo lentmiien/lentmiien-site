@@ -12,6 +12,7 @@ const {
   buildArtifactServerShell,
   getModelArtifactPreset,
   modelArtifactPreparationSignal,
+  modelArtifactServingSignal,
 } = require('../../services/runpodModelArtifactCatalog');
 const { spawnSync } = require('child_process');
 const { mkdtempSync, readFileSync, rmSync } = require('fs');
@@ -19,6 +20,14 @@ const { tmpdir } = require('os');
 const { join } = require('path');
 
 describe('Runpod model artifact catalog', () => {
+  test.each([['137', 137], ['0', 0], ['256', null], ['9999', null], ['13.5', null], ['-1', null], ['private-value', null]])(
+    'retains a bounded numeric launcher exit status for %s', (exit, expected) => {
+      const signal = modelArtifactServingSignal([{ line: `RUNPOD_LLM_FAILED code=SERVICE_COMMAND_FAILED stage=loading_model exit=${exit} token=private-value` }]);
+      expect(signal).toEqual({ status: 'failed', errorCode: 'SERVICE_COMMAND_FAILED', stage: 'loading_model',
+        ...(expected === null ? {} : { exitCode: expected }) });
+      expect(JSON.stringify(signal)).not.toContain('private-value');
+    },
+  );
   test('pins the approved GLM quantization to an exact five-shard manifest', () => {
     const preset = getModelArtifactPreset(GLM53_FLASH_UD_IQ4_XS_SLUG);
 

@@ -12,6 +12,22 @@ jest.mock('../../utils/apiDebugLogger', () => ({
 }));
 
 const AsrApiService = require('../../services/asrApiService');
+
+test('reports one sanitized transport failure, marks it for controller deduplication, and never retries audio', async () => {
+  const error = Object.assign(new Error('private audio content'), {
+    name: 'AxiosError', code: 'ECONNRESET', config: { headers: { authorization: 'secret' } },
+  });
+  axios.post.mockRejectedValueOnce(error);
+  const service = new AsrApiService();
+  await expect(service.transcribeBuffer({ buffer: Buffer.from('synthetic audio'), privateRequest: true })).rejects.toBe(error);
+  expect(axios.post).toHaveBeenCalledTimes(1);
+  const log = require('../../utils/logger');
+  expect(log.error).toHaveBeenCalledTimes(1);
+  expect(log.error.mock.calls[0][1].metadata).toMatchObject({ errorName: 'AxiosError', errorCode: 'ECONNRESET', operation: 'transcribe' });
+  expect(JSON.stringify(log.error.mock.calls)).not.toMatch(/private audio|secret/);
+  expect(AsrApiService.wasFailureLogged(error)).toBe(true);
+  expect(AsrApiService.wasFailureLogged(new Error('unrelated persistence failure'))).toBe(false);
+});
 const {
   CRISPERWHISPER_MODEL,
   buildTranscriptionFormFields,

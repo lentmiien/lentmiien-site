@@ -3,6 +3,7 @@ const path = require('path');
 const sharp = require('sharp');
 const { OpenAI } = require('openai');
 const logger = require('./logger');
+const { upstreamErrorMetadata } = require('./upstreamErrorMetadata');
 const { createApiDebugLogger } = require('./apiDebugLogger');
 const ToolManagerService = require('../services/toolManagerService');
 const { sliceMessagesFromConfiguredStart } = require('./chat5MessageSelection');
@@ -926,7 +927,10 @@ const chat = async (conversation, messages, model, options = {}) => {
     if (options.privateRequest) {
       logger.error('Miien Chat5 provider submission failed', { category: 'chat5_miien', metadata: { errorName: error?.name || 'Error' } });
     } else {
-      logger.error(`Error while calling ChatGPT API: ${error}`);
+      logger.error('Error while calling ChatGPT API', {
+        category: 'openai_api',
+        metadata: { operation: 'create_response', ...upstreamErrorMetadata(error) },
+      });
     }
     return null;
   }

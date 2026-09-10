@@ -35,6 +35,145 @@ const POD_RECORD_ID = '507f191e810c19729de860ea';
 const VOLUME_RECORD_ID = '507f191e810c19729de860ab';
 const FIXED_NOW = new Date('2026-09-01T00:00:00.000Z');
 
+describe('Runpod setup cleanup observations', () => {
+  const missing = () => new RunpodApiError('synthetic missing response', { code: 'RUNPOD_HTTP_ERROR', status: 404 });
+  const running = { id: 'pod-123', status: 'RUNNING', actions: ['stop'] };
+  const exited = { id: 'pod-123', status: 'EXITED', actions: ['start', 'terminate'] };
+  const cleanup = (fixture) => fixture.manager.stopProviderPodAfterSetupFailure('pod-123', POD_RECORD_ID, { name: 'admin' });
+
+  test('corroborates a detail 404 with a fresh list before recording provider absence', async () => {
+    const f = createFixture();
+    f.runpodService.getPod.mockRejectedValue(missing());
+    await expect(cleanup(f)).resolves.toEqual({ outcome: 'absent', persisted: true });
+    expect(f.runpodService.listPods).toHaveBeenCalledTimes(1);
+    expect(f.runpodService.transitionPod).not.toHaveBeenCalled();
+    expect(f.podModel.updateOne).toHaveBeenCalledWith(
+      { _id: POD_RECORD_ID, archivedAt: null },
+      { $set: expect.objectContaining({ archivedAt: FIXED_NOW, autoStopAt: null, providerStatus: 'TERMINATED' }) },
+    );
+  });
+
+  test('a list that still contains the pod permits one stop after a detail 404', async () => {
+    const f = createFixture();
+    f.runpodService.getPod.mockRejectedValue(missing());
+    f.runpodService.listPods.mockResolvedValue([running]);
+    f.runpodService.transitionPod.mockResolvedValue(exited);
+    await expect(cleanup(f)).resolves.toEqual({ outcome: 'stopped', persisted: true });
+    expect(f.runpodService.transitionPod).toHaveBeenCalledTimes(1);
+    expect(f.runpodService.transitionPod).toHaveBeenCalledWith('pod-123', 'stop');
+  });
+
+  test('does not infer deletion when a detail 404 cannot be corroborated', async () => {
+    const f = createFixture();
+    f.runpodService.getPod.mockRejectedValue(missing());
+    f.runpodService.listPods.mockRejectedValue(new RunpodApiError('private details', { code: 'RUNPOD_TIMEOUT' }));
+    await expect(cleanup(f)).resolves.toMatchObject({ outcome: 'unconfirmed', persisted: false });
+    expect(f.runpodService.listPods).toHaveBeenCalledTimes(2);
+    expect(f.podModel.updateOne).not.toHaveBeenCalled();
+    expect(f.runpodService.transitionPod).not.toHaveBeenCalled();
+    expect(JSON.stringify(f.appLogger.error.mock.calls)).not.toContain('private details');
+  });
+
+  test.each([[{}], [{ id: 42 }], [{ id: 'invalid pod ID' }]])('does not infer absence from malformed provider list entries (%j)', async (pod) => {
+    const f = createFixture();
+    f.runpodService.getPod.mockRejectedValue(missing());
+    f.runpodService.listPods.mockResolvedValue([pod]);
+    await expect(cleanup(f)).resolves.toMatchObject({ outcome: 'unconfirmed', persisted: false });
+    expect(f.podModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  test.each(['RUNPOD_TIMEOUT', 'RUNPOD_NETWORK_ERROR'])('retries a failed safe read once for %s', async (code) => {
+    const f = createFixture();
+    f.runpodService.getPod.mockRejectedValueOnce(new RunpodApiError('failed', { code })).mockResolvedValue(exited);
+    await expect(cleanup(f)).resolves.toEqual({ outcome: 'already_inactive', persisted: true });
+    expect(f.runpodService.getPod).toHaveBeenCalledTimes(2);
+    expect(f.runpodService.transitionPod).not.toHaveBeenCalled();
+  });
+
+  test('an ambiguous stop failure is not replayed and does not clear the local deadline', async () => {
+    const f = createFixture();
+    f.runpodService.getPod.mockResolvedValue(running);
+    f.runpodService.transitionPod.mockRejectedValue(new RunpodApiError('failed', { code: 'RUNPOD_TIMEOUT' }));
+    await expect(cleanup(f)).resolves.toMatchObject({ outcome: 'unconfirmed', persisted: false });
+    expect(f.runpodService.transitionPod).toHaveBeenCalledTimes(1);
+    expect(f.podModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  test('a stop acknowledgement without a terminal observation keeps a near-term guard deadline', async () => {
+    const f = createFixture();
+    f.runpodService.getPod.mockResolvedValue(running);
+    f.runpodService.transitionPod.mockResolvedValue(running);
+    await expect(cleanup(f)).resolves.toEqual({ outcome: 'stop_requested', persisted: true });
+    expect(f.podModel.updateOne).toHaveBeenCalledWith(expect.any(Object), {
+      $set: expect.objectContaining({ autoStopAt: new Date(+FIXED_NOW + 60_000), lifecycleGroup: 'running' }),
+    });
+    expect(f.appLogger.warning).toHaveBeenCalledTimes(1);
+  });
+
+  test('a local persistence failure is distinct from a confirmed provider stop', async () => {
+    const f = createFixture();
+    f.runpodService.getPod.mockResolvedValue(running);
+    f.runpodService.transitionPod.mockResolvedValue(exited);
+    f.podModel.updateOne.mockRejectedValue(new Error('private database information'));
+    await expect(cleanup(f)).resolves.toMatchObject({ outcome: 'stopped', persisted: false });
+    expect(JSON.stringify(f.appLogger.error.mock.calls)).not.toContain('private database');
+  });
+
+  test('missing stop permission is reported instead of silently claiming cleanup', async () => {
+    const f = createFixture();
+    f.runpodService.getPod.mockResolvedValue({ ...running, actions: [] });
+    await expect(cleanup(f)).resolves.toMatchObject({ outcome: 'unconfirmed', errorCode: 'RUNPOD_ACTION_CONFLICT' });
+    expect(f.appLogger.error).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([401, 403])('does not retry HTTP %i or infer deletion from it', async (status) => {
+    const f = createFixture();
+    f.runpodService.getPod.mockRejectedValue(new RunpodApiError('forbidden', { code: 'RUNPOD_HTTP_ERROR', status }));
+    await expect(cleanup(f)).resolves.toMatchObject({ outcome: 'unconfirmed' });
+    expect(f.runpodService.getPod).toHaveBeenCalledTimes(1);
+    expect(f.runpodService.listPods).not.toHaveBeenCalled();
+  });
+
+  test('expiry cleanup also reconciles confirmed provider absence after 404', async () => {
+    const f = createFixture();
+    f.podModel.find.mockReturnValue(queryResult([{ _id: POD_RECORD_ID, providerPodId: 'pod-123', autoStopAt: FIXED_NOW }]));
+    f.runpodService.getPod.mockRejectedValue(missing());
+    await expect(f.manager.stopExpiredPods()).resolves.toBe(0);
+    expect(f.runpodService.transitionPod).not.toHaveBeenCalled();
+    expect(f.podModel.updateOne).toHaveBeenCalledWith(expect.any(Object), {
+      $set: expect.objectContaining({ archivedAt: FIXED_NOW, autoStopAt: null }),
+    });
+  });
+
+  test('expiry guard retains a retry deadline when provider status is unknown', async () => {
+    const f = createFixture();
+    f.podModel.find.mockReturnValue(queryResult([{ _id: POD_RECORD_ID, providerPodId: 'pod-123', autoStopAt: FIXED_NOW }]));
+    f.runpodService.getPod.mockResolvedValue({ id: 'pod-123', status: 'UNKNOWN', actions: [] });
+    await expect(f.manager.stopExpiredPods()).resolves.toBe(0);
+    expect(f.podModel.updateOne).toHaveBeenCalledWith(expect.any(Object), {
+      $set: expect.objectContaining({ autoStopAt: new Date(+FIXED_NOW + 60_000), autoStopClaimedAt: null }),
+    });
+    expect(f.appLogger.error).toHaveBeenCalledWith('Automatic Runpod pod stop failed', expect.any(Object));
+  });
+
+  test('llama.cpp setup failure logs the safe launcher stage, exit, pod and actual cleanup outcome', async () => {
+    const f = createFixture();
+    const failure = Object.assign(new RunpodManagementError('private launcher output', { code: 'SERVICE_COMMAND_FAILED' }), {
+      launcherStage: 'loading_model', launcherExitCode: 137,
+    });
+    f.manager.waitForRunningPod = jest.fn().mockRejectedValue(failure);
+    f.runpodService.getPod.mockResolvedValue(exited);
+    await expect(f.manager._provisionLlamaCppPod({ _id: POD_RECORD_ID, providerPodId: 'pod-123' }, {}, {})).rejects.toBe(failure);
+    expect(f.appLogger.error).toHaveBeenCalledWith(expect.any(String), {
+      category: 'runpod_management', metadata: expect.objectContaining({
+        podRecordId: POD_RECORD_ID, launcherStage: 'loading_model', launcherExitCode: 137,
+        cleanupOutcome: 'already_inactive', cleanupStatePersisted: true,
+      }),
+    });
+    expect(JSON.stringify(f.appLogger.error.mock.calls)).not.toContain('private launcher');
+  });
+});
+
 function queryResult(value) {
   const query = {
     lean: jest.fn().mockResolvedValue(value),

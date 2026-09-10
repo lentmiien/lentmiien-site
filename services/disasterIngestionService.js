@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
+const { upstreamErrorMetadata } = require('../utils/upstreamErrorMetadata');
 const {
   DisasterAlert,
   DisasterIngestionState,
@@ -351,7 +352,7 @@ class DisasterIngestionService {
       runCounters.feedErrors += 1;
       this.logger.warning('JMA disaster feed polling failed', {
         category: 'disaster_ingestion',
-        metadata: { feedUrl, error: feedState.lastError },
+        metadata: { source: 'jma', feedIndex: DEFAULT_JMA_FEEDS.indexOf(feedUrl), ...upstreamErrorMetadata(error) },
       });
     }
 
@@ -804,7 +805,7 @@ class DisasterIngestionService {
 
   parseOpenWeatherForecast(data, location) {
     if (!Array.isArray(data?.list) || data.list.length === 0) {
-      throw new Error('OpenWeather forecast response did not include forecast entries');
+      throw Object.assign(new Error('OpenWeather forecast response did not include forecast entries'), { code: 'UPSTREAM_INVALID_RESPONSE' });
     }
 
     const now = Date.now();
@@ -834,7 +835,7 @@ class DisasterIngestionService {
       .slice(0, 10);
 
     if (hourly.length === 0) {
-      throw new Error('OpenWeather forecast response did not include usable 24-hour entries');
+      throw Object.assign(new Error('OpenWeather forecast response did not include usable 24-hour entries'), { code: 'UPSTREAM_INVALID_RESPONSE' });
     }
 
     return {
@@ -860,7 +861,7 @@ class DisasterIngestionService {
 
   parseOpenWeatherObservation(data, location) {
     if (!data || typeof data !== 'object' || !Number.isFinite(data.dt) || !data.main) {
-      throw new Error('OpenWeather current weather response was malformed');
+      throw Object.assign(new Error('OpenWeather current weather response was malformed'), { code: 'UPSTREAM_INVALID_RESPONSE' });
     }
 
     const observedAt = new Date(data.dt * 1000);
@@ -1021,7 +1022,7 @@ class DisasterIngestionService {
       } catch (error) {
         this.logger.warning('OpenWeather current weather refresh failed, using forecast fallback', {
           category: 'disaster_ingestion',
-          metadata: { error: compactError(error) },
+          metadata: { source: 'openweather', operation: 'current', ...upstreamErrorMetadata(error) },
         });
       }
     }
@@ -1053,7 +1054,7 @@ class DisasterIngestionService {
       } catch (error) {
         this.logger.warning('OpenWeather forecast refresh failed, trying Open-Meteo fallback', {
           category: 'disaster_ingestion',
-          metadata: { error: compactError(error) },
+          metadata: { source: 'openweather', operation: 'forecast', ...upstreamErrorMetadata(error) },
         });
       }
     }
@@ -1111,7 +1112,7 @@ class DisasterIngestionService {
       } catch (error) {
         this.logger.warning('Disaster weather snapshot refresh failed', {
           category: 'disaster_ingestion',
-          metadata: { error: compactError(error) },
+          metadata: { operation: 'weather_snapshot', ...upstreamErrorMetadata(error) },
         });
       }
 

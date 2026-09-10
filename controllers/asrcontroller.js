@@ -370,7 +370,7 @@ exports.transcribe = async (req, res) => {
       message = `ASR API request timed out after ${timeoutMs}ms.`;
     }
 
-    logger.error('ASR transcription failed', {
+    if (!AsrApiService.wasFailureLogged(error)) logger.error('ASR transcription failed', {
       category: 'asr',
       metadata: {
         error: error?.message,

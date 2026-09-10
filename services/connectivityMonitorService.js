@@ -44,6 +44,8 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
   let running = false;
   let previous = null;
   let restored = false;
+  let observedDatabaseReady = false;
+  const initialReadinessUntil = +clock() + config.intervalMs;
   const warnings = new Map();
   function warn(key, message) {
     const now = +clock();
@@ -51,13 +53,20 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
     warnings.set(key, now);
     Promise.resolve(log.warning(message, { category: 'connectivity_monitor' })).catch(() => {});
   }
+  function waitingForInitialReadiness() {
+    return !observedDatabaseReady && +clock() < initialReadinessUntil;
+  }
   async function tick({ scheduledAt = clock(), schedulerLatenessMs = 0 } = {}) {
     if (running) return { skipped: true };
     running = true;
     const startedAt = clock();
     const started = monotonic();
     try {
-      if (!restored && store.ready()) {
+      let restoreAttempted = false;
+      const restore = async () => {
+        if (restored || restoreAttempted || !store.ready()) return;
+        observedDatabaseReady = true;
+        restoreAttempted = true;
         try {
           const saved = await store.latest();
           // Keep current in-memory observations on DB recovery; merge saved cooldown only.
@@ -67,7 +76,8 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
           }
           restored = true;
         } catch { warn('db', 'Connectivity monitor cannot restore MongoDB state; alerts deferred'); }
-      }
+      };
+      await restore();
       const sampledAt = clock();
       // Retain the overlap lock until every task settles, even if a dependency unexpectedly rejects.
       const tasks = await Promise.allSettled([
@@ -75,13 +85,19 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
         Promise.resolve().then(() => runDiagnostics(config, localPort())),
       ]);
       if (tasks.some((task) => task.status === 'rejected')) throw new Error('Probe task failed');
+      // MongoDB often connects while the startup probes are in flight.
+      const initialReadinessSample = waitingForInitialReadiness();
+      await restore();
       const diagnostics = tasks.at(-1).value;
       const results = tasks.slice(0, -1).map((task) => task.value);
       const sample = advance(previous, results, sampledAt, config);
       Object.assign(sample, { diagnostics, runId: randomUUID(), processId: PROCESS_ID,
         processStartedAt: PROCESS_STARTED_AT, scheduledAt, startedAt, endedAt: clock(),
         runDurationMs: Math.max(0, monotonic() - started), schedulerLatenessMs });
-      if (diagnostics.some((item) => item.degraded)) {
+      if (diagnostics.some((item) => item.degraded && !(initialReadinessSample && (
+        item.errorCode === 'DB_NOT_READY' || item.errorCode === 'NO_LISTENER'
+        || (item.name === 'localHealth' && item.statusCode === 503)
+      )))) {
         warn('diagnostics', 'Connectivity local diagnostics degraded; compare local health and DB ping in analytics');
       }
       const sustained = sample.probes.filter((item) => item.degradedSince
@@ -104,7 +120,9 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
         persisted = true;
       } catch {
         restored = false;
-        warn('db', 'Connectivity monitor cannot persist MongoDB samples; alerts deferred');
+        if (!waitingForInitialReadiness()) {
+          warn('db', 'Connectivity monitor cannot persist MongoDB samples; alerts deferred');
+        }
       }
       if (due && (!persisted || !restored)) {
         sample.lastAttemptAt = oldAttempt;

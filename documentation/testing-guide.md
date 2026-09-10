@@ -138,6 +138,10 @@ describe('GET /api/users/:id', () => {
 
 ## Running All Tests Before Every Deployment:
 
+The shared application logger retains console warnings/errors in tests but skips its production file sink whenever `NODE_ENV=test` or `JEST_WORKER_ID` is present. This also protects Jest runs invoked with `NODE_ENV=production`. Test subprocesses should retain these environment markers. File-sink tests must mock filesystem writes; do not clear both markers while using the real logger against `logs/`.
+
+Production JSON log entries include a `runtime` object with PID, process start time, environment and the Git revision captured at the first log entry. Revision is null when Git metadata is unavailable; it is an attribution hint, not proof of a clean checkout or a deployment identifier. These fields help distinguish processes without logging their command line, environment contents or credentials.
+
 Make sure your `package.json` has the following script:
 
 ```json

@@ -7,7 +7,9 @@ const RUNPOD_SYNC_WARNING_INTERVAL_MS = 15 * 60 * 1000;
 
 function createRunpodPodGuardRunner({ manager = runpodPodManager, appLogger = logger } = {}) {
   let running = false;
-  let lastSyncWarningAt = 0;
+  let lastSyncWarningAt = null;
+  let syncFailures = 0;
+  let syncFailedSince = null;
   return async function tick(reason = 'scheduled') {
     if (running) return { skipped: true };
     running = true;
@@ -19,14 +21,28 @@ function createRunpodPodGuardRunner({ manager = runpodPodManager, appLogger = lo
             { name: 'runpod-state-observer' },
             { recordEvent: false }
           );
+          if (syncFailures) {
+            appLogger.notice('Runpod usage observer recovered provider state', {
+              category: 'runpod_management',
+              metadata: { failedTicks: syncFailures, durationMs: Math.max(0, Date.now() - syncFailedSince) },
+            });
+          }
+          syncFailures = 0;
+          syncFailedSince = null;
+          lastSyncWarningAt = null;
         } catch (error) {
           const now = Date.now();
-          if (now - lastSyncWarningAt >= RUNPOD_SYNC_WARNING_INTERVAL_MS) {
+          syncFailures += 1;
+          if (syncFailedSince === null) syncFailedSince = now;
+          if (lastSyncWarningAt === null || now - lastSyncWarningAt >= RUNPOD_SYNC_WARNING_INTERVAL_MS) {
             lastSyncWarningAt = now;
             appLogger.warning('Runpod usage observer could not refresh provider state', {
               category: 'runpod_management',
               metadata: {
                 reason,
+                failedTicks: syncFailures,
+                durationMs: Math.max(0, now - syncFailedSince),
+                providerStatus: Number.isInteger(error?.status) ? error.status : null,
                 errorCode: typeof error?.code === 'string'
                   ? error.code.slice(0, 80)
                   : 'RUNPOD_SYNC_FAILED',

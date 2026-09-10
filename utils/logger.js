@@ -1,6 +1,35 @@
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
+const { execFileSync } = require('child_process');
+
+// Jest can be invoked with NODE_ENV=production. Neither form may write app logs.
+const isTestRuntime = () => process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined;
+const processStartedAt = new Date(Date.now() - process.uptime() * 1000).toISOString();
+let runtimeIdentity;
+
+function getRuntimeIdentity() {
+  if (!runtimeIdentity) {
+    let revision = null;
+    if (!isTestRuntime()) {
+      try {
+        const head = execFileSync('git', ['rev-parse', '--verify', 'HEAD'], {
+          cwd: path.resolve(__dirname, '..'), encoding: 'utf8', timeout: 1000,
+          stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true,
+        }).trim();
+        if (/^[a-f0-9]{40,64}$/.test(head)) revision = head;
+      } catch (_) { /* Packaged deployments may not contain Git metadata. */ }
+    }
+    runtimeIdentity = Object.freeze({
+      pid: process.pid,
+      startedAt: processStartedAt,
+      environment: isTestRuntime() ? 'test'
+        : ['production', 'development'].includes(process.env.NODE_ENV) ? process.env.NODE_ENV : 'unspecified',
+      revision,
+    });
+  }
+  return runtimeIdentity;
+}
 
 const LOG_DIR = path.resolve(__dirname, '..', 'logs');
 const LOG_LEVELS = ['debug', 'notice', 'warning', 'error'];
@@ -175,6 +204,7 @@ async function writeLog(level, message, ...args) {
     timestamp: new Date().toISOString(),
     level: normalizedLevel,
     message: formatMessage(message),
+    runtime: getRuntimeIdentity(),
   };
 
   if (options.category) {
@@ -193,6 +223,8 @@ async function writeLog(level, message, ...args) {
   }
 
   logToConsole(entry);
+
+  if (isTestRuntime()) return;
 
   try {
     await ensureLogDir();

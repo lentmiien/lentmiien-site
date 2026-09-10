@@ -25,6 +25,80 @@ const CUSTOM_PATH_REDACTIONS = [
   },
 ];
 
+// Keep cold-start diagnostics without delaying voice discovery or retaining an
+// unbounded backlog during a database outage. Only sanitized entries are held.
+const MAX_PENDING_ENTRIES = 50;
+const MAX_PENDING_BYTES = 1024 * 1024;
+const PENDING_TTL_MS = 60_000;
+const pending = [];
+let pendingBytes = 0;
+let expiryTimer = null;
+let flushing = false;
+let droppedEntries = 0;
+
+function reportDroppedEntries() {
+  if (!droppedEntries) return;
+  logger.warning('API debug records discarded while MongoDB was unavailable', {
+    category: 'api-debug', metadata: { droppedEntries, reason: 'buffer_limit_or_expiry' },
+  });
+  droppedEntries = 0;
+}
+
+function expirePending() {
+  const now = Date.now();
+  while (pending.length && pending[0].expiresAt <= now) {
+    pendingBytes -= pending.shift().bytes;
+    droppedEntries += 1;
+  }
+}
+
+function scheduleExpiry() {
+  if (expiryTimer) return;
+  expiryTimer = setTimeout(() => {
+    expiryTimer = null;
+    expirePending();
+    reportDroppedEntries();
+    if (pending.length) scheduleExpiry();
+  }, pending.length ? Math.max(1, pending[0].expiresAt - Date.now()) : PENDING_TTL_MS);
+  expiryTimer.unref?.();
+}
+
+async function persistEntry(entry) {
+  try {
+    await ApiDebugLog.create(entry);
+  } catch (_) {
+    // An attempted write may have succeeded without acknowledgement; do not replay it.
+    logger.warning('Failed to record API debug log entry', {
+      category: 'api-debug',
+      metadata: { functionName: entry.functionName, jsFileName: entry.jsFileName, reason: 'write_failed' },
+    });
+  }
+}
+
+async function flushPending() {
+  if (flushing) return;
+  flushing = true;
+  try {
+    expirePending();
+    reportDroppedEntries();
+    while (pending.length && ApiDebugLog.db?.readyState === 1) {
+      const item = pending.shift();
+      pendingBytes -= item.bytes;
+      if (item.expiresAt <= Date.now()) droppedEntries += 1;
+      else await persistEntry(item.entry);
+    }
+    reportDroppedEntries();
+  } finally {
+    flushing = false;
+    if (!pending.length && expiryTimer) {
+      clearTimeout(expiryTimer);
+      expiryTimer = null;
+    }
+  }
+}
+
+ApiDebugLog.db?.on?.('connected', flushPending);
+
 const createApiDebugLogger = (jsFileName) => (payload) =>
   recordApiDebugLog({ jsFileName, ...payload });
 
@@ -39,7 +113,7 @@ const recordApiDebugLog = async ({
 }) => {
   const sanitizedRequestUrl = sanitizeRequestUrl(requestUrl);
   try {
-    await ApiDebugLog.create({
+    const entry = {
       requestUrl: sanitizedRequestUrl,
       requestHeaders: sanitizePayload(requestHeaders),
       requestBody: sanitizePayload(requestBody),
@@ -47,16 +121,25 @@ const recordApiDebugLog = async ({
       responseBody: sanitizePayload(responseBody),
       jsFileName,
       functionName,
-    });
-  } catch (err) {
-    logger.error('Failed to record API debug log entry', {
+      createdAt: new Date(),
+    };
+    if (ApiDebugLog.db?.readyState === 1) {
+      await persistEntry(entry);
+      return;
+    }
+    expirePending();
+    const bytes = Buffer.byteLength(JSON.stringify(entry), 'utf8');
+    if (pending.length >= MAX_PENDING_ENTRIES || pendingBytes + bytes > MAX_PENDING_BYTES) {
+      droppedEntries += 1;
+    } else {
+      pending.push({ entry, bytes, expiresAt: Date.now() + PENDING_TTL_MS });
+      pendingBytes += bytes;
+    }
+    scheduleExpiry();
+  } catch (_) {
+    logger.warning('Unable to prepare API debug log entry', {
       category: 'api-debug',
-      metadata: {
-        requestUrl: sanitizedRequestUrl,
-        functionName,
-        jsFileName,
-        message: err?.message || err,
-      },
+      metadata: { functionName, jsFileName, reason: 'serialization_failed' },
     });
   }
 };

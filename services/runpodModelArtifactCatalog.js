@@ -173,11 +173,13 @@ function modelArtifactServingSignal(logEvents = []) {
     .map((event) => String(event?.line || '').slice(0, 16 * 1024));
   const failed = lines.find((line) => line.includes('RUNPOD_LLM_FAILED'));
   if (failed) {
+    const exitCode = Number(failed.match(/\bexit=(\d{1,3})(?=\s|$)/u)?.[1]);
     return {
       status: 'failed',
       stage: failed.match(/\bstage=([a-z_]{1,40})\b/u)?.[1] || 'unknown',
       errorCode: failed.match(/\bcode=([A-Z0-9_]{1,80})\b/u)?.[1]
         || 'RUNPOD_LLAMA_CPP_SETUP_FAILED',
+      ...(Number.isInteger(exitCode) && exitCode <= 255 ? { exitCode } : {}),
     };
   }
   if (lines.some((line) => line.includes('RUNPOD_LLM_READY'))) {

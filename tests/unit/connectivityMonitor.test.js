@@ -98,6 +98,38 @@ test('DB unavailability continues bounded observations but defers alerts and thr
   expect(h.send).toHaveBeenCalledTimes(1);
 });
 
+test('connection during startup probing restores cooldown and saves the first sample without a false warning', async () => {
+  const h = harness();
+  h.store.ready.mockReturnValue(false);
+  h.options.runDiagnostics.mockImplementation(async () => {
+    h.store.ready.mockReturnValue(true);
+    return [{ name: 'database', degraded: true, outcome: 'unavailable', errorCode: 'DB_NOT_READY' }];
+  });
+  const sample = await h.tickAt(0);
+  expect(h.store.latest).toHaveBeenCalledTimes(1);
+  expect(h.store.save).toHaveBeenCalledTimes(1);
+  expect(sample.diagnostics[0].outcome).toBe('unavailable'); // retain the actual observation
+  expect(h.log.warning).not.toHaveBeenCalled();
+});
+
+test('initial readiness grace suppresses only startup noise; a later outage warns immediately', async () => {
+  const h = harness();
+  h.store.ready.mockReturnValue(false);
+  h.options.runDiagnostics.mockResolvedValue([{ name: 'database', degraded: true, errorCode: 'DB_NOT_READY' }]);
+  await h.tickAt(0);
+  expect(h.log.warning).not.toHaveBeenCalled();
+  h.store.ready.mockReturnValue(true);
+  h.options.runDiagnostics.mockResolvedValue([]);
+  await h.tickAt(1000);
+  h.store.ready.mockReturnValue(false);
+  await h.tickAt(2000);
+  expect(h.log.warning).toHaveBeenCalledWith(
+    'Connectivity monitor cannot persist MongoDB samples; alerts deferred',
+    expect.any(Object),
+  );
+  expect(h.send).not.toHaveBeenCalled();
+});
+
 test('ambiguous write failure restores saved cooldown before considering another send', async () => {
   const h = harness();
   for (let minute = 0; minute < 10; minute += 2) await h.tickAt(minute * 60000);

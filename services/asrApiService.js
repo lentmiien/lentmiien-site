@@ -1,6 +1,7 @@
 const axios = require('axios');
 const FormData = require('form-data');
 const logger = require('../utils/logger');
+const { upstreamErrorMetadata } = require('../utils/upstreamErrorMetadata');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 
 const DEFAULT_API_BASE = process.env.ASR_API_BASE || 'http://192.168.0.20:8080';
@@ -11,6 +12,7 @@ const DEFAULT_CRISPERWHISPER_TIMEOUT_MS = readPositiveInteger(
 );
 const JS_FILE_NAME = 'services/asrApiService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
+const reportedFailures = new WeakSet();
 
 const CRISPERWHISPER_MODEL = 'crisperwhisper-2.0';
 const SUPPORTED_MODELS = Object.freeze([
@@ -285,20 +287,21 @@ class AsrApiService {
       logger.error('ASR transcription failed (service)', {
         category: 'asr_service',
         metadata: {
-          apiBase: this.apiBase,
-          status: error?.response?.status,
-          ...(privateRequest ? { errorName: error?.name } : { message: error?.message }),
+          operation: 'transcribe',
+          ...upstreamErrorMetadata(error),
         },
       });
       if (error && typeof error === 'object' && error.asrRequestTimeoutMs === undefined) {
         error.asrRequestTimeoutMs = requestTimeoutMs;
       }
+      if (error && typeof error === 'object') reportedFailures.add(error);
       throw error;
     }
   }
 }
 
 module.exports = AsrApiService;
+module.exports.wasFailureLogged = (error) => reportedFailures.has(error);
 module.exports.DEFAULT_ASR_OPTIONS = ASR_DEFAULT_OPTIONS;
 module.exports.CRISPERWHISPER_DEFAULT_OPTIONS = CRISPERWHISPER_DEFAULT_OPTIONS;
 module.exports.CRISPERWHISPER_MODEL = CRISPERWHISPER_MODEL;

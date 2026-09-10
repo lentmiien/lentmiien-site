@@ -181,8 +181,24 @@ describe('DisasterIngestionService OpenWeather integration', () => {
       'OpenWeather current weather refresh failed, using forecast fallback',
       expect.objectContaining({
         category: 'disaster_ingestion',
-        metadata: { error: 'OpenWeather current weather response was malformed' },
+        metadata: expect.objectContaining({ source: 'openweather', operation: 'current', errorCode: 'UPSTREAM_INVALID_RESPONSE', phase: 'response_validation' }),
       })
     );
+  });
+
+  test('weather fallback keeps safe network diagnostics without logging provider secrets or location', async () => {
+    process.env.DISASTER_WEATHER_ENABLED = 'true';
+    process.env.OPENWEATHER_API_KEY = 'synthetic-weather-key';
+    const log = { warning: jest.fn() };
+    const { service } = createService(log);
+    service.fetchJson = jest.fn().mockRejectedValueOnce(Object.assign(new Error('private location and key'), {
+      name: 'AxiosError', code: 'ETIMEDOUT', response: { status: 504, data: 'private body' },
+    })).mockResolvedValueOnce({});
+    service.parseOpenMeteoForecast = jest.fn().mockReturnValue({ source: 'open-meteo' });
+    service.refreshWeatherObservation = jest.fn();
+    await expect(service.refreshWeatherSnapshot()).resolves.toMatchObject({ source: 'open-meteo' });
+    expect(service.fetchJson).toHaveBeenCalledTimes(2);
+    expect(log.warning.mock.calls[0][1].metadata).toMatchObject({ errorCode: 'ETIMEDOUT', status: 504, operation: 'forecast' });
+    expect(JSON.stringify(log.warning.mock.calls)).not.toMatch(/private|synthetic-weather-key/);
   });
 });

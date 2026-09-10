@@ -735,11 +735,29 @@ class EmbeddingQueueService {
       }
       const conversationId = await this.findConversationIdForChatMessage(messageId);
       if (!conversationId) {
-        await this.chatModel.updateOne(
-          { _id: messageId, embeddingStatus: 'pending' },
+        // Chat5 saves a message before appending its ID to the conversation.
+        // Allow that short window to settle before treating it as an orphan.
+        const sourceAgeMs = now.getTime() - new Date(message.timestamp).getTime();
+        if (sourceAgeMs < DEFAULT_SOURCE_RECONCILE_INTERVAL_MS) continue;
+        const result = await this.chatModel.updateOne(
+          {
+            _id: messageId, embeddingStatus: 'pending', embeddingRequested: { $ne: false },
+            'content.text': message.content.text,
+            embeddingContentHash: message.embeddingContentHash || null,
+          },
           { $set: { embeddingStatus: 'failed' } },
         );
-        markedFailed += 1;
+        if (modifiedCount(result) > 0) {
+          markedFailed += 1;
+          this.logger.warning('Embedding source has no conversation reference; inspect attachment or deletion history', {
+            category: 'embedding_queue',
+            metadata: {
+              documentId: /^[a-f\d]{24}$/i.test(messageId) ? messageId : hashValue(messageId),
+              reason: 'conversation_reference_missing',
+              sourceAgeMs: Number.isFinite(sourceAgeMs) ? Math.max(0, sourceAgeMs) : null,
+            },
+          });
+        }
         continue;
       }
       await this.enqueue(text, {}, [this.buildChatSource(messageId, conversationId)]);

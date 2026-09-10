@@ -54,6 +54,20 @@ const {
   supportsReasoningMode,
 } = require('../../utils/OpenAI_API');
 
+test('ChatGPT connection failures preserve a safe nested cause without raw error interpolation or replay', async () => {
+  mockResponsesCreate.mockRejectedValueOnce(Object.assign(new Error('private provider content'), {
+    name: 'APIConnectionError', cause: { name: 'TypeError', cause: { code: 'ENOTFOUND', hostname: 'private-host' } },
+  }));
+  await expect(chat({ metadata: { maxMessages: 20, tools: [], outputFormat: 'text' } }, [],
+    { api_model: 'catalog-model', context_type: 'system', in_modalities: ['text'] })).resolves.toBeNull();
+  expect(mockResponsesCreate).toHaveBeenCalledTimes(1);
+  const log = require('../../utils/logger');
+  expect(log.error).toHaveBeenCalledWith('Error while calling ChatGPT API', {
+    category: 'openai_api', metadata: expect.objectContaining({ operation: 'create_response', causeCode: 'ENOTFOUND', phase: 'dns' }),
+  });
+  expect(JSON.stringify(log.error.mock.calls)).not.toMatch(/private provider|private-host/);
+});
+
 describe('OpenAI_API response conversion', () => {
   beforeEach(() => {
     mockResponsesCreate.mockReset();

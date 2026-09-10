@@ -1849,13 +1849,14 @@ class RunpodPodManager {
     }
   }
 
-  logOperationFailure(message, action, error) {
+  logOperationFailure(message, action, error, context = {}) {
     this.logger.error(message, {
       category: 'runpod_management',
       metadata: {
         action,
         errorCode: safeString(error?.code, 80) || 'RUNPOD_MANAGEMENT_ERROR',
         providerStatus: providerStatusForError(error),
+        ...context,
       },
     });
   }
@@ -3730,7 +3731,7 @@ class RunpodPodManager {
           },
         }
       ).catch(() => {});
-      await this.stopProviderPodAfterSetupFailure(pod.providerPodId, pod._id, actor, pod);
+      const cleanup = await this.stopProviderPodAfterSetupFailure(pod.providerPodId, pod._id, actor, pod);
       await this.recordEvent({
         resourceType: 'pod',
         podRecordId: pod._id,
@@ -3740,7 +3741,9 @@ class RunpodPodManager {
         errorCode,
         actor,
       });
-      this.logOperationFailure('Runpod Ollama setup failed and the pod was stopped when possible', 'setup', error);
+      this.logOperationFailure('Runpod Ollama setup failed; inspect cleanup outcome', 'setup', error, {
+        podRecordId: String(pod._id), cleanupOutcome: cleanup.outcome, cleanupStatePersisted: cleanup.persisted,
+      });
       throw error;
     }
   }
@@ -3809,7 +3812,7 @@ class RunpodPodManager {
           },
         }
       ).catch(() => {});
-      await this.stopProviderPodAfterSetupFailure(pod.providerPodId, pod._id, actor, pod);
+      const cleanup = await this.stopProviderPodAfterSetupFailure(pod.providerPodId, pod._id, actor, pod);
       await this.recordEvent({
         resourceType: 'pod',
         podRecordId: pod._id,
@@ -3820,9 +3823,15 @@ class RunpodPodManager {
         actor,
       });
       this.logOperationFailure(
-        'Runpod llama.cpp setup failed and the Pod was stopped when possible',
+        'Runpod llama.cpp setup failed; inspect launcher diagnostics and cleanup outcome',
         'llama_cpp_setup',
-        error
+        error,
+        {
+          podRecordId: String(pod._id), cleanupOutcome: cleanup.outcome, cleanupStatePersisted: cleanup.persisted,
+          launcherStage: /^[a-z_]{1,40}$/.test(error?.launcherStage) ? error.launcherStage : null,
+          launcherExitCode: Number.isInteger(error?.launcherExitCode)
+            && error.launcherExitCode >= 0 && error.launcherExitCode <= 255 ? error.launcherExitCode : null,
+        }
       );
       throw error;
     }
@@ -3912,10 +3921,13 @@ class RunpodPodManager {
           ]);
           const signal = modelArtifactServingSignal(logs.events);
           if (signal.status === 'failed') {
-            throw new RunpodManagementError(
+            const failure = new RunpodManagementError(
               `The llama.cpp serving command failed during ${signal.stage}.`,
               { code: signal.errorCode, status: 502 }
             );
+            failure.launcherStage = signal.stage;
+            failure.launcherExitCode = signal.exitCode;
+            throw failure;
           }
           if (['ERROR', 'EXITED', 'TERMINATED'].includes(normalizeProviderStatus(providerPod.status))) {
             throw new RunpodManagementError(
@@ -4332,33 +4344,87 @@ class RunpodPodManager {
     return true;
   }
 
-  async stopProviderPodAfterSetupFailure(providerPodId, podRecordId, actor, localPod = {}) {
+  async readProviderState(read) {
     try {
-      const providerPod = await this.runpodService.getPod(providerPodId);
-      if (!normalizeActions(providerPod.actions).includes('stop')) return;
-      const stoppedPod = await this.runpodService.transitionPod(providerPodId, 'stop');
+      return await read();
+    } catch (error) {
+      const retryable = error instanceof RunpodApiError && (
+        ['RUNPOD_TIMEOUT', 'RUNPOD_NETWORK_ERROR'].includes(error.code)
+        || [408, 502, 503, 504].includes(error.status)
+      );
+      if (!retryable) throw error;
+      await this.sleep(250);
+      return read();
+    }
+  }
+
+  async getProviderPodForCleanup(providerPodId) {
+    try {
+      return await this.readProviderState(() => this.runpodService.getPod(providerPodId));
+    } catch (error) {
+      if (!(error instanceof RunpodApiError) || error.status !== 404) throw error;
+      // A detail 404 alone is inconclusive. Corroborate it with a fresh list;
+      // failure to read the list must retain the local guard and billing state.
+      const pods = await this.readProviderState(() => this.runpodService.listPods());
+      if (!Array.isArray(pods) || pods.length > MAX_PROVIDER_PODS || pods.some((pod) =>
+        typeof pod?.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(pod.id)
+      )) throw error;
+      return pods.find((pod) => pod.id === providerPodId)
+        || { id: providerPodId, status: 'TERMINATED', actions: [] };
+    }
+  }
+
+  async stopProviderPodAfterSetupFailure(providerPodId, podRecordId, actor, localPod = {}) {
+    let outcome = 'unconfirmed';
+    try {
+      let providerPod = await this.getProviderPodForCleanup(providerPodId);
+      const inactive = (pod) => ['EXITED', 'ERROR', 'TERMINATED'].includes(normalizeProviderStatus(pod.status));
+      if (normalizeProviderStatus(providerPod.status) === 'TERMINATED') outcome = 'absent';
+      else if (inactive(providerPod)) outcome = 'already_inactive';
+      else {
+        if (!normalizeActions(providerPod.actions).includes('stop')) {
+          throw new RunpodManagementError('Runpod did not offer a stop action after setup failed.', {
+            code: 'RUNPOD_ACTION_CONFLICT', status: 409,
+          });
+        }
+        providerPod = await this.runpodService.transitionPod(providerPodId, 'stop');
+        // A response accepting stop is not necessarily an observed terminal state.
+        outcome = inactive(providerPod) ? 'stopped' : 'stop_requested';
+      }
       const now = this.now();
+      const archivedAt = normalizeProviderStatus(providerPod.status) === 'TERMINATED' ? now : null;
       await this.podModel.updateOne(
         { _id: podRecordId, archivedAt: null },
         {
           $set: {
-            ...reconciledProviderPodFields(localPod, stoppedPod, now),
-            autoStopAt: null,
+            ...reconciledProviderPodFields(localPod, providerPod, now, { archivedAt }),
+            ...(archivedAt ? { archivedAt } : {}),
+            autoStopAt: outcome === 'stop_requested' ? new Date(now.getTime() + 60_000) : null,
             autoStopClaimedAt: null,
             lastActionAt: now,
             updatedBy: actor,
           },
         }
       );
+      if (outcome === 'stop_requested') {
+        this.logger.warning('Runpod setup cleanup stop requested; provider confirmation pending', {
+          category: 'runpod_management', metadata: { podRecordId: String(podRecordId), cleanupOutcome: outcome },
+        });
+      }
+      return { outcome, persisted: true };
     } catch (error) {
-      this.logger.error('Failed to stop a Runpod pod after setup failure', {
+      this.logger.error('Runpod setup cleanup could not be completed; reconcile provider and local state', {
         category: 'runpod_management',
         metadata: {
           action: 'setup_failure_stop',
           errorCode: safeString(error?.code, 80) || 'RUNPOD_STOP_FAILED',
           providerStatus: providerStatusForError(error),
+          podRecordId: String(podRecordId),
+          cleanupOutcome: outcome,
+          cleanupStatePersisted: false,
         },
       });
+      return { outcome, persisted: false, errorCode: safeString(error?.code, 80) || 'RUNPOD_STOP_FAILED' };
     }
   }
 
@@ -4957,7 +5023,7 @@ class RunpodPodManager {
 
   async syncProviderPods(principal, { recordEvent = true } = {}) {
     const actor = actorFromPrincipal(principal);
-    const providerPods = await this.runpodService.listPods();
+    const providerPods = await this.readProviderState(() => this.runpodService.listPods());
     const providerIds = new Set();
     const now = this.now();
     let imported = 0;
@@ -5127,7 +5193,7 @@ class RunpodPodManager {
           }
         );
         if (claimResult?.matchedCount === 0) continue;
-        const current = await this.runpodService.getPod(pod.providerPodId);
+        const current = await this.getProviderPodForCleanup(pod.providerPodId);
         const currentStatus = normalizeProviderStatus(current.status);
         if (normalizeActions(current.actions).includes('stop')) {
           const providerPod = await this.runpodService.transitionPod(pod.providerPodId, 'stop');
@@ -5152,7 +5218,7 @@ class RunpodPodManager {
             outcome: 'succeeded',
             actor,
           });
-        } else if (!ACTIVE_PROVIDER_STATUSES.has(currentStatus)) {
+        } else if (['EXITED', 'ERROR', 'TERMINATED'].includes(currentStatus)) {
           const archivedAt = currentStatus === 'TERMINATED' ? now : null;
           await this.podModel.updateOne(
             { _id: pod._id, archivedAt: null },
