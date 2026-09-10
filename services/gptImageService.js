@@ -606,6 +606,7 @@ async function executeCompatibleEditRequest(baseRequest, inputImages) {
     baseRequest,
     async (request) => {
       const uploadables = await buildOpenAIEditImages(inputImages);
+      await imageStorage.assertStorageReady();
       return openai.images.edit({
         ...request,
         image: uploadables.length === 1 ? uploadables[0] : uploadables,
@@ -740,6 +741,7 @@ async function performImageGeneration({
   let persistenceAttempted = false;
 
   try {
+    await imageStorage.assertStorageReady();
     const galleryInputs = await loadSelectedGalleryInputs(normalizedSelectedIds);
     const persistedUploads = await persistUploadedInputFiles(safeUploadedFiles);
     const uploadedInputs = persistedUploads.savedInputs;
@@ -775,6 +777,7 @@ async function performImageGeneration({
       requestType = 'edit';
       response = await executeCompatibleEditRequest(baseRequest, combinedInputs);
     } else {
+      await imageStorage.assertStorageReady();
       response = await openai.images.generate(baseRequest);
     }
 

@@ -456,6 +456,8 @@ function sanitizeDisplayHtml(value) {
 
 function isSafeMarkdownImageSource(value) {
   const source = String(value || '').trim();
+  // Match the private media contract verbatim, before any URL normalization.
+  if (source === value && /^\/gpt-image\/media\/gpt-image-private-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:png|jpg|webp)$/.test(source)) return true;
   if (/^data:image\/(?:gif|jpeg|png|webp);base64,/i.test(source)) return true;
   if (!source.startsWith('/') || source.startsWith('//') || source.includes('\\')) return false;
   try {

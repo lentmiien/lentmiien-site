@@ -5,6 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const logger = require('./utils/logger');
+// Validate private image storage independently of MongoDB; provider calls also
+// require a fresh successful probe, so this optional feature fails closed.
+void require('./services/gptImageStorageService').initializeStorage();
 
 // NPM packages
 const express = require('express');

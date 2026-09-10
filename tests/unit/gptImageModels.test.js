@@ -79,3 +79,19 @@ test('numeric normalization matches validation and rejects compound model/dimens
   expect(normalizeGenerationForm({ prompt: 'Test', model: ['gpt-image-2'] }).ok).toBe(false);
   expect(normalizeGenerationForm({ prompt: 'Test', sizeMode: 'custom', customWidth: [1024], customHeight: 1024 }).ok).toBe(false);
 });
+
+test('original tool retains every advertised valid option and default, including ignored PNG compression', () => {
+  const original = seeds.find(seed => seed.handlerKey === 'gptImage.generate');
+  const properties = original.toolDefinition.parameters.properties;
+  const defaults = Object.fromEntries(Object.entries(properties).filter(([, value]) => value.default !== undefined).map(([key, value]) => [key, value.default]));
+  const normalize = args => normalizeGenerationForm(normalizeToolImageArguments({ prompt: 'Test', ...args }));
+  expect(normalize(defaults).requestOptions).toMatchObject({ model: MODEL_NAME, n: 1, quality: 'medium', requestedSize: '1024x1024', background: 'auto', outputFormat: 'png', outputCompression: null, moderation: 'auto' });
+  for (const [key, definition] of Object.entries(properties)) {
+    const values = definition.enum || (definition.type === 'integer' ? [definition.minimum, definition.maximum] : []);
+    for (const value of values) expect(normalize({ ...defaults, [key]: value }).ok).toBe(true);
+  }
+  for (const format of ['jpeg', 'webp']) {
+    for (const compression of [0, 100]) expect(normalize({ output_format: format, output_compression: compression }).requestOptions).toMatchObject({ outputFormat: format, outputCompression: compression });
+    expect(normalize({ outputFormat: format, outputCompression: 0 }).requestOptions).toMatchObject({ outputFormat: format, outputCompression: 0 });
+  }
+});

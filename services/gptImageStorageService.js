@@ -7,7 +7,7 @@ const logger = require('../utils/logger');
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const MEDIA_PREFIX = '/gpt-image/media/';
-const PRIVATE_NAME = /^gpt-image-private-[0-9a-f-]{36}\.(png|jpg|webp)$/;
+const PRIVATE_NAME = /^gpt-image-private-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$/;
 const MIME_TYPES = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' };
 const MAX_STORED_BYTES = 50 * 1024 * 1024 - 1;
 const MAX_INPUT_PIXELS = 40 * 1024 * 1024;
@@ -18,8 +18,8 @@ function within(root, candidate) {
   const relative = path.relative(root, candidate);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
-function storageError() {
-  return Object.assign(new Error('GPT Image storage is unavailable.'), { code: 'GPT_IMAGE_STORAGE_UNSAFE' });
+function storageError(code = 'GPT_IMAGE_STORAGE_UNSAFE') {
+  return Object.assign(new Error('GPT Image storage is unavailable.'), { code, status: 503 });
 }
 async function assertNoSymlinks(target) {
   let current = path.parse(target).root;
@@ -30,6 +30,10 @@ async function assertNoSymlinks(target) {
   }
 }
 async function ensureStorage() {
+  const configured = process.env.GPT_IMAGE_STORAGE_DIR;
+  if (configured !== undefined && (!path.isAbsolute(configured) || configured.trim() !== configured || /[\x00-\x1f\x7f]/.test(configured))) {
+    throw storageError('GPT_IMAGE_STORAGE_CONFIG');
+  }
   const root = storageRoot();
   const staticRoots = [path.join(APP_ROOT, 'public'), path.join(APP_ROOT, 'games'), path.join(APP_ROOT, 'node_modules'), process.env.VUE_PATH].filter(Boolean);
   for (const staticRoot of staticRoots) {
@@ -45,10 +49,98 @@ async function ensureStorage() {
   let ancestor = root;
   while (!fs.existsSync(ancestor)) ancestor = path.dirname(ancestor);
   await assertNoSymlinks(ancestor);
+  await assertTrustedStorage(ancestor, ancestor !== root);
   await fsp.mkdir(root, { recursive: true, mode: 0o700 });
   await assertNoSymlinks(root);
+  await assertTrustedStorage(root);
   return root;
 }
+// Directory ancestors are deployment-controlled. Reject writable/untrusted
+// directories; a trusted sticky ancestor (e.g. /tmp in tests) cannot replace a
+// child owned by the app. The storage root itself must never be shared-writable.
+async function assertTrustedStorage(root, allowStickyRoot = false) {
+  let current = root;
+  while (true) {
+    const stat = await fsp.lstat(current);
+    const trustedOwner = typeof process.geteuid !== 'function' || stat.uid === 0 || stat.uid === process.geteuid();
+    const stickyAncestor = (current !== root || allowStickyRoot) && (stat.mode & 0o1000);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || !trustedOwner || ((stat.mode & 0o022) && !stickyAncestor)) {
+      throw storageError('GPT_IMAGE_STORAGE_PERMISSIONS');
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+}
+
+function diagnosticCode(error) {
+  const code = error && error.code;
+  return typeof code === 'string' && /^(?:E[A-Z0-9]{1,24}|GPT_IMAGE_STORAGE_[A-Z_]{1,32})$/.test(code) ? code : 'UNKNOWN';
+}
+
+async function assertStorageReady({ startup = false } = {}) {
+  let probePath;
+  let handle;
+  let created = false;
+  let failure;
+  let stage = 'path';
+  try {
+    const root = await ensureStorage();
+    probePath = path.join(root, `.gpt-image-probe-${randomUUID()}`);
+    stage = 'create';
+    handle = await fsp.open(probePath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_RDWR | fs.constants.O_NOFOLLOW, 0o600);
+    created = true;
+    stage = 'write';
+    const payload = Buffer.from(randomUUID());
+    await handle.writeFile(payload);
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    stage = 'read';
+    const actual = await readSafeFile(root, path.basename(probePath));
+    if (!actual.equals(payload)) throw storageError('GPT_IMAGE_STORAGE_PROBE');
+    stage = 'delete';
+    await fsp.unlink(probePath);
+    created = false;
+  } catch (error) {
+    failure = error;
+  } finally {
+    if (handle) {
+      try { await handle.close(); } catch (error) { failure ||= error; }
+    }
+    if (created) {
+      try {
+        await fsp.unlink(probePath);
+      } catch (error) {
+        if (error.code !== 'ENOENT') {
+          failure ||= error;
+          logger.error('GPT Image storage probe cleanup failed; check storage permissions and remove leftover .gpt-image-probe files', {
+            category: 'gpt_image', metadata: { code: diagnosticCode(error) },
+          });
+        }
+      }
+    }
+  }
+  if (failure) {
+    logger.error('GPT Image storage readiness failed; generation disabled until GPT_IMAGE_STORAGE_DIR path, ownership and read/write/delete access pass validation', {
+      category: startup ? 'startup:gpt_image' : 'gpt_image',
+      metadata: { stage, code: diagnosticCode(failure) },
+    });
+    throw Object.assign(storageError('GPT_IMAGE_STORAGE_UNAVAILABLE'), { expose: true });
+  }
+}
+
+// Optional-feature startup failure does not stop the site. Every provider call
+// repeats readiness validation, allowing recovery after an operator repairs it.
+async function initializeStorage() {
+  try {
+    await assertStorageReady({ startup: true });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function validateRaster(buffer, expectedFormat) {
   if (!Buffer.isBuffer(buffer) || !buffer.length || buffer.length > MAX_STORED_BYTES) {
     throw Object.assign(new Error('Invalid image size.'), { status: 400 });
@@ -139,4 +231,4 @@ function guardStaticMedia(root, middleware) {
     }
   };
 }
-module.exports = { MEDIA_PREFIX, PRIVATE_NAME, MAX_STORED_BYTES, storageRoot, ensureStorage, validateRaster, writeImage, readPrivateImage, readLibraryImage, guardStaticMedia };
+module.exports = { MEDIA_PREFIX, PRIVATE_NAME, MAX_STORED_BYTES, storageRoot, ensureStorage, assertStorageReady, initializeStorage, validateRaster, writeImage, readPrivateImage, readLibraryImage, guardStaticMedia };

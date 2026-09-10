@@ -223,4 +223,6 @@ DASHBOARD_PERSONAL_OWNER_USER_ID=
 DASHBOARD_MINUTE_LOGGER_DEVICE_ID=
 
 # Optional absolute durable directory outside all static roots; default: private_data/gpt-image
+# Unset for the default; otherwise use an absolute persistent path, owned by the service UID (0700).
+# Startup and every provider call require a successful private read/write/delete probe.
 # GPT_IMAGE_STORAGE_DIR=/srv/lentmiien-private/gpt-image
