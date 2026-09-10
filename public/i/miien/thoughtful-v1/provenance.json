@@ -1,0 +1,46 @@
+{
+  "assetVersion": "miien-2.5",
+  "status": "human-review-pending",
+  "tool": "image_gen.imagegen (built-in)",
+  "mood": "thoughtful",
+  "canvas": {
+    "width": 768,
+    "height": 1024
+  },
+  "sourceProvenance": "documentation/assets/miien-expressions-v1/provenance.json",
+  "processing": "Generated facial regions transferred onto accepted neutral foreground using clean-skin illumination correction and smooth elliptical masks. Original foreground alpha preserved. Blink/mouth patches use minimum source-over opacity compensated on Graphite #17191c. Sharp lossless WebP; no procedural lips/eyes.",
+  "assets": [
+    {
+      "src": "/i/miien/thoughtful-v1/character.webp",
+      "x": 0,
+      "y": 0,
+      "width": 768,
+      "height": 1024,
+      "sha256": "c201932d48c08679060f8301047f550de59d6b748bf060ec3136b86e4d7132f2"
+    },
+    {
+      "src": "/i/miien/thoughtful-v1/blink.webp",
+      "x": 258,
+      "y": 293,
+      "width": 260,
+      "height": 85,
+      "sha256": "cace7f7dd359997c8792bfb816722d3e6112160e41cef397455c9347cc3f508a"
+    },
+    {
+      "src": "/i/miien/thoughtful-v1/mouth-small.webp",
+      "x": 340,
+      "y": 395,
+      "width": 106,
+      "height": 70,
+      "sha256": "9e19bac324f979cb75b73c948abadadb6b8222dc8a45634ae2094ce754751fda"
+    },
+    {
+      "src": "/i/miien/thoughtful-v1/mouth-open.webp",
+      "x": 340,
+      "y": 395,
+      "width": 106,
+      "height": 70,
+      "sha256": "5fc71f3044df8b1228ec83e135139070d4f0cd6d02b866dea102e1c578f3f3f4"
+    }
+  ]
+}

@@ -29,6 +29,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 const mockConversation5Model = {
+  findOne: jest.fn(),
   findById: jest.fn(),
 };
 const mockPendingRequests = jest.fn(function pendingRequestCtor(doc) {
@@ -509,4 +510,16 @@ describe('ConversationService', () => {
     });
     expect(knowledgeService.getKnowledgesByIdArray).toHaveBeenCalledWith(['k1']);
   });
+});
+
+// New Miien callers must never enter the grandfathered legacy conversion path.
+test('Miien scoped submission denies foreign records before legacy lookup', async () => {
+  const legacy = createConversationModel();
+  mockConversation5Model.findOne.mockResolvedValue(null);
+  mockConversation5Model.findById.mockClear();
+  const service = new ConversationService(legacy, {}, null);
+  await expect(service.postToConversationNew({ conversationId: 'foreign', authorizedMember: 'owner', userId: 'owner' })).rejects.toThrow('Conversation not found');
+  expect(mockConversation5Model.findOne).toHaveBeenCalledWith({ _id: 'foreign', members: { $all: ['owner'], $size: 1 } });
+  expect(mockConversation5Model.findById).not.toHaveBeenCalled();
+  expect(legacy.findById).not.toHaveBeenCalled();
 });

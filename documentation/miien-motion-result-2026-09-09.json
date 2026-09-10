@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-09",
+  "gatewaySessionCompletedAt": "2026-09-09T04:07:48Z",
+  "jobId": "d2b915ba-d67a-460a-84df-00b8c86e474e",
+  "jobsCompletedInThisExperiment": 1,
+  "outcome": "technical-success-visual-rejection",
+  "decision": "REJECTED / DO NOT SHIP",
+  "acceptedAnimationAssetShipped": false,
+  "evidenceBasis": "Staged RESULT-HANDOFF.md, candidate-provenance.json and final-checksums.json inspected; session completion timestamp and preparation reservation acquisition supplied by coordinator. No generation, decode, visual or browser review rerun by this site checkpoint.",
+  "preparationSession": "/codex/sessions/tool-session-66b3a56878bdeb024a045e699858117b0f5ebdd2108b5489d3a06f16b127ef17",
+  "resultSession": "/codex/sessions/tool-session-e73eeca0c98250de5f1c70e6d2debf7e03741e55ff1901412003848b6e72ee84",
+  "earlierFailureRecord": "miien-motion-attempt-2026-09-09.json",
+  "source": {
+    "path": "public/i/miien/neutral.webp",
+    "sha256": "a96d921b3afea4022ffab1c3b2292b35ac6c62db78367f2f1c980997936d9978",
+    "bytes": 93270,
+    "width": 768,
+    "height": 1024
+  },
+  "conditioningImage": {
+    "sha256": "1ec07d44eefad5fec2094593b5f22c5d7e5aa5edd2893e0271643eb1a07f1020",
+    "bytes": 159154,
+    "width": 288,
+    "height": 384,
+    "format": "PNG",
+    "transform": {
+      "tool": "Pillow 10.2.0",
+      "resampling": "LANCZOS",
+      "scale": 0.375,
+      "color": "RGB 8-bit",
+      "crop": false,
+      "padding": false,
+      "outpaint": false,
+      "metadata": "new pixel-only image, PNG IHDR/IDAT/IEND only",
+      "save_compress_level": 9
+    }
+  },
+  "generation": {
+    "engine": "ComfyUI",
+    "modelFamily": "MiniMax H3",
+    "template": "video_minimax_h3_i2v.json",
+    "templateSha256": "edd412fed93c88363c3c5c19490c41fecd810cb942007241175fccd259df11b5",
+    "submittedGraphSha256": "181e852647cb9181e954e9946664effa45d5f6b9c5f92c96d5be96191c7f10a1",
+    "nodeCount": 15,
+    "imageConditioning": {
+      "executed": true,
+      "evidence": "Completed successful history graph exactly matches submitted graph; LoadImage connected to MiniMaxH3ImageToVideo.first_frame; output visibly resembles source.",
+      "firstFrameConnected": true,
+      "lastFramePresent": false
+    },
+    "previousBaseline": "text-only; this is the one image-conditioned experiment",
+    "width": 288,
+    "height": 384,
+    "frames": 124,
+    "fps": 24,
+    "seed": 164821162508038,
+    "steps": 20,
+    "scheduler": "simple",
+    "sampler": "res_multistep",
+    "denoise": 1,
+    "intent": "Calm closed-mouth neutral idle with subtle breathing, a blink, tiny movement, fixed framing and a return near the starting pose.",
+    "models": [
+      {
+        "file": "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+        "bytes": 20970379616,
+        "safetensorsHeaderSha256": "c1a65ff59085cbed8a6ea7c935ae7e58b1d2f870239df54c58a68fb7989e1cd8"
+      },
+      {
+        "file": "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "bytes": 15687142551,
+        "safetensorsHeaderSha256": "729000e5ec8a807f763398c5668d504d12d8b5bb56c8d6ffca009638a18b3ca0"
+      },
+      {
+        "file": "vae/minimax_h3_video_vae_fp16.safetensors",
+        "bytes": 5207808496,
+        "safetensorsHeaderSha256": "7bd6afbb1b2cfbf7c19901869eb224ec1b3e2a8cdbd8516d18f515c60f157c26"
+      },
+      {
+        "file": "vae/minimax_h3_audio_vae_fp32.safetensors",
+        "bytes": 605254808,
+        "safetensorsHeaderSha256": "23fb27ab02c45d7c6f5dfe5c3255ef956a5a13853c869b784bf8de4a1537d06b"
+      }
+    ],
+    "modelFingerprintLimitation": "Header hashes and sizes were verified; these are not full weight-file hashes.",
+    "containerImageDigests": {
+      "ai-gateway": "sha256:2b3c786770c11e8bd9accdd4fb0b0dd2f1cb0b68e39db19974f72b8c1879228f",
+      "comfyui": "sha256:e5680dc91b9b0f334e3392ae7a25b071fd52009499b67bb0cfa8417bf1c65c69"
+    }
+  },
+  "sanitizedVideo": {
+    "sha256": "7142bfe0f6afdf168290fd519df3c98315938d5a0d4882ad2bc41edd99fbc329",
+    "bytes": 314533,
+    "width": 288,
+    "height": 384,
+    "frames": 124,
+    "fps": 24,
+    "duration_sec": 5.166667,
+    "codec": "h264",
+    "pixel_format": "yuv420p",
+    "streams": 1,
+    "audio_streams": 0,
+    "full_decode_pass": true,
+    "faststart": true,
+    "alpha": false
+  },
+  "sanitization": {
+    "tool": "FFmpeg 6.1.1",
+    "videoRecipe": "Map first video stream only; libx264 slow CRF 20, yuv420p; remove audio/subtitle/data streams, inherited metadata and chapters; stream-copy remux removes generated encoder tag; faststart enabled.",
+    "sourceMetadataRemoved": true,
+    "colorLimitations": "Opaque yuv420p video and RGB WebP; no alpha or ICC. Video color primaries/transfer/matrix/range are unspecified; no color-grade or HDR claim. Browser/device color and playback review pending."
+  },
+  "visualReview": {
+    "technicalPassInGatewayEvidence": true,
+    "visualPass": false,
+    "humanDecision": "rejected",
+    "failures": [
+      "Moving colored flares across character and background",
+      "Mouth opens during intended closed-mouth idle",
+      "Pose, scale and framing shift"
+    ],
+    "reviewMethod": "Static source, full-resolution first/middle/last frames, 12-frame montage and 32-frame dense montage; no real-world playback review",
+    "seam": "First/last full-frame RGB MAE 11.3617/255 (4.4556%), about 3.06 times median adjacent-frame MAE; pose and flare mismatch at boundary. Seamlessness not established.",
+    "seamlessLoopEstablished": false,
+    "browserPlaybackReviewed": false,
+    "noLipSync": true
+  },
+  "reservation": {
+    "acquiredByHumanUsingSupportedHelperDuringPreparation": true,
+    "stagedSnapshotAt": "2026-09-09T04:06:59.684436Z",
+    "activeAtStagedSnapshot": true,
+    "normalReleaseRequestedSeparately": true,
+    "releaseConfirmedByThisCheckpoint": true,
+    "scope": "Historical staged active snapshot followed by human-confirmed release/inactive report. No agent execution of release, live reservation inspection or current service-health assertion.",
+    "releaseConfirmationBasis": "HUMAN-CONFIRMED: Lennart reports running the normal reservation release script; not independently observed by the agent.",
+    "releaseConfirmationReceivedAt": "2026-09-09T04:55:43.049Z",
+    "releaseConfirmationRequest": "/admin/ask-lennart#request-47c379c5-1f98-49b5-829e-9acd7b0c7bd9",
+    "releaseStatus": "released-inactive-human-confirmed",
+    "releaseIndependentlyObservedByAgent": false,
+    "humanReportedReleaseResult": {
+      "active": false,
+      "service": null,
+      "phase": null,
+      "container_state": null,
+      "remaining_sec": null,
+      "idle_timeout_sec": null,
+      "dispatch_paused": null,
+      "blocked_queue_depth": 0
+    }
+  },
+  "integration": {
+    "siteAssetVersionObserved": "miien-2.1",
+    "clipStatusObserved": "not-produced",
+    "clipCountObserved": 0,
+    "candidateVersionStatus": "miien-2.2 proposed only; not activated",
+    "siteAssetsChangedInGatewaySession": false,
+    "gatewayWorktreeReportedClean": true,
+    "instruction": "Keep rejected media private. Do not copy, register, activate or regenerate blindly. Keep corresponding mood portraits; any future clip must match exact activity and mood and preserve reduced-motion/failure fallback. Layered/hybrid direction is now approved as a plan; no animation implementation or asset acceptance/shipping occurred in this documentation follow-up."
+  },
+  "reproducibilityLimit": "Public-safe fingerprints and settings, not a runnable graph or guarantee of deterministic output. Raw prompts/graphs and rejected media remain private. Later technical success does not establish the earlier GPU fault root cause.",
+  "directionApproval": {
+    "status": "approved-plan-not-implemented",
+    "request": "/admin/ask-lennart#request-47c379c5-1f98-49b5-829e-9acd7b0c7bd9",
+    "respondedAt": "2026-09-09T04:55:43.049Z",
+    "evidenceBasis": "Lennart response supplied by the human for this documentation-only follow-up; not independently fetched by the agent.",
+    "previousDocumentationSession": "/codex/sessions/tool-session-95da05317454798b10ba01636e178bbb6971cd7c087d63ab36872171650fec34",
+    "previousDocumentationCommit": "0e8a2ab960231650f31d850f9f31499e80146efc",
+    "direction": "Layered/hybrid art, with a lightweight 2D rig potentially preferable; no proprietary stack or mandatory Live2D/paid tooling selected.",
+    "nextVisualCheckpoint": "PLANNED ONLY: ONE neutral layered Miien preserving existing framing/identity, separate plain background/character, coherent eye/mouth variants and modest breathing/blinking/approximate speaking. Review visual artifacts, variant alignment and layer seams with Lennart before expanding expressions or investing in a richer lightweight 2D rig.",
+    "reviewAuthority": "Lennart reviews and approves suitable checkpoints and the final result; direction approval does not accept unmade art.",
+    "integrationPlan": "Later prefer a small isolated proof in the existing motion/audio controller, preserving separate activity/mood and Chat5 architecture, reduced-motion and portrait/failure fallbacks. Flattened portraits are not rigged; whole-image pan/zoom is not articulated animation.",
+    "captionAudioPolicy": "Show reply/captions immediately while synthesis is pending; play audio delayed when ready with configured opt-in/user interaction. Voice remains default Off; history/reload must not autoplay. Speaking activity and mouth timing follow actual audio playback, never network response or caption arrival; close/stop the mouth on silence, pause, buffering, Stop, interruption or end.",
+    "accurateLipSync": "Optional stretch goal or future improvement; approximate mouth movement is sufficient and accurate lip-sync is not a phase-2 or phase-3 acceptance blocker.",
+    "generatedClips": "Optional, separately reviewed; this rejected candidate remains REJECTED / DO NOT SHIP.",
+    "animationAssetsAccepted": false,
+    "animationAssetsShipped": false,
+    "featureImplementationPerformed": false,
+    "artOrVideoGenerationPerformed": false,
+    "deploymentOrHumanActionRequiredForDocumentationCheckpoint": false
+  }
+}

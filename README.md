@@ -86,6 +86,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 
 ### Useful Local Routes
 
+- `/chat5/miien` - Optional [Miien character-chat proof of concept](documentation/chat5-miien.md): expression artwork, Chat5 history and optional voice.
 - `/chat5` - Chat workspace with templates, knowledge browser, and pending queue.
 - `/codex` - Persisted Codex workspace sessions, turns, queue state, and usage accounting.
 - `/admin/ask-lennart` - Durable inbox for responding to Chat5 human-action tool calls.

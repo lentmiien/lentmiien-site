@@ -11,7 +11,9 @@ block content
       each role in roles 
         tr 
           td= `${role.name} (${role.type})`
-          td!= role.permissions.join('<br>') 
+          td
+            each permission in role.permissions
+              div= permission
   h2 Update permission 
   label(for="selection") Select role to modify 
   select.form-control(onchange="UpdateInputForm(this)") 
@@ -24,15 +26,16 @@ block content
         option(value=n)= n
   div 
     form(action="/admin/update_role", method="post") 
+      input(type='hidden', name='_csrf', value=csrfToken)
       label(for="role") Role to modify 
       input#role.form-control(type="text", name="role", readonly)
       label(for="type") Role type 
       input#type.form-control(type="text", name="type", readonly)
       .form-group
-        each p in selection.routes
+        each p, index in selection.routes
           .form-check.form-check-inline
-            input.form-check-input(type="checkbox", id=p, name="route_permissions", value=p)
-            label.form-check-label(for=p)= p
+            input.form-check-input(type="checkbox", id=`permission-${index}`, name="route_permissions", value=p)
+            label.form-check-label(for=`permission-${index}`)= p
       input.btn.btn-warning(type="submit", value="Update")
   pre#roles.hidden= JSON.stringify(roles, null, 2)
   pre#selection.hidden= JSON.stringify(selection, null, 2)

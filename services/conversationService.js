@@ -1284,6 +1284,7 @@ class ConversationService {
 
   async postToConversationNew({
     conversationId,
+    authorizedMember = null,
     userId,
     requestPrincipal = null,
     messageContent,
@@ -1292,7 +1293,11 @@ class ConversationService {
     s,
     c,
   }) {
-    let conversation = await Conversation5Model.findById(conversationId);
+    let conversation = authorizedMember
+      ? await Conversation5Model.findOne({ _id: conversationId, members: { $all: [authorizedMember], $size: 1 } })
+      : await Conversation5Model.findById(conversationId);
+
+    if (!conversation && authorizedMember) throw new Error('Conversation not found');
 
     if (!conversation) {
       const oldConv = await this.conversationModel.findById(conversationId);
@@ -1380,7 +1385,9 @@ class ConversationService {
           response_provider,
           msg,
           messages: generatedMessages,
-        } = await this.messageService.generateAIMessage({conversation: conversationForAI});
+        } = await this.messageService.generateAIMessage({conversation: conversationForAI,
+          ...(authorizedMember ? { maxOutputTokens: 4096, privateRequest: true } : {}),
+        });
         const messagesToAppend = Array.isArray(generatedMessages) && generatedMessages.length > 0
           ? generatedMessages
           : (msg ? [msg] : []);

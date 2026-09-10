@@ -412,3 +412,12 @@ describe('OpenAI_API response conversion', () => {
     ]);
   });
 });
+
+test('Miien opts into bounded provider submission without changing ordinary Chat5 defaults', async () => {
+  mockResponsesCreate.mockResolvedValue({ id: 'resp-miien' });
+  await chat({ metadata: { maxMessages: 20, tools: [], outputFormat: 'text' } }, [],
+    { api_model: 'catalog-model', context_type: 'system', in_modalities: ['text'] },
+    { privateRequest: true, maxOutputTokens: 4096 });
+  expect(mockResponsesCreate).toHaveBeenLastCalledWith(expect.objectContaining({ max_output_tokens: 4096 }),
+    { timeout: 60000, maxRetries: 0 });
+});

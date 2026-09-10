@@ -1,0 +1,76 @@
+{
+  "status": "Provisional neutral visual checkpoint; human acceptance pending",
+  "tool": "image_gen.imagegen (built-in)",
+  "date": "2026-09-09",
+  "reference": "public/i/miien/neutral.webp",
+  "referenceSha256": "a96d921b3afea4022ffab1c3b2292b35ac6c62db78367f2f1c980997936d9978",
+  "appearanceReference": "documentation/README-Prompts.md sections B and D",
+  "sourceEncoding": "Generated PNGs re-encoded as lossless WebP by Sharp with metadata removed; original 1086x1448 canvas retained.",
+  "character": {
+    "source": "exec-17ae8002-53b4-407f-a00b-2296589cd279.png",
+    "prompt": "Use case: background-extraction. Asset type: transparent character base for a small layered 2D website animation. Input image 1 is the accepted Miien portrait and EDIT TARGET. Remove ONLY the entire background including all rings, vertical streaks, flares, haze and light behind her. Output the exact same character on genuinely transparent alpha background, at the same registered 3:4 canvas and same scale/position, waist-up crop. Preserve her exact face, golden eyes, graphite twin tails, cat ears, fully zipped graphite hoodie with Ember orange trims, line art, shading, lighting, head angle and CLOSED resting mouth. Preserve all visible character pixels and clean fine hair edges as closely as possible. Do not crop ears or move/resize the character. This is a cutout, not a redesign. One image, no sheet, no text, no added features. Keep transparent gaps between hair strands and between twin tails and body."
+  },
+  "variants": [
+    {
+      "name": "blink",
+      "source": "exec-202e35c5-3f5f-4fcf-9ea1-607690e34ea5.png",
+      "reference": "character.webp",
+      "prompt": "Use case: identity-preserve. Edit target: the attached transparent Miien cutout. Change ONLY BOTH EYES to naturally CLOSED eyes during a soft brief blink. Draw coherent fine curved eyelid/lash artwork matching her original anime linework; relaxed closed eyelids, eyebrows unchanged. Everything else must stay exactly identical: her closed resting mouth, face skin shading, hair crossing the eyes, head pose, silhouette, transparent alpha background, canvas dimensions and pixel registration. Do not move, resize, reframe, redesign or relight anything. One complete cutout on transparent alpha, no sheet, no added features. This image supplies a masked eye replacement for the exact base."
+    },
+    {
+      "name": "mouth-small",
+      "source": "exec-9d401065-06b8-419d-8a48-3f45b89a60d8.png",
+      "reference": "character.webp",
+      "prompt": "Use case: identity-preserve. Edit target: attached transparent Miien cutout. Change ONLY her mouth into a SMALL gently parted speaking mouth, narrow visible dark interior, subtle lip edges, no exaggerated grin or pout. Match existing high-detail anime linework and skin shading. Keep BOTH EYES OPEN exactly as original. Preserve exact identity, neutral mood, skin shading around mouth, face, pose, hair, ears, outfit, silhouette, transparent alpha background, canvas dimensions and pixel registration. Do not move/resize/reframe/redesign/relight anything. One complete cutout on transparent alpha, no sheet. This supplies a small masked mouth replacement aligned to the base."
+    },
+    {
+      "name": "mouth-open",
+      "source": "exec-cf9a966f-d3de-4a83-9c9d-310811b7d104.png",
+      "reference": "character.webp",
+      "prompt": "Use case: identity-preserve. Edit target: attached transparent Miien cutout. Change ONLY her mouth to a modest OPEN speaking mouth, softly oval with restrained dark interior and tiny natural tongue shading, like quietly saying ah. Not surprised, not smiling widely, no exaggerated cartoon outline. Match the existing fine anime linework and skin shading. Keep BOTH EYES OPEN exactly as original. Preserve exact identity, neutral mood, face skin around mouth, pose, hair, ears, outfit, silhouette, transparent alpha background, canvas dimensions and pixel registration. Do not move/resize/reframe/redesign/relight anything. One complete cutout, no sheet. This supplies a small masked mouth replacement aligned to the base."
+    }
+  ],
+  "limitations": [
+    "Cutout is a generated reinterpretation, not a pixel-exact extraction of the accepted portrait. Small face/hair/shading differences need human review.",
+    "Character source has genuine alpha. The three variant sources have painted checkerboard backgrounds, not alpha; only opaque interior facial regions are used.",
+    "Packaging resizes to 768x1024, extracts feathered replacement regions, and retains generated skin fills around eyelids/lips. No hand-drawn eyes/mouths or generated video.",
+    "Background is a fixed authored CSS Graphite gradient using existing theme tokens, not generated art.",
+    "Base contains open eyes and resting closed mouth; blink and mouth patches independently replace their regions. No head/hair/body mesh rig or hidden joint articulation is claimed."
+  ],
+  "sources": [
+    {
+      "file": "character.webp",
+      "sha256": "96d6edc1b55a747f69634c6b25bc7f99193e9d624cf21ceecf9bb4f74f631682"
+    },
+    {
+      "file": "blink.webp",
+      "sha256": "23dae76f016f28e8dfe72f1241c726e42f7c563b515674a0b3ed91f8b0120807"
+    },
+    {
+      "file": "mouth-small.webp",
+      "sha256": "823209822391e9fac3b30a552d92641ed7c8f5cae7d9e536837f54fdb373b0b6"
+    },
+    {
+      "file": "mouth-open.webp",
+      "sha256": "7fa4a45af56173b99885101f24669813fd1218749760faf9f39d1771f9c78f07"
+    }
+  ],
+  "mouthCorrection": {
+    "date": "2026-09-09",
+    "version": "miien-2.4",
+    "status": "Corrected mouth assets pending human device review",
+    "method": "No new generation. Existing mouth source masters are resized, corrected against base skin sampled above/below lips, restricted by a local soft elliptical mask including the wider resting mouth, and converted into minimum-alpha source-over patches compensated for the base partial alpha on Graphite #17191c.",
+    "scripts": [
+      "scripts/build-miien-neutral-assets.js",
+      "scripts/miien-mouth-correction.js",
+      "scripts/review-miien-mouth-assets.js"
+    ],
+    "runtimeProvenance": "public/i/miien/neutral-v2/provenance.json",
+    "reviewDirectory": "documentation/assets/miien-mouth-cleanup-v2",
+    "preserved": "All original source masters; runtime neutral-v1 character and blink bytes; blink/breath timing; mouth cadence; all other portraits.",
+    "limitations": [
+      "Source-over cannot keep the base alpha exactly inside changed mouth pixels. Minimum opacity and reference-background compensation minimize the discrepancy; tests bound background-dependent RGB error below 5 on black/white stress backgrounds and outer seam changes below 1.",
+      "Composites were visually inspected. Pixel assertions and an offline cycle are not human acceptance, actual device rendering, or phonetic lip-sync."
+    ]
+  }
+}

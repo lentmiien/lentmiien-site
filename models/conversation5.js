@@ -9,6 +9,10 @@ const Conversation5 = new mongoose.Schema({
   messages: [{ type: String, required: true, max: 100 }],
   lastCleanupAt: { type: Date, index: true },
 
+  // Optional submission guards used only by the Miien adapter.
+  miienBusyUntil: Date,
+  miienRequestIds: { type: [String], default: undefined },
+
   metadata: {
     contextPrompt: { type: String, default: "" },
     model: { type: String, default: "gpt-5.5" },

@@ -1,0 +1,56 @@
+{
+  "assetVersion": "miien-2.3",
+  "status": "prototype-human-review-pending",
+  "tool": "image_gen.imagegen (built-in)",
+  "referenceSha256": "a96d921b3afea4022ffab1c3b2292b35ac6c62db78367f2f1c980997936d9978",
+  "sourceCanvas": {
+    "width": 1086,
+    "height": 1448
+  },
+  "canvas": {
+    "width": 768,
+    "height": 1024
+  },
+  "processing": "Sharp lossless WebP; separate alpha character; feathered generated eye/mouth interior crops; fixed CSS theme background.",
+  "limitations": [
+    "Cutout is a generated reinterpretation, not a pixel-exact extraction of the accepted portrait. Small face/hair/shading differences need human review.",
+    "Character source has genuine alpha. The three variant sources have painted checkerboard backgrounds, not alpha; only opaque interior facial regions are used.",
+    "Packaging resizes to 768x1024, extracts feathered replacement regions, and retains generated skin fills around eyelids/lips. No hand-drawn eyes/mouths or generated video.",
+    "Background is a fixed authored CSS Graphite gradient using existing theme tokens, not generated art.",
+    "Base contains open eyes and resting closed mouth; blink and mouth patches independently replace their regions. No head/hair/body mesh rig or hidden joint articulation is claimed."
+  ],
+  "assets": [
+    {
+      "src": "/i/miien/neutral-v1/character.webp",
+      "x": 0,
+      "y": 0,
+      "width": 768,
+      "height": 1024,
+      "sha256": "6c84d93a90366088748df1b0e78b17c7ed22ec82c5958e2fa21cca255cfc34ac"
+    },
+    {
+      "src": "/i/miien/neutral-v1/blink.webp",
+      "x": 264,
+      "y": 298,
+      "width": 248,
+      "height": 80,
+      "sha256": "f9901ab469c087bc8d91349edcf33c640dc10e8f25ff767446e4061341509fb1"
+    },
+    {
+      "src": "/i/miien/neutral-v1/mouth-small.webp",
+      "x": 350,
+      "y": 409,
+      "width": 86,
+      "height": 51,
+      "sha256": "4b780b19b3e1b6fe024f46383f70d638763e1c7de6c1e997df0e288dbfe35465"
+    },
+    {
+      "src": "/i/miien/neutral-v1/mouth-open.webp",
+      "x": 350,
+      "y": 409,
+      "width": 86,
+      "height": 51,
+      "sha256": "abd5869996ed48b42ca75fd8b66acf26897565e9d7b8dcae290f06514c6aebbb"
+    }
+  ]
+}

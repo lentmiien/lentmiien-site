@@ -179,8 +179,12 @@ app.use('/webhook', webhook);
 // Body parsers
 const DEFAULT_BODY_LIMIT = '5mb';
 app.use(require('./middleware/accountSurfaceBody'));
-app.use(bodyParser.urlencoded({ extended: false, limit: DEFAULT_BODY_LIMIT }));
-app.use(express.json({ limit: DEFAULT_BODY_LIMIT }));
+// Miien applies small, route-specific parsers after authentication/authorization.
+const legacyFormParser = bodyParser.urlencoded({ extended: false, limit: DEFAULT_BODY_LIMIT });
+const legacyJsonParser = express.json({ limit: DEFAULT_BODY_LIMIT });
+const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
+app.use((req, res, next) => isMiienPath(req) ? next() : legacyFormParser(req, res, next));
+app.use((req, res, next) => isMiienPath(req) ? next() : legacyJsonParser(req, res, next));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -489,6 +493,7 @@ app.use('/chat', isAuthenticated, authorize("chat"), chatRouter);
 app.use('/chat2', isAuthenticated, authorize("chat2"), chat2Router);
 app.use('/chat3', isAuthenticated, authorize("chat3"), chat3Router);
 app.use('/chat4', isAuthenticated, authorize("chat4"), chat4Router);
+app.use('/chat5/miien', require('./controllers/miienController'));
 app.use('/chat5', isAuthenticated, authorize("chat5"), chat5Router);
 app.use('/openai', isAuthenticated, authorize("openai"), openaiRouter);
 app.use('/embedding', isAuthenticated, authorize("embedding"), embeddingRouter);

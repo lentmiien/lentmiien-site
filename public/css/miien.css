@@ -1,0 +1,200 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: .2em; }
+button, input, select, textarea { font: inherit; }
+button, .secondary { border: 1px solid var(--border); border-radius: .75rem; padding: .65rem 1rem; background: var(--surface-2); color: var(--text); cursor: pointer; text-decoration: none; display: inline-block; }
+button:hover, .secondary:hover { background: var(--surface-3); }
+button.primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); font-weight: 700; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+input:not([type='checkbox']), select, textarea { width: 100%; padding: .7rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--surface-1); color: var(--text); }
+textarea { resize: vertical; }
+label { display: block; margin: .8rem 0 .35rem; font-size: .9rem; font-weight: 600; }
+.check { display: flex; align-items: center; gap: .6rem; }
+input[type='checkbox'] { width: 1.15rem; height: 1.15rem; accent-color: var(--brand); }
+h1, h2, p { margin-top: 0; } h1, h2 { line-height: 1.15; letter-spacing: -.035em; }
+.miien-nav { max-width: 1440px; margin: auto; padding: 1.1rem 2rem; display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--divider); }
+.miien-nav nav { display: flex; gap: 1.5rem; font-size: .85rem; align-items: center; }
+.wordmark { font-size: 1.5rem; font-weight: 800; text-decoration: none; color: var(--text); }
+.wordmark span { color: var(--text-muted); font-size: .8rem; font-weight: 400; }
+main { max-width: 1400px; margin: auto; padding: 2rem; }
+.eyebrow { color: var(--accent); font-size: .72rem; text-transform: uppercase; letter-spacing: .16em; font-weight: 700; }
+.subtle, .hint { color: var(--text-secondary); } .hint { font-size: .8rem; margin: .5rem 0 .8rem; }
+.miien-start { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; }
+.intro-art { position: sticky; top: 1rem; height: min(850px, 88vh); overflow: hidden; border-radius: 1.5rem; background: var(--surface-1); }
+.intro-art img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+.art-caption { position: absolute; bottom: 0; padding: 3rem 2rem 1rem; width: 100%; background: linear-gradient(transparent, var(--bg) 70%); }
+.art-caption h1 { font-size: clamp(2rem, 3.5vw, 3.5rem); margin: .8rem 0; }
+.settings-panel { max-width: 600px; padding: 1rem 0; } .settings-panel h2 { font-size: 2rem; margin: .7rem 0 1rem; }
+.settings-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+fieldset { margin: 1rem 0; border: 1px solid var(--border); border-radius: .8rem; padding: .8rem 1rem; }
+legend { font-size: .8rem; color: var(--text-secondary); padding: 0 .5rem; }
+details { border-top: 1px solid var(--divider); padding: 1rem 0; } summary { cursor: pointer; color: var(--text-secondary); font-size: .9rem; }
+.resume-link { display: block; padding: .6rem 0; } .resume { margin-top: 1rem; }
+.room-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.3rem; }
+.room-heading h1 { font-size: clamp(1.25rem, 3vw, 2rem); margin: .4rem 0 0; overflow-wrap: anywhere; }
+.room { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr); gap: 1.5rem; }
+.stage { position: relative; height: min(780px, 80vh); min-height: 650px; border: 1px solid var(--border); border-radius: 1.5rem; overflow: hidden; background: var(--surface-1); }
+#character { width: 100%; height: 100%; object-fit: contain; object-position: center top; position: relative; }
+.art-fallback { position: absolute; inset: 35% 2rem auto; text-align: center; color: var(--text-secondary); }
+.stage-top { position: absolute; inset: 1rem 1rem auto; display: flex; justify-content: space-between; gap: .5rem; }
+.pill { border-radius: 2rem; background: color-mix(in srgb, var(--bg) 90%, transparent); padding: .35rem .7rem; font-size: .75rem; }
+.dialogue-panel, .composer { background: var(--surface-1); background: color-mix(in srgb, var(--surface-1) 78%, transparent); border: 1px solid var(--border); border-radius: 1rem; padding: 1.1rem; backdrop-filter: blur(12px); }
+.stage .composer { position: absolute; bottom: 1rem; left: 1rem; right: 1rem; }
+.composer textarea { background: color-mix(in srgb, var(--bg) 65%, transparent); max-height: 180px; }
+.dialogue-panel { min-width: 0; margin-bottom: 1rem; }
+#latest-reply { max-height: min(45vh, 400px); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: .5rem 0 0; }
+.conversation-panel { display: flex; flex-direction: column; min-width: 0; gap: .5rem; }
+.voice-options { padding-top: 0; border-top: 0; } .button-row { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .7rem; }
+.transcript { overflow: auto; } .transcript[open] { max-height: 350px; } #history { padding: .5rem .25rem; }
+.message { padding: .75rem 1rem; margin: .6rem 0; border-radius: .8rem; background: var(--surface-1); border-left: 2px solid var(--border); }
+.message.assistant { border-left-color: var(--accent); } .message p { white-space: pre-wrap; overflow-wrap: anywhere; margin: .25rem 0 0; font-size: .9rem; }
+.message strong { color: var(--text-secondary); font-size: .75rem; }
+.composer label { margin-top: 0; } #chat-status { margin: .5rem 0; font-size: .85rem; } .error-panel { max-width: 650px; margin: 3rem auto; }
+.skip-link { position: absolute; left: 1rem; top: -100px; z-index: 10; background: var(--bg); padding: 1rem; } .skip-link:focus { top: 0; }
+@media (max-width: 900px) { main { padding: 1rem; } .miien-nav { padding: 1rem; } .miien-nav nav { gap: .8rem; font-size: .75rem; } .miien-start, .room { grid-template-columns: 1fr; gap: 1rem; } .intro-art { position: relative; top: 0; height: 420px; } .intro-art img { object-position: center 25%; } .stage { height: auto; min-height: 0; } #character { display: block; height: 65svh; min-height: 360px; max-height: 600px; object-fit: contain; } #character[hidden] { display: block; visibility: hidden; } .stage .composer { position: relative; inset: auto; margin: 0 .6rem .6rem; } #latest-reply { max-height: 300px; } .conversation-panel { max-height: none; } .transcript[open] { max-height: 350px; } .art-caption { padding: 2rem 1.3rem .5rem; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* Viewport call room. Portraits remain contained; landscape masters are pending. */
+.miien-call { overflow: hidden; }
+.miien-call .miien-nav { position: absolute; inset: 0 0 auto; z-index: 20; max-width: none; padding: max(.5rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) .5rem max(1rem, env(safe-area-inset-left)); background: color-mix(in srgb, var(--bg) 80%, transparent); }
+.miien-call .wordmark { font-size: 1.1rem; }
+.miien-call main { padding: 0; max-width: none; }
+.miien-call .room { position: absolute; top: var(--call-top, 0); inset-inline: 0; height: var(--call-height, 100dvh); display: block; }
+.miien-call .stage { height: 100%; min-height: 0; width: 100%; border: 0; border-radius: 0; background: radial-gradient(ellipse at 50% 35%, var(--surface-3), var(--bg) 75%); }
+.miien-call #character, .character-motion { position: absolute; inset: 3rem 0 0; width: 100%; height: calc(100% - 3rem); min-height: 0; max-height: none; object-fit: contain; object-position: center top; }
+.miien-call #character[hidden], .character-motion[hidden], [hidden] { display: none !important; }
+.call-toolbar { position: absolute; inset: 3.5rem max(1rem, env(safe-area-inset-right)) auto max(1rem, env(safe-area-inset-left)); display: flex; align-items: start; justify-content: space-between; gap: 1rem; z-index: 30; }
+.call-title { min-width: 0; max-width: 45%; }
+.call-title h1 { font-size: 1rem; margin: 0 0 .4rem; overflow-wrap: anywhere; max-height: 3rem; overflow: auto; }
+.call-title .pill { display: inline-block; color: var(--text-secondary); }
+.stage[data-activity='listening'] #presence { color: var(--info); }
+.stage[data-activity='thinking'] #presence { color: var(--accent); }
+.stage[data-activity='speaking'] #presence { color: var(--success); }
+.call-tools { display: flex; gap: .5rem; align-items: start; }
+.call-tools button, .call-tools summary { padding: .5rem .7rem; font-size: .85rem; border-radius: .65rem; background: color-mix(in srgb, var(--surface-1) 90%, transparent); border: 1px solid var(--border); color: var(--text); }
+.call-tools details { padding: 0; border: 0; overflow: visible; }
+.call-tools details[open] { max-height: none; }
+.call-tools .drawer { position: absolute; right: 0; top: 3.2rem; width: min(440px, calc(100vw - 2rem)); max-height: calc(var(--call-height, 100dvh) - 12rem); overflow: auto; overscroll-behavior: contain; padding: 1rem; border: 1px solid var(--border); border-radius: 1rem; background: color-mix(in srgb, var(--surface-1) 97%, transparent); box-shadow: 0 1rem 3rem var(--bg); }
+.drawer h2 { font-size: 1.1rem; }
+.call-bottom { position: absolute; inset: auto max(1rem, env(safe-area-inset-right)) max(.6rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); max-width: 760px; margin-inline: auto; }
+.miien-call .dialogue-panel { margin-bottom: .5rem; padding: .65rem 1rem; background: color-mix(in srgb, var(--bg) 88%, transparent); }
+.miien-call #latest-reply { max-height: min(20dvh, 180px); font-size: .95rem; margin: .15rem 0 0; }
+.miien-call .stage .composer { position: static; margin: 0; padding: .65rem .85rem; background: color-mix(in srgb, var(--surface-1) 90%, transparent); }
+.miien-call .composer textarea { resize: none; height: 3.5rem; max-height: 5rem; padding: .45rem .65rem; }
+.miien-call .composer label { font-size: .8rem; margin-bottom: .25rem; }
+.miien-call .composer .button-row { margin-top: .5rem; gap: .4rem; }
+.miien-call .composer button { padding: .45rem .7rem; font-size: .85rem; }
+.miien-call .composer p { font-size: .75rem; margin: .3rem 0 0; }
+.miien-call .composer p:empty { display: none; }
+.room:fullscreen .call-toolbar { top: max(1rem, env(safe-area-inset-top)); }
+.room:fullscreen #character, .room:fullscreen .character-motion { inset: 0; height: 100%; }
+.miien-call .stage:has(#character:not([hidden])) .art-fallback { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) { .character-motion { display: none !important; } }
+.miien-call .stage .composer { max-height: calc(var(--call-height, 100dvh) - 7rem); overflow: auto; overscroll-behavior: contain; }
+
+/* Neutral v1: fixed theme background, registered transparent foreground and
+   generated facial patches. Breathing and blinking have independent CSS clocks. */
+.character-layers { position: absolute; inset: 3rem 0 0; height: calc(100% - 3rem); container-type: size; display: flex; justify-content: center; pointer-events: none; overflow: hidden; }
+.miien-rig { position: relative; width: min(100cqw, 75cqh); height: min(133.3333cqw, 100cqh); flex: none; transform-origin: 50% 95%; animation: miien-breathe 5.8s ease-in-out infinite; }
+.miien-rig img { position: absolute; display: block; max-width: none; }
+.miien-blink { opacity: 0; animation: miien-blink 6.7s linear infinite; }
+@keyframes miien-breathe { 0%, 100% { transform: translateY(0) scaleY(1); } 50% { transform: translateY(-1px) scaleY(1.004); } }
+@keyframes miien-blink { 0%, 45%, 48%, 100% { opacity: 0; } 45.01%, 47.99% { opacity: 1; } }
+.miien-call .stage:has(.character-layers) .art-fallback { visibility: hidden; }
+.room:fullscreen .character-layers { inset: 0; height: 100%; }
+@media (prefers-reduced-motion: reduce) {
+  .miien-rig, .miien-blink { animation: none; }
+  .miien-blink, .miien-mouth { visibility: hidden; }
+}
+
+/* Phones reserve the space between toolbar and bounded text panels for art.
+   The same layout applies to a short visual viewport, even if CSS vh stays tall. */
+.miien-call .room { container: call-room / size; }
+.miien-call:has(.compact-viewport) .miien-nav { display: none; }
+@container call-room (max-width: 600px), (max-width: 1000px) and (max-height: 570px) {
+  .miien-call .stage {
+    display: grid;
+    grid-template: auto minmax(0, 1fr) auto / minmax(0, 1fr);
+    gap: .35rem;
+    padding: max(3rem, env(safe-area-inset-top)) max(.5rem, env(safe-area-inset-right)) max(.35rem, env(safe-area-inset-bottom)) max(.5rem, env(safe-area-inset-left));
+  }
+  .call-toolbar { position: relative; inset: auto; grid-area: 1 / 1; gap: .4rem; align-items: center; }
+  .call-title { max-width: 35%; }
+  .call-title h1 { font-size: .85rem; max-height: 2rem; margin-bottom: .2rem; }
+  .call-title .pill { font-size: .7rem; padding: .2rem .4rem; }
+  .call-tools { gap: .25rem; }
+  .call-tools button, .call-tools summary { min-height: 44px; display: flex; align-items: center; font-size: .8rem; padding: .45rem .5rem; white-space: nowrap; }
+  .call-tools .drawer { top: calc(100% + .35rem); width: min(440px, calc(100cqw - 1rem)); max-height: calc(var(--call-height, 100dvh) - 8rem); }
+  .miien-call #character, .miien-call .character-motion, .miien-call .character-layers {
+    position: relative; inset: auto; grid-area: 2 / 1; width: 100%; height: 100%; min-height: 0;
+    object-position: center; align-self: center;
+  }
+  .miien-call .character-layers { align-items: center; }
+  .call-bottom { position: relative; inset: auto; grid-area: 3 / 1; width: 100%; min-width: 0; }
+  .miien-call .dialogue-panel { padding: .35rem .6rem; margin-bottom: .35rem; }
+  .miien-call .dialogue-panel .eyebrow { display: none; }
+  .miien-call #latest-reply { max-height: min(5rem, 12cqh); margin: 0; font-size: .85rem; overscroll-behavior: contain; }
+  .miien-call .stage .composer { padding: .4rem; max-height: none; overflow: visible; }
+  /* Keep the input's accessible name without spending a line on its label. */
+  .miien-call .composer label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .miien-call .composer textarea { display: block; height: 3rem; min-height: 44px; max-height: 3rem; font-size: 16px; }
+  .miien-call .composer .button-row { display: grid; grid-template-columns: .8fr 1.5fr .9fr 1fr; gap: .25rem; margin-top: .35rem; }
+  .miien-call .composer button { min-width: 0; min-height: 44px; padding: .25rem; font-size: .8rem; line-height: 1.2; overflow-wrap: anywhere; }
+  .composer-status { max-height: 3rem; overflow: auto; overscroll-behavior: contain; overflow-wrap: anywhere; margin-top: .25rem; }
+  .miien-call .composer-status p { margin: 0 0 .2rem; }
+  .miien-call :focus-visible { outline-offset: 1px; }
+}
+@container call-room (max-width: 1000px) and (max-height: 570px) {
+  .miien-call .stage { padding-top: max(.35rem, env(safe-area-inset-top)); }
+  .call-title { display: none; }
+  .call-toolbar { justify-content: end; }
+  .miien-call .composer textarea { height: 44px; }
+  .composer-status { max-height: 1.5rem; }
+  .miien-call #latest-reply { max-height: 2.6rem; }
+  .call-tools .drawer { max-height: calc(var(--call-height, 100dvh) - 4rem); }
+}
+@container call-room (min-width: 601px) and (max-width: 1000px) and (max-height: 570px) {
+  .miien-call .stage { grid-template: auto minmax(0, 1fr) / minmax(0, 2fr) minmax(0, 3fr); }
+  .call-toolbar { grid-area: 1 / 1; }
+  .call-tools .drawer { left: 0; right: auto; }
+  .call-bottom { grid-area: 1 / 2 / 3 / 3; align-self: end; }
+  .miien-call #character, .miien-call .character-motion, .miien-call .character-layers { grid-area: 2 / 1; }
+}
+/* A half-height phone keyboard benefits from art beside the editor: a full-width
+   composer would leave only a thumbnail between two horizontal control rows. */
+@container call-room (max-width: 600px) and (max-height: 450px) {
+  .miien-call .stage { grid-template: auto minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 2fr); }
+  .call-toolbar { grid-area: 1 / 1 / 2 / 3; }
+  .call-bottom { grid-area: 2 / 2; align-self: end; }
+  .miien-call #character, .miien-call .character-motion, .miien-call .character-layers { grid-area: 2 / 1; }
+  .miien-call .composer .button-row { grid-template-columns: 1fr 1.4fr; }
+  .miien-call .stage .composer { padding: .25rem; }
+  .miien-call .composer-status { max-height: 1.1rem; }
+  .miien-call .composer-status p { font-size: .7rem; line-height: 1.5; }
+  .miien-call #latest-reply { max-height: 2.6rem; }
+}
+@container call-room (max-width: 600px) and (max-height: 320px) {
+  .miien-call #latest-reply { max-height: 1.3rem; }
+}
+
+@media (max-width: 600px) {
+  .miien-call .miien-nav nav { gap: .7rem; font-size: .7rem; }
+  .miien-call .wordmark span { display: none; }
+}
+/* Retain the established layout for wide desktop windows with little height. */
+@container call-room (min-width: 1001px) and (max-height: 570px) {
+  .call-title h1 { display: none; }
+  .call-bottom { max-width: 900px; left: 41%; right: 1rem; }
+  .miien-call .composer label, .miien-call #mic-status:not(.active-status) { display: none; }
+  .miien-call .composer textarea { height: 2.6rem; }
+  .miien-call #latest-reply { max-height: 12dvh; }
+  .miien-call .dialogue-panel { padding-block: .3rem; }
+  .miien-call .dialogue-panel .eyebrow { display: none; }
+  .miien-call #character, .miien-call .character-motion, .miien-call .character-layers { width: 40%; top: 5.5rem; height: calc(100% - 5.5rem); }
+}
+@media (min-width: 1001px) and (max-height: 350px) {
+  .miien-call .miien-nav { display: none; }
+  .call-toolbar { top: .4rem; }
+  .call-tools .drawer { max-height: calc(var(--call-height, 100dvh) - 5rem); }
+}

@@ -1164,7 +1164,7 @@ class MessageService {
     return result.deletedCount || 0;
   }
 
-  async generateAIMessage({conversation, includeLastToolBatch = false}) {
+  async generateAIMessage({conversation, includeLastToolBatch = false, maxOutputTokens = null, privateRequest = false}) {
     // Generate a message through AI and save to database *Can possible generate multiple messages if using tools or reasoning
     const model = (await AIModelCards.find({api_model: conversation.metadata.model}))[0];
     if (!model) {
@@ -1184,7 +1184,10 @@ class MessageService {
     const runtimeConversation = cloneConversationForAI(conversation, effectiveContextPrompt);
 
     if (model.provider === "OpenAI") {
-      const response_id = await ai.chat(runtimeConversation, messages, model, { includeLastToolBatch });
+      const response_id = await ai.chat(runtimeConversation, messages, model, { includeLastToolBatch,
+        ...(privateRequest ? { maxOutputTokens, privateRequest } : {}),
+      });
+      if (privateRequest && !response_id) throw new Error('Chat provider did not accept the request');
 
       const message = {
         user_id: "bot",
@@ -1210,10 +1213,13 @@ class MessageService {
       return {response_id, msg};
     }
 
+    if (privateRequest && Number.isInteger(maxOutputTokens)) runtimeConversation.metadata.max_tokens = maxOutputTokens;
+
     // Local models use the Gateway's background job API. The webhook/recovery
     // path replaces this placeholder after retrieving the terminal job result.
     const job = await ollama.submitChatJob(runtimeConversation, messages, model, {
       includeLastToolBatch,
+      ...(privateRequest ? { privateRequest } : {}),
     });
     if (!job || !job.job_id) {
       throw new Error('AI gateway did not return an Ollama background job ID');

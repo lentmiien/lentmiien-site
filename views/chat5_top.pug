@@ -13,6 +13,10 @@ block content
     .col-md-6.text-md-end.mt-2.mt-md-0
       a.btn.btn-primary.chat5-create-btn(href=`/chat5/chat/NEW`) +NEW
 
+  if Array.isArray(permissions) && permissions.includes('chat.conversation.read')
+    p
+      a.btn.btn-outline-primary(href='/chat5/miien') Miien character chat
+
   //- Group headers and cards
   - const now = Date.now()
   - const MIN = 60 * 1000

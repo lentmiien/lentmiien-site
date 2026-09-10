@@ -1,0 +1,258 @@
+{
+  "tool": "image_gen.imagegen (built-in)",
+  "status": "human-review-pending",
+  "sourceCrop": {
+    "x": 256,
+    "y": 245,
+    "width": 264,
+    "height": 222,
+    "canvasWidth": 768,
+    "canvasHeight": 1024
+  },
+  "processing": "Each generated PNG resized to 768x1024, facial master cropped to (256,245,264,222), saved lossless WebP. Only these interior pixels enter packaging. Painted checkerboards and unrelated generated silhouette/outfit pixels discarded.",
+  "sources": [
+    {
+      "mood": "happy",
+      "name": "character",
+      "file": "happy/character.webp",
+      "sha256": "093bc0b142369077dda2872903d58dada68a525bc7e266bc56baebb4116006f2",
+      "generatedSource": "exec-90f143d7-772e-4809-bf57-a57471805662.png",
+      "generatedSha256": "57722ca7219a320ac8e1775e91abfb6fb99d6e145e76a48c84e7dec9aef32c64",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": [
+        "public/i/miien/neutral-v1/character.webp",
+        "public/i/miien/happy.webp"
+      ],
+      "prompt": "Use case: identity-preserve. Asset type: production layered 2D Miien happy character base. Image 1 is the EDIT TARGET accepted neutral transparent cutout; image 2 is an EXPRESSION REFERENCE only. Change ONLY eyes, brows and mouth on image 1 to match image 2's warm cheerful closed-lip smile and gently smiling open golden eyes. Keep pixel registration, head size, face position, hair strands, ears, fully zipped graphite/ember hoodie, shoulders, crop, lighting and all other pixels of image 1 unchanged. Same 3:4 canvas and full waist-up framing. Genuine transparent alpha background, no checkerboard, no new background. No text, props, extra marks. Adult anime character with same exact identity. One image."
+    },
+    {
+      "mood": "thoughtful",
+      "name": "character",
+      "file": "thoughtful/character.webp",
+      "sha256": "51e43ffe1e9231a79ac5f82bd04e0b6d0168b850674c35f028ca62d3f2d052fc",
+      "generatedSource": "exec-2031bd3b-bd9a-4b38-a184-a289b62e6256.png",
+      "generatedSha256": "fe6537b771611548bbe7f97e792ad3dbfec7fe4a7e2ed2de5b83c3e273e61ec4",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": [
+        "public/i/miien/neutral-v1/character.webp",
+        "public/i/miien/thoughtful.webp"
+      ],
+      "prompt": "Use case: identity-preserve. Asset type: production layered 2D Miien thoughtful character base. Image 1 is the EDIT TARGET accepted neutral cutout; image 2 is the EXPRESSION REFERENCE only. Change ONLY eyes, brows and mouth on image 1: subtly drawn inward brows, open eyes looking slightly to viewer's left, closed composed thoughtful lips. Keep exact pixel registration, head size, face position, hair strands, ears, fully zipped graphite/ember hoodie, shoulders, crop, lighting and all other pixels of image 1 unchanged. Same 3:4 canvas and full waist-up framing. Genuine transparent alpha background, no checkerboard, no new background. No text, props or extra marks. Adult anime character with same identity. One image."
+    },
+    {
+      "mood": "concerned",
+      "name": "character",
+      "file": "concerned/character.webp",
+      "sha256": "2d9a56b2f568c291ec00df594ff98c091fdfe39896fc7bfe00ec5278fb9c8fc5",
+      "generatedSource": "exec-7780ee42-cf85-4623-b9ae-6a05b888790b.png",
+      "generatedSha256": "8fe5cc554ab75d910ff2c0eccdfe027df16c332875ad8faff19095a9c006339b",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": [
+        "public/i/miien/neutral-v1/character.webp",
+        "public/i/miien/concerned.webp"
+      ],
+      "prompt": "Use case: identity-preserve. Asset type: production layered 2D Miien concerned character base. Image 1 is the EDIT TARGET accepted neutral cutout; image 2 is the EXPRESSION REFERENCE only. Change ONLY eyes, brows and mouth on image 1: inner eyebrows raised gently, sympathetic softened open eyes, subtle closed-mouth frown, compassionate and calm without tears. Keep exact pixel registration, head size, face position, hair strands, ears, fully zipped graphite/ember hoodie, shoulders, crop, lighting and all other pixels of image 1 unchanged. Same 3:4 canvas and full waist-up framing. Genuine transparent alpha background, no checkerboard, no new background. No text, props or extra marks. Adult anime character with same identity. One image."
+    },
+    {
+      "mood": "surprised",
+      "name": "character",
+      "file": "surprised/character.webp",
+      "sha256": "b5b33c7ae973969504260982a90031a257d78cd5306038bf8be846656192c43e",
+      "generatedSource": "exec-515e393d-ff14-4869-9dbd-feba752ea80c.png",
+      "generatedSha256": "3794903c0c6ff583d4321db95a5a4305498e5a5a0aaeb0e4e23111bb07550052",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": [
+        "public/i/miien/neutral-v1/character.webp",
+        "public/i/miien/surprised.webp"
+      ],
+      "prompt": "Use case: identity-preserve. Asset type: production layered 2D Miien surprised character base. Image 1 is the EDIT TARGET accepted neutral cutout; image 2 is the EXPRESSION REFERENCE only. Change ONLY eyes, brows and mouth on image 1: clearly widened golden eyes and raised eyebrows, friendly surprise not fear, lips gently closed at rest (speaking overlays will open them). Keep exact pixel registration, head size, face position, hair strands, ears, fully zipped graphite/ember hoodie, shoulders, crop, lighting and all other pixels of image 1 unchanged. Same 3:4 canvas and full waist-up framing. Genuine transparent alpha background, no checkerboard, no new background. No text, props or extra marks. Adult anime character with same identity. One image."
+    },
+    {
+      "mood": "happy",
+      "name": "blink",
+      "file": "happy/blink.webp",
+      "sha256": "281414e84d9ffcd81b909f058b91b92b8b9fe763aa6aafce6d5eb84c19a94384",
+      "generatedSource": "exec-be52dbb4-100e-499f-a1bd-cb0f31981775.png",
+      "generatedSha256": "328166a053e3714f073a7cda5954de66471c09ea82fa3a8deb4dd19d8b29e330",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": "exec-90f143d7-772e-4809-bf57-a57471805662.png",
+      "prompt": "Use case: precise-object-edit. Asset type: Miien happy blink animation source. Edit target: supplied happy character base. Close both eyes naturally for a blink, with curved closed eyelids and eyelashes matching the happy lifted cheeks. Keep the closed smiling mouth completely unchanged. Preserve EXACT image dimensions, head position, face outline, nose, hair, ears, golden eyes/brows (unless blinking), outfit, colors and skin illumination. No head/jaw/body movement. Do not redesign anything outside the requested facial feature. Same full 3:4 portrait. No text, props or extra marks. One image."
+    },
+    {
+      "mood": "happy",
+      "name": "mouth-small",
+      "file": "happy/mouth-small.webp",
+      "sha256": "0f614f14c7fdd9f4c9289d9dc6530e795b32164004d0a8c0b440f33ffd0a73f3",
+      "generatedSource": "exec-e96df187-7225-4f86-990a-da80f5a0ca69.png",
+      "generatedSha256": "faa0ff0b4ab8fcaaab925af75682cc8b7f2985124a9fe631068fc00360140910",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": "exec-90f143d7-772e-4809-bf57-a57471805662.png",
+      "prompt": "Use case: precise-object-edit. Asset type: Miien happy mouth-small animation source. Edit target: supplied happy character base. Change only the mouth to a small slightly parted speaking smile, tiny dark gap, warm upturned corners, no second lip line. Preserve EXACT image dimensions, head position, face outline, nose, hair, ears, golden eyes/brows (unless blinking), outfit, colors and skin illumination. No head/jaw/body movement. Do not redesign anything outside the requested facial feature. Same full 3:4 portrait. No text, props or extra marks. One image."
+    },
+    {
+      "mood": "happy",
+      "name": "mouth-open",
+      "file": "happy/mouth-open.webp",
+      "sha256": "3e00f70d50815364a1665eb3961ed6292575bb2351b322d2a14eff34cade639c",
+      "generatedSource": "exec-3b13febe-31d9-43df-a3f4-307d4401e33e.png",
+      "generatedSha256": "d4ba7fa6d2f34d5a8db6299af4b4738b8ee242d059c67729336e503c8c005e61",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": "exec-90f143d7-772e-4809-bf57-a57471805662.png",
+      "prompt": "Use case: precise-object-edit. Asset type: Miien happy mouth-open animation source. Edit target: supplied happy character base. Change only the mouth to a modest open speaking smile, small visible upper teeth and dark interior, warm upturned corners. Restrained speech opening, not a huge grin. Preserve EXACT image dimensions, head position, face outline, nose, hair, ears, golden eyes/brows (unless blinking), outfit, colors and skin illumination. No head/jaw/body movement. Do not redesign anything outside the requested facial feature. Same full 3:4 portrait. No text, props or extra marks. One image."
+    },
+    {
+      "mood": "thoughtful",
+      "name": "blink",
+      "file": "thoughtful/blink.webp",
+      "sha256": "54c6f2e18aa6c978911e8ed3c23184034f396d09601f4afb95fa558aff3d9a8f",
+      "generatedSource": "exec-e2aa2c1c-2327-4fcd-97da-dd43f6eda1ba.png",
+      "generatedSha256": "76796d7b1dcafed63e74a9ad9e94e3dc0bec1ac343ad32275a3ab930408a02c1",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": "exec-2031bd3b-bd9a-4b38-a184-a289b62e6256.png",
+      "prompt": "Use case: precise-object-edit. Asset type: Miien thoughtful blink animation source. Edit target: supplied thoughtful character base. Close both eyes naturally for a blink with relaxed closed eyelids. Keep thoughtful brows and closed composed mouth unchanged. Preserve EXACT image dimensions, head position, face outline, nose, hair, ears, golden eyes/brows (unless blinking), outfit, colors and skin illumination. No head/jaw/body movement. Do not redesign anything outside the requested facial feature. Same full 3:4 portrait. No text, props or extra marks. One image."
+    },
+    {
+      "mood": "thoughtful",
+      "name": "mouth-small",
+      "file": "thoughtful/mouth-small.webp",
+      "sha256": "4e3caa0ffc297b9409b2559bdb64f0dc1d9c2d4caff4629d74fa7a3e68d4a5cb",
+      "generatedSource": "exec-41b8b96f-da5b-4a37-89e0-7e9ebdc1d957.png",
+      "generatedSha256": "22a76b723b228603c4813e9b3dab481820ec16b4f24013a568c7113d85b18ac8",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": "exec-2031bd3b-bd9a-4b38-a184-a289b62e6256.png",
+      "prompt": "Use case: precise-object-edit. Asset type: Miien thoughtful mouth-small animation source. Edit target: supplied thoughtful character base. Change only the mouth to a small slightly parted composed speaking mouth, tiny dark gap, relaxed level corners. Preserve EXACT image dimensions, head position, face outline, nose, hair, ears, golden eyes/brows (unless blinking), outfit, colors and skin illumination. No head/jaw/body movement. Do not redesign anything outside the requested facial feature. Same full 3:4 portrait. No text, props or extra marks. One image."
+    },
+    {
+      "mood": "thoughtful",
+      "name": "mouth-open",
+      "file": "thoughtful/mouth-open.webp",
+      "sha256": "7b969423508dabf1a6b73f3f635cdcb859c3d2d786355c5262c09357a1d8e26d",
+      "generatedSource": "exec-8c0a5a02-eb40-4e04-bbb9-68f594e1ab27.png",
+      "generatedSha256": "b7c85639b6a852c8f9d58942946751c4bb014bb8999efcd2f186bf94d1bbbd01",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": "exec-2031bd3b-bd9a-4b38-a184-a289b62e6256.png",
+      "prompt": "Use case: precise-object-edit. Asset type: Miien thoughtful mouth-open animation source. Edit target: supplied thoughtful character base. Change only the mouth to a modest open speaking mouth, small dark interior and subtle tongue. Relaxed level corners, no smile or grin. Preserve EXACT image dimensions, head position, face outline, nose, hair, ears, golden eyes/brows (unless blinking), outfit, colors and skin illumination. No head/jaw/body movement. Do not redesign anything outside the requested facial feature. Same full 3:4 portrait. No text, props or extra marks. One image."
+    },
+    {
+      "mood": "concerned",
+      "name": "blink",
+      "file": "concerned/blink.webp",
+      "sha256": "c5214bc9ce708d7d951701cf183f0259e66dd7bdfb69a797e78708aa5a3cd07d",
+      "generatedSource": "exec-ee7db428-81c8-4de3-8f02-f1986148a5cf.png",
+      "generatedSha256": "7a83b7ed75864b4a0ef13b17e6485307e930019b7e766214a835016004f474c9",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": "exec-7780ee42-cf85-4623-b9ae-6a05b888790b.png",
+      "prompt": "Use case: precise-object-edit. Asset type: Miien concerned blink animation source. Edit target: supplied concerned character base. Close both eyes naturally for a gentle blink. Preserve sympathetic raised inner brows and closed concerned mouth. Preserve EXACT image dimensions, head position, face outline, nose, hair, ears, golden eyes/brows (unless blinking), outfit, colors and skin illumination. No head/jaw/body movement. Do not redesign anything outside the requested facial feature. Same full 3:4 portrait. No text, props or extra marks. One image."
+    },
+    {
+      "mood": "concerned",
+      "name": "mouth-small",
+      "file": "concerned/mouth-small.webp",
+      "sha256": "4697890d24eb6baa2838cd99d4bb98b3b3de6bcbf7ecb163db4beaf06704489e",
+      "generatedSource": "exec-2e6bcbe0-0b6b-4f15-987e-6c56da6678a1.png",
+      "generatedSha256": "3aaacad351d19dd44cef2e65cb38082eacf8b15895aa967edae85af3e96505ae",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": "exec-7780ee42-cf85-4623-b9ae-6a05b888790b.png",
+      "prompt": "Use case: precise-object-edit. Asset type: Miien concerned mouth-small animation source. Edit target: supplied concerned character base. Change only the mouth to a tiny slightly parted speaking mouth, dark narrow gap, gently downturned concerned corners. Preserve EXACT image dimensions, head position, face outline, nose, hair, ears, golden eyes/brows (unless blinking), outfit, colors and skin illumination. No head/jaw/body movement. Do not redesign anything outside the requested facial feature. Same full 3:4 portrait. No text, props or extra marks. One image."
+    },
+    {
+      "mood": "concerned",
+      "name": "mouth-open",
+      "file": "concerned/mouth-open.webp",
+      "sha256": "c0be9250135ac5ff48c2012011ad709a2be884ce116f6785f47c9261441d71a2",
+      "generatedSource": "exec-45b09196-a77a-473b-8fd4-9239185085b7.png",
+      "generatedSha256": "eb54293a7230cd007442ea3af018618537f92db4ed357b50623b929d07152ecd",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": "exec-7780ee42-cf85-4623-b9ae-6a05b888790b.png",
+      "prompt": "Use case: precise-object-edit. Asset type: Miien concerned mouth-open animation source. Edit target: supplied concerned character base. Change only the mouth to a modest open speaking mouth, soft dark interior and subtle tongue, sympathetic downturned corners. No smile, grin or teeth-baring. Preserve EXACT image dimensions, head position, face outline, nose, hair, ears, golden eyes/brows (unless blinking), outfit, colors and skin illumination. No head/jaw/body movement. Do not redesign anything outside the requested facial feature. Same full 3:4 portrait. No text, props or extra marks. One image."
+    },
+    {
+      "mood": "surprised",
+      "name": "blink",
+      "file": "surprised/blink.webp",
+      "sha256": "0eecd49f203595a95844053031052c18c9d01538211bbf2e567590da27ddea13",
+      "generatedSource": "exec-bb6fd536-dc8b-4804-a3d8-942c0c5d925e.png",
+      "generatedSha256": "a9b54446d8fc2749370287bdecb106a0585f5d54d1819372d913db64755194a1",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": "exec-515e393d-ff14-4869-9dbd-feba752ea80c.png",
+      "prompt": "Use case: precise-object-edit. Asset type: Miien surprised blink animation source. Edit target: supplied surprised character base. Close both widened eyes naturally for a blink, with closed eyelids and eyelashes. Preserve raised surprised brows and resting mouth. Preserve EXACT image dimensions, head position, face outline, nose, hair, ears, golden eyes/brows (unless blinking), outfit, colors and skin illumination. No head/jaw/body movement. Do not redesign anything outside the requested facial feature. Same full 3:4 portrait. No text, props or extra marks. One image."
+    },
+    {
+      "mood": "surprised",
+      "name": "mouth-small",
+      "file": "surprised/mouth-small.webp",
+      "sha256": "8af2cd88b1ba223c1ba5ce9863a4dd75886b5d1072af8abace212af338ffcb7a",
+      "generatedSource": "exec-4e799b23-8554-4499-90c5-b7e15956c223.png",
+      "generatedSha256": "dbd2b656cad075a45a7ba292ce224ec00917c87da4a4d423e81085531c0703bd",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": "exec-515e393d-ff14-4869-9dbd-feba752ea80c.png",
+      "prompt": "Use case: precise-object-edit. Asset type: Miien surprised mouth-small animation source. Edit target: supplied surprised character base. Change only the mouth to a tiny softly rounded oh speaking mouth with a small dark opening. Friendly surprised expression. Preserve EXACT image dimensions, head position, face outline, nose, hair, ears, golden eyes/brows (unless blinking), outfit, colors and skin illumination. No head/jaw/body movement. Do not redesign anything outside the requested facial feature. Same full 3:4 portrait. No text, props or extra marks. One image."
+    },
+    {
+      "mood": "surprised",
+      "name": "mouth-open",
+      "file": "surprised/mouth-open.webp",
+      "sha256": "58f634aaba465f9dd65185a682044938162b46ca75708037e652dd232f28f74c",
+      "generatedSource": "exec-33c13bee-59c2-4e59-8d7b-1cee50e4af36.png",
+      "generatedSha256": "82fb801cb9b491d1b4ae67c375339c9c53f798ad5c4d92afb55e8855c9377a36",
+      "generatedDimensions": {
+        "width": 1086,
+        "height": 1448
+      },
+      "reference": "exec-515e393d-ff14-4869-9dbd-feba752ea80c.png",
+      "prompt": "Use case: precise-object-edit. Asset type: Miien surprised mouth-open animation source. Edit target: supplied surprised character base. Change only the mouth to a modest rounded open oh speaking shape with dark interior and subtle tongue. Friendly surprised expression, not screaming or smiling. Preserve EXACT image dimensions, head position, face outline, nose, hair, ears, golden eyes/brows (unless blinking), outfit, colors and skin illumination. No head/jaw/body movement. Do not redesign anything outside the requested facial feature. Same full 3:4 portrait. No text, props or extra marks. One image."
+    }
+  ],
+  "referenceHashes": {
+    "public/i/miien/neutral-v1/character.webp": "6c84d93a90366088748df1b0e78b17c7ed22ec82c5958e2fa21cca255cfc34ac",
+    "public/i/miien/happy.webp": "6f7a06334755a2fa00f18953b59a7b4eb41b9aa93205f3a8ec08ba80256819e4",
+    "public/i/miien/thoughtful.webp": "9cba193a5a0c47e71b5d663e652fd45f8a7f3a5cd70cb2bc8ae1b9e235afa6c1",
+    "public/i/miien/concerned.webp": "fb43fa1ec98302f923b3be36522627d231996b03453d45ba71f480525e6a34cd",
+    "public/i/miien/surprised.webp": "c272f483daeefa41bc1cc5679103c14b48e004ace9dc777af9f3242d315d6a0b"
+  }
+}
