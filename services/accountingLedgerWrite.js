@@ -4,8 +4,16 @@ const Account = require('../models/account_db');
 const Transaction = require('../models/transaction_db');
 const logger = require('../utils/logger');
 
+// Only explicit application rejections prove there is no in-flight mutation.
+// A status code or driver error alone cannot prove that a write did not commit.
+const safeRejections = new WeakSet();
+function rejection(message, status) {
+  const error = Object.assign(new Error(message), { status, expose: true });
+  safeRejections.add(error);
+  return error;
+}
 // These fixed messages contain no ledger data and must reach legacy write UIs.
-function conflict(message) { return Object.assign(new Error(message), { status: 409, expose: true }); }
+function conflict(message) { return rejection(message, 409); }
 async function withLedgerWrite(work) {
   const token = randomUUID();
   try {
@@ -18,13 +26,23 @@ async function withLedgerWrite(work) {
     logger.error('Accounting write lock acquisition failed', { category: 'accounting' });
     throw error;
   }
-  try { return await work(); }
+  let canRelease = false;
+  try {
+    const result = await work();
+    canRelease = true;
+    return result;
+  }
   catch (error) {
-    if (!error.status || error.status >= 500) logger.error('Accounting ledger write failed', { category: 'accounting', metadata: { errorName: error.name } });
+    canRelease = safeRejections.has(error);
+    if (!canRelease) logger.error('Accounting ledger write outcome uncertain; lock retained for offline operator recovery', { category: 'accounting' });
     throw error;
   } finally {
-    try { await Lock.deleteOne({ _id: 'ledger', token }).maxTimeMS(5000); }
-    catch (_) { logger.error('Accounting write lock release failed; operator recovery required', { category: 'accounting' }); }
+    if (canRelease) {
+      try {
+        const result = await Lock.deleteOne({ _id: 'ledger', token }).maxTimeMS(5000);
+        if (result.deletedCount !== 1) throw new Error('Lock ownership changed');
+      } catch (_) { logger.error('Accounting write lock release failed; operator recovery required', { category: 'accounting' }); }
+    }
   }
 }
 async function assertOpen(transaction) {
@@ -51,4 +69,4 @@ async function deleteAccount(id) {
     return Account.deleteOne({ _id: id }).maxTimeMS(5000);
   });
 }
-module.exports = { withLedgerWrite, insertTransaction, deleteTransaction, deleteAccount, conflict };
+module.exports = { withLedgerWrite, insertTransaction, deleteTransaction, deleteAccount, conflict, rejection };

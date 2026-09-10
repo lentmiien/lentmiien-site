@@ -543,6 +543,10 @@ app.use('/tmp-files', isAuthenticated, isAdmin, tmpFilesRouter);
 app.use('/admin/ask-lennart', isAuthenticated, askLennartAdminRouter);
 app.use('/admin/runpod', isAuthenticated, isAdmin, runpodAdminRouter);
 app.use('/admin/connectivity', require('./routes/connectivity').createConnectivityRouter());
+app.use('/admin/database-viewer', (_req, res, next) => {
+  res.set('Cache-Control', 'private, no-store');
+  next();
+});
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
 app.post(

@@ -6,6 +6,8 @@ const closeJson = express.json({ limit: '4kb' });
 // Run before the application's larger legacy parsers, including chunked bodies.
 function accountSurfaceBody(req, res, next) {
   if (/^\/(?:accounting|budget)\/close-month(?:\/|$)/i.test(req.path)) {
+    // Parent authentication/capability middleware may deny before the close router.
+    res.set('Cache-Control', 'private, no-store');
     const failed = error => res.status(error.status === 413 ? 413 : 400).set('Cache-Control', 'private, no-store').send('Invalid accounting request body.');
     return closeJson(req, res, error => {
       if (error) return failed(error);

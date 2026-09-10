@@ -33,6 +33,8 @@ test('review is read-only; close saves previous month, retains prior baseline an
   expect(accounts[0]).toMatchObject({ balance: 89, balance_date: 20260831, closedThrough: 20260831,
     balanceHistory: [{ balance: 100, balance_date: 20220101, closedBalance: 89, closedThrough: 20260831, confirmedBy: owner }] });
   expect(transactions).toHaveLength(2);
+  expect(require('../../utils/accountBalances').balances(accounts[0], transactions,
+    require('../../utils/accountBalances').period(instant)).current).toBe(preview.current);
   expect(write).toHaveBeenCalledTimes(1);
   await expect(submit(preview.token)).rejects.toMatchObject({ status: 409 });
   expect((await service.preview(owner)).accounts).toEqual([]);

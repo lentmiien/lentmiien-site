@@ -35,13 +35,48 @@ test('another writer fails closed and cannot release the active lock', async () 
   await expect(ledger.withLedgerWrite(work)).rejects.toMatchObject({ status: 409 });
   expect(work).not.toHaveBeenCalled(); expect(Lock.deleteOne).not.toHaveBeenCalled();
 });
-test('failed work releases lock; failed release is reported without exposing content', async () => {
+test('unexpected failure retains lock; failed release is reported without exposing content', async () => {
   await expect(ledger.withLedgerWrite(() => { throw new Error('private ledger content'); })).rejects.toThrow();
-  expect(Lock.deleteOne).toHaveBeenCalledTimes(1);
+  expect(Lock.deleteOne).not.toHaveBeenCalled();
+  expect(logger.error).toHaveBeenCalledWith('Accounting ledger write outcome uncertain; lock retained for offline operator recovery', { category: 'accounting' });
   Lock.deleteOne.mockReturnValue({ maxTimeMS: async () => { throw new Error('private ledger content'); } });
   await ledger.withLedgerWrite(async () => 'done');
   expect(logger.error).toHaveBeenCalledWith('Accounting write lock release failed; operator recovery required', expect.any(Object));
   expect(JSON.stringify(logger.error.mock.calls)).not.toContain('private ledger content');
+});
+test.each([404, 409, 422])('explicit no-write rejection %s releases the lock', async status => {
+  await expect(ledger.withLedgerWrite(() => { throw ledger.rejection('Review required.', status); })).rejects.toMatchObject({ status });
+  expect(Lock.deleteOne).toHaveBeenCalledTimes(1);
+});
+test('an arbitrary status code is not evidence that the database stopped writing', async () => {
+  await expect(ledger.withLedgerWrite(() => { throw Object.assign(new Error('uncertain'), { status: 409 }); })).rejects.toThrow();
+  expect(Lock.deleteOne).not.toHaveBeenCalled();
+});
+test('a lost write acknowledgment blocks the next writer even if the interrupted operation later commits', async () => {
+  let locked = false;
+  let finishDatabaseWrite;
+  let committed = false;
+  Lock.create.mockImplementation(async () => {
+    if (locked) throw { code: 11000 };
+    locked = true;
+  });
+  const uncertainWrite = () => {
+    finishDatabaseWrite = () => { committed = true; };
+    throw new Error('Network timeout');
+  };
+  await expect(ledger.withLedgerWrite(uncertainWrite)).rejects.toThrow('Network timeout');
+  const secondWriter = jest.fn();
+  await expect(ledger.withLedgerWrite(secondWriter)).rejects.toMatchObject({ status: 409 });
+  finishDatabaseWrite();
+  expect(committed).toBe(true);
+  await expect(ledger.withLedgerWrite(secondWriter)).rejects.toMatchObject({ status: 409 });
+  expect(secondWriter).not.toHaveBeenCalled();
+  expect(Lock.deleteOne).not.toHaveBeenCalled();
+});
+test('missing token-scoped lock on release is an operational failure', async () => {
+  Lock.deleteOne.mockReturnValue(query({ deletedCount: 0 }));
+  await expect(ledger.withLedgerWrite(async () => 'done')).resolves.toBe('done');
+  expect(logger.error).toHaveBeenCalledWith('Accounting write lock release failed; operator recovery required', { category: 'accounting' });
 });
 test('open-period deletes are allowed under the lock', async () => {
   await ledger.deleteTransaction(id); await ledger.deleteAccount(id);

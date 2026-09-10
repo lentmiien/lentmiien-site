@@ -2,21 +2,21 @@ const { createHmac, randomBytes } = require('crypto');
 const Account = require('../models/account_db');
 const Transaction = require('../models/transaction_db');
 const { period, balances, eligible, storedNumber, validDate } = require('../utils/accountBalances');
-const { withLedgerWrite, conflict } = require('./accountingLedgerWrite');
+const { withLedgerWrite, conflict, rejection } = require('./accountingLedgerWrite');
 const logger = require('../utils/logger');
 
 const reviewKey = randomBytes(32);
 const MAX_TRANSACTIONS = 50000;
 function createCloseService({ accountModel = Account, transactionModel = Transaction, write = withLedgerWrite, now = () => new Date() } = {}) {
   async function snapshot(account, principalId, dates) {
-    const invalidLedger = () => Object.assign(new Error('The baseline or ledger has an invalid date, currency, amount or unsupported precision. Review this account before closing.'), { status: 422 });
+    const invalidLedger = () => rejection('The baseline or ledger has an invalid date, currency, amount or unsupported precision. Review this account before closing.', 422);
     try { balances(account, [], dates); }
     catch (_) { throw invalidLedger(); }
     const transactions = await transactionModel.find({
       $or: [{ from_account: String(account._id) }, { to_account: String(account._id) }],
       date: { $gt: account.balance_date, $lte: dates.today },
     }).select('_id date from_account to_account amount from_fee to_fee').sort({ _id: 1 }).limit(MAX_TRANSACTIONS + 1).maxTimeMS(5000).lean();
-    if (transactions.length > MAX_TRANSACTIONS) throw Object.assign(new Error('Ledger review limit reached. Contact the operator.'), { status: 422 });
+    if (transactions.length > MAX_TRANSACTIONS) throw rejection('Ledger review limit reached. Contact the operator.', 422);
     let computed; let closingNumber;
     try {
       computed = balances(account, transactions, dates);
@@ -51,7 +51,7 @@ function createCloseService({ accountModel = Account, transactionModel = Transac
     return write(async () => {
       const dates = period(now());
       const account = await accountModel.findOne({ _id: input.accountId }).maxTimeMS(5000).lean();
-      if (!account) throw Object.assign(new Error('Account unavailable.'), { status: 404 });
+      if (!account) throw rejection('Account unavailable.', 404);
       if (!eligible(account, dates)) throw conflict('This account is already finalized or has a newer baseline. Refresh the review.');
       const review = await snapshot(account, principalId, dates);
       if (review.token !== input.token) throw conflict('The day, account, or transactions changed. Refresh and compare the balances again.');
