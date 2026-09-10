@@ -1,6 +1,68 @@
-# Miien character chat — scoped phase 3 polish
+# Miien character chat — phase 3 accepted and completed
 
-**Phase 3 implementation is ready for a proper human testing session; acceptance and finalization remain open. Merge into `main` is the FINAL step, only after Lennart accepts the tested feature revision. Do not merge as part of this implementation handoff.** The coordinator owns test deployment and device testing. No production deployment/restart, Gateway changes, new synthesis, microphone capture or artwork generation was performed here. All five approved expression rigs/artwork remain unchanged.
+**Lennart accepted the feature after production database repair and application testing on 2026-09-10, and explicitly authorized completion and merge into `main`. Latency is an accepted limitation.** This closes the scoped Chat5 Miien project; the future ideas below are deferred, not additional release requirements.
+
+## Final acceptance and release record (2026-09-10)
+
+### Human confirmation and production evidence
+
+The supplied response to [Ask Lennart request 80c89a9b-028f-4274-8d7a-37d65f955dc7](/admin/ask-lennart#request-80c89a9b-028f-4274-8d7a-37d65f955dc7) confirms that the database fix succeeded and the application error disappeared. Lennart's subsequent App test section says **“Everything seems to be working now.”** He explicitly accepted remaining latency as nonblocking for project completion and merge. This is overall user acceptance, not individually reported A–D test passes, per-device results or latency measurements. The earlier operator note that a microphone retest remained is superseded by this subsequent acceptance; unchanged behavior needs no additional acceptance round.
+
+The operator reports creation of `miien_asr_slots` in the independently confirmed application database, with exactly `_id_` and unique `principalId_1`, neither TTL, sparse nor partial. Apply, check and runtime-account runtime-check returned `ready: true` / exit 0. LennartWeb was restarted, port 3000 was listening, MongoDB was ready and `/apphealth` reported status ok/database ready. No existing records or roles changed. These are supplied operator results, not production actions repeated during finalization. Private database names, credentials and conversation transcripts are intentionally absent here.
+
+### Repository review and release boundary
+
+Finalization started from a clean worktree at **`678fa9925c5822db9b60925af1ca5828e7192463`**, matching both local and fetched `origin/feat/chat5-miien-phase2-slice1`. Fetched `origin/main` was `b774b10`, an ancestor of the feature; no newer main work or previous feature merge was present. This finalization changes only this document: application code, assets, configuration, dependencies, tests and maintenance commands remain identical to `678fa99`.
+
+The focused release review found no release-blocking defect in semantic capability and conversation/child scope checks, shared CSRF and request limits, private rendering/media delivery, ASR reservation/upload/poll/discard authorization, readiness checks, guarded slot release, TTS authorization/lifecycle, stale-result suppression or the opt-in integration with existing Chat5. Negative security and regression tests exercise these boundaries. The accepted experience includes the fullscreen responsive room, five layered animated expressions, audio-envelope mouth movement, prepared Markdown for OmniVoice English Anny, microphone-to-editable-draft ASR, and latest-reply voice turn-taking.
+
+Completion documentation is committed/pushed on the feature branch before an explicit merge commit into current `origin/main`. The main merge/push is the final delivery step; its exact SHA and remote verification belong to the resulting Git release evidence, not a premature claim in this pre-merge document. Keep `feat/chat5-miien-phase2-slice1` as the rollback/reference branch. No branch deletion, production checkout switch, deployment/restart or live database mutation is part of finalization. Since the completion change is documentation only, no new runtime deployment is required to obtain accepted behavior. The accepted production runtime does not prove the production checkout's exact SHA or that it has switched to the eventual main merge commit.
+
+### Current automated validation
+
+All runs used pinned Node **24.20.0** and the unchanged `678fa99` application tree:
+
+| Check | Current result |
+| --- | --- |
+| Focused Miien, provisioning, shared Chat5/provider and admin-role regressions | **22 suites / 676 tests passed**, including 70 provisioning tests |
+| Full Jest with coverage | **277 suites / 2,642 tests passed**, no skipped tests; all configured coverage thresholds passed |
+| Chromium voice/ASR harness | **28 synthetic check groups passed**, zero browser/CSP errors (current output, superseding the previously reported 27) |
+| Chromium responsive harness | **19 checks passed**, zero browser errors |
+| Chromium expressions harness | **13 check groups passed**, nine screenshots generated outside the repository, zero browser/CSP errors |
+| Authenticated disposable MongoDB integration | **12 groups passed** on MongoDB **8.0.30** / Mongoose **9.7.4**, rerun against a new loopback-only container with ephemeral storage; container removed afterward |
+| Other checks | **59 JavaScript syntax checks**, all **4 curated OpenAPI specs**, provisioning CLI `--help` and `git diff --check` passed |
+
+The MongoDB rerun reused the prior temporary integration harness (`/tmp/miien-asr-provisioning-integration.cjs`) with only its dedicated container port changed in a temporary copy. It tested missing-schema checks, target refusal, exact index creation, idempotency, runtime/operator privilege boundaries, uniqueness, populated/conflicting schema refusal, TTL refusal, incomplete-schema recovery, sanitized CLI output and preservation of an unrelated synthetic collection. This is an ad hoc authenticated integration run, separate from Jest; it does not exercise live production credentials. No required local check was skipped. Synthetic browser checks do not measure real microphone capture, audible voice quality, physical phone keyboard behavior or production/Gateway latency. Human acceptance above is separate evidence. Jest emitted its existing experimental VM Modules warning.
+
+Reproduction commands (the integration container must be newly isolated before using the temporary harness):
+
+```bash
+volta run --node 24.20.0 npm test -- --runInBand --coverage=false tests/unit/miien*.test.js tests/unit/setupMiienAsrIndexes.test.js tests/unit/asrApiService.test.js tests/unit/conversationService.test.js tests/unit/messageService.test.js tests/unit/openaiApiConversion.test.js tests/unit/ollamaApiTools.test.js tests/unit/adminRoleManagement.test.js
+volta run --node 24.20.0 npm test -- --runInBand
+volta run --node 24.20.0 node scripts/review-miien-turn-taking-browser.js <installed-playwright-module> <chromium-executable>
+volta run --node 24.20.0 node scripts/review-miien-responsive-browser.js <installed-playwright-module> <chromium-executable> <temporary-output-directory>
+volta run --node 24.20.0 node scripts/review-miien-expressions-browser.js <installed-playwright-module> <chromium-executable> <temporary-output-directory>
+volta run --node 24.20.0 npm run lint:openapi
+volta run --node 24.20.0 node scripts/setup-miien-asr-indexes.js --help
+```
+
+Earlier provisioning implementation context: [session 818b4a846714fe3422ba0d18685ec7cb5aa6785cfc74ce2a383121922603c68f](/codex/sessions/tool-session-818b4a846714fe3422ba0d18685ec7cb5aa6785cfc74ce2a383121922603c68f). That session reference is supplied context; the repository history and validation above were verified afresh.
+
+### Known limitations and operation of the accepted runtime
+
+- **Latency:** ASR, TTS, GPU queueing and startup can be slow. No latency target or optimization is a completion gate. Existing content-free diagnostics help a future investigation; no live load tests were performed.
+- **Provisioning/startup:** provision `miien_asr_slots` explicitly before microphone use with the [guarded standalone procedure](#phase-3-explicit-asr-database-provisioning-2026-09-10). Runtime disables automatic collection/index creation, requires database readiness and checks actual indexes on each reservation. The runtime principal needs collection-scoped `listIndexes`, `insert` and `remove`; operator DDL uses separate scoped authority. A healthy `/apphealth` alone does not prove ASR admission readiness. The accepted installation is already repaired; do not repeat apply or alter app configuration for this documentation release. Use the pinned Node 24.20.0 and existing app/provider configuration. `npm start`/`setup.js` are not smoke tests.
+- **Process-local unfinished jobs:** ASR handles/results and TTS handles/audio stay in process memory, while admission slots persist in MongoDB. Use one worker or sticky routing; another worker or restart can lose access to an unfinished job/result without releasing its durable slot. ASR terminal results normally expire after five minutes (configurable within bounds); speech audio after 15 minutes. Saved Chat5 text persists. Existing ASR deadline/retention overrides and recovery instructions below still apply.
+- **Cancellation and recovery:** Stop, Send, hiding/leaving or reload suppress local stale playback/transcripts; they cannot prove accepted upstream ASR/TTS work stopped. Ambiguous transport failure, timeout or process death can retain slots. Never add TTL or blindly delete locks. An authorized operator must first establish Gateway settlement and follow the scoped recovery instructions below. Ordinary Chat5 editing concurrently with Miien in the same conversation remains unsupported.
+- **Speech and animation:** Anny remains a bounded 600-character English preview; Markdown preparation improves input but formatted text can still produce poor speech. Full replies remain readable. Browser autoplay/device support varies. Audio-envelope mouth shapes are approximate, not phoneme alignment or a fully rigged character; reduced-motion/static fallbacks remain available.
+
+### Deferred future projects
+
+These are Lennart's future ideas, with no implementation in this release: improve latency; build a properly rigged 2D character with richer animation; add characters/personalities; add character memory and session memory; add hands-free mode once latency is good; consider optional tool use; and evaluate a better TTS model, including formatted-text handling.
+
+## Historical implementation and deployment record
+
+The dated checkpoints below retain architecture, reproduction, provisioning and recovery instructions. Earlier pending acceptance/merge gates, requests for retesting and phase-specific limitations describe those checkpoints; the final acceptance record above supersedes their project status. Provisioning and recovery safeguards remain applicable to future installations or incidents.
 
 ## Phase 3 explicit ASR database provisioning (2026-09-10)
 
@@ -41,7 +103,7 @@ Minimum MongoDB privileges (names are MongoDB privilege actions, not application
 
 These scopes follow MongoDB's [privilege actions](https://www.mongodb.com/docs/manual/reference/privilege-actions/) and [listCollections access rules](https://www.mongodb.com/docs/manual/reference/command/listCollections/#required-access). Prefer an existing authorized operator or temporary separate provisioning principal with these permissions. **Do not broaden or replace existing app roles, grant the app dbOwner/root, or change the app's DB URL for this repair.** If the runtime lacks an action, report that exact namespace/action for separately authorized account administration; this command cannot grant it.
 
-### Copy-paste Windows procedure for Lennart
+### Historical Windows repair procedure and future provisioning reference
 
 These commands are for the human operator; they were not run against LennartWeb here. Preserve local work. In the deployment checkout, substitute the exact pushed repair SHA from the handoff:
 
@@ -1166,7 +1228,7 @@ These original ideas are historical, not the current work order; they do not reo
 - Use audio timing/phoneme or viseme data for lip sync; define a common clock for utterance, mouth and expression. Test stop/interrupt before adding body motion.
 - Improve mood with language-aware structured output isolated to this tool or a small calibrated classifier. Add mixed-emotion/negation evaluation and transition hysteresis; avoid changing ordinary Chat5 prompts.
 
-## Phase 3: full experience and performance
+## Historical extended roadmap (deferred beyond accepted phase 3)
 
 Approximate mouth movement is acceptable under the approved direction; accurate/realistic lip-sync remains an optional stretch goal or future improvement, never a phase-3 acceptance blocker. The approved neutral layered phase-2 proof comes first; no richer rig or 3D stack has been selected.
 
