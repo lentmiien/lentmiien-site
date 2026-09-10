@@ -13,6 +13,8 @@ const TransactionDBModel = require('../models/transaction_db');
 const { Receipt, Payroll } = require('../database');
 const AccountingBusinessService = require('./accountingBusinessService');
 const finance = require('../utils/finance');
+const ledgerWrite = require('./accountingLedgerWrite');
+const { period: accountPeriod } = require('../utils/accountBalances');
 
 const EXPENSE_TYPE_LIST = ['expense'];
 const EXPENSE_TYPE_SET = new Set(EXPENSE_TYPE_LIST);
@@ -138,7 +140,8 @@ const budgetService = {
 
     const dashboardData = {};
     const a = await this.getAccounts();
-    const d = new Date()
+    const today = accountPeriod(new Date()).today;
+    const d = new Date(Math.floor(today / 10000), Math.floor(today / 100) % 100 - 1, today % 100);
     const one_month_ago = new Date(d.getFullYear(), d.getMonth() - 1, 1);
     const lower = (one_month_ago.getFullYear() * 10000) + ((one_month_ago.getMonth()+1) * 100);
     const higher = (one_month_ago.getFullYear() * 10000) + ((one_month_ago.getMonth()+1) * 100) + 32;
@@ -149,7 +152,7 @@ const budgetService = {
       a.accounts[i]["last_30_days_transactions"] = [];
     }
     // Load all new transactions
-    const transactions = await TransactionDBModel.find();
+    const transactions = await TransactionDBModel.find({ date: { $lte: today } });
     // Update `balance` in `accounts`
     transactions.forEach(t => {
       if (a.id_to_account_index.hasOwnProperty(t.from_account)) {
@@ -183,21 +186,21 @@ const budgetService = {
           if (t.date > a.accounts[account_index].new_balance_date) {
             a.accounts[account_index].new_balance_date = t.date;
           }
-          if (t.date > lower && t.date < higher) {
-            a.accounts[account_index].change_last_month += t.amount - t.to_fee;
-          }
-          if (t.date > last_30_limit) {
-            a.accounts[account_index].last_30_days_transactions.push({
-              id: t._id.toString(),
-              amount: t.amount - t.to_fee,
-              date: t.date,
-              label: t.transaction_business,
-              hasReceipt: receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? true : false,
-              receiptId: receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? receiptLookup[t.date][t.amount] : null,
-              hasPay: payLookup[t.date] && payLookup[t.date][t.amount] ? true : false,
-              payId: payLookup[t.date] && payLookup[t.date][t.amount] ? payLookup[t.date][t.amount] : null,
-            });
-          }
+        }
+        if (t.date > lower && t.date < higher) {
+          a.accounts[account_index].change_last_month += t.amount - t.to_fee;
+        }
+        if (t.date > last_30_limit) {
+          a.accounts[account_index].last_30_days_transactions.push({
+            id: t._id.toString(),
+            amount: t.amount - t.to_fee,
+            date: t.date,
+            label: t.transaction_business,
+            hasReceipt: receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? true : false,
+            receiptId: receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? receiptLookup[t.date][t.amount] : null,
+            hasPay: payLookup[t.date] && payLookup[t.date][t.amount] ? true : false,
+            payId: payLookup[t.date] && payLookup[t.date][t.amount] ? payLookup[t.date][t.amount] : null,
+          });
         }
       }
     });
@@ -212,13 +215,8 @@ const budgetService = {
     dashboardData["accounts"] = a.accounts;
     return dashboardData;
   },
-  async UpdateBalance() {
-    // Load new accounts
-    // Load all new transactions after the `balance_date` date
-    // Update all transactions up to end of last month
-  },
   async DeleteTransaction(id) {
-    await TransactionDBModel.deleteOne({_id: id});
+    await ledgerWrite.deleteTransaction(id);
   },
 };
 
@@ -371,7 +369,7 @@ async function getReceiptEntrySuggestions(options = {}) {
 /* 4)  Insert new transaction  */
 async function insertTransaction(body){
   const t = new TransactionDBModel(body);
-  const saved = await t.save();
+  const saved = await ledgerWrite.insertTransaction(t);
   await AccountingBusinessService.ensureBusiness(
     saved.transaction_business || body.transaction_business,
     { source: AccountingBusinessService.SOURCE_BUDGET },

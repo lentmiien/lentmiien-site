@@ -6,7 +6,7 @@ const at = new Date('2026-09-08T01:00:00Z');
 const owner = '111111111111111111111111';
 let calls; let fixtures; let data;
 function model(name) {
-  const chain = { select: p => { calls.at(-1).projection = p; return chain; }, sort: s => { calls.at(-1).sort = s; return chain; }, limit: l => { calls.at(-1).limit = l; return chain; }, maxTimeMS: ms => { expect(ms).toBe(2000); return chain; }, setOptions: () => chain, lean: () => chain, option: () => chain, exec: async () => fixtures[name] || [] };
+  const chain = { select: p => { calls.at(-1).projection = p; return chain; }, sort: s => { calls.at(-1).sort = s; return chain; }, limit: l => { calls.at(-1).limit = l; return chain; }, maxTimeMS: ms => { expect(ms).toBe(2000); return chain; }, setOptions: () => chain, lean: () => chain, option: () => chain, exec: async () => typeof fixtures[name] === 'function' ? fixtures[name](calls.at(-1).filter) : fixtures[name] || [] };
   return { find: filter => { calls.push({ name, filter }); return chain; }, aggregate: pipeline => { calls.push({ name, pipeline }); return chain; } };
 }
 const policy = (id = owner, role = 'admin', grants = []) => resolvePolicy({ _id: id, type_user: role, name: 'member' }, { findOne: async q => q.type === 'user' ? { permissions: grants } : null }, owner);
@@ -95,4 +95,45 @@ test('disaster fallback remains regional and absence is never an all-clear', asy
   expect(reads.every(c => c.limit === 5 && c.filter.$and)).toBe(true);
   expect(result.note).toContain('not an all-clear');
   expect(result.state).toBe('stale');
+});
+
+const ledgerAccount = (id, date = 20260831) => ({ _id: id, name: `Synthetic ${id}`, currency: 'USD', balance: 100, balance_date: date });
+const movement = (id, date, amount) => ({ _id: `${id}-${date}`, date, amount, from_account: id, to_account: 'EXT', from_fee: 1, to_fee: 0, type: 'expense' });
+test('closed accounts reuse spend transactions with no extra history read and include transfers in balances only', async () => {
+  fixtures.account_db = [ledgerAccount('a'), ledgerAccount('b')];
+  fixtures.transaction_db = [movement('a', 20260831, 20), movement('a', 20260901, 10),
+    { ...movement('a', 20260902, 5), to_account: 'b', type: 'saving', to_fee: 2 }];
+  const result = await data.load('accounting', await policy(owner, 'admin', ['accounting']));
+  expect(calls.filter(c => c.name === 'transaction_db')).toHaveLength(1);
+  expect(result.rows.find(r => r.title === 'Synthetic a').detail).toContain('USD 83 · current');
+  expect(result.rows.find(r => r.title === 'Synthetic b').detail).toContain('USD 103 · current');
+  expect(result.rows[0].title).toBe('USD 11.00 this month');
+});
+test('years-old baselines read only non-overlapping older history, individually filter each baseline', async () => {
+  fixtures.account_db = [ledgerAccount('a', 20220101), ledgerAccount('b', 20260831)];
+  fixtures.transaction_db = filter => filter.date.$lt ? [movement('a', 20220301, 20)] : [movement('a', 20260831, 5), movement('a', 20260901, 10)];
+  const result = await data.load('accounting', await policy(owner, 'admin', ['accounting']));
+  const reads = calls.filter(c => c.name === 'transaction_db');
+  expect(reads).toHaveLength(2);
+  expect(reads[1].filter).toMatchObject({ date: { $lt: 20260801 }, $or: [{ date: { $gt: 20220101 } }] });
+  expect(result.rows.find(r => r.title === 'Synthetic a').detail).toContain('USD 62 · current');
+  expect(result.rows.find(r => r.title === 'Synthetic b').detail).toContain('USD 100 · current');
+});
+test('history truncation and invalid baseline never masquerade as current balances', async () => {
+  fixtures.account_db = [ledgerAccount('a', 20220101)];
+  fixtures.transaction_db = filter => filter.date.$lt ? Array(50001).fill(movement('a', 20220301, 1)) : [];
+  expect((await data.load('accounting', await policy(owner, 'admin', ['accounting']))).state).toBe('unavailable');
+  fixtures.account_db = [ledgerAccount('a', 20260931)]; fixtures.transaction_db = [];
+  const result = await data.load('accounting', await policy(owner, 'admin', ['accounting']));
+  expect(result.rows[0].detail).toContain('Current balance unavailable');
+});
+test('automatic reminders require owner/capability, are per account, and cannot be marked complete', async () => {
+  fixtures.account_db = [ledgerAccount('a', 20220101), ledgerAccount('b', 20260731), ledgerAccount('c')];
+  const result = await data.load('tasks', await policy(owner, 'admin', ['scheduletask', 'accounting']));
+  expect(result.rows).toHaveLength(2);
+  expect(result.rows.every(r => r.group === 'Automatic accounting' && !r.canComplete && !r.taskId)).toBe(true);
+  expect(result.rows[0].href).toBe('/accounting/close-month/#account-a');
+  calls = [];
+  await data.load('tasks', await policy('222222222222222222222222', 'admin', ['scheduletask', 'accounting']));
+  expect(calls.some(c => c.name === 'account_db')).toBe(false);
 });

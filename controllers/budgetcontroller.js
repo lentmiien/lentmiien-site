@@ -603,7 +603,7 @@ exports.add_transaction_post = async (req, res) => {
     tags: req.body.tags
   };
   const add_entry = new TransactionDBModel(data);
-  await add_entry.save();
+  await require('../services/accountingLedgerWrite').insertTransaction(add_entry);
   res.render('add_transaction', {new_accounts, new_categories, sort_categories, tags, businesses, account_lookup, category_lookup, category_lookup_rev, input_network, entry: add_entry, pre_set: {}});
 };
 
@@ -614,7 +614,7 @@ exports.manage_accounts = async (req, res) => {
 };
 exports.manage_accounts_api = async (req, res) => {
   if (req.body.request === "DELETE") {
-    await AccountDBModel.deleteOne({_id:req.body.id});
+    await require('../services/accountingLedgerWrite').deleteAccount(req.body.id);
     return res.json({status:`Deleted account ${req.body.id}`});
   } else if (req.body.request === "ADD") {
     // add
@@ -625,9 +625,8 @@ exports.manage_accounts_api = async (req, res) => {
       currency: req.body.data.currency
     };
     const add_entry = new AccountDBModel(data);
-    add_entry.save((err, entry) => {
-      return res.json({status:`Added account ${entry._id}`, account: entry});
-    });
+    const entry = await require('../services/accountingLedgerWrite').withLedgerWrite(() => add_entry.save());
+    return res.json({status:`Added account ${entry._id}`, account: entry});
   } else {
     return res.json({status:`Unknown action`});
   }
@@ -766,7 +765,7 @@ exports.history = async (req, res) => {
 // Delete a transaction
 exports.delete = async (req, res) => {
   const id = req.params.id;
-  await TransactionDBModel.deleteOne({_id: id});
+  await require('../services/accountingLedgerWrite').deleteTransaction(id);
   res.redirect("/accounting/history");
 };
 

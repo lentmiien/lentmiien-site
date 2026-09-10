@@ -1,0 +1,48 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/accounting_close.css')
+
+block content
+  main.accounting-close
+    h1 Finalize previous month
+    if typeof saved !== 'undefined' && saved
+      p(role='status') The confirmed month-end balance was saved. Refresh /mypage to update its balances and reminders.
+    p Enter all transactions through today, then compare each calculated current balance with the official balance in the same currency.
+    p
+      a(href=ledgerPath) Open Accounting to enter or review transactions
+    if error
+      p.close-error(role='alert')= error
+      a(href=closePath) Refresh the review
+    if review
+      p All dates use Asia/Tokyo. Today: #{review.dates.todayLabel}. Closing date: #{review.dates.closeDate} (end of day).
+      p Close each account separately after checking it. Current-month entries stay outside the saved month-end balance. Historical transactions and replaced baselines are retained.
+      if !review.accounts.length
+        p No accounts need a previous-month close. Existing baselines are already at or beyond that date.
+      each account in review.accounts
+        section(id=`account-${account.id}`)
+          h2= account.name
+          if account.error
+            p.close-error(role='alert')= account.error
+          else
+            dl
+              dt Saved baseline (#{account.baselineDate})
+              dd #{account.currency} #{account.baseline}
+              dt Calculated current balance through today — compare with official figure
+              dd.current-balance #{account.currency} #{account.current}
+              dt Current-month net movement
+              dd #{account.currency} #{account.currentMonth}
+              dt Balance to save at #{review.dates.closeDate}
+              dd #{account.currency} #{account.closing}
+            form(method='post', action=closePath)
+              input(type='hidden', name='_csrf', value=csrfToken)
+              input(type='hidden', name='accountId', value=account.id)
+              input(type='hidden', name='token', value=account.token)
+              label
+                input(type='checkbox', name='transactionsComplete', value='yes', required)
+                |  I have entered all transactions affecting this account through today.
+              label
+                input(type='checkbox', name='balancesMatch', value='yes', required)
+                |  I confirm this calculated current balance matches the official figure.
+              button(type='submit') Save confirmed month-end balance
+      p If a figure does not match, correct the ledger and refresh this review before confirming. Avoid editing reconciled history; corrections must use an open period.

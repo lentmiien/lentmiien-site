@@ -28,6 +28,7 @@ exports.dashboard = async (req, res, next) => {
     });
 
     res.render('accounting_dashboard', {
+      accountingCloseHref: `${req.baseUrl === '/budget' ? '/budget' : '/accounting'}/close-month/`,
       budgetSummary,
       creditSummary,
       anomalies: {

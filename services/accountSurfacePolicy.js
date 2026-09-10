@@ -9,7 +9,7 @@ const { getSoraLifecycle } = require('../utils/soraLifecycle');
 const { MIIEN_ROLE_CAPABILITY_BUNDLES } = require('../utils/miienAuthorizationPolicy');
 
 const BASE = ['dashboard.account.read', 'dashboard.preferences.write'];
-const ADMIN = ['dashboard.operations.read', 'dashboard.personal.read', 'dashboard.personal.write', 'dashboard.embedding.search'];
+const ADMIN = ['dashboard.operations.read', 'dashboard.personal.read', 'dashboard.personal.write', 'dashboard.embedding.search', 'finance.account.close'];
 const ROLE_BUNDLES = { admin: [...BASE, ...ADMIN], family: BASE, user: BASE };
 const PERSONAL_PATH = /^\/(?:accounting|budget|receipt|payroll|health)(?:\/|$)|^\/admin\/(?:life_log|minute-logger)(?:\/|$)/;
 const GROUPS = ['Chat & knowledge', 'Create & generate', 'Documents & utilities', 'Plan & household', 'Personal account', 'Content & learning', 'Operations', 'Administration'];
@@ -96,6 +96,10 @@ function allows(policy, item) {
   if (item.capability && !policy.capabilities.includes(item.capability)) return false;
   return (item.permissions || []).every(p => policy.capabilities.includes(p));
 }
+function canCloseAccounts(policy) {
+  return policy.isOwner && policy.capabilities.includes('finance.account.close')
+    && policy.capabilities.some(c => ['accounting', 'budget'].includes(c));
+}
 function bookmarkAllowed(policy, url) {
   try {
     const rawPath = decodeURIComponent(new URL(url, 'https://local.invalid').pathname);
@@ -112,4 +116,4 @@ function navigationFor(policy, settings = {}) {
     meta: item.id === 'sora' && getSoraLifecycle().generationDisabled ? 'Library · generation stopped' : null,
   })).sort((a, b) => (order.includes(a.id) ? order.indexOf(a.id) : 999) - (order.includes(b.id) ? order.indexOf(b.id) : 999));
 }
-module.exports = { BASE, ROLE_BUNDLES, GROUPS, NAVIGATION, SECTIONS, reportPersonalConfiguration, bookmarkAllowed, ownerMatches, resolvePolicy, allows, navigationFor };
+module.exports = { BASE, ROLE_BUNDLES, GROUPS, NAVIGATION, SECTIONS, reportPersonalConfiguration, bookmarkAllowed, ownerMatches, resolvePolicy, allows, canCloseAccounts, navigationFor };
