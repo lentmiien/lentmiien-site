@@ -59,6 +59,21 @@ async function ensureStorage() {
 // directories; a trusted sticky ancestor (e.g. /tmp in tests) cannot replace a
 // child owned by the app. The storage root itself must never be shared-writable.
 async function assertTrustedStorage(root, allowStickyRoot = false) {
+  if (process.platform === 'win32') {
+    // Windows stat mode bits do not represent NTFS access control. Fail closed
+    // unless the pre-provisioned tree passes a fresh native ACL inspection.
+    const { promisify } = require('util');
+    const execFile = promisify(require('child_process').execFile);
+    try {
+      await execFile(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'), [
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
+        path.join(APP_ROOT, 'scripts/assert-gpt-image-acl.ps1'), '-StoragePath', root,
+      ], { windowsHide: true, timeout: 10000, maxBuffer: 1024 });
+    } catch (_) {
+      throw storageError('GPT_IMAGE_STORAGE_PERMISSIONS');
+    }
+    return;
+  }
   let current = root;
   while (true) {
     const stat = await fsp.lstat(current);

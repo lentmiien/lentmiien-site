@@ -58,6 +58,27 @@ Edit references are supplied through the installed OpenAI SDK's multipart `image
 
 ### Startup and per-provider storage readiness
 
+On Windows, POSIX `stat.mode` bits do not describe NTFS permissions. Storage
+validation invokes `scripts/assert-gpt-image-acl.ps1` with a bounded, hidden native
+PowerShell process on each check. Provision the media root with inheritance
+disabled and access only for the service identity, SYSTEM and Administrators;
+set its owner to the service identity. Ancestors must have trusted owners
+(the service identity, SYSTEM, Administrators or Windows TrustedInstaller), no
+reparse points and no untrusted directory/child deletion or ACL/owner-changing
+grants. Creating siblings at a volume root is allowed; untrusted access to the
+media root or its future children is rejected. Null DACLs and inspection failures
+fail closed. The ordinary private write/read/delete probe still runs. Missing
+directories can only inherit an already-private parent's ACLs; pre-provisioning
+the complete path is recommended. No existing ACLs are changed by the app.
+
+Windows ACL integration tests require an explicitly provisioned trusted parent:
+set `GPT_IMAGE_WINDOWS_TEST_DIR` to that absolute directory and run
+`node node_modules/jest/bin/jest.js --runInBand --coverage=false --testPathPatterns gptImageWindowsStorage`.
+The tests create and remove only their unique temporary children. Ordinary
+Windows TEMP directories can have additional principals and are not assumed
+private. These tests cover successful probe cleanup, untrusted read/write grants
+and ancestor child-deletion rights.
+
 `app.js` starts `initializeStorage()` immediately after loading configuration/logger, before importing the database. It performs the same path and filesystem probe used by generation. It never calls OpenAI, queries models/account access, or opens MongoDB. It is an optional-feature check: failure logs an **error** under `startup:gpt_image` and leaves the rest of the site running. It does not mark the whole site unhealthy or terminate the process. This follows the app's independent feature-startup handling; operators must inspect the GPT Image startup error even if the site's database health endpoint is healthy.
 
 Every generation request checks readiness before processing references and **again immediately before each OpenAI generate/edit call**, including original-model compatibility retries. Readiness is never cached. A failed probe returns HTTP 503 with `GPT Image storage is unavailable.` (the equivalent error for tools), logs under `gpt_image`, and makes **zero subsequent provider calls**. This includes text-only generation with no uploaded references. After permissions/mount access is repaired, the next request can succeed without a process restart; changing the environment variable requires restarting every affected process. There is no public-storage fallback. Safe existing private media may still be read when only writes are unavailable; invalid paths/ownership are rejected for private reads as well.
