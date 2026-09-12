@@ -125,33 +125,56 @@ function createDashboardData({ model = name => require(`../models/${name}`), now
       const prior = new Date(Date.UTC(year, month - 2, 1));
       const begin = prior.getUTCFullYear() * 10000 + (prior.getUTCMonth() + 1) * 100 + 1;
       const current = year * 10000 + month * 100 + 1;
-      const [accounts, transactions] = await Promise.all([
-        read('account_db', {}, 'name currency balance balance_date', { _id: 1 }, 101),
-        read('transaction_db', { date: { $gte: begin, $lte: Number(day.key.replaceAll('-', '')) } }, 'amount from_fee to_fee type from_account to_account date', { date: -1, _id: -1 }, 2001),
-      ]);
-      if (accounts.length > 100 || transactions.length > 2000) return { state: 'unavailable', rows: [], note: 'Summary limit reached. Open Accounting for complete figures.' };
-      const totals = spendingByCurrency(transactions, accounts, current);
-      const olderAccounts = accounts.filter(a => accountBalances.validDate(a.balance_date) && a.balance_date < begin);
-      const older = olderAccounts.length ? await read('transaction_db', { date: { $lt: begin }, $or: olderAccounts.map(a => ({
-        date: { $gt: a.balance_date }, $or: [{ from_account: String(a._id) }, { to_account: String(a._id) }],
-      })) }, 'amount from_fee to_fee from_account to_account date', { _id: 1 }, 50001) : [];
-      if (older.length > 50000) {
-        logger.warning('Dashboard accounting balance history limit reached', { category: 'accounting' });
-        return { state: 'unavailable', rows: [], note: 'Balance history limit reached. Open Accounting for complete figures.' };
-      }
-      const balanceTransactions = [...older, ...transactions];
-      const balanceRows = accounts.map(a => {
-        try {
-          const calculated = accountBalances.balances(a, balanceTransactions, dates);
-          return row(a.name, `${a.currency} ${calculated.current} · current through ${dates.todayLabel} · baseline ${a.balance_date}`, href);
-        } catch (_) {
-          logger.warning('Dashboard account balance requires ledger review', { category: 'accounting' });
-          return row(a.name, 'Current balance unavailable. Review the baseline and ledger in Accounting.', href);
+      let stage = 'summary_read';
+      try {
+        const [accounts, transactions] = await Promise.all([
+          read('account_db', {}, 'name currency balance balance_date', { _id: 1 }, 101),
+          read('transaction_db', { date: { $gte: begin, $lte: Number(day.key.replaceAll('-', '')) } }, 'amount from_fee to_fee type from_account to_account date', { date: -1, _id: -1 }, 2001),
+        ]);
+        if (accounts.length > 100 || transactions.length > 2000) {
+          accountingWarning(stage, 'SUMMARY_LIMIT');
+          return { state: 'unavailable', rows: [], note: 'Summary limit reached. Open Accounting for complete figures.' };
         }
-      });
-      return { rows: [...totals.map(t => row(`${t.currency} ${t.current.toFixed(2)} this month`, `Prior full month ${t.prior.toFixed(2)} · difference ${(t.current - t.prior).toFixed(2)}`, href)),
-        ...balanceRows, ...(canCloseAccounts(policy) ? [row('Finalize previous month', 'Compare official balances and confirm each account.', `${href}/close-month/`)] : [])],
-      note: 'Spend includes budget expenses and both fees by payer currency; transfers and the separate credit-card ledger are excluded from spend. Current balances include all ledger movements after each baseline through today (Asia/Tokyo).' };
+        stage = 'spending';
+        let spending;
+        try {
+          spending = spendingByCurrency(transactions, accounts, current);
+        } catch (_) {
+          spending = { rows: [{ title: 'Spending summary unavailable', detail: 'Both months and comparison unavailable. Refresh to retry; if this persists, contact the operator.' }],
+            issues: [{ reasonCode: 'SPENDING_CALCULATION_FAILED' }] };
+        }
+        spending.issues.forEach(issue => accountingWarning(stage, issue.reasonCode,
+          issue.period ? { period: issue.period, affectedCount: issue.affectedCount } : {}));
+        const spendingRows = spending.rows.map(r => row(r.title, r.detail, href));
+        stage = 'balance_history_read';
+        const olderAccounts = accounts.filter(a => accountBalances.validDate(a.balance_date) && a.balance_date < begin);
+        const older = olderAccounts.length ? await read('transaction_db', { date: { $lt: begin }, $or: olderAccounts.map(a => ({
+          date: { $gt: a.balance_date }, $or: [{ from_account: String(a._id) }, { to_account: String(a._id) }],
+        })) }, 'amount from_fee to_fee from_account to_account date', { _id: 1 }, 50001) : [];
+        if (older.length > 50000) {
+          accountingWarning(stage, 'BALANCE_HISTORY_LIMIT');
+          return { state: 'unavailable', rows: [], note: 'Balance history limit reached. Open Accounting for complete figures.' };
+        }
+        stage = 'balances';
+        const balanceTransactions = [...older, ...transactions];
+        let unavailableBalances = 0;
+        const balanceRows = accounts.map(a => {
+          try {
+            const calculated = accountBalances.balances(a, balanceTransactions, dates);
+            return row(a.name, `${a.currency} ${calculated.current} · current through ${dates.todayLabel} · baseline ${a.balance_date}`, href);
+          } catch (_) {
+            unavailableBalances++;
+            return row(a.name, 'Current balance unavailable. Review the baseline and ledger in Accounting.', href);
+          }
+        });
+        if (unavailableBalances) accountingWarning(stage, 'BALANCE_REVIEW_REQUIRED', { affectedCount: unavailableBalances });
+        return { state: spending.issues.length || unavailableBalances ? 'partial' : undefined,
+          rows: [...spendingRows, ...balanceRows, ...(canCloseAccounts(policy) ? [row('Finalize previous month', 'Compare official balances and confirm each account.', `${href}/close-month/`)] : [])],
+          note: 'Spend includes expenses and both fees in the selected accounts’ shared currency; transfers and the separate credit-card ledger are excluded. Current balances include all movements after each baseline through today (Asia/Tokyo).' };
+      } catch (error) {
+        accountingWarning(stage, 'ACCOUNTING_STAGE_FAILED');
+        throw error;
+      }
     },
     async life() {
       const entries = await read('my_life_log_entry', {}, 'type label value text timestamp', { timestamp: -1, _id: -1 }, 8);
@@ -252,19 +275,74 @@ function createDashboardData({ model = name => require(`../models/${name}`), now
   }
   return { load, read };
 }
+function accountingWarning(stage, reasonCode, metadata = {}) {
+  logger.warning('Dashboard accounting summary requires review', {
+    category: 'account_dashboard', metadata: { section: 'accounting', stage, reasonCode, ...metadata },
+  });
+}
 function spendingByCurrency(transactions, accounts, monthStart) {
-  const currencies = new Map(accounts.map(a => [String(a._id), a.currency || 'Unknown currency']));
+  const currencies = new Map(accounts.map(a => [String(a._id), a.currency]));
   const totals = new Map();
+  const issues = new Map();
+  function unavailable(period, reasonCode) {
+    const key = `${period}:${reasonCode}`;
+    if (!issues.has(key)) issues.set(key, { period, reasonCode, affectedCount: 0 });
+    issues.get(key).affectedCount++;
+  }
   for (const t of transactions) {
+    // Explicit classification wins, including an expense paid by EXT.
     const type = typeof t.type === 'string' && t.type.trim() ? t.type.trim().toLowerCase() : t.from_account === 'EXT' ? 'income' : t.to_account === 'EXT' ? 'expense' : 'saving';
     if (type !== 'expense') continue;
-    const currency = currencies.get(t.from_account);
-    if (!currency || currency === 'Unknown currency') throw new Error('Expense account currency unavailable');
-    const value = Number(t.amount || 0) + Number(t.from_fee || 0) + Number(t.to_fee || 0);
-    if (!Number.isFinite(value)) throw new Error('Invalid ledger amount');
+    const period = t.date >= monthStart ? 'current' : 'prior';
+    if (t.from_account === 'EXT') {
+      unavailable(period, 'EXPENSE_EXTERNAL_PAYER');
+      continue;
+    }
+    // The entry form promises one amount in the selected accounts' currency.
+    // EXT is "Other business", not an account or a currency. Never substitute a
+    // receiver for a missing tracked payer, or invent FX for conflicting accounts.
+    const tracked = [t.from_account, t.to_account].filter(id => id !== 'EXT');
+    const selected = tracked.map(id => currencies.get(id));
+    if (!selected.length || selected.some(currency => !/^[A-Z]{3}$/.test(currency || ''))) {
+      unavailable(period, 'EXPENSE_CURRENCY_UNAVAILABLE');
+      continue;
+    }
+    if (new Set(selected).size !== 1) {
+      unavailable(period, 'EXPENSE_CURRENCY_CONFLICT');
+      continue;
+    }
+    const currency = selected[0];
+    const amounts = [t.amount, t.from_fee, t.to_fee];
+    const value = amounts.reduce((sum, amount) => sum + amount, 0);
+    if (amounts.some(amount => typeof amount !== 'number' || !Number.isFinite(amount) || Math.abs(amount) > Number.MAX_SAFE_INTEGER)
+        || !Number.isFinite(value) || Math.abs(value) > Number.MAX_SAFE_INTEGER) {
+      unavailable(period, 'EXPENSE_AMOUNT_INVALID');
+      continue;
+    }
     if (!totals.has(currency)) totals.set(currency, { currency, current: 0, prior: 0 });
-    totals.get(currency)[t.date >= monthStart ? 'current' : 'prior'] += value;
+    totals.get(currency)[period] += value;
+    if (!Number.isFinite(totals.get(currency)[period]) || Math.abs(totals.get(currency)[period]) > Number.MAX_SAFE_INTEGER) unavailable(period, 'SPENDING_TOTAL_OUT_OF_RANGE');
   }
-  return [...totals.values()];
+  const failures = [...issues.values()];
+  const missing = new Set(failures.map(issue => issue.period));
+  // Suppress the entire affected month, across currencies: an unresolved expense
+  // might belong to any bucket. Neither zero nor a difference is then meaningful.
+  const rows = [];
+  for (const period of ['current', 'prior']) {
+    if (missing.has(period)) rows.push({ title: 'Spending summary unavailable',
+      detail: `${period === 'current' ? 'This month' : 'Prior full month'}: review expense types, payer accounts, currencies and amounts in Accounting. Comparison unavailable.` });
+  }
+  for (const total of totals.values()) {
+    if (!missing.size) rows.push({ title: `${total.currency} ${total.current.toFixed(2)} this month`,
+      detail: `Prior full month ${total.prior.toFixed(2)} · difference ${(total.current - total.prior).toFixed(2)}` });
+    else for (const period of ['current', 'prior']) {
+      if (!missing.has(period)) rows.push({ title: `${total.currency} ${total[period].toFixed(2)} ${period === 'current' ? 'this month' : 'prior full month'}`,
+        detail: 'Comparison unavailable.' });
+    }
+  }
+  if (!totals.size) for (const period of ['current', 'prior']) {
+    if (!missing.has(period)) rows.push({ title: period === 'current' ? 'This month spending' : 'Prior full month spending', detail: 'No expenses recorded.' });
+  }
+  return { rows, issues: failures };
 }
 module.exports = { createDashboardData, tokyoDay, freshness, spendingByCurrency };

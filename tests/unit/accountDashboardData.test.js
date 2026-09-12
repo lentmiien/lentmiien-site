@@ -83,9 +83,10 @@ test('financial semantics include both fees, exclude transfers/income and keep c
   const accounts = [{ _id: 'jpy', currency: 'JPY' }, { _id: 'usd', currency: 'USD' }];
   const base = { from_account: 'jpy', to_account: 'EXT', amount: 100, from_fee: 2, to_fee: 3, date: 20260907 };
   expect(spendingByCurrency([base, { ...base, date: 20260810, amount: 50 }, { ...base, from_account: 'usd', amount: 10 },
-    { ...base, type: 'saving' }, { ...base, type: 'income' }, { ...base, type: 'transfer' }], accounts, 20260901)).toEqual([
-    { currency: 'JPY', current: 105, prior: 55 }, { currency: 'USD', current: 15, prior: 0 },
-  ]);
+    { ...base, type: 'saving' }, { ...base, type: 'income' }, { ...base, type: 'transfer' }], accounts, 20260901)).toEqual({ issues: [], rows: [
+    { title: 'JPY 105.00 this month', detail: 'Prior full month 55.00 · difference 50.00' },
+    { title: 'USD 15.00 this month', detail: 'Prior full month 0.00 · difference 15.00' },
+  ] });
 });
 
 test('disaster fallback remains regional and absence is never an all-clear', async () => {
@@ -99,6 +100,132 @@ test('disaster fallback remains regional and absence is never an all-clear', asy
 
 const ledgerAccount = (id, date = 20260831) => ({ _id: id, name: `Synthetic ${id}`, currency: 'USD', balance: 100, balance_date: date });
 const movement = (id, date, amount) => ({ _id: `${id}-${date}`, date, amount, from_account: id, to_account: 'EXT', from_fee: 1, to_fee: 0, type: 'expense' });
+const externalExpense = (date = 20260902) => ({ ...movement('EXT', date, 25), to_account: 'a', from_fee: 0 });
+const supportedExpense = (date = 20260902) => ({ ...movement('a', date, 25), from_fee: 0 });
+const logger = require('../../utils/logger');
+
+test.each([false, true])('invalid external-payer expense preserves balances and tasks with pending closes=%s', async pending => {
+  fixtures.account_db = [ledgerAccount('a', pending ? 20260731 : 20260831)];
+  fixtures.transaction_db = filter => filter.date.$lt ? [] : [externalExpense()];
+  const p = await policy(owner, 'admin', ['accounting', 'scheduletask']);
+  const result = await data.load('accounting', p);
+  expect(result.state).toBe('partial');
+  expect(result.rows[0].title).toBe('Spending summary unavailable');
+  expect(result.rows.find(r => r.title === 'Synthetic a').detail).toContain('USD 125 · current');
+  expect(result.rows.some(r => r.href === '/accounting/close-month/')).toBe(true);
+  expect((await data.load('tasks', p)).rows).toHaveLength(pending ? 1 : 0);
+  expect(logger.warning.mock.calls[0][1].metadata.reasonCode).toBe('EXPENSE_EXTERNAL_PAYER');
+});
+
+test.each([{ transactions: [] }, { transactions: [movement('a', 20260901, 10)] }])('finalized accounts with empty/populated ledgers stay ready %#', async ({ transactions }) => {
+  fixtures.account_db = [ledgerAccount('a')]; fixtures.transaction_db = transactions;
+  const p = await policy(owner, 'admin', ['accounting', 'scheduletask']);
+  const result = await data.load('accounting', p);
+  expect(result.state).toBe('ready');
+  expect(result.rows.find(r => r.title === 'Synthetic a').detail).toContain(`USD ${transactions.length ? 89 : 100} · current`);
+  expect((await data.load('tasks', p)).rows).toEqual([]);
+});
+
+test('external representation preserves explicit classification, fees, same-currency accounts and signed amounts', () => {
+  const base = externalExpense();
+  const result = spendingByCurrency([
+    { ...base, from_account: 'b', type: ' ExPeNsE ', from_fee: 2, to_fee: 3 },
+    { ...base, type: '' }, { ...base, type: 'income' }, { ...base, type: 'saving' },
+    { ...base, from_account: 'b', amount: -5 },
+  ], [ledgerAccount('a'), ledgerAccount('b')], 20260901);
+  expect(result).toEqual({ issues: [], rows: [{ title: 'USD 25.00 this month', detail: 'Prior full month 0.00 · difference 25.00' }] });
+});
+
+test.each([
+  [{ from_account: 'missing' }, 'EXPENSE_CURRENCY_UNAVAILABLE'],
+  [{ from_account: 'EXT' }, 'EXPENSE_EXTERNAL_PAYER'],
+  [{ to_account: 'missing' }, 'EXPENSE_CURRENCY_UNAVAILABLE'],
+  [{ to_account: 'jpy' }, 'EXPENSE_CURRENCY_CONFLICT'],
+  [{ amount: NaN }, 'EXPENSE_AMOUNT_INVALID'],
+  [{ amount: Infinity }, 'EXPENSE_AMOUNT_INVALID'],
+  [{ amount: '25' }, 'EXPENSE_AMOUNT_INVALID'],
+  [{ from_fee: undefined }, 'EXPENSE_AMOUNT_INVALID'],
+])('unresolved expenses never become a zero or a partial total %#', (changes, reasonCode) => {
+  const result = spendingByCurrency([supportedExpense(), { ...supportedExpense(), ...changes }],
+    [ledgerAccount('a'), { ...ledgerAccount('jpy'), currency: 'JPY' }], 20260901);
+  expect(result.issues).toEqual([{ period: 'current', reasonCode, affectedCount: 1 }]);
+  expect(result.rows[0].title).toBe('Spending summary unavailable');
+  expect(JSON.stringify(result.rows)).not.toMatch(/25.00|difference|0.00 this month/);
+});
+
+test.each(['current', 'prior', 'both'])('month availability and comparisons remain honest: %s', async missing => {
+  fixtures.account_db = [ledgerAccount('a')];
+  fixtures.transaction_db = [supportedExpense(), supportedExpense(20260831)];
+  for (const [period, date] of [['current', 20260901], ['prior', 20260801]]) {
+    if (missing === period || missing === 'both') fixtures.transaction_db.push(externalExpense(date));
+  }
+  const p = await policy(owner, 'admin', ['accounting', 'scheduletask']);
+  const result = await data.load('accounting', p);
+  expect(result.state).toBe('partial');
+  expect(result.rows.filter(r => r.title === 'Spending summary unavailable')).toHaveLength(missing === 'both' ? 2 : 1);
+  const serialized = JSON.stringify(result.rows);
+  expect(serialized).not.toContain('difference');
+  expect(serialized.includes('USD 25.00 this month')).toBe(missing === 'prior');
+  expect(serialized.includes('USD 25.00 prior full month')).toBe(missing === 'current');
+  expect(result.rows.find(r => r.title === 'Synthetic a').detail).toContain(`USD ${missing === 'prior' ? 75 : 100} · current`);
+  expect((await data.load('tasks', p)).rows).toEqual([]);
+  expect(result.rows.some(r => r.href === '/accounting/close-month/')).toBe(true);
+});
+
+test('spending failures aggregate safe diagnostics without record values or identifiers', async () => {
+  fixtures.account_db = [ledgerAccount('a')];
+  fixtures.transaction_db = [0, 1].map(() => ({ ...externalExpense(), from_account: 'private-account-id', _id: 'private-transaction-id', amount: 987654, tags: 'private text' }));
+  await data.load('accounting', await policy(owner, 'admin', ['accounting']));
+  expect(logger.warning.mock.calls).toEqual([['Dashboard accounting summary requires review', {
+    category: 'account_dashboard', metadata: { section: 'accounting', stage: 'spending', reasonCode: 'EXPENSE_CURRENCY_UNAVAILABLE', period: 'current', affectedCount: 2 },
+  }]]);
+});
+
+test('unexpected spending exception leaves valid balances and close action available', async () => {
+  fixtures.account_db = [ledgerAccount('a')];
+  const entry = externalExpense();
+  Object.defineProperty(entry, 'type', { get() { throw new Error('private exception content'); } });
+  fixtures.transaction_db = [entry];
+  const result = await data.load('accounting', await policy(owner, 'admin', ['accounting']));
+  expect(result.state).toBe('partial');
+  expect(result.rows[0]).toMatchObject({ title: 'Spending summary unavailable' });
+  expect(result.rows.find(r => r.title === 'Synthetic a').detail).toContain('USD 125 · current');
+  expect(result.rows.some(r => r.href === '/accounting/close-month/')).toBe(true);
+  expect(logger.warning.mock.calls[0][1].metadata).toEqual({ section: 'accounting', stage: 'spending', reasonCode: 'SPENDING_CALCULATION_FAILED' });
+  expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('private exception content');
+});
+
+test.each(['summary_read', 'balance_history_read'])('read failure remains a failure with safe stage: %s', async stage => {
+  fixtures.account_db = [ledgerAccount('a', 20220101)];
+  fixtures.transaction_db = filter => {
+    if (stage === 'summary_read' || filter.date.$lt) throw new Error('private database content');
+    return [];
+  };
+  await expect(data.load('accounting', await policy(owner, 'admin', ['accounting']))).rejects.toThrow();
+  expect(logger.warning.mock.calls).toEqual([['Dashboard accounting summary requires review', {
+    category: 'account_dashboard', metadata: { section: 'accounting', stage, reasonCode: 'ACCOUNTING_STAGE_FAILED' },
+  }]]);
+});
+
+test.each([
+  ['2026-08-31T14:59:59Z', 20260701, 20260831, 20260801],
+  ['2026-08-31T15:00:00Z', 20260801, 20260901, 20260901],
+  ['2026-12-31T15:00:00Z', 20261201, 20270101, 20270101],
+  ['2028-02-29T14:59:59Z', 20280101, 20280229, 20280201],
+  ['2028-02-29T15:00:00Z', 20280201, 20280301, 20280301],
+])('spending window and balances use Tokyo date boundaries at %s', async (instant, begin, today, monthStart) => {
+  data = createDashboardData({ model, now: () => new Date(instant) });
+  fixtures.account_db = [ledgerAccount('a', begin)];
+  const ledger = [supportedExpense(begin - 1), supportedExpense(begin), supportedExpense(today), supportedExpense(today + 1)];
+  fixtures.transaction_db = filter => ledger.filter(t => t.date >= filter.date.$gte && t.date <= filter.date.$lte);
+  const result = await data.load('accounting', await policy(owner, 'admin', ['accounting']));
+  expect(calls.find(c => c.name === 'transaction_db').filter).toEqual({ date: { $gte: begin, $lte: today } });
+  expect(result.state).toBe('ready');
+  expect(result.rows[0]).toMatchObject({ title: 'USD 25.00 this month', detail: 'Prior full month 25.00 · difference 0.00' });
+  expect(result.rows.find(r => r.title === 'Synthetic a').detail).toContain('USD 75 · current');
+  expect(today).toBeGreaterThanOrEqual(monthStart);
+});
+
 test('closed accounts reuse spend transactions with no extra history read and include transfers in balances only', async () => {
   fixtures.account_db = [ledgerAccount('a'), ledgerAccount('b')];
   fixtures.transaction_db = [movement('a', 20260831, 20), movement('a', 20260901, 10),
@@ -125,7 +252,8 @@ test('history truncation and invalid baseline never masquerade as current balanc
   expect((await data.load('accounting', await policy(owner, 'admin', ['accounting']))).state).toBe('unavailable');
   fixtures.account_db = [ledgerAccount('a', 20260931)]; fixtures.transaction_db = [];
   const result = await data.load('accounting', await policy(owner, 'admin', ['accounting']));
-  expect(result.rows[0].detail).toContain('Current balance unavailable');
+  expect(result.rows.find(r => r.title === 'Synthetic a').detail).toContain('Current balance unavailable');
+  expect(result.state).toBe('partial');
 });
 test('automatic reminders require owner/capability, are per account, and cannot be marked complete', async () => {
   fixtures.account_db = [ledgerAccount('a', 20220101), ledgerAccount('b', 20260731), ledgerAccount('c')];

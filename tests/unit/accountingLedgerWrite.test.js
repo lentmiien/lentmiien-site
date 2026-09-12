@@ -1,5 +1,5 @@
 jest.mock('../../models/accounting_write_lock', () => ({ create: jest.fn(), deleteOne: jest.fn() }));
-jest.mock('../../models/account_db', () => ({ exists: jest.fn(), deleteOne: jest.fn() }));
+jest.mock('../../models/account_db', () => ({ find: jest.fn(), exists: jest.fn(), deleteOne: jest.fn() }));
 jest.mock('../../models/transaction_db', () => ({ findById: jest.fn(), deleteOne: jest.fn() }));
 jest.mock('../../utils/logger', () => ({ warning: jest.fn(), error: jest.fn() }));
 const Lock = require('../../models/accounting_write_lock');
@@ -8,10 +8,14 @@ const Transaction = require('../../models/transaction_db');
 const logger = require('../../utils/logger');
 const ledger = require('../../services/accountingLedgerWrite');
 const id = '111111111111111111111111';
-const tx = { from_account: id, to_account: 'EXT', date: 20260831, save: jest.fn(async () => 'saved') };
-const query = value => ({ maxTimeMS: async () => value });
+const tx = { from_account: id, to_account: 'EXT', date: 20260831, type: 'expense', amount: 10, from_fee: 0, to_fee: 0, validate: jest.fn(async () => {}), save: jest.fn(async () => 'saved') };
+const query = value => {
+  const q = { maxTimeMS: async () => value, select: () => q, limit: () => q, lean: () => q };
+  return q;
+};
 beforeEach(() => {
   Lock.create.mockResolvedValue({}); Lock.deleteOne.mockReturnValue(query({ deletedCount: 1 }));
+  Account.find.mockReturnValue(query([{ _id: id, currency: 'USD' }]));
   Account.exists.mockReturnValue(query(null)); Transaction.deleteOne.mockReturnValue(query({ deletedCount: 1 }));
   Account.deleteOne.mockReturnValue(query({ deletedCount: 1 }));
   Transaction.findById.mockReturnValue({ lean: () => query(tx) });
@@ -20,6 +24,68 @@ test('insert holds a token-scoped lock and releases it after save', async () => 
   expect(await ledger.insertTransaction(tx)).toBe('saved');
   expect(Account.exists).toHaveBeenCalledWith({ _id: { $in: [id] }, closedThrough: { $gte: 20260831 } });
   expect(Lock.deleteOne).toHaveBeenCalledWith({ _id: 'ledger', token: Lock.create.mock.calls[0][0].token });
+});
+test.each(['expense', 'Expense', ' EXPENSE '])('external payer %s is rejected before lock/write with safe corrective feedback', async type => {
+  const document = { ...tx, from_account: 'EXT', to_account: id, type };
+  const error = await ledger.insertTransaction(document).catch(e => e);
+  expect(error).toMatchObject({ status: 422, expose: true, message: expect.stringContaining('income') });
+  expect(Lock.create).not.toHaveBeenCalled(); expect(document.save).not.toHaveBeenCalled();
+  expect(Account.find).not.toHaveBeenCalled();
+  expect(logger.warning.mock.calls).toEqual([['Accounting transaction input rejected', {
+    category: 'accounting', metadata: { stage: 'transaction_validation', reasonCode: 'EXPENSE_EXTERNAL_PAYER' },
+  }]]);
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  require('../../middleware/errorHandler')(logger)(error, { originalUrl: '/accounting/api/transaction', get: () => 'application/json' }, res, jest.fn());
+  expect(res.status).toHaveBeenCalledWith(422);
+  expect(res.json).toHaveBeenCalledWith({ error: expect.stringContaining('tracked payer account') });
+});
+test('corrected Income is accepted with external payer and tracked receiver', async () => {
+  expect(await ledger.insertTransaction({ ...tx, from_account: 'EXT', to_account: id, type: 'income' })).toBe('saved');
+  expect(Account.find).toHaveBeenCalledWith({ _id: { $in: [id] } });
+  expect(Lock.deleteOne).toHaveBeenCalledTimes(1);
+});
+test.each([{ date: 20260229 }, { date: 20260931 }, { amount: Infinity }, { amount: NaN }, { from_fee: undefined },
+  { amount: 1e-21 }, { amount: Number.MAX_SAFE_INTEGER + 1 }, { from_account: 'missing' }, { type: '' }, { type: 'expenses' }])('invalid ledger input fails without taking a lock %#', async changes => {
+  await expect(ledger.insertTransaction({ ...tx, ...changes })).rejects.toMatchObject({ status: 422, expose: true });
+  expect(tx.save).not.toHaveBeenCalled(); expect(Lock.create).not.toHaveBeenCalled();
+});
+test('schema validation failure is sanitized and never strands the lock', async () => {
+  await expect(ledger.insertTransaction({ ...tx, validate: async () => { throw new Error('private model values'); } })).rejects.toMatchObject({ status: 422 });
+  expect(Lock.create).not.toHaveBeenCalled(); expect(tx.save).not.toHaveBeenCalled();
+  expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('private model values');
+});
+test('actual Mongoose documents validate before save without opening a database connection', async () => {
+  const Model = jest.requireActual('../../models/transaction_db');
+  const input = { from_account: 'EXT', to_account: id, type: 'income', date: 20260901, amount: 25, from_fee: 0, to_fee: 0,
+    transaction_business: 'Synthetic business', categories: 'Synthetic category', tags: 'synthetic' };
+  const valid = new Model(input); valid.save = jest.fn(async () => valid);
+  await expect(ledger.insertTransaction(valid)).resolves.toBe(valid);
+  const invalid = new Model({ ...input, tags: undefined }); invalid.save = jest.fn();
+  await expect(ledger.insertTransaction(invalid)).rejects.toMatchObject({ status: 422, message: 'Check all required transaction fields and their formats.' });
+  expect(invalid.save).not.toHaveBeenCalled();
+  expect(Lock.create).toHaveBeenCalledTimes(1);
+});
+test.each([{ accounts: [] }, { accounts: [{ _id: id, currency: '' }] }])('missing account/currency releases lock and rejects save %#', async ({ accounts }) => {
+  Account.find.mockReturnValue(query(accounts));
+  await expect(ledger.insertTransaction(tx)).rejects.toMatchObject({ status: 422 });
+  expect(tx.save).not.toHaveBeenCalled(); expect(Lock.deleteOne).toHaveBeenCalledTimes(1);
+});
+test('conflicting currencies fail; supported same-currency transfer retains fees and decimals', async () => {
+  const receiver = '222222222222222222222222';
+  Account.find.mockReturnValue(query([{ _id: id, currency: 'USD' }, { _id: receiver, currency: 'JPY' }]));
+  const transfer = { ...tx, to_account: receiver, type: 'saving', amount: 1.25, from_fee: 0.05, to_fee: 0.1 };
+  await expect(ledger.insertTransaction(transfer)).rejects.toMatchObject({ status: 422, message: expect.stringContaining('one currency') });
+  expect(tx.save).not.toHaveBeenCalled(); expect(Lock.deleteOne).toHaveBeenCalledTimes(1);
+  Account.find.mockReturnValue(query([{ _id: id, currency: 'USD' }, { _id: receiver, currency: 'USD' }]));
+  await expect(ledger.insertTransaction(transfer)).resolves.toBe('saved');
+  expect(transfer).toMatchObject({ amount: 1.25, from_fee: 0.05, to_fee: 0.1 });
+});
+test('account lookup failure is read-only, releases lock, and hides database content', async () => {
+  const q = query([]); q.maxTimeMS = async () => { throw new Error('private database content'); };
+  Account.find.mockReturnValue(q);
+  await expect(ledger.insertTransaction(tx)).rejects.toMatchObject({ status: 503 });
+  expect(tx.save).not.toHaveBeenCalled(); expect(Lock.deleteOne).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('private database content');
 });
 test('closed history insert/delete and finalized account deletion fail without changing data', async () => {
   Account.exists.mockReturnValue(query({ _id: id }));

@@ -15,7 +15,7 @@ async function fixture() {
   return { win, form: win.document.querySelector('form'), button: win.document.querySelector('button') };
 }
 afterEach(() => dom?.window.close());
-test.each(['busy', 'closed', 'network', 'unconfirmed'])('rejected insert preserves input and never reports saved: %s', async failure => {
+test.each(['busy', 'closed', 'validation', 'network', 'unconfirmed'])('rejected insert preserves input and never reports saved: %s', async failure => {
   const { win, form } = await fixture();
   form.elements.amount.value = '25';
   const reset = jest.spyOn(form, 'reset');
@@ -27,7 +27,7 @@ test.each(['busy', 'closed', 'network', 'unconfirmed'])('rejected insert preserv
   expect(form.elements.amount.value).toBe('25');
   expect(win.alert).toHaveBeenCalledTimes(1);
   expect(win.alert).not.toHaveBeenCalledWith('saved!');
-  if (['busy', 'closed'].includes(failure)) expect(win.alert).toHaveBeenCalledWith(`${failure} ledger`);
+  if (['busy', 'closed', 'validation'].includes(failure)) expect(win.alert).toHaveBeenCalledWith(`${failure} ledger`);
 });
 test.each(['busy', 'closed', 'network', 'unconfirmed'])('rejected delete keeps row and restores button: %s', async failure => {
   const { win, button } = await fixture();

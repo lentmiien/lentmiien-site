@@ -380,5 +380,6 @@ test('dashboard expense calculation matches existing accounting fee/type semanti
   mockCreditCardTransaction.find.mockReturnValue(chainResolved([]));
   const analytics = await service.getAnalytics({ scope: 'group', value: 'Fixture' });
   const dashboard = spendingByCurrency(rows, [{ _id: 'account', currency: 'JPY' }], 20260901);
-  expect(dashboard[0].current).toBe(analytics.summary.totalSpend);
+  expect(dashboard.issues).toEqual([]);
+  expect(dashboard.rows[0].title).toBe(`JPY ${analytics.summary.totalSpend.toFixed(2)} this month`);
 });

@@ -79,6 +79,18 @@ test('a failed card returns a generic error and the next card still works', asyn
   expect(failed.status).toBe(503); expect(await failed.text()).not.toContain('provider secret');
   expect((await fetch(`${base}/mypage/api/cards/jobs`)).status).toBe(200);
 });
+test('authorized partial accounting response stays uncached and distinct from a failed card', async () => {
+  principal.type_user = 'admin'; grants = ['accounting'];
+  data.load.mockResolvedValueOnce({ state: 'partial', rows: [
+    { title: 'Spending summary unavailable', detail: 'Review expense types in Accounting.', href: '/accounting' },
+    { title: 'Synthetic account', detail: 'USD 125 · current', href: '/accounting' },
+  ] });
+  const response = await fetch(`${base}/mypage/api/cards/accounting`);
+  expect(response.status).toBe(200);
+  expect(response.headers.get('cache-control')).toContain('private, no-store');
+  expect(await response.json()).toMatchObject({ ok: true, state: 'partial', rows: expect.arrayContaining([{ title: 'Synthetic account', detail: 'USD 125 · current', href: '/accounting' }]) });
+  expect(userModel.updateOne).not.toHaveBeenCalled();
+});
 
 test('Life Log mutation checks owner and CSRF before loading a record model', async () => {
   principal.type_user = 'admin'; principal._id = '222222222222222222222222';

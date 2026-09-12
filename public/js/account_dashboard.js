@@ -93,7 +93,7 @@
       const data = await request(`/mypage/api/cards/${id}`);
       if (!data.ok) throw new Error('Invalid card response');
       card.dataset.state = data.state;
-      status.textContent = ({ empty: 'Nothing here yet', stale: 'Last-known data · check freshness', unavailable: 'Not available yet' })[data.state]
+      status.textContent = ({ empty: 'Nothing here yet', partial: 'Some summaries unavailable · see details', stale: 'Last-known data · check freshness', unavailable: 'Not available yet' })[data.state]
         || `Updated ${new Intl.DateTimeFormat('en', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' }).format(new Date(data.fetchedAt))}`;
       renderRows(card, data); card.querySelector('.account-card-note').textContent = data.note || '';
       if (id === 'life' && !card.querySelector('.account-card-data').dataset.panelLoaded) {

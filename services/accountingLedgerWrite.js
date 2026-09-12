@@ -3,6 +3,7 @@ const Lock = require('../models/accounting_write_lock');
 const Account = require('../models/account_db');
 const Transaction = require('../models/transaction_db');
 const logger = require('../utils/logger');
+const { decimal, validDate } = require('../utils/accountBalances');
 
 // Only explicit application rejections prove there is no in-flight mutation.
 // A status code or driver error alone cannot prove that a write did not commit.
@@ -51,8 +52,46 @@ async function assertOpen(transaction) {
   if (closed) throw conflict('This transaction affects a finalized period. Historical transactions are preserved; use an open-period correction.');
 }
 async function insertTransaction(document) {
+  // Validate before taking the non-expiring write lock. A rejected form is not an
+  // uncertain database write and must never prevent the next valid submission.
+  const invalid = (reasonCode, message) => {
+    logger.warning('Accounting transaction input rejected', { category: 'accounting', metadata: { stage: 'transaction_validation', reasonCode } });
+    return rejection(message, 422);
+  };
+  const type = typeof document.type === 'string' ? document.type.trim().toLowerCase() : '';
+  if (!['income', 'expense', 'saving', 'transfer'].includes(type)) {
+    throw invalid('TRANSACTION_TYPE_INVALID', 'Select Income, Expense or Saving/Transfer as the transaction type.');
+  }
+  if (type === 'expense' && document.from_account === 'EXT') {
+    throw invalid('EXPENSE_EXTERNAL_PAYER', 'An expense must have a tracked payer account. Review the transaction type and payer; money received from an external business is income.');
+  }
+  document.type = type;
+  if (!validDate(document.date)) throw invalid('TRANSACTION_DATE_INVALID', 'Enter a valid transaction date.');
+  try {
+    for (const field of ['amount', 'from_fee', 'to_fee']) decimal(document[field]);
+  } catch (_) { throw invalid('TRANSACTION_AMOUNT_INVALID', 'Enter finite amounts and fees within the supported ledger range and precision.'); }
+  try { await document.validate(); }
+  catch (_) { throw invalid('TRANSACTION_FIELDS_INVALID', 'Check all required transaction fields and their formats.'); }
+  const accountIds = [...new Set([document.from_account, document.to_account].filter(id => id !== 'EXT'))];
+  if (!accountIds.length || accountIds.some(id => typeof id !== 'string' || !/^[a-f\d]{24}$/.test(id))) {
+    throw invalid('TRANSACTION_ACCOUNTS_INVALID', 'Select a tracked account and valid payer and receiver accounts.');
+  }
   return withLedgerWrite(async () => {
     await assertOpen(document);
+    let accounts;
+    try {
+      accounts = await Account.find({ _id: { $in: accountIds } }).select('_id currency').limit(2).lean().maxTimeMS(2000);
+    } catch (_) {
+      // Only reads have run; releasing this lock is safe. Never expose driver data.
+      logger.warning('Accounting transaction account validation unavailable', { category: 'accounting', metadata: { stage: 'transaction_validation', reasonCode: 'ACCOUNT_LOOKUP_FAILED' } });
+      throw rejection('Account validation unavailable. Retry shortly.', 503);
+    }
+    if (accounts.length !== accountIds.length || accounts.some(account => !/^[A-Z]{3}$/.test(account.currency || ''))) {
+      throw invalid('TRANSACTION_CURRENCY_UNAVAILABLE', 'A selected account is missing or has an invalid currency. Review the accounts before saving.');
+    }
+    if (new Set(accounts.map(account => account.currency)).size !== 1) {
+      throw invalid('TRANSACTION_CURRENCY_CONFLICT', 'The selected accounts must share one currency. This transaction form does not support currency conversion.');
+    }
     return document.save();
   });
 }

@@ -8,8 +8,7 @@ function el() {
     classList: { add: jest.fn(), remove: jest.fn() }, focus: jest.fn(), showModal: jest.fn(), close: jest.fn(),
   };
 }
-function fixture() {
-  const ids = ['chats', 'agenda', 'cooking', 'jobs', 'ask', 'codex', 'runpod', 'tapo', 'models', 'gateway'];
+function fixture(ids = ['chats', 'agenda', 'cooking', 'jobs', 'ask', 'codex', 'runpod', 'tapo', 'models', 'gateway']) {
   const cards = ids.map(id => {
     const card = el(); card.dataset.section = id;
     const children = Object.fromEntries(['account-card-content', 'account-card-state', 'account-card-data', 'account-card-note', 'account-collapse', 'account-refresh'].map(c => [`.${c}`, el()]));
@@ -40,6 +39,25 @@ test('loads at most four cards concurrently and never requests hidden/collapsed 
   const urls = f.fetch.mock.calls.map(c => c[0]);
   for (const id of ['tapo', 'models', 'gateway', 'codex']) expect(urls).not.toContain(`/mypage/api/cards/${id}`);
   f.pending.slice(4).forEach(answer); await flush();
+});
+test('partial accounting renders the inline warning, balance and close link; refresh replaces them', async () => {
+  const f = fixture(['accounting']); const card = f.cards[0];
+  f.pending[0].resolve({ ok: true, json: async () => ({ ok: true, state: 'partial', rows: [
+    { title: 'Spending summary unavailable', detail: 'This month: review expense types in Accounting. Comparison unavailable.', href: '/accounting' },
+    { title: 'Synthetic account', detail: 'USD 125 · current', href: '/accounting' },
+    { title: 'Finalize previous month', detail: 'Compare official balances.', href: '/accounting/close-month/' },
+  ] }) });
+  await flush();
+  expect(card.dataset.state).toBe('partial');
+  expect(card.querySelector('.account-card-state').textContent).toBe('Some summaries unavailable · see details');
+  const rows = card.querySelector('.account-card-data').children[0].children;
+  expect(rows[0].children[0].textContent).toBe('Spending summary unavailable');
+  expect(rows[1].children[1].textContent).toBe('USD 125 · current');
+  expect(rows[2].children[0].href).toBe('/accounting/close-month/');
+  card.querySelector('.account-refresh').handlers.click();
+  answer(f.pending.at(-1)); await flush();
+  expect(card.dataset.state).toBe('empty');
+  expect(card.querySelector('.account-card-data').children[0].children).toEqual([]);
 });
 test('card failure does not break queue; expansion loads its card once and refresh retries', async () => {
   const f = fixture();

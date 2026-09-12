@@ -85,9 +85,118 @@ admin queued/running operations without provider helpers.
 
 Accounting reports ledger expenses including payer/receiver fees, by payer currency, and
 compares this month to the prior full month. Transfers and separate card ledgers are excluded
-from spending to avoid double counting. Balances are **recorded, dated snapshots**, not
-reconstructed current balances. Open Accounting for full reconciliation and card analysis.
-No cross-currency grand total is invented.
+from spending to avoid double counting. Current balances reconstruct all movements strictly
+after each dated baseline through today in Asia/Tokyo, using `utils/accountBalances.js`.
+No cross-currency grand total or currency conversion is invented.
+
+### Transaction validation and spending failure isolation
+
+An external payment was mistakenly classified as Expense instead of Income. The previous
+spending helper required a tracked payer currency and threw before balance rows could render.
+The card route returned a generic 503, so one bad spending row hid otherwise valid balances.
+Zero pending finalizations and month-end boundaries were not responsible. Monthly close
+updates account baselines/history, never transaction types or amounts.
+
+Contract evidence and the maintained rule:
+
+- `transaction_db` stores one amount and payer/receiver fees, account references and a type;
+  it has no transaction currency, exchange rate or separate converted amount.
+- The legacy entry form labels `EXT` as **Other business** on either side. Its amount label
+  assumes the selected accounts share a currency; type is independently selectable. The
+  REST form also permits independent account/type selection. Neither previously enforced
+  that an expense needs a tracked payer. The owner confirmed the incident was misclassified
+  Income; receiving money from `EXT` must not be silently treated as an expense in the
+  receiver's currency.
+- Explicit types take precedence. With no explicit type, existing readers infer income
+  for an external payer, expense for an external receiver, otherwise saving/transfer.
+  Income and saving/transfer are excluded from spending, but all types affect account
+  balances according to their payer/receiver direction. Supported spending includes both
+  fees and remains separated by currency; two selected tracked accounts must agree.
+- `budgetService.getSummary()` uses the explicit expense classification and sums amount
+  plus both fees without a payer currency lookup or per-currency grouping. That explains
+  why `/accounting` could still load; it does not establish that a conflicting entry is
+  correct or make its mixed-currency aggregate comparable to this card.
+- Both `budgetService.insertTransaction()` (REST aliases `/accounting/api/transaction`
+  and `/budget/api/transaction`) and `budgetcontroller.add_transaction_post()` (legacy)
+  use `accountingLedgerWrite.insertTransaction()`. It now rejects Expense with `EXT` payer
+  with HTTP 422 and a fixed explanation to review type/payer. It accepts Income, Expense
+  and Saving/Transfer types (normalizing case/whitespace) and also validates the
+  normalized document's date, numeric range/precision and required schema fields before
+  acquiring the lock. Existing form coercion is unchanged (the legacy form uses integers).
+  Tracked references must be valid IDs and resolve to accounts with one valid shared
+  currency, checked under the existing write lock with at most two accounts and a 2s
+  query timeout. Validation never guesses or rewrites transaction classification.
+- Field errors take no lock; account/currency rejections release the lock without saving.
+  Existing finalized-period checks and uncertain-write lock retention remain in force.
+  Separate credit-card CSV imports write another ledger and are unchanged. No generic
+  transaction import route exists in the inventoried application. Future writers must use
+  this writer; direct database writes bypass application validation.
+
+For inconsistent existing expenses (external payer, unresolved/conflicting currencies or
+invalid amounts), the card returns HTTP 200 with `state: partial` and a bounded **Spending
+summary unavailable** row naming the affected month and directing review in Accounting.
+The entire affected month's spending is suppressed across all currencies; the other month
+may be shown, but no difference is calculated unless both are complete. Unknown totals
+are never displayed as zero. Unexpected spending exceptions also produce an unavailable
+spending section. Valid balances and the close-review link remain visible; automatic
+per-account tasks remain independently derived and can correctly be empty. Invalid balance
+rows explicitly remain unavailable and mark the card partial. Database failures and query
+limits still fail visibly; truncated ledgers never become complete figures.
+
+Diagnostics use fixed messages with `stage`, `reasonCode` and (for known spending issues)
+`period: current|prior` and aggregate `affectedCount`. Stages distinguish `summary_read`,
+`spending`, `balance_history_read`, `balances` and write `transaction_validation`. Reasons
+include `EXPENSE_EXTERNAL_PAYER`, `EXPENSE_CURRENCY_UNAVAILABLE`,
+`EXPENSE_CURRENCY_CONFLICT`, `EXPENSE_AMOUNT_INVALID`, `SPENDING_TOTAL_OUT_OF_RANGE`,
+`SPENDING_CALCULATION_FAILED`, `BALANCE_REVIEW_REQUIRED`, query limits and
+`ACCOUNTING_STAGE_FAILED`. Writer reasons distinguish invalid date/amount/fields/accounts,
+missing/conflicting currency and lookup failure. Logs contain no record IDs, names, values,
+raw errors or database payloads. There is one diagnostic per affected period/reason per
+manual card load, rather than per transaction.
+
+This is maintenance within the existing logged-in security contract: existing surface/tool
+capabilities, configured personal-owner binding, private/no-store responses, escaped DOM
+rendering, request limits and legacy write-route authorization remain unchanged. No routes,
+mutation authority, migrations, dependencies, configuration or live-data corrections are
+introduced. The existing legacy mutation controls are not rebuilt by this patch.
+
+Release verification (operator steps; not performed against production during development):
+
+1. In an isolated staging ledger, submit an external-payer Expense through each enabled
+   REST alias and the legacy form. Expect 422 guidance, no transaction/business creation
+   and no retained write lock. The REST form must retain inputs. Correct only Type to
+   Income and confirm one acknowledged save and the expected receiver balance. Also test
+   normal expenses, same-currency transfers and rejected missing/conflicting currencies.
+2. Release the reviewed commit using the normal service process. No migration is required.
+   Do not invoke `npm start` as a smoke test: its prestart runs maintenance/sync. Restart
+   existing application processes through the established release procedure so adapters
+   and the content-hashed dashboard script are refreshed together.
+3. Live read-only: sign in as the configured entitled owner, refresh `/mypage` Accounting
+   and inspect `GET /mypage/api/cards/accounting`. The already corrected ledger should
+   return 200/ready with correct dated balances and spending. Zero pending close tasks
+   is valid. Open the close review only; do not confirm it or create test transactions.
+4. Check production logs for the new fixed stages/reasons. If a partial state remains,
+   review the indicated month/type/currency issue through authorized read-only tools;
+   do not assume missing spending is zero or auto-correct records. Confirm another admin
+   still receives 403 for the personal card and the API remains private/no-store.
+5. In staging with synthetic inconsistent history, verify the warning, intact valid
+   balances/close link and honest one-sided/two-sided comparisons on desktop and mobile.
+   Rollback is code-only to the previous release; it removes input protection and restores
+   the old whole-card failure behavior, but requires no financial-data rollback.
+
+Regression coverage uses synthetic records, actual Mongoose validation without a database
+connection, mocked persistence, HTTP route tests and DOM rendering/refresh tests. It covers
+external-payer Expense rejection/Income acceptance, safe lock release, finalized empty and
+populated ledgers, month comparisons, fees/currencies, Tokyo midnight/month/year/leap-day
+boundaries and sanitized logs.
+
+Release validation, 2026-09-12: Node 24.20.0 via Volta. Focused dashboard, ledger,
+close, business and controller tests passed (`npm test -- --runInBand --coverage=false`
+with the relevant `tests/unit/` paths). The final `volta run --node 24.20.0 npm test --
+--runInBand` passed: 294 suites / 2,989 tests; 1 suite / 4 tests skipped. All configured
+coverage thresholds passed (71.78% statements, 50% branches, 80.79% functions, 72.64%
+lines). `git diff --check` passed. Live financial data, deployment and real browser
+screenshots were not part of verification; UI rendering/refresh was checked with DOM tests.
 
 Recent jobs merge at most ten rows from each selected entitled source into ten stable rows.
 GPT Image outputs are grouped by generation ID. ASR/GPT Image and Music are saved histories;
@@ -151,7 +260,7 @@ For form script revisions, CSRF diagnostics and the protected-form audit, see
 Validation uses synthetic records and mocked integrations. Production app startup, live
 records and providers are intentionally not part of the test run.
 
-## Validation for this change
+## Original dashboard rollout validation
 
 Node 24.20.0 via Volta. Full Jest run with coverage passed (253 suites / 1,939 tests). Required coverage thresholds passed:
 67.35% statements, 43.72% branches, 77.56% functions, 67.98% lines for the configured

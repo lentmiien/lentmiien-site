@@ -18,7 +18,8 @@
 .account-collapse[aria-expanded='false']::after { content: ' +'; }
 .account-card-content { padding: 0 1.2rem 1.2rem; }
 .account-card-state { color: var(--text-muted); font-size: .78rem; min-height: 1.3rem; }
-.account-card[data-state='stale'] .account-card-state { color: var(--warning); }
+.account-card[data-state='stale'] .account-card-state,
+.account-card[data-state='partial'] .account-card-state { color: var(--warning); }
 .account-card[data-state='error'] .account-card-state, .is-error { color: var(--danger); }
 .account-rows { list-style: none; padding: 0; margin: .4rem 0; max-height: 350px; overflow-y: auto; overscroll-behavior: contain; }
 .account-row { display: flex; flex-direction: column; padding: .65rem 0; border-bottom: 1px solid var(--divider); gap: .18rem; overflow-wrap: anywhere; }
