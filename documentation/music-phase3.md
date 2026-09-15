@@ -98,6 +98,12 @@ reviewed contract. ACE retains instrumental/BPM/language/duration/LM controls
 and adds bounded synthesis steps/guidance/batching. YuE2 never receives those
 fields, even false values.
 
+Each provider retains its own seed when switching in either direction,
+including a blank random seed and explicit zero. Manual, AI and Infinity form
+submissions omit a blank seed and preserve explicit decimal values exactly.
+Restoring settings never converts seed strings through JavaScript numbers;
+the existing server input range validation still applies.
+
 YuE2 requires singing lyrics; full/melody/none planning, optional ABC, FLAC/WAV
 and a current testing duration **ceiling** of 8–30 seconds (default 20) are
 available. This is not a target length or a whole-model inherent limit. Blank
@@ -159,6 +165,9 @@ variables, dependencies, migrations or system-wide installs are required.
    displayed/persisted model, seed, format, settings/provenance and actual
    duration/cropping. Repeat YuE2 with WAV and an omitted seed; do not infer
    deterministic GPU output merely from seed preservation.
+   Before submitting, check blank ACE seed → YuE2 seed 123 → ACE restores
+   blank, and repeat with the providers reversed. Check zero and the largest
+   accepted input seed (9007199254740991) also survive switching exactly.
 6. Play, pause and seek native FLAC and WAV on target devices using the
    authenticated Site URLs. Check HEAD has no body; range requests return 206
    with correct Content-Range; unsatisfiable ranges return 416. Play a historical
@@ -192,7 +201,7 @@ variables, dependencies, migrations or system-wide installs are required.
   YuE2 playback remains unavailable until that release is restored. Never
   destructively migrate paths to work around a rollback.
 
-## Development verification (2026-09-16)
+## Initial development verification (2026-09-16)
 
 - Pinned Node 24.20.0, no dependency or lockfile changes.
 - Focused music/security/dashboard/OpenAI checks: 16 suites, 208 tests passed.
@@ -206,7 +215,42 @@ variables, dependencies, migrations or system-wide installs are required.
   device/browser playback verification occurred. Gateway worktree stayed clean
   at `27e4ab2`.
 
-### Main implementation files
+## Seed regression verification (2026-09-16)
+
+This follow-up fixes blank seed restoration after switching providers and
+omits blank seeds from manual, AI and Infinity submissions. It supersedes the
+initial Site release candidate `448c832378125ac9848db73f1c381531e0b46f07`;
+release the follow-up commit containing this fix through the main-chat approval
+workflow. No deployment or Ask Lennart call was made.
+
+- Added 72 tests: repeated switching in both directions for blank, zero, 123,
+  maximum safe input and larger exact decimal seeds; serialized requests for
+  both providers/pages and all three submission modes; safe input acceptance
+  and fractional/malformed/unsafe input rejection. Larger restored decimal
+  strings remain exact, but are still rejected as new input above the safe limit.
+- Before implementation, the new UI suite reproduced 14 blank-seed failures.
+  A separate new test initially assumed the existing server rejects scientific
+  notation; it was corrected to test fractional input without changing validation.
+- Final focused run: 11 suites, 253 tests passed; zero skipped or failed.
+  Coverage was disabled for this focused run because its unrelated global
+  coverage targets are checked by the full suite.
+- Final full run: 300 suites passed, one skipped; 3186 tests passed, four skipped,
+  zero failures. All configured coverage thresholds passed. The skipped suite
+  is the existing opt-in Windows private-media ACL suite, unavailable on Linux.
+- Both runs used Node 24.20.0 and emitted only the expected experimental VM
+  modules warning. `git diff --check` passed. No dependencies, configuration or
+  migrations changed. No production actions, GPU inference or actual browser
+  testing were performed.
+
+Exact final commands:
+
+```sh
+volta run --node 24.20.0 npm test -- --runInBand --coverage=false tests/unit/musicUi.test.js tests/unit/musicGatewayService.test.js tests/unit/musicIntegration.test.js tests/unit/musicJobs.test.js tests/unit/musicOutputProxy.test.js tests/unit/musicDashboard.test.js tests/unit/adminRoleManagement.test.js tests/unit/sessionCsrf.test.js tests/unit/authorization.test.js tests/unit/openaiApiConversion.test.js tests/unit/templateService.test.js
+volta run --node 24.20.0 npm test -- --runInBand
+git diff --check
+```
+
+## Main implementation files
 
 - `services/musicGatewayService.js`, `utils/losslessJson.js`: shared discovery,
   provider validation, transport budgeting, confined output listing and exact seeds.

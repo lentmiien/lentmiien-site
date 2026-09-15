@@ -456,6 +456,7 @@
     state.submitting = true;
     try {
     const formData = new FormData(generateForm);
+    if (formData.get('seed') === '') formData.delete('seed');
     if (form === aiForm) formData.set('direction', aiDirectionInput.value);
     // An unchecked checkbox must override a Gateway default of true too.
     if (!document.getElementById('music-ace-controls').disabled) formData.set('instrumental', document.getElementById('instrumental').checked ? 'true' : 'false');

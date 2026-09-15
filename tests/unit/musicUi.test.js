@@ -14,7 +14,8 @@ function setup({ admin = false, catalog } = {}) {
   for (const file of ['music_controls.js', 'music_library.js']) vm.runInContext(fs.readFileSync('public/js/' + file, 'utf8'), dom.getInternalVMContext());
   return dom.window.document;
 }
-function selectYue(document) { const el = document.getElementById('music-model'); el.value = 'yue2-3b'; el.dispatchEvent(new dom.window.Event('change')); }
+function selectModel(document, model) { const el = document.getElementById('music-model'); el.value = model; el.dispatchEvent(new dom.window.Event('change')); }
+function selectYue(document) { selectModel(document, 'yue2-3b'); }
 const flush = () => new Promise(resolve => setImmediate(resolve));
 test('model selection updates caption length, required lyrics, format/defaults and gates ACE controls', () => {
   const d = setup(); expect(d.getElementById('caption').maxLength).toBe(512);
@@ -33,6 +34,43 @@ test('switching models preserves each model’s settings without copying ACE opt
   const el = d.getElementById('music-model'); el.value = 'ace-step-1.5-xl-turbo'; el.dispatchEvent(new dom.window.Event('change'));
   expect(d.getElementById('duration').value).toBe('100'); expect(d.getElementById('caption').maxLength).toBe(512);
   selectYue(d); expect(d.getElementById('max_duration').value).toBe('12');
+});
+describe.each(['ace-step-1.5-xl-turbo', 'yue2-3b'])('seed settings for %s', model => {
+  const otherModel = model === 'yue2-3b' ? 'ace-step-1.5-xl-turbo' : 'yue2-3b';
+  test.each(['', '0', '123', '9007199254740991', '9223372036854775807'])('restores seed %p exactly across repeated switches', seed => {
+    const d = setup(); selectModel(d, model);
+    const input = d.getElementById('music-seed'); input.value = seed;
+    selectModel(d, otherModel); input.value = '456';
+    for (let i = 0; i < 2; i++) {
+      selectModel(d, model); expect(input.value).toBe(seed);
+      selectModel(d, otherModel); expect(input.value).toBe('456');
+    }
+  });
+  describe.each([false, true])('submission for admin=%s', admin => {
+    test.each(['manual', 'ai', 'infinity'].flatMap(mode => ['', '0', '123', '9007199254740991'].map(seed => [mode, seed])))('%s serializes restored seed %p', async (mode, seed) => {
+      const d = setup({ admin }); selectModel(d, model);
+      d.getElementById('music-seed').value = seed;
+      selectModel(d, otherModel); d.getElementById('music-seed').value = '456';
+      selectModel(d, model); d.getElementById('lyrics').value = '[Verse]\nA boat sails home';
+      if (mode === 'infinity') {
+        const toggle = d.getElementById('infinity-toggle'); toggle.checked = true;
+        toggle.dispatchEvent(new dom.window.Event('change'));
+      } else {
+        d.getElementById(mode === 'manual' ? 'music-generate-form' : 'music-ai-form').dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+      }
+      await flush();
+      const calls = dom.window.fetch.mock.calls.filter(([url]) => url.includes('/generate'));
+      expect(calls).toHaveLength(1);
+      const [url, options] = calls[0]; const body = new URLSearchParams(String(options.body));
+      expect(url).toBe('https://site.invalid' + (admin ? '/admin/music-test' : '/music') + (mode === 'manual' ? '/generate' : '/generate-ai'));
+      expect(options.method).toBe('POST'); expect(body.get('model')).toBe(model);
+      expect(body.has('seed')).toBe(seed !== ''); expect(body.get('seed')).toBe(seed === '' ? null : seed);
+      expect(body.has('background')).toBe(mode === 'infinity');
+      expect(body.get('_csrf')).toBe('A'.repeat(43));
+      expect(body.has('max_duration')).toBe(model === 'yue2-3b');
+      expect(body.has('instrumental')).toBe(model !== 'yue2-3b');
+    });
+  });
 });
 test.each([false, true])('AI submission keeps current generator/controls for admin=%s', async admin => {
   const d = setup({ admin }); selectYue(d); d.getElementById('max_duration').value = '12'; d.getElementById('ai-direction').value = 'folk';

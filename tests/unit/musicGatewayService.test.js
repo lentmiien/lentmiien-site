@@ -31,6 +31,14 @@ test.each(['thinking', 'instrumental', 'load', 'params', 'config', 'load_llm', '
 test.each([null, true, -1, '9223372036854775807', 1.5, '2junk'])('rejects invalid or unsafe YuE2 input seed %p', seed => {
   expect(() => validate(yue({ seed }), catalog())).toThrow();
 });
+describe.each([ACE, YUE])('input seed validation for %s', model => {
+  test.each(['0', '123', '9007199254740991'])('accepts exact safe decimal seed %s', seed => {
+    expect(String(validate(yue({ model, seed }), catalog()).payload.seed)).toBe(seed);
+  });
+  test.each(['1.5', '2junk', '9007199254740992', '9223372036854775807'])('rejects malformed or unsafe seed %s', seed => {
+    expect(() => validate(yue({ model, seed }), catalog())).toThrow();
+  });
+});
 test.each([{ lyrics: '' }, { lyrics: '  ' }, { caption: 'a'.repeat(2001) }, { lyrics: 'a'.repeat(6001) }, { caption: '界'.repeat(2000), lyrics: '界'.repeat(4000) }, { max_duration: 31 }, { max_duration: 7 }, { max_duration: 20.5 }, { max_duration: 20, max_duration_seconds: 21 }, { cot: 'none', abc: 'C D' }, { abc: '界'.repeat(1400) }, { timeout_sec: 1831 }, { audio_format: 'mp3' }, { model: null }, { model_id: ACE }])('rejects invalid YuE2 contract %p', fields => {
   expect(() => validate(yue(fields), catalog())).toThrow();
 });

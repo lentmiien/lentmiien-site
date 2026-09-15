@@ -23,7 +23,7 @@
       const el = form.elements[name];
       if (!el || ['model', 'caption', 'lyrics', '_csrf'].includes(name)) continue;
       if (el.type === 'checkbox') el.checked = Boolean(value);
-      else if (name !== 'seed' || /^\d+$/.test(String(value))) el.value = value ?? '';
+      else if (name !== 'seed' || /^\d*$/.test(String(value ?? ''))) el.value = value ?? '';
     }
     if (!snapshots.has(model.id)) form.elements.seed.value = '';
     const caption = form.elements.caption;
