@@ -1103,6 +1103,7 @@
       try {
         const response = await fetch(`/admin/ai-gateway/containers/${encodeURIComponent(id)}/${action}`, {
           method: 'POST',
+          headers: { 'X-CSRF-Token': payload.csrfToken },
         });
         const data = await readJsonResponse(response);
         applyContainerResponse(data);
@@ -1150,7 +1151,7 @@
         try {
           const response = await fetch('/admin/ai-gateway/containers/reset-defaults', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': payload.csrfToken },
             body: JSON.stringify({ restart_running: true, wait: false }),
           });
           const data = await readJsonResponse(response);
@@ -1322,7 +1323,7 @@
       try {
         const response = await fetch('/admin/ai-gateway/reservation', {
           cache: 'no-store',
-          headers: { Accept: 'application/json' },
+          headers: { Accept: 'application/json', 'X-CSRF-Token': payload.csrfToken },
         });
         const data = await readJsonResponse(response);
         updateReservationUI(data.reservation, { syncForm });
@@ -1364,7 +1365,7 @@
         try {
           const response = await fetch('/admin/ai-gateway/reservation', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': payload.csrfToken },
             body: JSON.stringify({
               container_id: containerId,
               idle_timeout_sec: idleTimeoutSec,
@@ -1398,7 +1399,7 @@
         try {
           const response = await fetch('/admin/ai-gateway/reservation', {
             method: 'DELETE',
-            headers: { Accept: 'application/json' },
+            headers: { Accept: 'application/json', 'X-CSRF-Token': payload.csrfToken },
           });
           const data = await readJsonResponse(response);
           updateReservationUI(data.reservation, { syncForm: true });
@@ -1484,7 +1485,7 @@
       try {
         const response = await fetch('/admin/ai-gateway/auto-stop', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': payload.csrfToken },
           body: JSON.stringify({ enabled }),
         });
         const data = await response.json().catch(() => ({}));
@@ -1581,7 +1582,7 @@
       try {
         const response = await fetch('/admin/ai-gateway/monitor', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': payload.csrfToken },
           body: JSON.stringify({ folder }),
         });
         const data = await response.json().catch(() => ({}));
@@ -1656,7 +1657,7 @@
       try {
         const response = await fetch('/admin/ai-gateway/gpu', {
           cache: 'no-store',
-          headers: { Accept: 'application/json' },
+          headers: { Accept: 'application/json', 'X-CSRF-Token': payload.csrfToken },
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {

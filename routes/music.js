@@ -1,16 +1,17 @@
 const express = require('express');
+const { rateLimit } = require('express-rate-limit');
 const router = express.Router();
-
 const controller = require('../controllers/musiccontroller');
-
+const { requireMusic, CAPABILITIES, csrf, boundedBody } = require('../middleware/musicAccess');
+router.use(requireMusic(CAPABILITIES.read), express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '64kb', parameterLimit: 30 }), csrf.issueToken);
+const generationLimit = rateLimit({ windowMs: 60000, limit: 5, keyGenerator: req => String(req.user._id), standardHeaders: 'draft-8', legacyHeaders: false });
 router.get('/', controller.music_page);
-router.post('/generate', controller.music_generate);
-router.post('/generate-ai', controller.music_generate_ai);
-router.get('/status/:id', controller.music_status);
+router.post('/generate', requireMusic(CAPABILITIES.generate), csrf.requireToken, boundedBody, generationLimit, controller.music_generate);
+router.post('/generate-ai', requireMusic(CAPABILITIES.generate), csrf.requireToken, boundedBody, generationLimit, controller.music_generate_ai);
+router.get('/status/:id', requireMusic(CAPABILITIES.generate), controller.music_status);
 router.get('/output', controller.music_output);
 router.get('/library', controller.music_library_list);
 router.get('/library/random', controller.music_library_random);
-router.post('/library/:id/rating', controller.music_library_rate);
-router.post('/library/:id/played', controller.music_library_played);
-
+router.post('/library/:id/rating', requireMusic(CAPABILITIES.write), csrf.requireToken, boundedBody, controller.music_library_rate);
+router.post('/library/:id/played', requireMusic(CAPABILITIES.write), csrf.requireToken, boundedBody, controller.music_library_played);
 module.exports = router;

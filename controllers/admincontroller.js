@@ -1,3 +1,5 @@
+const { normalizeCatalog: normalizeMusicCatalog, sanitizeMetadata: sanitizeMusicMetadata, modelLimits: musicModelLimits, SPEC: MUSIC_SPECS } = require('../services/musicGatewayService');
+const { parseLosslessJson } = require('../utils/losslessJson');
 const axios = require('axios');
 const bcrypt = require('bcryptjs');
 const FormData = require('form-data');
@@ -102,6 +104,10 @@ const routes = [
   "scheduletask",
   "image_gen",
   "music",
+  "music.library.read",
+  "music.library.write",
+  "music.generation.create",
+  "music.gateway.manage",
   "sora",
   "binpacking",
   "ocr",
@@ -579,51 +585,6 @@ const TTS_KEYWORDS = {
     '(groaning)', '(crowd laughing)', '(background laughter)', '(audience laughing)',
   ],
 };
-const MUSIC_API_BASE = AI_GATEWAY_BASE_URL;
-const MUSIC_GENERATE_ENDPOINT = '/music/acestep15/generate';
-const MUSIC_OUTPUTS_ENDPOINT = '/music/acestep15/outputs';
-const MUSIC_OUTPUT_ENDPOINT = '/music/acestep15/output';
-const MUSIC_HEALTH_ENDPOINT = '/music/acestep15/health';
-const MUSIC_STATE_ENDPOINT = '/music/acestep15/state';
-const MUSIC_DEFAULT_TIMEOUT_SEC = 7200;
-const MUSIC_MIN_TIMEOUT_SEC = 60;
-const MUSIC_MAX_TIMEOUT_SEC = 14400;
-const MUSIC_TIMEOUT_BUFFER_MS = 30 * 1000;
-const MUSIC_OUTPUT_TIMEOUT_MS = 10 * 60 * 1000;
-const MUSIC_OUTPUTS_DEFAULT_LIMIT = 20;
-const MUSIC_OUTPUTS_MAX_LIMIT = 200;
-const MUSIC_CAPTION_MAX_LENGTH = 512;
-const MUSIC_LYRICS_MAX_LENGTH = 4096;
-const MUSIC_BPM_MIN = 30;
-const MUSIC_BPM_MAX = 300;
-const MUSIC_DURATION_MIN = 10;
-const MUSIC_DURATION_MAX = 600;
-const MUSIC_VOCAL_LANGUAGES = [
-  'unknown',
-  'en',
-  'ja',
-  'es',
-  'fr',
-  'de',
-  'it',
-  'pt',
-  'ko',
-  'zh',
-];
-const MUSIC_DEFAULT_FORM = Object.freeze({
-  caption: 'Ambient techno with soft pads',
-  lyrics: '',
-  instrumental: false,
-  bpm: null,
-  vocalLanguage: 'unknown',
-  durationSec: 0,
-  timeoutSec: MUSIC_DEFAULT_TIMEOUT_SEC,
-  loadLlm: true,
-  llmBackend: 'vllm',
-});
-const MUSIC_JOB_RETENTION_MS = 60 * 60 * 1000;
-const musicJobs = new Map();
-
 function normalizeDbStatus(status) {
   const normalized = String(status || '').toLowerCase();
   return DB_FEEDBACK_STATUSES.has(normalized) ? normalized : null;
@@ -1907,6 +1868,7 @@ const GATEWAY_ROUTE_LABELS = {
   ocr: 'OCR',
   tts: 'TTS',
   comfy_run: 'ComfyUI Run',
+  music_generate: 'Music Generate',
   music_acestep15_generate: 'ACE-Step Generate',
   music_acestep15_load: 'ACE-Step Load',
   music_acestep15_health: 'ACE-Step Health',
@@ -2174,6 +2136,7 @@ function normalizeLogEntry(rawEntry) {
     upstreamDurationSec,
     backend: rawEntry.backend,
     model: rawEntry.model,
+    provider: rawEntry.provider,
     language: rawEntry.language,
     voiceId: rawEntry.voice_id,
     textChars: asNumber(rawEntry.text_chars),
@@ -2721,6 +2684,7 @@ function buildMusicLogStats(entries) {
 
   return {
     sampleCount: entries.length,
+    models: [...new Set(entries.map(entry => entry.model || 'unknown (historical)'))].map(model => ({ model, count: entries.filter(entry => (entry.model || 'unknown (historical)') === model).length })),
     avgVramDeltaBytes: vramDeltaStats?.average || null,
     avgVramDeltaDisplay: vramDeltaStats?.average !== null && vramDeltaStats?.average !== undefined
       ? formatBytes(vramDeltaStats.average)
@@ -2756,7 +2720,7 @@ function buildGatewayLogInsights(logEntries) {
   const ttsEntries = logs.filter((entry) => entry.route === 'tts');
   const llmEntries = logs.filter((entry) => (entry.route || '').startsWith('llm'));
   const ocrEntries = logs.filter((entry) => entry.route === 'ocr');
-  const musicEntries = logs.filter((entry) => entry.route === 'music_acestep15_generate');
+  const musicEntries = logs.filter((entry) => ['music_generate', 'music_acestep15_generate'].includes(entry.route));
   const comfyEntries = logs.filter((entry) => entry.route === 'comfy_run');
 
   return {
@@ -3604,6 +3568,21 @@ function buildAiGatewayDashboard(rawData) {
   const ocrTimingChartData = buildGatewayOcrTimingChartData(logInsights);
   const ttsChartData = buildGatewayTtsChartData(logInsights);
   const limits = normalizeGatewayLimits(rawData.limits);
+  let musicCatalog = null;
+  let musicDiscoveryNote = 'Music discovery is unavailable. Saved tracks remain playable.';
+  if (rawData.errors?.musicModels?.startsWith('404')) musicDiscoveryNote = 'Older Gateway release: /music/models is unsupported (404). Deploy Gateway Phase 2 before expecting YuE2; container cards remain the actual registry.';
+  if (rawData.musicModels) {
+    try { musicCatalog = normalizeMusicCatalog(rawData.musicModels); musicDiscoveryNote = musicCatalog.note; }
+    catch (_) { musicDiscoveryNote = 'Gateway returned an invalid music catalog.'; }
+  }
+  const musicLimits = rawData.limits?.music ? sanitizeMusicMetadata({ ...rawData.limits.music, models: Object.entries(rawData.limits.music.models || {}).map(([id, spec]) => ({ id, ...spec })), enabled: Object.entries(rawData.limits.music.enabled || {}).map(([id, enabled]) => ({ id, enabled })) }) : null;
+  if (musicLimits && Array.isArray(musicLimits.models)) {
+    for (const model of musicLimits.models) {
+      if (!MUSIC_SPECS[model.id]) continue;
+      try { model.limits = musicModelLimits(model.id, rawData.limits.music.models[model.id].limits); }
+      catch (_) { model.limits = null; }
+    }
+  }
   const autoStop = normalizeGatewayAutoStop(rawData.autoStop);
   const checkpoints = normalizeGatewayCheckpoints(rawData.checkpoints);
   const containers = normalizeGatewayContainers(rawData.containers, rawData.health);
@@ -3726,6 +3705,9 @@ function buildAiGatewayDashboard(rawData) {
     gpu,
     waiters,
     limits,
+    musicCatalog,
+    musicDiscoveryNote,
+    musicLimits,
     autoStop,
     checkpoints,
     containers,
@@ -3754,6 +3736,7 @@ exports.ai_gateway_dashboard = async (req, res) => {
     { key: 'metricsText', path: AI_GATEWAY_ENDPOINTS.metrics, responseType: 'text' },
     { key: 'gpu', path: AI_GATEWAY_ENDPOINTS.gpu },
     { key: 'limits', path: AI_GATEWAY_ENDPOINTS.limits },
+    { key: 'musicModels', path: '/music/models' },
     { key: 'health', path: AI_GATEWAY_ENDPOINTS.health },
     { key: 'reservation', path: AI_GATEWAY_ENDPOINTS.reservation },
     { key: 'containers', path: AI_GATEWAY_ENDPOINTS.containers, admin: true },
@@ -3767,7 +3750,8 @@ exports.ai_gateway_dashboard = async (req, res) => {
     `${AI_GATEWAY_BASE_URL}${endpoint.path}`,
     {
       timeout: AI_GATEWAY_TIMEOUT_MS,
-      responseType: endpoint.responseType || 'json',
+      responseType: ['musicModels', 'limits'].includes(endpoint.key) ? 'text' : endpoint.responseType || 'json',
+      ...(['musicModels', 'limits'].includes(endpoint.key) ? { transformResponse: [parseLosslessJson], maxContentLength: 1024 * 1024, maxRedirects: 0 } : {}),
       headers: endpoint.admin ? buildAiGatewayAdminHeaders() : undefined,
       validateStatus: (status) => isAiGatewayDashboardStatusAccepted(endpoint.key, status),
     },
@@ -3780,8 +3764,8 @@ exports.ai_gateway_dashboard = async (req, res) => {
       rawData[key] = result.value.data;
     } else {
       const message = result.reason?.response?.status
-        ? `${result.reason.response.status} ${result.reason.response.statusText || ''}`.trim()
-        : result.reason?.message || 'Request failed.';
+        ? `${result.reason.response.status} Gateway endpoint unavailable.`
+        : 'Gateway endpoint could not be reached.';
       rawData.errors[key] = message;
       logger.warning('Failed to fetch AI gateway endpoint', {
         category: 'ai_gateway',
@@ -4063,20 +4047,22 @@ exports.ai_gateway_container_action = async (req, res) => {
   const action = typeof req.params.action === 'string' ? req.params.action.trim() : '';
   const allowedActions = ['start', 'stop', 'restart'];
 
-  if (!id) {
-    return res.status(400).json({ ok: false, error: 'Container id is required.' });
+  if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) {
+    return res.status(400).json({ ok: false, error: 'Valid container id is required.' });
   }
   if (!allowedActions.includes(action)) {
     return res.status(400).json({ ok: false, error: 'Unsupported container action.' });
   }
 
+  const operationTimeoutMs = action === 'stop' ? 120000 : 900000;
   try {
     const gatewayPath = `${AI_GATEWAY_ENDPOINTS.containers}/${encodeURIComponent(id)}/${action}`;
     const response = await axios.post(
       `${AI_GATEWAY_BASE_URL}${gatewayPath}`,
       buildGatewayContainerActionBody(req.body),
       {
-        timeout: AI_GATEWAY_TIMEOUT_MS,
+        timeout: operationTimeoutMs,
+        maxRedirects: 0,
         headers: buildAiGatewayAdminHeaders(),
       },
     );
@@ -4116,7 +4102,7 @@ exports.ai_gateway_container_action = async (req, res) => {
     });
   } catch (error) {
     const status = error?.response?.status || 502;
-    const message = buildAiGatewayErrorMessage(error, `Unable to ${action || 'update'} AI gateway container.`);
+    const message = error?.response ? `Gateway container operation failed (${status}). Refresh status before manually trying again.` : 'Container operation outcome is uncertain. Refresh status before manually trying again; no retry was sent.';
 
     logger.warning('Failed to update AI gateway container state', {
       category: 'ai_gateway',
@@ -6145,628 +6131,6 @@ exports.tts_test_status = (req, res) => {
     result: job.result,
     error: job.error,
   });
-};
-
-function defaultMusicForm() {
-  return { ...MUSIC_DEFAULT_FORM };
-}
-
-function parseOptionalBoolean(raw) {
-  if (raw === undefined || raw === null || raw === '') {
-    return null;
-  }
-  if (typeof raw === 'boolean') {
-    return raw;
-  }
-  const normalized = String(raw).toLowerCase();
-  if (['true', '1', 'yes', 'on'].includes(normalized)) {
-    return true;
-  }
-  if (['false', '0', 'no', 'off'].includes(normalized)) {
-    return false;
-  }
-  return null;
-}
-
-function normalizeMusicTimeout(raw) {
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return MUSIC_DEFAULT_TIMEOUT_SEC;
-  }
-  if (parsed < MUSIC_MIN_TIMEOUT_SEC) {
-    return MUSIC_MIN_TIMEOUT_SEC;
-  }
-  if (parsed > MUSIC_MAX_TIMEOUT_SEC) {
-    return MUSIC_MAX_TIMEOUT_SEC;
-  }
-  return parsed;
-}
-
-function normalizeMusicText(raw, maxLength) {
-  if (typeof raw !== 'string') {
-    return '';
-  }
-  const trimmed = raw.trim();
-  if (trimmed.length > maxLength) {
-    return trimmed.slice(0, maxLength);
-  }
-  return trimmed;
-}
-
-function normalizeMusicBpm(raw) {
-  if (raw === undefined || raw === null || raw === '') {
-    return null;
-  }
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) {
-    return null;
-  }
-  if (parsed < MUSIC_BPM_MIN) {
-    return MUSIC_BPM_MIN;
-  }
-  if (parsed > MUSIC_BPM_MAX) {
-    return MUSIC_BPM_MAX;
-  }
-  return parsed;
-}
-
-function normalizeMusicDuration(raw) {
-  if (raw === undefined || raw === null || raw === '') {
-    return 0;
-  }
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) {
-    return 0;
-  }
-  if (parsed <= 0) {
-    return 0;
-  }
-  if (parsed < MUSIC_DURATION_MIN) {
-    return MUSIC_DURATION_MIN;
-  }
-  if (parsed > MUSIC_DURATION_MAX) {
-    return MUSIC_DURATION_MAX;
-  }
-  return parsed;
-}
-
-function normalizeMusicVocalLanguage(raw) {
-  const value = typeof raw === 'string' ? raw.trim() : '';
-  if (!value) {
-    return 'unknown';
-  }
-  if (MUSIC_VOCAL_LANGUAGES.includes(value)) {
-    return value;
-  }
-  return 'unknown';
-}
-
-function normalizeMusicForm(body = {}) {
-  const caption = normalizeMusicText(body.caption, MUSIC_CAPTION_MAX_LENGTH);
-  const lyrics = normalizeMusicText(body.lyrics, MUSIC_LYRICS_MAX_LENGTH);
-  const instrumental = parseCheckbox(body.instrumental);
-  const bpm = normalizeMusicBpm(body.bpm);
-  const vocalLanguage = normalizeMusicVocalLanguage(body.vocal_language ?? body.vocalLanguage);
-  const durationSec = normalizeMusicDuration(body.duration ?? body.duration_sec ?? body.durationSec);
-  const timeoutSec = normalizeMusicTimeout(body.timeout_sec ?? body.timeoutSec);
-  const loadLlm = parseOptionalBoolean(body.load_llm ?? body.loadLlm);
-  const llmBackendRaw = typeof body.llm_backend === 'string'
-    ? body.llm_backend
-    : (typeof body.llmBackend === 'string' ? body.llmBackend : '');
-  const llmBackend = llmBackendRaw.trim();
-
-  return {
-    caption,
-    lyrics,
-    instrumental,
-    bpm,
-    vocalLanguage,
-    durationSec,
-    timeoutSec,
-    loadLlm,
-    llmBackend,
-  };
-}
-
-function normalizeMusicOutputsQuery(query = {}) {
-  const jobId = typeof query.job_id === 'string' ? query.job_id.trim() : '';
-  const pageRaw = Number.parseInt(query.page, 10);
-  const limitRaw = Number.parseInt(query.limit, 10);
-  const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
-  let limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : MUSIC_OUTPUTS_DEFAULT_LIMIT;
-  if (limit > MUSIC_OUTPUTS_MAX_LIMIT) {
-    limit = MUSIC_OUTPUTS_MAX_LIMIT;
-  }
-
-  return { jobId, page, limit };
-}
-
-function shouldFetchMusicOutputs(query = {}) {
-  if (!query || typeof query !== 'object') {
-    return false;
-  }
-  const hasJobId = typeof query.job_id === 'string' && query.job_id.trim();
-  const hasPage = query.page !== undefined;
-  const hasLimit = query.limit !== undefined;
-  const wantsFetch = parseCheckbox(query.fetch);
-  return Boolean(hasJobId || hasPage || hasLimit || wantsFetch);
-}
-
-function buildMusicRequestUrl(endpoint) {
-  try {
-    return new URL(endpoint, MUSIC_API_BASE).toString();
-  } catch (error) {
-    return `${MUSIC_API_BASE}${endpoint}`;
-  }
-}
-
-function buildMusicGeneratePayload(form) {
-  const payload = {
-    caption: form.caption,
-    timeout_sec: form.timeoutSec,
-  };
-  if (form.lyrics) {
-    payload.lyrics = form.lyrics;
-  }
-  if (form.instrumental) {
-    payload.instrumental = true;
-  }
-  if (form.loadLlm === true) {
-    payload.thinking = true;
-  }
-  if (typeof form.bpm === 'number') {
-    payload.bpm = form.bpm;
-  }
-  if (form.vocalLanguage) {
-    payload.vocal_language = form.vocalLanguage;
-  }
-  if (typeof form.durationSec === 'number') {
-    payload.duration = form.durationSec;
-  }
-  const load = {};
-  if (form.loadLlm !== null) {
-    load.load_llm = form.loadLlm;
-  }
-  if (form.llmBackend) {
-    load.llm_backend = form.llmBackend;
-  }
-  if (Object.keys(load).length) {
-    payload.load = load;
-  }
-  return payload;
-}
-
-function buildMusicOutputsResponse(data) {
-  if (!data || typeof data !== 'object') {
-    return null;
-  }
-  const items = Array.isArray(data.items) ? data.items : [];
-  return {
-    ok: data.ok,
-    root: data.root || null,
-    jobId: data.job_id || null,
-    total: data.total ?? null,
-    page: data.page ?? null,
-    limit: data.limit ?? null,
-    pages: data.pages ?? null,
-    items: items.map((item) => {
-      const viewPath = item.path ? `/admin/music-test/output?path=${encodeURIComponent(item.path)}` : null;
-      return {
-        name: item.name || item.path || 'output',
-        path: item.path || null,
-        sizeBytes: item.size_bytes ?? null,
-        sizeLabel: typeof item.size_bytes === 'number' ? formatBytes(item.size_bytes) : null,
-        modifiedLabel: item.modified_ts ? new Date(item.modified_ts * 1000).toLocaleString('en-US') : null,
-        viewUrl: viewPath,
-      };
-    }),
-  };
-}
-
-async function fetchMusicOutputs(query) {
-  const requestUrl = buildMusicRequestUrl(MUSIC_OUTPUTS_ENDPOINT);
-  const params = {
-    page: query.page,
-    limit: query.limit,
-  };
-  if (query.jobId) {
-    params.job_id = query.jobId;
-  }
-
-  try {
-    const response = await axios.get(requestUrl, { params, timeout: AI_GATEWAY_TIMEOUT_MS });
-    await recordApiDebugLog({
-      functionName: 'music_test_outputs',
-      requestUrl,
-      requestBody: params,
-      responseHeaders: response.headers || null,
-      responseBody: response.data,
-    });
-    return buildMusicOutputsResponse(response.data);
-  } catch (error) {
-    await recordApiDebugLog({
-      functionName: 'music_test_outputs',
-      requestUrl,
-      requestBody: params,
-      responseHeaders: error?.response?.headers || null,
-      responseBody: error?.response?.data || error?.message || 'Unknown error',
-    });
-    throw error;
-  }
-}
-
-async function fetchMusicStatus() {
-  const results = {
-    health: null,
-    state: null,
-    error: null,
-  };
-
-  const healthUrl = buildMusicRequestUrl(MUSIC_HEALTH_ENDPOINT);
-  const stateUrl = buildMusicRequestUrl(MUSIC_STATE_ENDPOINT);
-
-  try {
-    const response = await axios.get(healthUrl, { timeout: AI_GATEWAY_TIMEOUT_MS });
-    results.health = response.data;
-    await recordApiDebugLog({
-      functionName: 'music_test_health',
-      requestUrl: healthUrl,
-      responseHeaders: response.headers || null,
-      responseBody: response.data,
-    });
-  } catch (error) {
-    results.error = 'Unable to fetch music gateway health.';
-    await recordApiDebugLog({
-      functionName: 'music_test_health',
-      requestUrl: healthUrl,
-      responseHeaders: error?.response?.headers || null,
-      responseBody: error?.response?.data || error?.message || 'Unknown error',
-    });
-  }
-
-  try {
-    const response = await axios.get(stateUrl, { timeout: AI_GATEWAY_TIMEOUT_MS });
-    results.state = response.data;
-    await recordApiDebugLog({
-      functionName: 'music_test_state',
-      requestUrl: stateUrl,
-      responseHeaders: response.headers || null,
-      responseBody: response.data,
-    });
-  } catch (error) {
-    results.error = results.error || 'Unable to fetch music gateway state.';
-    await recordApiDebugLog({
-      functionName: 'music_test_state',
-      requestUrl: stateUrl,
-      responseHeaders: error?.response?.headers || null,
-      responseBody: error?.response?.data || error?.message || 'Unknown error',
-    });
-  }
-
-  return results;
-}
-
-function buildMusicErrorMessage(error, timeoutMs) {
-  let message = 'Unable to generate music.';
-
-  if (error?.response) {
-    const detail = typeof error.response.data === 'string' ? error.response.data.slice(0, 200) : '';
-    message = `Music gateway returned ${error.response.status}. ${detail}`.trim();
-    if (error.response.status === 429) {
-      message = 'Music gateway is busy (429). Another GPU-heavy job is running.';
-    }
-  } else if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
-    message = `Unable to reach the gateway at ${MUSIC_API_BASE}.`;
-  } else if (error?.code === 'ETIMEDOUT' || error?.code === 'ESOCKETTIMEDOUT') {
-    message = `Music request timed out after ${timeoutMs}ms.`;
-  }
-
-  return message;
-}
-
-function scheduleMusicJobCleanup(jobId) {
-  setTimeout(() => {
-    musicJobs.delete(jobId);
-  }, MUSIC_JOB_RETENTION_MS);
-}
-
-function startMusicJob({ form, requestPayload, user }) {
-  const id = createJobId();
-  const timeoutMs = (form.timeoutSec * 1000) + MUSIC_TIMEOUT_BUFFER_MS;
-  const job = {
-    id,
-    status: 'queued',
-    form,
-    requestPayload,
-    result: null,
-    outputs: null,
-    outputsError: null,
-    error: null,
-    createdAt: Date.now(),
-    user,
-  };
-
-  musicJobs.set(id, job);
-  scheduleMusicJobCleanup(id);
-
-  setImmediate(async () => {
-    job.status = 'processing';
-    logger.debug('Music generation job started', {
-      category: 'admin_music',
-      metadata: {
-        jobId: id,
-        captionLength: form.caption.length,
-        user,
-      },
-    });
-
-    try {
-      const requestUrl = buildMusicRequestUrl(MUSIC_GENERATE_ENDPOINT);
-      const response = await axios.post(requestUrl, requestPayload, { timeout: timeoutMs });
-      await recordApiDebugLog({
-        functionName: 'music_test_generate',
-        requestUrl,
-        requestBody: requestPayload,
-        responseHeaders: response.headers || null,
-        responseBody: response.data,
-      });
-
-      job.result = response.data;
-      job.status = 'completed';
-
-      if (job.result?.job_id) {
-        try {
-          const outputsQuery = {
-            jobId: job.result.job_id,
-            page: 1,
-            limit: MUSIC_OUTPUTS_DEFAULT_LIMIT,
-          };
-          job.outputs = await fetchMusicOutputs(outputsQuery);
-        } catch (error) {
-          const statusCode = error?.response?.status;
-          job.outputsError = statusCode
-            ? `Outputs request failed with ${statusCode}.`
-            : (error?.message || 'Unable to fetch outputs for this job.');
-        }
-      }
-
-      logger.notice('Admin music generation completed', {
-        category: 'admin_music',
-        metadata: {
-          jobId: job.result?.job_id || null,
-          captionLength: form.caption.length,
-          hasOutputs: Boolean(job.outputs && job.outputs.items && job.outputs.items.length),
-        },
-      });
-    } catch (error) {
-      await recordApiDebugLog({
-        functionName: 'music_test_generate',
-        requestUrl: buildMusicRequestUrl(MUSIC_GENERATE_ENDPOINT),
-        requestBody: requestPayload,
-        responseHeaders: error?.response?.headers || null,
-        responseBody: error?.response?.data || error?.message || 'Unknown error',
-      });
-
-      job.status = 'failed';
-      job.error = buildMusicErrorMessage(error, timeoutMs);
-
-      logger.error('Admin music generation failed', {
-        category: 'admin_music',
-        metadata: {
-          error: error?.message,
-          status: error?.response?.status,
-          code: error?.code,
-        },
-      });
-    }
-  });
-
-  return job;
-}
-
-function renderMusicTestPage(res, {
-  form,
-  error = null,
-  result = null,
-  requestPayload = null,
-  outputs = null,
-  outputsError = null,
-  outputsQuery = null,
-  status = null,
-  statusError = null,
-  info = null,
-  job = null,
-  jobError = null,
-}) {
-  const normalizedForm = normalizeMusicForm(form);
-  const normalizedOutputsQuery = outputsQuery || { jobId: '', page: 1, limit: MUSIC_OUTPUTS_DEFAULT_LIMIT };
-  return res.render('admin_music_test', {
-    apiBase: MUSIC_API_BASE,
-    form: normalizedForm,
-    error,
-    result,
-    requestPayload,
-    outputs,
-    outputsError,
-    outputsQuery: normalizedOutputsQuery,
-    status,
-    statusError,
-    info,
-    job,
-    jobError,
-    vocalLanguages: MUSIC_VOCAL_LANGUAGES,
-    limits: {
-      minTimeout: MUSIC_MIN_TIMEOUT_SEC,
-      maxTimeout: MUSIC_MAX_TIMEOUT_SEC,
-      maxOutputs: MUSIC_OUTPUTS_MAX_LIMIT,
-      maxCaption: MUSIC_CAPTION_MAX_LENGTH,
-      maxLyrics: MUSIC_LYRICS_MAX_LENGTH,
-      bpmMin: MUSIC_BPM_MIN,
-      bpmMax: MUSIC_BPM_MAX,
-      durationMin: MUSIC_DURATION_MIN,
-      durationMax: MUSIC_DURATION_MAX,
-    },
-  });
-}
-
-exports.music_test_page = async (req, res) => {
-  const form = defaultMusicForm();
-  let outputsQuery = normalizeMusicOutputsQuery(req.query || {});
-  let wantsOutputs = shouldFetchMusicOutputs(req.query || {});
-  const wantsStatus = parseCheckbox(req.query?.check);
-  const jobId = typeof req.query?.jobId === 'string' ? req.query.jobId.trim() : '';
-  const job = jobId ? musicJobs.get(jobId) || null : null;
-  let jobError = null;
-  let outputs = null;
-  let outputsError = null;
-  let status = null;
-  let statusError = null;
-  let result = null;
-  let requestPayload = null;
-
-  if (wantsStatus) {
-    const statusResult = await fetchMusicStatus();
-    status = { health: statusResult.health, state: statusResult.state };
-    statusError = statusResult.error;
-  }
-
-  if (jobId && !job) {
-    jobError = 'Requested job was not found. It may have expired.';
-  }
-
-  if (job) {
-    result = job.result;
-    requestPayload = job.requestPayload;
-    if (job.status === 'failed') {
-      jobError = job.error || 'Job failed.';
-    }
-    if (!wantsOutputs && job.status === 'completed' && job.result?.job_id) {
-      outputsQuery = {
-        jobId: job.result.job_id,
-        page: 1,
-        limit: MUSIC_OUTPUTS_DEFAULT_LIMIT,
-      };
-      wantsOutputs = true;
-    }
-    if (job.outputs) {
-      outputs = job.outputs;
-    }
-    if (job.outputsError) {
-      outputsError = job.outputsError;
-    }
-  }
-
-  if (wantsOutputs) {
-    try {
-      outputs = outputs || await fetchMusicOutputs(outputsQuery);
-    } catch (error) {
-      const statusCode = error?.response?.status;
-      if (statusCode) {
-        outputsError = `Music outputs request failed with ${statusCode}.`;
-      } else if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
-        outputsError = `Unable to reach the gateway at ${MUSIC_API_BASE}.`;
-      } else {
-        outputsError = error?.message || 'Unable to fetch outputs.';
-      }
-    }
-  }
-
-  return renderMusicTestPage(res, {
-    form,
-    result,
-    requestPayload,
-    outputs,
-    outputsError,
-    outputsQuery,
-    status,
-    statusError,
-    job,
-    jobError,
-  });
-};
-
-exports.music_test_generate = async (req, res) => {
-  const form = normalizeMusicForm(req.body || {});
-  const requestPayload = buildMusicGeneratePayload(form);
-
-  if (!form.caption) {
-    res.status(400);
-    return renderMusicTestPage(res, {
-      form,
-      requestPayload,
-      error: 'Please enter a caption or prompt to generate music.',
-    });
-  }
-
-  const job = startMusicJob({
-    form,
-    requestPayload,
-    user: req.user?.name || 'unknown',
-  });
-
-  return renderMusicTestPage(res, {
-    form,
-    requestPayload,
-    info: 'Job queued. This page will refresh when the output is ready.',
-    job,
-  });
-};
-
-exports.music_test_status = (req, res) => {
-  const jobId = req.params?.id;
-  const job = jobId ? musicJobs.get(jobId) : null;
-
-  if (!job) {
-    return res.status(404).json({ status: 'not_found' });
-  }
-
-  return res.json({
-    status: job.status,
-    result: job.result,
-    outputs: job.outputs,
-    outputsError: job.outputsError,
-    error: job.error,
-  });
-};
-
-exports.music_test_output = async (req, res) => {
-  const pathParam = typeof req.query?.path === 'string' ? req.query.path.trim() : '';
-  if (!pathParam) {
-    return res.status(400).send('Missing output path.');
-  }
-
-  const requestUrl = buildMusicRequestUrl(MUSIC_OUTPUT_ENDPOINT);
-
-  try {
-    const response = await axios.get(requestUrl, {
-      params: { path: pathParam },
-      responseType: 'stream',
-      timeout: MUSIC_OUTPUT_TIMEOUT_MS,
-    });
-
-    res.status(response.status);
-    if (response.headers?.['content-type']) {
-      res.setHeader('Content-Type', response.headers['content-type']);
-    }
-    if (response.headers?.['content-length']) {
-      res.setHeader('Content-Length', response.headers['content-length']);
-    }
-    if (response.headers?.['content-disposition']) {
-      res.setHeader('Content-Disposition', response.headers['content-disposition']);
-    }
-
-    return response.data.pipe(res);
-  } catch (error) {
-    const statusCode = error?.response?.status || 502;
-    res.status(statusCode);
-    if (error?.response?.data) {
-      return res.send('Unable to fetch output from gateway.');
-    }
-    if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
-      return res.send(`Unable to reach the gateway at ${MUSIC_API_BASE}.`);
-    }
-    return res.send('Unable to fetch output from gateway.');
-  }
 };
 
 exports.agent5_page = async (req, res) => {

@@ -1,0 +1,78 @@
+input(type='hidden', name='_csrf', value=csrfToken)
+.mb-3
+  label.form-label(for='music-model') Generator
+  select#music-model.form-select(name='model', required)
+    each model in musicCatalog.models
+      option(value=model.id, selected=model.id === musicCatalog.default_model, disabled=!model.usable)= `${model.id} · ${model.availability}`
+  p#music-model-note.form-text(role='status')= musicCatalog.note
+.mb-3
+  label.form-label(for='caption') Caption / style
+  textarea#caption.form-control(name='caption', rows='3', required, maxlength='512') Ambient techno with soft pads
+  small#caption-help.form-text
+.mb-3
+  label#lyrics-label.form-label(for='lyrics') Lyrics
+  textarea#lyrics.form-control(name='lyrics', rows='4', maxlength='6000')
+  small#lyrics-help.form-text
+.row
+  .col-md-6.mb-3
+    label.form-label(for='music-seed') Seed (optional, exact integer 0–9007199254740991)
+    input#music-seed.form-control(type='text', name='seed', inputmode='numeric', pattern='[0-9]+', maxlength='16')
+    small.form-text Leave blank for a seed allocated once by the Gateway. Returned seeds may be larger and are preserved exactly.
+  .col-md-6.mb-3
+    label.form-label(for='audio_format') Audio format
+    select#audio_format.form-select(name='audio_format')
+.row
+  .col-md-6.mb-3
+    label.form-label(for='timeout_sec') Execution timeout (seconds)
+    input#timeout_sec.form-control(type='number', name='timeout_sec', min='1')
+    small.form-text GPU queue, preparation and cleanup have separate budgets.
+fieldset#music-yue-controls.mb-3(hidden, disabled)
+  legend.h6 YuE2 settings
+  p.form-text Current testing allows an 8–30 second ceiling, not a target duration or an inherent whole-model limit. Singing lyrics are required; there is no reliable instrumental switch. Model loading is automatic.
+  .mb-3
+    label.form-label(for='max_duration') Duration ceiling (seconds)
+    input#max_duration.form-control(type='number', name='max_duration', min='8', max='30', value='20')
+  .mb-3
+    label.form-label(for='cot') Planning mode
+    select#cot.form-select(name='cot')
+      option(value='full') Full
+      option(value='melody') Melody
+      option(value='none') None
+  .mb-3
+    label.form-label(for='abc') ABC score (optional; full or melody mode, at most 4096 UTF-8 bytes)
+    textarea#abc.form-control(name='abc', rows='3', maxlength='4096')
+fieldset#music-ace-controls.mb-3
+  legend.h6 ACE settings
+  .form-check.mb-3
+    input#instrumental.form-check-input(type='checkbox', name='instrumental')
+    label.form-check-label(for='instrumental') Instrumental
+  .row
+    .col-md-4.mb-3
+      label.form-label(for='bpm') BPM (optional)
+      input#bpm.form-control(type='number', name='bpm', min='1', max='300')
+    .col-md-4.mb-3
+      label.form-label(for='vocal_language') Vocal language
+      select#vocal_language.form-select(name='vocal_language')
+        each code in ['unknown', 'en', 'ja', 'es', 'fr', 'de', 'it', 'pt', 'ko', 'zh']
+          option(value=code)= code
+    .col-md-4.mb-3
+      label.form-label(for='duration') Duration (seconds; -1 or 0 automatic)
+      input#duration.form-control(type='number', name='duration', min='-1', max='600', step='any')
+  .row
+    each label, key in { inference_steps: 'Synthesis steps', guidance_scale: 'Guidance', batch_size: 'Batch size' }
+      .col-md-4.mb-3
+        label.form-label(for=key)= label
+        input.form-control(id=key, name=key, type='number', step=key === 'guidance_scale' ? 'any' : '1')
+  .row
+    .col-md-6.mb-3
+      label.form-label(for='load_llm') Language model / thinking
+      select#load_llm.form-select(name='load_llm')
+        option(value='') Gateway default
+        option(value='true') Enable thinking and load LM
+        option(value='false') Disable thinking and LM
+    .col-md-6.mb-3
+      label.form-label(for='llm_backend') Language model backend
+      select#llm_backend.form-select(name='llm_backend')
+        option(value='') Gateway default
+        option(value='vllm') vllm
+        option(value='pt') pt

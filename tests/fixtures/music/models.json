@@ -1,0 +1,153 @@
+{
+  "default_model": "ace-step-1.5-xl-turbo",
+  "models": [
+    {
+      "provider": "acestep15",
+      "defaults": {
+        "task_type": "text2music",
+        "lyrics": "",
+        "instrumental": false,
+        "vocal_language": "unknown",
+        "bpm": null,
+        "keyscale": "",
+        "timesignature": "",
+        "duration": -1.0,
+        "inference_steps": 8,
+        "guidance_scale": 7.0,
+        "seed": -1,
+        "thinking": false,
+        "audio_format": "flac",
+        "batch_size": 1
+      },
+      "fields": [
+        "caption",
+        "task_type",
+        "lyrics",
+        "instrumental",
+        "vocal_language",
+        "bpm",
+        "keyscale",
+        "timesignature",
+        "duration",
+        "inference_steps",
+        "guidance_scale",
+        "seed",
+        "thinking",
+        "audio_format",
+        "batch_size",
+        "params",
+        "config",
+        "load",
+        "save_subdir",
+        "timeout_sec"
+      ],
+      "limits": {
+        "caption_chars": 512,
+        "lyrics_chars": 6000,
+        "duration_seconds": [
+          0,
+          600
+        ],
+        "duration_auto": [
+          -1,
+          0
+        ],
+        "inference_steps": [
+          1,
+          200
+        ],
+        "guidance_scale": [
+          0,
+          30
+        ],
+        "batch_size": [
+          1,
+          8
+        ]
+      },
+      "provenance": {
+        "source_revision": null,
+        "weights_revision": null,
+        "note": "Existing ACE build uses a floating source ref and unpinned weights; no revision guarantee."
+      },
+      "id": "ace-step-1.5-xl-turbo",
+      "enabled": true,
+      "configured": true,
+      "container_state": "exited",
+      "availability": "startable",
+      "ready": false,
+      "queue_timeout_sec": 900,
+      "execution_timeout_sec": 7200
+    },
+    {
+      "provider": "yue2",
+      "defaults": {
+        "cot": "full",
+        "max_duration": 20,
+        "audio_format": "flac",
+        "seed": "random once per request",
+        "abc": null,
+        "synthesis_steps": 32,
+        "synthesis_method": "midpoint",
+        "guidance": 1.0
+      },
+      "fields": [
+        "caption",
+        "lyrics",
+        "seed",
+        "audio_format",
+        "cot",
+        "abc",
+        "max_duration",
+        "timeout_sec"
+      ],
+      "aliases": {
+        "cot.off": "none",
+        "max_duration_seconds": "max_duration"
+      },
+      "limits": {
+        "caption_chars": 2000,
+        "lyrics_chars": 6000,
+        "abc_utf8_bytes": 4096,
+        "text_utf8_bytes": 16000,
+        "max_duration": [
+          8,
+          30
+        ],
+        "seed": [
+          0,
+          9223372036854775807
+        ],
+        "audio_format": [
+          "flac",
+          "wav"
+        ],
+        "cot": [
+          "full",
+          "melody",
+          "none"
+        ]
+      },
+      "guidance_by_cot": {
+        "full": 1.0,
+        "melody": 1.0,
+        "none": 1.01
+      },
+      "instrumental_control": false,
+      "duration_is_ceiling": true,
+      "provenance": {
+        "source": "0edaf2f4053ef4731334b8329834b107977f9637",
+        "generator": "29b3558dd46954a0cd9021dc76d5c91864a0f1c7",
+        "vae": "9a94e1d0ea9f8087e98f77fa88df4a4068104d2a"
+      },
+      "id": "yue2-3b",
+      "enabled": true,
+      "configured": true,
+      "container_state": "exited",
+      "availability": "startable",
+      "ready": false,
+      "queue_timeout_sec": 900,
+      "execution_timeout_sec": 1830
+    }
+  ]
+}

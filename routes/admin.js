@@ -9,6 +9,12 @@ const { createSessionCsrf } = require('../middleware/sessionCsrf');
 
 // Require controller modules.
 const controller = require('../controllers/admincontroller');
+const musicController = require('../controllers/musiccontroller');
+const { requireMusic, CAPABILITIES: MUSIC_CAPABILITIES, csrf: musicCsrf, boundedBody: boundedMusicBody } = require('../middleware/musicAccess');
+const { rateLimit: musicRateLimit } = require('express-rate-limit');
+const adminMusicLimit = musicRateLimit({ windowMs: 60000, limit: 5, keyGenerator: req => String(req.user._id), standardHeaders: 'draft-8', legacyHeaders: false });
+router.use('/music-test', requireMusic(MUSIC_CAPABILITIES.admin), (req, _res, next) => { req.musicAdmin = true; next(); }, express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '64kb', parameterLimit: 30 }), musicCsrf.issueToken);
+router.use(/^\/ai-gateway(?:\/(?:gpu|reservation|containers(?:\/.*)?|auto-stop|monitor))?\/?$/i, requireMusic(MUSIC_CAPABILITIES.admin), musicCsrf.issueToken, (req, res, next) => ['GET', 'HEAD'].includes(req.method) ? next() : musicCsrf.requireToken(req, res, next));
 const learningAdminController = require('../controllers/learningAdminController');
 const messageInboxController = require('../controllers/messageInboxAdminController');
 const toolManagerController = require('../controllers/toolManagerController');
@@ -356,10 +362,12 @@ router.post('/asr-test', handleAsrUpload);
 router.get('/tts-test', controller.tts_test_page);
 router.post('/tts-test', controller.tts_test_generate);
 router.get('/tts-test/status/:id', controller.tts_test_status);
-router.get('/music-test', controller.music_test_page);
-router.post('/music-test', controller.music_test_generate);
-router.get('/music-test/status/:id', controller.music_test_status);
-router.get('/music-test/output', controller.music_test_output);
+router.get('/music-test', musicController.music_page);
+router.post('/music-test/generate-ai', musicCsrf.requireToken, boundedMusicBody, adminMusicLimit, musicController.music_generate_ai);
+router.post('/music-test/generate', musicCsrf.requireToken, boundedMusicBody, adminMusicLimit, musicController.music_generate);
+router.post('/music-test', musicCsrf.requireToken, boundedMusicBody, adminMusicLimit, musicController.music_generate);
+router.get('/music-test/status/:id', musicController.music_status);
+router.get('/music-test/output', musicController.music_output);
 
 router.get('/qwen3-training-guide', qwen3TrainingGuideController.render);
 router.get('/qwen3-lora', qwen3LoraAdminController.render);

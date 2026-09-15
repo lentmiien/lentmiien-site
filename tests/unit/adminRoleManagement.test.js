@@ -124,7 +124,9 @@ test('registered role routes issue and enforce shared CSRF before permission wri
   vm.runInNewContext(fs.readFileSync('routes/admin.js', 'utf8'), {
     module: { exports: {} }, __dirname: path.resolve('routes'), process: { env: {} },
     require: name => {
-      if (name === 'express') return { Router: () => router };
+      if (name === 'express') return { Router: () => router, json: () => () => {}, urlencoded: () => () => {} };
+      if (name === 'express-rate-limit') return { rateLimit: () => (_req, _res, next) => next() };
+      if (name === '../middleware/musicAccess') return { requireMusic: () => (_req, _res, next) => next(), CAPABILITIES: {}, csrf: { issueToken: () => {}, requireToken: () => {} } };
       if (name === '../controllers/admincontroller') return f.controller;
       if (name === '../middleware/sessionCsrf') return {
         createSessionCsrf: () => require('../../middleware/sessionCsrf').createSessionCsrf({ appLogger: logger, allowedOrigins: [] }),

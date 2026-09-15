@@ -185,9 +185,10 @@ app.use(require('./middleware/accountSurfaceBody'));
 // Miien applies small, route-specific parsers after authentication/authorization.
 const legacyFormParser = bodyParser.urlencoded({ extended: false, limit: DEFAULT_BODY_LIMIT });
 const legacyJsonParser = express.json({ limit: DEFAULT_BODY_LIMIT });
+const isMusicPath = req => /^\/(?:music|admin\/music-test)(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
-app.use((req, res, next) => isMiienPath(req) ? next() : legacyFormParser(req, res, next));
-app.use((req, res, next) => isMiienPath(req) ? next() : legacyJsonParser(req, res, next));
+app.use((req, res, next) => (isMiienPath(req) || isMusicPath(req)) ? next() : legacyFormParser(req, res, next));
+app.use((req, res, next) => (isMiienPath(req) || isMusicPath(req)) ? next() : legacyJsonParser(req, res, next));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -526,7 +527,7 @@ app.use('/bookmarks', isAuthenticated, bookmarkRouter);
 app.use('/reminders', isAuthenticated, pushoverReminderRouter);
 app.use('/image_gen', isAuthenticated, authorize("image_gen"), imageGenRouter);
 app.use('/gpt-image', gptImageRouter);
-app.use('/music', isAuthenticated, authorize("music"), musicRouter);
+app.use('/music', isAuthenticated, musicRouter);
 app.use('/ocr', isAuthenticated, authorize("ocr"), ocrRouter);
 app.use('/ocr-tts', isAuthenticated, authorize("ocr"), ocrTtsRouter);
 app.use('/asr', isAuthenticated, authorize("asr"), asrRouter);

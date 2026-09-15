@@ -53,6 +53,7 @@ const {
   supportsReasoningModel,
   supportsReasoningMode,
 } = require('../../utils/OpenAI_API');
+const structuredDebugLogger = require('../../utils/apiDebugLogger').createApiDebugLogger.mock.results[0].value;
 
 test('ChatGPT connection failures preserve a safe nested cause without raw error interpolation or replay', async () => {
   mockResponsesCreate.mockRejectedValueOnce(Object.assign(new Error('private provider content'), {
@@ -434,4 +435,19 @@ test('Miien opts into bounded provider submission without changing ordinary Chat
     { privateRequest: true, maxOutputTokens: 4096 });
   expect(mockResponsesCreate).toHaveBeenLastCalledWith(expect.objectContaining({ max_output_tokens: 4096 }),
     { timeout: 60000, maxRetries: 0 });
+});
+
+test('music structured requests bound submission and keep private payloads out of debug logs', async () => {
+  const { generateStructuredOutput } = require('../../utils/OpenAI_API');
+  const debugLog = structuredDebugLogger;
+  debugLog.mockClear();
+  mockResponsesCreate.mockResolvedValue({ output_text: '{"caption":"private","lyrics":"private"}' });
+  const result = await generateStructuredOutput({ model: 'gpt-5.2-2025-12-11', prompt: 'private', schema: { type: 'object' }, privateRequest: true, maxOutputTokens: 6000 });
+  expect(result.caption).toBe('private');
+  expect(mockResponsesCreate).toHaveBeenLastCalledWith(expect.objectContaining({ max_output_tokens: 6000 }), { timeout: 60000, maxRetries: 0 });
+  expect(debugLog).not.toHaveBeenCalled();
+  mockResponsesCreate.mockRejectedValue(new Error('PRIVATE PAYLOAD'));
+  await generateStructuredOutput({ model: 'gpt-5.2-2025-12-11', prompt: 'private', schema: { type: 'object' }, privateRequest: true });
+  expect(debugLog).not.toHaveBeenCalled();
+  expect(require('../../utils/logger').error).toHaveBeenLastCalledWith('Error while generating structured OpenAI output', { category: 'music', metadata: { status: null } });
 });

@@ -16,6 +16,9 @@
     pollers: new Map(),
     backgroundJobId: null,
     lastBackgroundStart: 0,
+    submitting: false,
+    backgroundPaused: false,
+    backgroundPauseReason: '',
   };
 
   const feedbackEl = document.getElementById('music-feedback');
@@ -30,6 +33,8 @@
   const nowRatingSelect = document.getElementById('music-now-rating');
   const nowRatingBtn = document.getElementById('music-now-rate-btn');
   const nowMetaEl = document.getElementById('music-now-meta');
+  const provenanceEl = document.getElementById('music-now-provenance');
+  const generationDetails = entry => JSON.stringify({ model: entry.modelId, provider: entry.provider, seed: entry.seed, format: entry.audioFormat, settings: entry.resolvedSettings, provenance: entry.provenance, cropped: entry.durationCropped, truncated: entry.truncated }, null, 2);
   const libraryListEl = document.getElementById('music-library-list');
   const infinityToggle = document.getElementById('infinity-toggle');
   const infinityMinRating = document.getElementById('infinity-min-rating');
@@ -96,7 +101,7 @@
 
   function updateInfinityStatus(message) {
     if (infinityStatusEl) {
-      infinityStatusEl.textContent = message;
+      infinityStatusEl.textContent = message + (state.backgroundPaused ? ` Background generation paused: ${state.backgroundPauseReason}` : '');
     }
   }
 
@@ -154,7 +159,8 @@
         <span class="badge text-bg-secondary">${escapeHtml(ratingText)}</span>
       </div>
       ${audioHtml}
-      <p class="text-muted small mb-2">Duration: ${escapeHtml(durationLabel)} · Vocal: ${escapeHtml(entry.vocalLanguage || 'unknown')} · Last played: ${escapeHtml(lastPlayedLabel)}</p>
+      <details class="mb-2"><summary>Generation details</summary><pre class="small">${escapeHtml(generationDetails(entry))}</pre></details>
+      <p class="text-muted small mb-2">Generator: ${escapeHtml(entry.modelId || 'Unknown (historical)')} · Seed: ${escapeHtml(entry.seed ?? 'unknown')} · Format: ${escapeHtml(entry.audioFormat || 'unknown')} · Duration: ${escapeHtml(durationLabel)} · Vocal: ${escapeHtml(entry.vocalLanguage || 'unknown')} · Last played: ${escapeHtml(lastPlayedLabel)}</p>
       <div class="d-flex flex-wrap align-items-center gap-2">
         <select class="form-select form-select-sm w-auto" data-rating-select="${escapeHtml(entry.id)}">
           <option value="">Set rating...</option>
@@ -237,11 +243,13 @@
       if (nowAudioEl) nowAudioEl.removeAttribute('src');
       if (nowRatingSelect) nowRatingSelect.value = '';
       if (nowMetaEl) nowMetaEl.textContent = '';
+      if (provenanceEl) provenanceEl.textContent = '';
       return;
     }
 
     const sameTrack = state.currentTrack && state.currentTrack.id === track.id;
     state.currentTrack = track;
+    if (provenanceEl) provenanceEl.textContent = generationDetails(track);
     if (nowTitleEl) nowTitleEl.textContent = track.caption || track.outputName || 'Untitled track';
     if (nowAudioEl) {
       if (!preservePlayback || !sameTrack || !nowAudioEl.getAttribute('src')) {
@@ -254,7 +262,7 @@
     }
     if (nowMetaEl) {
       const durationLabel = track.durationSec ? `${track.durationSec}s` : 'auto';
-      nowMetaEl.textContent = `Rating: ${ratingLabel(track.rating)} · Duration: ${durationLabel} · Vocal: ${track.vocalLanguage || 'unknown'}`;
+      nowMetaEl.textContent = `Generator: ${track.modelId || 'Unknown (historical)'} · Seed: ${track.seed ?? 'unknown'} · Format: ${track.audioFormat || 'unknown'} · Cropped: ${track.durationCropped ?? 'unknown'} · Truncated: ${track.truncated ?? 'unknown'} · Rating: ${ratingLabel(track.rating)} · Duration: ${durationLabel} · Vocal: ${track.vocalLanguage || 'unknown'}`;
     }
   }
 
@@ -278,7 +286,7 @@
   async function markPlayed(id, { updateUi = false } = {}) {
     if (!id) return;
     try {
-      const response = await fetch(`/music/library/${id}/played`, { method: 'POST' });
+      const response = await fetch(`/music/library/${id}/played`, { method: 'POST', headers: { 'X-CSRF-Token': defaults.csrfToken } });
       if (!response.ok) return;
       if (!updateUi) return;
       const data = await readJsonResponse(response);
@@ -298,7 +306,7 @@
     try {
       const response = await fetch(`/music/library/${id}/rating`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': defaults.csrfToken },
         body: JSON.stringify({ rating }),
       });
       const data = await readJsonResponse(response);
@@ -387,32 +395,36 @@
 
   function startPolling(jobId, { showStatus, kind }) {
     if (!jobId || state.pollers.has(jobId)) return;
+    let polling = false;
+    let failures = 0;
     const poll = async () => {
+      if (polling) return;
+      polling = true;
       try {
-        const response = await fetch(`/music/status/${jobId}`);
+        const response = await fetch(`${defaults.prefix}/status/${encodeURIComponent(jobId)}`);
         const data = await readJsonResponse(response);
-        if (response.status === 404) {
-          if (showStatus) setJobStatus('not_found', 'Job not found or expired.');
+        if (response.status === 404 || response.status === 401 || response.status === 403) {
+          pauseBackground('Job status unavailable. Inspect outputs before manually generating again.');
+          if (showStatus) setJobStatus('not_found', 'Job unavailable or lost on restart. Inspect Gateway outputs before generating again.');
           clearPoller(jobId);
           return;
         }
-        if (!response.ok) return;
+        if (!response.ok) throw new Error('Status request failed.');
+        failures = 0;
         if (showStatus) {
-          setJobStatus(data.status || 'unknown', data.error || data.outputsError || '', data.status === 'completed' ? 'Job completed.' : '');
+          setJobStatus(data.status || 'unknown', data.error || data.outputsError || '', data.result?.job_id ? `Output reference: ${data.result.job_id}` : (data.status === 'completed' ? 'Job completed.' : ''));
         }
         if (data.status === 'completed') {
           clearPoller(jobId);
           handleJobCompleted(jobId, data, { kind, showStatus });
         } else if (data.status === 'failed') {
           clearPoller(jobId);
-          if (showStatus) setJobStatus('failed', data.error || 'Job failed.');
-          if (kind === 'background') {
-            state.backgroundJobId = null;
-          }
+          if (showStatus) setJobStatus('failed', data.error || 'Job failed.', data.result?.job_id ? `Output reference: ${data.result.job_id}` : '');
+          pauseBackground(data.error || 'Generation failed. Inspect outputs before manually generating again.');
         }
       } catch (error) {
-        // ignore transient errors
-      }
+        if (++failures >= 5) { clearPoller(jobId); pauseBackground('Status could not be recovered. The job may still finish; inspect outputs.'); if (showStatus) setJobStatus('unknown', 'Status connection lost. No generation will be replayed.'); }
+      } finally { polling = false; }
     };
 
     const timer = setInterval(poll, 3000);
@@ -440,7 +452,13 @@
   }
 
   async function submitForm(form, url, { kind, showStatus, background = false } = {}) {
-    const formData = new FormData(form);
+    if (state.submitting || state.pollers.size) throw new Error('A generation is already being submitted or monitored.');
+    state.submitting = true;
+    try {
+    const formData = new FormData(generateForm);
+    if (form === aiForm) formData.set('direction', aiDirectionInput.value);
+    // An unchecked checkbox must override a Gateway default of true too.
+    if (!document.getElementById('music-ace-controls').disabled) formData.set('instrumental', document.getElementById('instrumental').checked ? 'true' : 'false');
     if (background) {
       formData.set('background', '1');
     }
@@ -475,6 +493,7 @@
       startPolling(data.job.id, { showStatus, kind });
     }
     return data;
+    } finally { state.submitting = false; }
   }
 
   function applyAiToForm(ai) {
@@ -486,13 +505,19 @@
 
     if (captionEl) captionEl.value = ai.caption || '';
     if (lyricsEl) lyricsEl.value = ai.lyrics || '';
-    if (vocalEl) vocalEl.value = ai.vocalLanguage || 'unknown';
+    if (vocalEl && ai.vocalLanguage) vocalEl.value = ai.vocalLanguage;
     if (durationEl && Number.isFinite(ai.durationSec)) durationEl.value = ai.durationSec;
   }
 
+  function pauseBackground(message) {
+    state.backgroundPaused = true;
+    state.backgroundPauseReason = message;
+    updateInfinityStatus('');
+  }
+
   function maybeStartBackgroundGeneration() {
-    if (!state.infinity) return;
-    if (state.backgroundJobId) return;
+    if (!state.infinity || generateForm.querySelector('button[type=submit]').disabled) return;
+    if (state.backgroundJobId || state.submitting || state.backgroundPaused || state.pollers.size) return;
     const now = Date.now();
     if (now - state.lastBackgroundStart < 15000) return;
     state.lastBackgroundStart = now;
@@ -505,7 +530,7 @@
       })
       .catch((error) => {
         state.backgroundJobId = null;
-        updateInfinityStatus(error.message || 'Background generation failed.');
+        pauseBackground(error.message || 'Background generation failed.');
       });
   }
 
@@ -536,7 +561,7 @@
         setFeedback('Submitting music generation...', 'info');
         submitForm(generateForm, generateForm.action, { kind: 'manual', showStatus: true })
           .then(() => setFeedback('Generation queued.', 'success'))
-          .catch((error) => setFeedback(error.message || 'Unable to generate music.', 'danger'));
+          .catch((error) => { pauseBackground(error.message); setFeedback(error.message || 'Unable to generate music.', 'danger'); });
       });
     }
 
@@ -546,7 +571,7 @@
         setFeedback('Generating AI prompt...', 'info');
         submitForm(aiForm, aiForm.action, { kind: 'ai', showStatus: true })
           .then(() => setFeedback('AI generation queued.', 'success'))
-          .catch((error) => setFeedback(error.message || 'Unable to generate AI prompt.', 'danger'));
+          .catch((error) => { pauseBackground(error.message); setFeedback(error.message || 'Unable to generate AI prompt.', 'danger'); });
       });
     }
 

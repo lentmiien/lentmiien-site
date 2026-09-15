@@ -811,7 +811,7 @@ function extractStructuredOutput(response) {
   return null;
 }
 
-const generateStructuredOutput = async ({ model, prompt, schema, schemaName, system, temperature, maxOutputTokens }) => {
+const generateStructuredOutput = async ({ model, prompt, schema, schemaName, system, temperature, maxOutputTokens, privateRequest = false }) => {
   const input = [];
   if (system) {
     input.push({
@@ -847,8 +847,8 @@ const generateStructuredOutput = async ({ model, prompt, schema, schemaName, sys
   const requestUrl = 'openai.responses.create';
 
   try {
-    const response = await openai.responses.create(requestBody);
-    await recordApiDebugLog({
+    const response = await openai.responses.create(requestBody, ...(privateRequest ? [{ timeout: 60000, maxRetries: 0 }] : []));
+    if (!privateRequest) await recordApiDebugLog({
       requestUrl,
       requestBody,
       functionName: 'generateStructuredOutput',
@@ -856,13 +856,13 @@ const generateStructuredOutput = async ({ model, prompt, schema, schemaName, sys
     });
     return extractStructuredOutput(response);
   } catch (error) {
-    await recordApiDebugLog({
+    if (!privateRequest) await recordApiDebugLog({
       requestUrl,
       requestBody,
       functionName: 'generateStructuredOutput',
       responseBody: error,
     });
-    logger.error('Error while generating structured OpenAI output', { error });
+    logger.error('Error while generating structured OpenAI output', privateRequest ? { category: 'music', metadata: { status: error.status || null } } : { error });
     return null;
   }
 };

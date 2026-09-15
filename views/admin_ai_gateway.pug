@@ -33,8 +33,9 @@ block content
         h1 AI Gateway
         p.text-muted Monitor gateway health, GPU load, limits, and live logs.
       .ai-gateway__meta
-        span.meta-chip Base URL: #{dashboard.baseUrl}
         span.meta-chip Fetched: #{new Date(dashboard.fetchedAt || Date.now()).toLocaleString()}
+        a.btn.btn-outline-warning.btn-sm(href='/admin/music-test') Music test
+        a.btn.btn-outline-warning.btn-sm(href='/music') Music library
         a.btn.btn-outline-warning.btn-sm(href='/admin/ai-gateway/modular-llm') Modular LLM
         a.btn.btn-outline-warning.btn-sm(href='/admin/ai-gateway/documentation') Documentation
         a.btn.btn-outline-light.btn-sm(href='/admin/ai-gateway') Refresh
@@ -300,8 +301,27 @@ block content
           p.text-muted.mb-0 Monitor status updates after you set it (no GET /lentmiienlm/monitor).
       .panel
         .panel__header
+          h2.panel__title Music capabilities
+          p.panel__subtitle= dashboard.musicDiscoveryNote || 'Music discovery has not been checked.'
+        if dashboard.musicCatalog
+          each model in dashboard.musicCatalog.models
+            h3.h5= `${model.id} · ${model.provider}`
+            p= `State: ${model.availability} · container: ${model.container_state || 'unknown'} · enabled: ${model.enabled} · configured: ${model.configured}`
+            p= model.usable ? 'Generation may be attempted; stopped models start automatically.' : 'Generation unavailable for this provider.'
+            p= `Queue budget: ${model.queue_timeout_sec}s · execution budget: ${model.execution_timeout_sec}s`
+            details
+              summary Defaults and supported limits
+              pre= JSON.stringify({ defaults: model.defaults, fields: model.fields, limits: model.limits }, null, 2)
+        if dashboard.musicLimits
+          details
+            summary Music guardrails from /limits
+            pre= JSON.stringify(dashboard.musicLimits, null, 2)
+        else
+          p.text-muted Gateway did not publish music limits.
+      .panel
+        .panel__header
           h2.panel__title Limits
-          p.panel__subtitle OCR + LLM guardrails from /limits.
+          p.panel__subtitle Gateway guardrails from /limits.
         if dashboard.limits
           if dashboard.limits.ocr
             h4.limits-title OCR
@@ -574,7 +594,10 @@ block content
           p.text-muted.mb-0 No OCR log entries yet.
       .panel
         .panel__header
-          h2.panel__title ACE-Step 1.5 VRAM Usage
+          h2.panel__title Music generation VRAM usage
+          if logInsights.music && logInsights.music.models
+            each item in logInsights.music.models
+              p= `${item.model}: ${item.count} requests`
           p.panel__subtitle Recent /music/acestep15/generate requests with start-to-peak deltas and absolute peak usage.
         if logInsights.music
           ul.limits-list
@@ -590,7 +613,7 @@ block content
             if typeof logInsights.music.successRate === 'number'
               li Success rate: #{formatPercent(logInsights.music.successRate)}
         else
-          p.text-muted.mb-0 No ACE-Step generate log entries yet.
+          p.text-muted.mb-0 No music generate log entries yet.
       .panel
         .panel__header
           h2.panel__title ComfyUI VRAM Usage
@@ -607,5 +630,5 @@ block content
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
-  script(type='application/json', id='aiGatewayData') !{safeJson({ baseUrl: dashboard.baseUrl, fetchedAt: dashboard.fetchedAt, chartData: dashboard.chartData, gpu: dashboard.gpu, autoStop: dashboard.autoStop, containers: dashboard.containers, containerSummary: dashboard.containerSummary, reservation: dashboard.reservation })}
+  script(type='application/json', id='aiGatewayData') !{safeJson({ csrfToken: typeof csrfToken !== 'undefined' ? csrfToken : '', fetchedAt: dashboard.fetchedAt, chartData: dashboard.chartData, gpu: dashboard.gpu, autoStop: dashboard.autoStop, containers: dashboard.containers, containerSummary: dashboard.containerSummary, reservation: dashboard.reservation })}
   script(src='/js/aiGateway.js', defer)
