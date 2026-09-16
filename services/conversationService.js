@@ -115,7 +115,7 @@ function normalizeInitiatingPrincipal(value) {
 // Conversation5Model.metadata
 const DEFAULT_SETTINGS = {
   contextPrompt: "",
-  model: "gpt-5-2025-08-07",
+  model: "gpt-5.6-luna",
   maxMessages: 999,
   startMessageId: null,
   maxAudioMessages: 3,

@@ -227,7 +227,7 @@ module.exports = async function registerChat5_5Handlers({
     }
     const maxMessages = normalizePositiveIntOption(settings.maxMessages, 999, 'settings.maxMessages', adjustments);
     const contextPrompt = normalizeStringOption(settings.context, '', 'settings.context', adjustments, { allowEmpty: true });
-    const model = normalizeStringOption(settings.model, 'gpt-5-2025-08-07', 'settings.model', adjustments);
+    const model = normalizeStringOption(settings.model, 'gpt-5.6-luna', 'settings.model', adjustments);
     const reasoning = normalizeStringOption(settings.reasoning, 'medium', 'settings.reasoning', adjustments);
     let mode = normalizeStringOption(settings.mode, 'standard', 'settings.mode', adjustments);
     if (mode !== 'standard' && mode !== 'pro') {
