@@ -2,6 +2,13 @@
 
 ## Status and primary contract
 
+Historical Phase 3 implementation record. The user has since confirmed successful
+live ACE and YuE2 generation and shared-library persistence. For the pending
+full-song rollout, follow [Phase 4](music-phase4.md), which supersedes the old
+duration limits and deployment/rollback order below: **Site first, then Gateway**.
+Do not repeat prior-phase confirmation or revert the old Gateway artifact parser
+after producing long outputs.
+
 Development implementation only. This change does not deploy Gateway or Site,
 start/stop a live container, download weights, generate audio, or establish
 browser playback quality. The registry fixture comes from the public literals
@@ -138,7 +145,7 @@ renamed nor backfilled with guessed models/providers/owners. Other collection
 readers keep their existing shared/historical policy. No new environment
 variables, dependencies, migrations or system-wide installs are required.
 
-## Human release steps (not performed by this change)
+## Historical Phase 3 release steps (superseded by Phase 4)
 
 1. During a maintenance window, deploy the approved Gateway Phase 2 commit
    first, following its handover. Enable `YUE2_ENABLED=true`; preserve ACE enabled,

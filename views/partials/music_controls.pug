@@ -28,10 +28,11 @@ input(type='hidden', name='_csrf', value=csrfToken)
     small.form-text GPU queue, preparation and cleanup have separate budgets.
 fieldset#music-yue-controls.mb-3(hidden, disabled)
   legend.h6 YuE2 settings
-  p.form-text Current testing allows an 8–30 second ceiling, not a target duration or an inherent whole-model limit. Singing lyrics are required; there is no reliable instrumental switch. Model loading is automatic.
+  p.form-text Singing lyrics are required; there is no reliable instrumental switch. Model loading is automatic.
   .mb-3
-    label.form-label(for='max_duration') Duration ceiling (seconds)
-    input#max_duration.form-control(type='number', name='max_duration', min='8', max='30', value='20')
+    label.form-label(for='max_duration') Maximum song length (seconds; ceiling)
+    input#max_duration.form-control(type='number', name='max_duration', min='8', max='30', value='20', step='1', required, aria-describedby='max-duration-help')
+    small#max-duration-help.form-text Limits and default follow verified Gateway discovery. This is a ceiling, not an exact target; the song may finish earlier.
   .mb-3
     label.form-label(for='cot') Planning mode
     select#cot.form-select(name='cot')

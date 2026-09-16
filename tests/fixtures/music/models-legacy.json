@@ -83,7 +83,7 @@
       "provider": "yue2",
       "defaults": {
         "cot": "full",
-        "max_duration": 300,
+        "max_duration": 20,
         "audio_format": "flac",
         "seed": "random once per request",
         "abc": null,
@@ -112,7 +112,7 @@
         "text_utf8_bytes": 16000,
         "max_duration": [
           8,
-          300
+          30
         ],
         "seed": [
           0,
@@ -147,7 +147,7 @@
       "availability": "startable",
       "ready": false,
       "queue_timeout_sec": 900,
-      "execution_timeout_sec": 3630
+      "execution_timeout_sec": 1830
     }
   ]
 }

@@ -22,11 +22,11 @@ test('model selection updates caption length, required lyrics, format/defaults a
   selectYue(d);
   expect(d.getElementById('caption').maxLength).toBe(2000); expect(d.getElementById('lyrics').required).toBe(true);
   expect(d.getElementById('music-ace-controls').disabled).toBe(true);
-  expect(d.getElementById('timeout_sec').value).toBe('1830');
+  expect(d.getElementById('timeout_sec').value).toBe('3630');
   expect(d.getElementById('infinity-generator').textContent).toContain('yue2-3b');
   const data = new dom.window.FormData(d.getElementById('music-generate-form'));
   expect(data.has('instrumental')).toBe(false); expect(data.has('load_llm')).toBe(false);
-  expect(data.get('max_duration')).toBe('20'); expect(data.get('seed')).toBe('');
+  expect(data.get('max_duration')).toBe('300'); expect(data.get('seed')).toBe('');
   expect([...d.getElementById('audio_format').options].map(o => o.value)).toEqual(['flac', 'wav']);
 });
 test('switching models preserves each model’s settings without copying ACE options', () => {
@@ -105,4 +105,48 @@ test('unavailable catalog disables generation and private JSON is escaped', () =
   expect(dom.window.pwned).toBeUndefined();
   expect(d.getElementById('music-catalog').textContent).toContain('\\u003c');
   expect(d.documentElement.innerHTML).not.toContain('Gateway base:');
+});
+
+describe.each([['models.json', 300, 300, 3630], ['models-legacy.json', 30, 20, 1830]])('%s browser controls', (file, max, defaultDuration, execution) => {
+  const discovered = () => normalizeCatalog(parseLosslessJson(fs.readFileSync(`tests/fixtures/music/${file}`, 'utf8')));
+  describe.each([false, true])('admin=%s', admin => {
+    test('limits, defaults and help match discovery and survive provider switching', () => {
+      const d = setup({ admin, catalog: discovered() }); selectYue(d);
+      const input = d.getElementById('max_duration');
+      expect([input.min, input.max, input.value]).toEqual(['8', String(max), String(defaultDuration)]);
+      expect(d.getElementById('timeout_sec').max).toBe(String(execution));
+      const help = d.getElementById('max-duration-help').textContent;
+      expect(help).toContain(`8–${max} seconds`); expect(help).toContain(`default: ${defaultDuration} seconds`);
+      expect(help).toContain('may finish earlier'); expect(help).not.toContain('testing');
+      expect(help.includes('5 minutes')).toBe(max === 300);
+      input.value = '12'; selectModel(d, 'ace-step-1.5-xl-turbo');
+      expect(d.getElementById('timeout_sec').value).toBe('7200');
+      selectYue(d); expect(input.value).toBe('12');
+    });
+    test.each(['manual', 'ai', 'infinity'].flatMap(mode => [undefined, 12, 31, 300, 301].map(ceiling => [mode, ceiling])))('%s submits or rejects selected ceiling %s before network', async (mode, ceiling) => {
+      const d = setup({ admin, catalog: discovered() }); selectYue(d);
+      d.getElementById('lyrics').value = '[Verse]\nA boat sails home';
+      if (ceiling !== undefined) d.getElementById('max_duration').value = String(ceiling);
+      selectModel(d, 'ace-step-1.5-xl-turbo'); selectYue(d);
+      if (mode === 'infinity') {
+        const toggle = d.getElementById('infinity-toggle'); toggle.checked = true; toggle.dispatchEvent(new dom.window.Event('change'));
+      } else d.getElementById(mode === 'manual' ? 'music-generate-form' : 'music-ai-form').dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+      await flush();
+      const calls = dom.window.fetch.mock.calls.filter(([url]) => url.includes('/generate'));
+      if (ceiling > max) { expect(calls).toHaveLength(0); return; }
+      expect(calls).toHaveLength(1);
+      const body = new URLSearchParams(String(calls[0][1].body));
+      expect(body.get('max_duration')).toBe(String(ceiling ?? defaultDuration));
+      expect(body.get('timeout_sec')).toBe(String(execution));
+      expect(body.get('model')).toBe('yue2-3b'); expect(body.has('instrumental')).toBe(false);
+    });
+  });
+});
+test('unverified fallback remains disabled and conservative before browser initialization', () => {
+  const html = pug.renderFile('views/partials/music_controls.pug', { csrfToken: 'token', musicCatalog: { models: [], note: 'Unavailable' } });
+  dom = new JSDOM(html);
+  const d = dom.window.document;
+  expect(d.getElementById('music-yue-controls').disabled).toBe(true);
+  expect(d.getElementById('max_duration').max).toBe('30');
+  expect(d.getElementById('max_duration').value).toBe('20');
 });

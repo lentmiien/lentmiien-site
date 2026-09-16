@@ -18,6 +18,7 @@
     const formats = yue ? model.limits.audio_format : ['flac', 'wav', 'mp3', 'wav32', 'opus', 'aac'];
     const audio = form.elements.audio_format;
     audio.replaceChildren(...formats.map(format => new Option(format.toUpperCase(), format)));
+    if (yue) form.elements.cot.replaceChildren(...model.limits.cot.map(mode => new Option(mode[0].toUpperCase() + mode.slice(1), mode)));
     const settings = snapshots.get(model.id) || { ...model.defaults, timeout_sec: model.execution_timeout_sec };
     for (const [name, value] of Object.entries(settings)) {
       const el = form.elements[name];
@@ -37,6 +38,11 @@
     if (!yue) form.elements.duration.max = model.limits.duration_seconds[1];
     for (const key of yue ? ['max_duration'] : ['inference_steps', 'guidance_scale', 'batch_size']) {
       form.elements[key].min = model.limits[key][0]; form.elements[key].max = model.limits[key][1];
+    }
+    if (yue) {
+      const [min, max] = model.limits.max_duration;
+      const minutes = max >= 60 ? ` (${Number((max / 60).toFixed(2))} minutes)` : '';
+      document.getElementById('max-duration-help').textContent = `Choose ${min}–${max} seconds${minutes}. Gateway default: ${model.defaults.max_duration} seconds. This is a ceiling, not an exact target; the song may finish earlier.`;
     }
     document.getElementById('music-model-note').textContent = `${catalog.note} Selected: ${model.id} (${model.availability}). Queue budget: ${model.queue_timeout_sec}s.`;
     document.getElementById('infinity-generator').textContent = `Background generator: ${model.id}. Uses the settings above; playback draws from the shared mixed-model library.`;

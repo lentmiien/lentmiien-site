@@ -3,9 +3,11 @@ const { parseLosslessJson } = require('../utils/losslessJson');
 const ACE = 'ace-step-1.5-xl-turbo';
 const YUE = 'yue2-3b';
 const PROVIDERS = { [ACE]: 'acestep15', [YUE]: 'yue2' };
+const EXECUTION_MAX = { [ACE]: 7200, [YUE]: 3630 };
+// YuE2 fallbacks stay conservative; verified discovery enables 300s/3630s.
 const SPEC = {
   [ACE]: { id: ACE, provider: 'acestep15', defaults: { lyrics: '', instrumental: false, thinking: false, vocal_language: 'unknown', duration: -1, inference_steps: 8, guidance_scale: 7, batch_size: 1, audio_format: 'flac' }, limits: { caption_chars: 512, lyrics_chars: 6000, duration_seconds: [0, 600], inference_steps: [1, 200], guidance_scale: [0, 30], batch_size: [1, 8] }, execution_timeout_sec: 7200, queue_timeout_sec: 900 },
-  [YUE]: { id: YUE, provider: 'yue2', defaults: { cot: 'full', max_duration: 20, audio_format: 'flac', abc: null }, limits: { caption_chars: 2000, lyrics_chars: 6000, text_utf8_bytes: 16000, abc_utf8_bytes: 4096, max_duration: [8, 30], audio_format: ['flac', 'wav'], cot: ['full', 'melody', 'none'] }, execution_timeout_sec: 1830, queue_timeout_sec: 900 },
+  [YUE]: { id: YUE, provider: 'yue2', defaults: { cot: 'full', max_duration: 20, audio_format: 'flac', abc: null }, limits: { caption_chars: 2000, lyrics_chars: 6000, text_utf8_bytes: 16000, abc_utf8_bytes: 4096, max_duration: [8, 300], audio_format: ['flac', 'wav'], cot: ['full', 'melody', 'none'] }, execution_timeout_sec: 1830, queue_timeout_sec: 900 },
 };
 class MusicError extends Error {
   constructor(message, status = 422) { super(message); this.status = status; }
@@ -65,27 +67,69 @@ function modelLimits(id, supplied = {}) {
   // private generation metadata, so copy them through a numeric allowlist.
   for (const key of ['caption_chars', 'lyrics_chars', 'abc_utf8_bytes', 'text_utf8_bytes']) {
     if (baseline[key] === undefined) continue;
-    limits[key] = number(supplied[key] === undefined ? baseline[key] : supplied[key], 1, baseline[key], `Gateway ${key}`);
+    limits[key] = catalogNumber(supplied[key] === undefined ? baseline[key] : supplied[key], 1, baseline[key], `Gateway ${key}`);
   }
   for (const key of ['max_duration', 'duration_seconds', 'inference_steps', 'guidance_scale', 'batch_size']) {
     if (!baseline[key]) continue;
-    const pair = supplied[key] || baseline[key];
+    // An omitted capability must never opt an older Gateway into longer songs.
+    const pair = supplied[key] === undefined ? (key === 'max_duration' ? [8, 30] : baseline[key]) : supplied[key];
     if (!Array.isArray(pair) || pair.length !== 2) fail('Invalid Gateway music limits.', 502);
-    limits[key] = [number(pair[0], baseline[key][0], baseline[key][1], `Gateway ${key}`), number(pair[1], baseline[key][0], baseline[key][1], `Gateway ${key}`)];
+    limits[key] = pair.map(value => catalogNumber(value, baseline[key][0], baseline[key][1], `Gateway ${key}`, key === 'max_duration' || !['duration_seconds', 'guidance_scale'].includes(key)));
     if (limits[key][0] > limits[key][1]) fail('Invalid Gateway music limits.', 502);
+  }
+  for (const key of ['audio_format', 'cot']) {
+    if (!baseline[key]) continue;
+    const values = supplied[key] === undefined ? baseline[key] : supplied[key];
+    if (!Array.isArray(values) || !values.length || values.length > baseline[key].length || new Set(values).size !== values.length || values.some(value => !baseline[key].includes(value))) fail('Invalid Gateway music choices.', 502);
+    limits[key] = values;
   }
   return limits;
 }
+function catalogNumber(value, min, max, name, integer = true) {
+  if (typeof value !== 'number') fail('Invalid Gateway numeric capability.', 502);
+  return number(value, min, max, name, integer);
+}
 function normalizeCatalog(data) {
   if (!data || !Array.isArray(data.models) || data.models.length > 20) fail('Music discovery returned an invalid catalog.', 502);
-  const models = data.models.filter(m => m && PROVIDERS[m.id] === m.provider).map(m => ({
-    ...SPEC[m.id], ...sanitizeMetadata(m), id: m.id, provider: m.provider,
-    defaults: { ...SPEC[m.id].defaults, ...sanitizeMetadata(m.defaults) },
-    limits: modelLimits(m.id, m.limits),
-    usable: m.enabled !== false && m.configured !== false && ['startable', 'unknown', 'ready_to_attempt', 'busy'].includes(m.availability),
-  }));
+  const models = data.models.filter(m => m && Object.hasOwn(PROVIDERS, m.id) && PROVIDERS[m.id] === m.provider).map(m => {
+    try {
+      for (const key of ['limits', 'defaults']) {
+        if (m[key] !== undefined && (!m[key] || typeof m[key] !== 'object' || Array.isArray(m[key]))) fail('Invalid Gateway music catalog.', 502);
+      }
+      for (const key of ['enabled', 'configured']) {
+        if (m[key] !== undefined && typeof m[key] !== 'boolean') fail('Invalid Gateway availability.', 502);
+      }
+      for (const [key, fallback] of Object.entries(SPEC[m.id].defaults)) {
+        if (fallback !== null && m.defaults?.[key] !== undefined && typeof m.defaults[key] !== typeof fallback) fail('Invalid Gateway music default.', 502);
+      }
+      if (m.defaults?.max_duration_seconds !== undefined && typeof m.defaults.max_duration_seconds !== 'number') fail('Invalid Gateway duration default.', 502);
+      const model = {
+        ...SPEC[m.id], ...sanitizeMetadata(m), id: m.id, provider: m.provider,
+        defaults: { ...SPEC[m.id].defaults, ...sanitizeMetadata(m.defaults) },
+        limits: modelLimits(m.id, m.limits),
+        usable: m.enabled !== false && m.configured !== false && ['startable', 'unknown', 'ready_to_attempt', 'busy'].includes(m.availability),
+      };
+      model.execution_timeout_sec = catalogNumber(m.execution_timeout_sec === undefined ? SPEC[m.id].execution_timeout_sec : m.execution_timeout_sec, 1, EXECUTION_MAX[m.id], 'Gateway execution budget');
+      for (const [key, fallback, max] of [['queue_timeout_sec', 900, 7200], ['preparation_timeout_sec', 900, 3600], ['cleanup_timeout_sec', 600, 1800]]) {
+        model[key] = catalogNumber(m[key] === undefined ? fallback : m[key], 1, max, `Gateway ${key}`);
+      }
+      if (m.id === YUE) model.defaults.max_duration = durationCeiling(m.defaults || {}, SPEC[YUE].defaults.max_duration, model.limits.max_duration);
+      // Validate defaults even for disabled providers, before publishing to forms.
+      validate({ model: m.id }, { default_model: m.id, models: [{ ...model, usable: true }] }, { promptOnly: true });
+      return model;
+    } catch (error) {
+      if (error instanceof MusicError) fail('Music discovery returned invalid limits, defaults or timing budgets.', 502);
+      throw error;
+    }
+  });
   if (!models.length || new Set(models.map(m => m.id)).size !== models.length) fail('Music discovery returned an invalid catalog.', 502);
   return { default_model: models.some(m => m.id === data.default_model) ? data.default_model : ACE, models, legacy: false, note: 'Stopped/startable models start automatically. Availability is permission to attempt generation.' };
+}
+function durationCeiling(values, fallback, limits) {
+  const supplied = ['max_duration', 'max_duration_seconds'].filter(key => values[key] !== undefined)
+    .map(key => number(values[key], Math.max(8, limits[0]), Math.min(300, limits[1]), 'Duration ceiling'));
+  if (supplied.length === 2 && supplied[0] !== supplied[1]) fail('Duration aliases must agree.');
+  return supplied.length ? supplied[0] : number(fallback, Math.max(8, limits[0]), Math.min(300, limits[1]), 'Duration ceiling');
 }
 function selectModel(body, catalog) {
   if (body.model !== undefined && body.model_id !== undefined && body.model !== body.model_id) fail('model and model_id must agree.');
@@ -113,11 +157,10 @@ function validate(body, catalog, { promptOnly = false } = {}) {
   if (body.background !== undefined) bool(body.background, 'background');
   if (body.seed !== undefined && !(typeof body.seed === 'string' && !body.seed.trim())) payload.seed = number(body.seed, yue ? 0 : -1, Number.MAX_SAFE_INTEGER, 'Seed');
   payload.audio_format = choice(body.audio_format ?? d.audio_format, yue ? m.limits.audio_format : ['flac', 'wav', 'mp3', 'wav32', 'opus', 'aac'], 'audio format');
-  payload.timeout_sec = number(body.timeout_sec ?? m.execution_timeout_sec, 1, Math.min(m.execution_timeout_sec, yue ? 1830 : 7200), 'Execution timeout');
+  payload.timeout_sec = number(body.timeout_sec ?? m.execution_timeout_sec, 1, Math.min(m.execution_timeout_sec, EXECUTION_MAX[m.id]), 'Execution timeout');
   if (yue) {
-    payload.cot = choice(body.cot === 'off' ? 'none' : body.cot ?? d.cot, ['full', 'melody', 'none'], 'planning mode');
-    if (body.max_duration !== undefined && body.max_duration_seconds !== undefined && Number(body.max_duration) !== Number(body.max_duration_seconds)) fail('Duration aliases must agree.');
-    payload.max_duration = number(body.max_duration ?? body.max_duration_seconds ?? d.max_duration, Math.max(8, m.limits.max_duration[0]), Math.min(30, m.limits.max_duration[1]), 'Duration ceiling');
+    payload.cot = choice(body.cot === 'off' ? 'none' : body.cot ?? d.cot, m.limits.cot, 'planning mode');
+    payload.max_duration = durationCeiling(body, d.max_duration, m.limits.max_duration);
     if (body.abc !== undefined && body.abc !== null && body.abc !== '') {
       payload.abc = text(body.abc, 4096, 'ABC score', true);
       if (payload.cot === 'none' || Buffer.byteLength(payload.abc) > Math.min(4096, m.limits.abc_utf8_bytes)) fail('ABC requires full/melody and at most 4096 UTF-8 bytes.');

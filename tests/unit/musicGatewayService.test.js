@@ -8,7 +8,7 @@ const id = 'yue2:' + 'a'.repeat(32);
 const item = { path: `${id}/audio.flac`, name: 'audio.flac', size_bytes: 2048, modified_ts: 123456 };
 
 test('real Gateway registry: stopped/startable is usable even when ready is false', () => {
-  expect(catalog().models[1]).toMatchObject({ usable: true, ready: false, availability: 'startable', execution_timeout_sec: 1830 });
+  expect(catalog().models[1]).toMatchObject({ usable: true, ready: false, availability: 'startable', execution_timeout_sec: 3630 });
   expect(catalog().models[1].limits.seed[1]).toBe('9223372036854775807');
 });
 test('raw response preserves maximum seeds in every nesting without a dependency', () => {
@@ -21,9 +21,9 @@ test('raw response preserves maximum seeds in every nesting without a dependency
 });
 test('YuE2 only gets its controls, omitted seed stays omitted and zero is preserved', () => {
   const request = validate(yue({ seed: '' }), catalog());
-  expect(request.payload).toEqual({ model: YUE, caption: 'Acoustic folk', lyrics: '[Verse]\nA boat sails home', audio_format: 'flac', timeout_sec: 1830, cot: 'full', max_duration: 20 });
+  expect(request.payload).toEqual({ model: YUE, caption: 'Acoustic folk', lyrics: '[Verse]\nA boat sails home', audio_format: 'flac', timeout_sec: 3630, cot: 'full', max_duration: 300 });
   expect(validate(yue({ seed: '0' }), catalog()).payload.seed).toBe(0);
-  expect(request.timeoutMs).toBe((1830 + 900 + 900 + 600 + 60) * 1000);
+  expect(request.timeoutMs).toBe((3630 + 900 + 900 + 600 + 60) * 1000);
 });
 test.each(['thinking', 'instrumental', 'load', 'params', 'config', 'load_llm', 'inference_steps', 'guidance_scale', 'batch_size', 'duration', 'userId', 'audio_url'])('rejects YuE2 forbidden field %s even false', key => {
   expect(() => validate(yue({ [key]: false }), catalog())).toThrow('Unsupported settings');
@@ -39,7 +39,7 @@ describe.each([ACE, YUE])('input seed validation for %s', model => {
     expect(() => validate(yue({ model, seed }), catalog())).toThrow();
   });
 });
-test.each([{ lyrics: '' }, { lyrics: '  ' }, { caption: 'a'.repeat(2001) }, { lyrics: 'a'.repeat(6001) }, { caption: '界'.repeat(2000), lyrics: '界'.repeat(4000) }, { max_duration: 31 }, { max_duration: 7 }, { max_duration: 20.5 }, { max_duration: 20, max_duration_seconds: 21 }, { cot: 'none', abc: 'C D' }, { abc: '界'.repeat(1400) }, { timeout_sec: 1831 }, { audio_format: 'mp3' }, { model: null }, { model_id: ACE }])('rejects invalid YuE2 contract %p', fields => {
+test.each([{ lyrics: '' }, { lyrics: '  ' }, { caption: 'a'.repeat(2001) }, { lyrics: 'a'.repeat(6001) }, { caption: '界'.repeat(2000), lyrics: '界'.repeat(4000) }, { max_duration: 301 }, { max_duration: 7 }, { max_duration: 20.5 }, { max_duration: 20, max_duration_seconds: 21 }, { cot: 'none', abc: 'C D' }, { abc: '界'.repeat(1400) }, { timeout_sec: 3631 }, { audio_format: 'mp3' }, { model: null }, { model_id: ACE }])('rejects invalid YuE2 contract %p', fields => {
   expect(() => validate(yue(fields), catalog())).toThrow();
 });
 test('NFC budget and cot off alias, valid ABC and duration alias', () => {
@@ -114,4 +114,84 @@ test('sanitizes provider errors and metadata and bounds total transport budget',
   expect(errorMessage({ response: { status: 422, data: { detail: 'SECRET' } } })).not.toContain('SECRET');
   expect(sanitizeMetadata({ url: 'http://secret', caption: 'private', config: { seed: 0, token: 'SECRET' }, provenance: { source_revision: 'abc' } })).toEqual({ config: { seed: '0' }, provenance: { source_revision: 'abc' } });
   expect(() => transportTimeout({ queue_timeout_sec: 7200, preparation_timeout_sec: 3600, cleanup_timeout_sec: 1800 }, 7200)).toThrow('five-hour');
+});
+
+describe.each([
+  ['models.json', 300, 300, 3630],
+  ['models-legacy.json', 30, 20, 1830],
+])('%s discovery compatibility', (file, max, defaultDuration, execution) => {
+  const discovered = () => normalizeCatalog(parseLosslessJson(fs.readFileSync(`tests/fixtures/music/${file}`, 'utf8')));
+  test('discovered defaults and ACE behavior remain independent of the YuE2 ceiling', () => {
+    expect(validate(yue(), discovered()).payload).toMatchObject({ max_duration: defaultDuration, timeout_sec: execution });
+    expect(validate({ caption: 'Folk' }, discovered()).payload).toEqual({ model: ACE, caption: 'Folk', lyrics: '', audio_format: 'flac', timeout_sec: 7200, instrumental: false, thinking: false, vocal_language: 'unknown', duration: -1, inference_steps: 8, guidance_scale: 7, batch_size: 1 });
+  });
+  test.each(['max_duration', 'max_duration_seconds'])('%s enforces actual bounds for both aliases', key => {
+    for (const ceiling of [8, 12, 30, 31, 300, 301]) {
+      if (ceiling <= max) expect(validate(yue({ [key]: ceiling }), discovered()).payload.max_duration).toBe(ceiling);
+      else expect(() => validate(yue({ [key]: ceiling }), discovered())).toThrow('Duration ceiling');
+    }
+    expect(validate(yue({ max_duration: String(max), max_duration_seconds: max }), discovered()).payload.max_duration).toBe(max);
+    expect(() => validate(yue({ max_duration: max, max_duration_seconds: max - 1 }), discovered())).toThrow('aliases');
+  });
+  test('execution and transport use discovered budgets, never audio duration', () => {
+    for (const ceiling of [8, max]) {
+      const request = validate(yue({ max_duration: ceiling }), discovered());
+      expect(request.timeoutMs).toBe((execution + 900 + 900 + 600 + 60) * 1000);
+      expect(validate(yue({ timeout_sec: 1830 }), discovered()).payload.timeout_sec).toBe(1830);
+    }
+    expect(() => validate(yue({ timeout_sec: execution + 1 }), discovered())).toThrow('Execution timeout');
+  });
+});
+test('explicit discovered preparation/cleanup/queue and shorter execution budgets are respected', () => {
+  const raw = rawCatalog();
+  Object.assign(raw.models[1], { queue_timeout_sec: 100, preparation_timeout_sec: 200, cleanup_timeout_sec: 50, execution_timeout_sec: 1000 });
+  expect(validate(yue(), normalizeCatalog(raw)).timeoutMs).toBe(1410000);
+  expect(() => validate(yue({ timeout_sec: 1830 }), normalizeCatalog(raw))).toThrow();
+});
+test('missing duration capabilities retain conservative old defaults', () => {
+  const raw = rawCatalog(); delete raw.models[1].limits.max_duration; delete raw.models[1].defaults.max_duration; delete raw.models[1].execution_timeout_sec;
+  const c = normalizeCatalog(raw);
+  expect(c.models[1].limits.max_duration).toEqual([8, 30]);
+  expect(validate(yue(), c).payload).toMatchObject({ max_duration: 20, timeout_sec: 1830 });
+  expect(() => validate(yue({ max_duration: 31 }), c)).toThrow();
+});
+test('alias-only discovered duration default becomes the canonical form default', () => {
+  const raw = rawCatalog(); delete raw.models[1].defaults.max_duration; raw.models[1].defaults.max_duration_seconds = 60;
+  expect(normalizeCatalog(raw).models[1].defaults.max_duration).toBe(60);
+  expect(validate(yue(), normalizeCatalog(raw)).payload.max_duration).toBe(60);
+});
+test.each([
+  { limits: null }, { limits: [] }, { defaults: null }, { defaults: [] }, { enabled: 'false' }, { configured: 1 },
+  { limits: { max_duration: ['8', 300] } }, { defaults: { max_duration: '300' } }, { execution_timeout_sec: '3630' },
+  { limits: { max_duration: null } }, { limits: { max_duration: [8] } }, { limits: { max_duration: [8, 301] } },
+  { limits: { max_duration: [7, 300] } }, { limits: { max_duration: [30, 8] } }, { limits: { max_duration: [8, 29.5] } },
+  { limits: { max_duration: [8, 30] }, defaults: { max_duration: 300 } },
+  { defaults: { max_duration: null } }, { defaults: { max_duration: 301 } }, { defaults: { max_duration: true } },
+  { defaults: { max_duration: 20.5 } }, { defaults: { max_duration: 20, max_duration_seconds: 30 } },
+  { limits: { audio_format: ['mp3'] } }, { limits: { cot: ['future'] } }, { limits: { audio_format: [] } },
+  { defaults: { cot: 'future' } }, { defaults: { audio_format: 'mp3' } },
+  { execution_timeout_sec: 3631 }, { execution_timeout_sec: null }, { execution_timeout_sec: 0 },
+  { queue_timeout_sec: 7201 }, { preparation_timeout_sec: 3601 }, { cleanup_timeout_sec: 1801 },
+])('rejects malformed or unsupported discovery before any form/dispatch %p', overrides => {
+  const raw = rawCatalog();
+  for (const [key, value] of Object.entries(overrides)) raw.models[1][key] = value && !Array.isArray(value) && typeof value === 'object' ? { ...raw.models[1][key], ...value } : value;
+  expect(() => normalizeCatalog(raw)).toThrow(expect.objectContaining({ status: 502 }));
+});
+test('unknown models cannot dispatch; additive metadata cannot expand supported settings', () => {
+  const raw = rawCatalog(); raw.models.push({ id: 'future', provider: 'future', availability: 'startable' });
+  raw.models[1].fields.push('dangerous_setting'); raw.models[1].limits.future = [0, 999];
+  const c = normalizeCatalog(raw);
+  expect(c.models).toHaveLength(2);
+  expect(() => validate(yue({ model: 'future' }), c)).toThrow('Unknown');
+  expect(() => validate(yue({ dangerous_setting: true }), c)).toThrow('Unsupported settings');
+  raw.models[1].enabled = false;
+  expect(() => validate(yue(), normalizeCatalog(raw))).toThrow('Selected music model');
+});
+test('tighter discovered planning/format choices govern defaults and requests', () => {
+  const raw = rawCatalog(); raw.models[1].limits.cot = ['melody']; raw.models[1].defaults.cot = 'melody';
+  raw.models[1].limits.audio_format = ['wav']; raw.models[1].defaults.audio_format = 'wav';
+  const c = normalizeCatalog(raw);
+  expect(validate(yue(), c).payload).toMatchObject({ cot: 'melody', audio_format: 'wav' });
+  expect(() => validate(yue({ cot: 'full' }), c)).toThrow();
+  expect(() => validate(yue({ audio_format: 'flac' }), c)).toThrow();
 });

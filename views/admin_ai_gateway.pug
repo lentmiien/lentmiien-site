@@ -598,7 +598,7 @@ block content
           if logInsights.music && logInsights.music.models
             each item in logInsights.music.models
               p= `${item.model}: ${item.count} requests`
-          p.panel__subtitle Recent /music/acestep15/generate requests with start-to-peak deltas and absolute peak usage.
+          p.panel__subtitle Recent /music/generate and legacy /music/acestep15/generate requests across models, with start-to-peak deltas and absolute peak usage.
         if logInsights.music
           ul.limits-list
             li Requests sampled: #{formatNumber(logInsights.music.sampleCount)}

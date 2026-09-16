@@ -3,7 +3,6 @@ const vm = require('vm');
 const path = require('path');
 const pug = require('pug');
 const { parseLosslessJson } = require('../../utils/losslessJson');
-const catalog = parseLosslessJson(fs.readFileSync('tests/fixtures/music/models.json', 'utf8'));
 function fixture() {
   const axios = { post: jest.fn().mockResolvedValue({ data: {} }), get: jest.fn().mockResolvedValue({ data: { containers: [] } }) };
   const logger = { warning: jest.fn(), notice: jest.fn() };
@@ -23,7 +22,8 @@ function fixture() {
   return { context, axios, logger };
 }
 function render(dashboard) { return pug.renderFile('views/admin_ai_gateway.pug', { dashboard, loggedIn: true, admin: true, permissions: [], htmlPaths: [], bookmarks: [], csrfToken: 'A'.repeat(43) }); }
-test('real registered YuE2 container stays dynamic and startable, music limits and mixed stats render', () => {
+test.each(['models.json', 'models-legacy.json'])('%s: registered YuE2 stays dynamic and startable, music limits and mixed stats render', file => {
+  const catalog = parseLosslessJson(fs.readFileSync(`tests/fixtures/music/${file}`, 'utf8'));
   const f = fixture();
   const dashboard = f.context.buildAiGatewayDashboard({ errors: {}, musicModels: catalog, containers: { containers: [{ id: 'yue2', name: 'yue2-standalone', state: 'exited', running: false, gpu_reservable: true }] }, limits: { music: { default_model: catalog.default_model, models: Object.fromEntries(catalog.models.map(m => [m.id, m])) } }, logsRaw: [JSON.stringify({ route: 'music_generate', model: 'yue2-3b', provider: 'yue2', status_code: 200, duration_sec: 80 }), JSON.stringify({ route: 'music_acestep15_generate', status_code: 200, duration_sec: 60 })].join('\n') });
   expect(dashboard.containers).toHaveLength(1); expect(dashboard.containers[0].id).toBe('yue2');
@@ -32,6 +32,7 @@ test('real registered YuE2 container stays dynamic and startable, music limits a
   expect(dashboard.logInsights.music.models).toEqual([{ model: 'yue2-3b', count: 1 }, { model: 'unknown (historical)', count: 1 }]);
   const html = render(dashboard); expect(html).toContain('Music capabilities'); expect(html).toContain('State: startable'); expect(html).toContain('data-container-id="yue2"');
   expect(html).toContain('data-container-action="start"'); expect(html).toContain('9223372036854775807');
+  expect(html).toContain('Recent /music/generate and legacy /music/acestep15/generate requests across models');
   expect(html).not.toContain('PRIVATE_ADMIN_TOKEN'); expect(html).not.toContain('private-gateway.invalid');
 });
 test('missing discovery gives old-release note and never fabricates a container', () => {

@@ -453,6 +453,8 @@
 
   async function submitForm(form, url, { kind, showStatus, background = false } = {}) {
     if (state.submitting || state.pollers.size) throw new Error('A generation is already being submitted or monitored.');
+    const ceiling = generateForm.elements.max_duration;
+    if (!document.getElementById('music-yue-controls').disabled && !ceiling.checkValidity()) throw new Error('Choose a maximum song length within the displayed Gateway limits.');
     state.submitting = true;
     try {
     const formData = new FormData(generateForm);
