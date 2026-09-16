@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 - Entry point: `app.js` (Express + Socket.IO).
 - Server code: `routes/`, `controllers/`, `services/`, `models/`, `middleware/`, `schedulers/`, and `utils/`.
-- Views: `views/` (Pug). Static assets and generated media: `public/`. Standalone games: `games/`. Maintenance scripts: `scripts/`.
+- Views: `views/` (Pug). Static assets and public generated media: `public/`. Private generated media stays outside `public/`, including GPT Image storage at `private_data/gpt-image/` by default. Standalone games: `games/`. Maintenance scripts: `scripts/`.
 - Realtime: `socket_io/`.
 - Tests: `tests/` (Jest). Project documentation: `documentation/`.
 - Generated and ignored runtime data includes `cache/`, `tmp_data/`, `logs/`, `github-repos/`, coverage, and generated media; do not edit or commit it unless the task specifically requires it.
@@ -11,13 +11,13 @@
 
 ## Build, Test, and Development Commands
 - Clean install: `npm ci`. Use `npm install` only when intentionally changing dependencies, and commit the resulting lockfile changes.
-- Test: `npm test` — runs the Jest suite with coverage. Run a focused suite with `npm test -- tests/unit/<name>.test.js`.
-- Validate curated OpenAPI YAML after changing it: `npm run lint:openapi`.
+- Test: `npm test` — runs the full Jest suite with coverage. Run a focused suite with `npm test -- tests/unit/<name>.test.js --coverage=false` to avoid enforcing unrelated files' coverage thresholds on a partial run.
+- Validate each changed curated OpenAPI YAML with `npm run lint:openapi -- <filename>.yaml` (filenames are relative to `public/yaml/`). The default `npm run lint:openapi` checks only the validator's configured list, which does not include every tracked spec.
 - `npm start` is not a routine smoke test: its `prestart` pipeline mutates generated files and database data and may run Dropbox synchronization before launching `node app`.
-- `PORT=8080 node app` bypasses `prestart`, but still connects to MongoDB and starts background schedulers and workers. Use it only when exercising the configured application environment.
+- `PORT=8080 node app` bypasses `prestart`, but still starts the database lifecycle and background services. Database-dependent schedulers and workers wait for database readiness; local log retention and connectivity monitoring start independently. Use it only when exercising the configured application environment.
 
 ## Coding Style & Naming Conventions
-- JavaScript using the Node version pinned by Volta in `package.json` (currently 24.20.0). Predominantly CommonJS (`require`, `module.exports`). Keep new code consistent with neighboring files; avoid mixing ESM unless needed.
+- JavaScript using the Node version pinned by Volta in `package.json`. Predominantly CommonJS (`require`, `module.exports`). Keep new code consistent with neighboring files; avoid mixing ESM unless needed.
 - Indentation: 2 spaces; include semicolons; single quotes preferred.
 - Files: follow existing patterns in each folder (e.g., `routes/*.js`, `models/*`). Use PascalCase for new model constructor identifiers and `lowerCamelCase` for functions; preserve existing filenames, registered Mongoose model names, and collection names unless a migration is explicitly requested.
 - Views: Pug templates under `views/`; keep route names aligned with template names where practical.
@@ -44,11 +44,11 @@
 
 ## Security & Configuration Tips
 - New features and deliberate replacements of legacy features must follow `documentation/security-framework.md`; read it before designing or implementing those changes.
-- Classify each new feature as fully public, secret public, or logged in. Logged-in features require semantic capabilities plus object-level owner/member authorization; authentication alone is not sufficient.
+- Classify each new feature as fully public, secret public, or logged in. Logged-in features require semantic capabilities; object-bearing operations must also enforce the feature's declared object scope (owner, member, shared household, or explicitly admin-managed). Authentication alone is not sufficient.
 - Treat `admin`, `family`, and `user` as capability bundles, not authorization shortcuts. Derive identity from the validated principal rather than request-supplied user fields.
-- New browser mutations must not use GET and must use the shared CSRF approach. Keep private files outside `public`, bound all untrusted input/work, and add negative security tests.
+- Reuse `middleware/requireCapabilities.js` and `utils/authorization.js` for capability checks. New browser mutations must not use GET and must use `middleware/sessionCsrf.js` for the shared CSRF defense. Keep private files outside `public`, bound all untrusted input/work, and add negative security tests.
 - Existing features are grandfathered until explicitly rebuilt, but new routes or operations added to legacy features must meet the framework and must not copy known legacy security gaps.
-- Never commit secrets. Configure `.env` from `env_sample` (e.g., `MONGOOSE_URL`, `SESSION_SECRET`, `API_KEY`, `OPENAI_API_KEY`, Dropbox/Google keys).
-- Do not read, print, or commit `.env`, token files, credentials, or generated personal data unless the task requires it.
-- `setup.js` resets temporary data, converts images, prunes files, performs database maintenance, and conditionally runs Dropbox backup and restore. Its preflight normally requires `MONGOOSE_URL`, `SESSION_SECRET`, and `OPENAI_API_KEY`.
-- `database.js` opens the application's MongoDB connection on import; verify connectivity and use sandbox credentials for external integrations when possible.
+- Never commit secrets, `.env`, token files, or credentials.
+- Do not read or print `.env`, token files, credentials, or generated personal data unless the task requires it. Do not commit generated personal data unless explicitly requested.
+- `setup.js` resets temporary data, converts images, prunes files, performs database maintenance, and conditionally runs Dropbox backup and restore. Its default preflight checks `MONGOOSE_URL`, `SESSION_SECRET`, and `OPENAI_API_KEY`; missing non-database configuration blocks setup, while missing or unavailable MongoDB defers recovery to the web process and skips database maintenance. See `documentation/startup-diagnostics.md` for configuration and recovery behavior.
+- `database.js` registers and exports models and disables Mongoose command buffering; it does not connect on import. `app.js` starts `services/databaseLifecycleService.js` to manage MongoDB connectivity and readiness. Verify connectivity when exercising the application or integrations, and use sandbox credentials where possible.

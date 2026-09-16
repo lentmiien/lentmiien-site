@@ -2,7 +2,7 @@
 
 - Status: Normative for new development
 - Version: 1.0
-- Last updated: 2026-08-29
+- Last updated: 2026-09-16
 
 ## Purpose
 
@@ -24,9 +24,11 @@ The findings that motivated this framework are recorded in `documentation/securi
 
 This document is the target policy; it does not imply that every shared primitive already exists.
 
-Reusable controls currently include session authentication, the shared role-permission evaluator, secret-public response handling, safe inline JSON, rich-content sanitizers, file/path and local-redirect validators, the production logger, and generic error handling.
+Reusable controls currently include session authentication, the shared role-permission and capability evaluator (`utils/authorization.js`), capability middleware (`middleware/requireCapabilities.js`), session CSRF middleware (`middleware/sessionCsrf.js`), secret-public response handling, safe inline JSON, rich-content sanitizers, file/path and local-redirect validators, the production logger, and generic error handling. Reuse these controls rather than adding feature-specific replacements.
 
-The project does not yet have a complete semantic capability catalog/policy registry, shared CSRF middleware, scoped service-principal system, universal owner/member guard, persistent revocable session store, or private-media delivery layer. The first new feature that needs one of these controls must either add a reviewed shared implementation with focused tests or stop and document the missing prerequisite. It must not silently fall back to a legacy insecure pattern.
+Private-media storage and delivery exist for individual features, including `services/gptImageStorageService.js` and the authorized media route in `routes/gpt_image.js`; these are feature-specific rather than a universal delivery layer.
+
+The project does not yet have a complete semantic capability catalog/policy registry, scoped service-principal system, universal owner/member guard, persistent revocable session store, or universal private-media delivery layer. The first new feature that needs a missing control must either add a reviewed shared implementation with focused tests or stop and document the missing prerequisite. It must not silently fall back to a legacy insecure pattern.
 
 ## Requirement language
 
