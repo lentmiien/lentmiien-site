@@ -151,67 +151,24 @@ function getMessageIdentity(message, fallbackIndex = 0) {
   return `message-${fallbackIndex}`;
 }
 
-function getContentResponseId(message) {
-  const content = message?.content || {};
-  return content.responseId || content.response_id || content.raw?.response_id || null;
-}
-
-function isFunctionResponseMessage(message) {
-  return message?.contentType === 'function_call' || message?.contentType === 'function_call_output';
-}
-
-function isReasoningResponseMessage(message) {
-  return message?.contentType === 'reasoning';
+function isBuiltInToolResponseMessage(message) {
+  const type = message?.content?.raw?.type;
+  return (message?.contentType === 'tool' || message?.contentType === 'image')
+    && (type === 'web_search_call' || type === 'image_generation_call');
 }
 
 function isResponseReplayMessage(message) {
-  return isFunctionResponseMessage(message) || isReasoningResponseMessage(message);
+  return message?.contentType === 'function_call'
+    || message?.contentType === 'function_call_output'
+    || message?.contentType === 'reasoning'
+    || isBuiltInToolResponseMessage(message);
 }
 
-function findLastFunctionResponseBatch(messages = []) {
-  const batch = new Set();
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return batch;
-  }
-
-  let foundBatch = false;
-  const responseIds = new Set();
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index];
-    if (!message) continue;
-
-    if (isFunctionResponseMessage(message)) {
-      batch.add(getMessageIdentity(message, index));
-      foundBatch = true;
-      const responseId = getContentResponseId(message);
-      if (responseId) {
-        responseIds.add(responseId);
-      }
-      continue;
-    }
-
-    if (foundBatch && isReasoningResponseMessage(message)) {
-      const responseId = getContentResponseId(message);
-      if (responseIds.size === 0 || !responseId || responseIds.has(responseId)) {
-        batch.add(getMessageIdentity(message, index));
-      }
-      continue;
-    }
-
-    if (foundBatch && !message.hideFromBot) {
-      break;
-    }
-  }
-
-  return batch;
-}
-
-function selectMessagesForResponses(messages = [], maxMessagesLimit = null, { includeLastToolBatch = false } = {}) {
+function selectMessagesForResponses(messages = [], maxMessagesLimit = null) {
   if (!Array.isArray(messages) || messages.length === 0) {
     return [];
   }
 
-  const toolBatch = includeLastToolBatch ? findLastFunctionResponseBatch(messages) : new Set();
   const selected = [];
   let visibleCount = 0;
 
@@ -220,9 +177,9 @@ function selectMessagesForResponses(messages = [], maxMessagesLimit = null, { in
     if (!message) continue;
 
     if (isResponseReplayMessage(message)) {
-      if (toolBatch.has(getMessageIdentity(message, index))) {
-        selected.push(message);
-      }
+      // Replay all tool calls, results, and reasoning even though stored as hidden.
+      // These items do not count toward the visible-message limit.
+      selected.push(message);
       continue;
     }
 
@@ -362,7 +319,10 @@ function buildFunctionCallOutputInput(message) {
   };
 }
 
-function buildFunctionResponseInput(message) {
+function buildResponseReplayInput(message) {
+  if (isBuiltInToolResponseMessage(message)) {
+    return message.content.raw;
+  }
   if (message?.contentType === 'reasoning') {
     return buildReasoningInput(message);
   }
@@ -444,10 +404,10 @@ function GenerateMessagesArray_Responses(context, messages, isImageModel) {
     if (!message) continue;
 
     if (isResponseReplayMessage(message)) {
-      const functionInput = buildFunctionResponseInput(message);
-      if (functionInput) {
+      const replayInput = buildResponseReplayInput(message);
+      if (replayInput) {
         flushContent();
-        messageArray.push(functionInput);
+        messageArray.push(replayInput);
       }
       continue;
     }
@@ -872,9 +832,7 @@ const chat = async (conversation, messages, model, options = {}) => {
   const promptWithTools = appendToolGuidance(resolvedContext, conversation?.metadata?.tools);
   const maxMessagesLimit = resolveMaxMessagesLimit(conversation);
   const messagesFromConfiguredStart = sliceMessagesFromConfiguredStart(messages, conversation);
-  const limitedMessages = selectMessagesForResponses(messagesFromConfiguredStart, maxMessagesLimit, {
-    includeLastToolBatch: !!options.includeLastToolBatch,
-  });
+  const limitedMessages = selectMessagesForResponses(messagesFromConfiguredStart, maxMessagesLimit);
   const messageArray = GenerateMessagesArray_Responses(
     {type: model.context_type, prompt: promptWithTools},
     limitedMessages,

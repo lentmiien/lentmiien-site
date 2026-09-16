@@ -265,7 +265,7 @@ describe('OpenAI_API response conversion', () => {
     });
   });
 
-  test('chat resolves custom tools and only includes last tool batch when requested', async () => {
+  test('chat resolves custom tools and includes tool history by default', async () => {
     mockGetToolJson.mockResolvedValue({
       type: 'function',
       name: 'demo_tool',
@@ -331,7 +331,7 @@ describe('OpenAI_API response conversion', () => {
       },
     ];
 
-    await chat(conversation, messages, model, { includeLastToolBatch: true });
+    await chat(conversation, messages, model);
 
     expect(mockGetToolJson).toHaveBeenCalledWith('demo_tool', {
       format: 'responses',
@@ -362,6 +362,106 @@ describe('OpenAI_API response conversion', () => {
     expect(reasoningIndex).toBeGreaterThan(-1);
     expect(reasoningIndex).toBeLessThan(functionCallIndex);
     expect(functionCallIndex).toBeLessThan(functionOutputIndex);
+  });
+
+  test.each([undefined, { includeLastToolBatch: false }, { includeLastToolBatch: true }])(
+    'chat retains every tool batch and its reasoning in order with options %j',
+    async (options) => {
+      mockResponsesCreate.mockResolvedValue({ id: 'resp-history' });
+      const messages = [];
+      const expectedInput = [];
+      for (let turn = 1; turn <= 2; turn++) {
+        const text = `Request ${turn}`;
+        messages.push({
+          _id: `user-${turn}`, user_id: 'Lennart', contentType: 'text', content: { text },
+        });
+        expectedInput.push({ role: 'user', content: [{ type: 'input_text', text }] });
+        const output = [
+          {
+            type: 'reasoning', id: `rs_${turn}`, summary: [],
+            encrypted_content: `encrypted-${turn}`,
+          },
+          ...[1, 2].map(call => ({
+            type: 'function_call', id: `fc_${turn}_${call}`, call_id: `call_${turn}_${call}`,
+            name: 'demo_tool', arguments: JSON.stringify({ turn, call }), status: 'completed',
+          })),
+        ];
+        const converted = await convertResponseBody({ id: `resp-${turn}`, output });
+        messages.push(...converted.filter(item => item.contentType));
+        expectedInput.push(...output);
+        for (let call = 1; call <= 2; call++) {
+          const result = {
+            type: 'function_call_output', call_id: `call_${turn}_${call}`,
+            output: JSON.stringify({ result: `${turn}-${call}` }),
+          };
+          const convertedResult = await convertResponseBody({ output: [result] });
+          messages.push(...convertedResult.filter(item => item.contentType));
+          expectedInput.push(result);
+        }
+        messages.push({
+          user_id: 'bot', contentType: 'text', content: { text: `Answer ${turn}` },
+        });
+        expectedInput.push({
+          role: 'assistant', content: [{ type: 'output_text', text: `Answer ${turn}` }],
+        });
+      }
+      messages.push(
+        { contentType: 'text', content: { text: 'Hidden message' }, hideFromBot: true },
+        { user_id: 'Lennart', contentType: 'text', content: { text: 'Follow up' } },
+      );
+      expectedInput.push({ role: 'user', content: [{ type: 'input_text', text: 'Follow up' }] });
+      const originalMessages = JSON.parse(JSON.stringify(messages));
+      const conversation = { metadata: { maxMessages: 20, tools: [] } };
+      const model = { api_model: 'gpt-4.1', context_type: 'none', in_modalities: ['text'] };
+
+      await chat(conversation, messages, model, options);
+
+      expect(mockResponsesCreate.mock.calls[0][0].input).toEqual(expectedInput);
+      expect(messages).toEqual(originalMessages);
+
+      // The existing max-message limit counts visible messages, not replay items.
+      conversation.metadata.maxMessages = 1;
+      await chat(conversation, messages, model, options);
+      expect(mockResponsesCreate.mock.calls[1][0].input).toEqual(
+        expectedInput.filter(item => item.type || item === expectedInput.at(-1)),
+      );
+
+      conversation.metadata.startMessageId = 'user-2';
+      conversation.metadata.maxMessages = 20;
+      await chat(conversation, messages, model, options);
+      const secondTurnIndex = expectedInput.findIndex(item => item.content?.[0]?.text === 'Request 2');
+      expect(mockResponsesCreate.mock.calls[2][0].input).toEqual(expectedInput.slice(secondTurnIndex));
+    },
+  );
+
+  test('chat replays stored built-in tool calls from previous turns as-is', async () => {
+    mockResponsesCreate.mockResolvedValue({ id: 'resp-built-in-history' });
+    const webSearch = {
+      type: 'web_search_call', id: 'ws_1', status: 'completed',
+      action: { type: 'search', query: 'example' },
+    };
+    const imageGeneration = {
+      type: 'image_generation_call', id: 'ig_1', status: 'completed', result: null,
+    };
+    const converted = await convertResponseBody({ output: [webSearch, imageGeneration] });
+    const messages = [
+      ...converted.filter(item => item.contentType),
+      // Successful image generations are stored as image messages with the raw call.
+      { contentType: 'image', content: { raw: { ...imageGeneration, id: 'ig_2', result: 'base64-image' } }, hideFromBot: true },
+      { contentType: 'tool', content: { toolOutput: 'Legacy entry without a raw call' }, hideFromBot: true },
+      { user_id: 'Lennart', contentType: 'text', content: { text: 'Follow up' } },
+    ];
+
+    await chat({ metadata: { maxMessages: 20, tools: [] } }, messages, {
+      api_model: 'gpt-4.1', context_type: 'none', in_modalities: ['text'],
+    });
+
+    expect(mockResponsesCreate.mock.calls[0][0].input).toEqual([
+      webSearch,
+      imageGeneration,
+      { ...imageGeneration, id: 'ig_2', result: 'base64-image' },
+      { role: 'user', content: [{ type: 'input_text', text: 'Follow up' }] },
+    ]);
   });
 
   test('chat applies the configured start message before the max-message limit', async () => {
