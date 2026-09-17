@@ -106,6 +106,7 @@ describe('amiamiScraperService', () => {
     const normalized = normalizeDetail({
       item: {
         gcode: 'FIGURE-100001',
+        scode: 'separate_upstream_code',
         gname: 'Example Figure',
         price: '12,345',
         maker_name: 'Example Maker',
@@ -121,6 +122,7 @@ describe('amiamiScraperService', () => {
 
     expect(normalized).toEqual(expect.objectContaining({
       gcode: 'FIGURE-100001',
+      scode: 'separate_upstream_code',
       itemName: 'Example Figure',
       price: expect.objectContaining({
         currentJpy: 12345,

@@ -43,7 +43,8 @@ function jan(value, code = 'INVALID_REQUEST') {
   return string(value, 13, code, /^(?:[0-9]{8}|[0-9]{13})$/);
 }
 function gcode(value, code = 'INVALID_REQUEST') {
-  // Conservative supported subset, not a claim to cover every historical AmiAmi code.
+  // Bounded pilot subset covering the FIGURE-/GOODS- examples in core-api.v1.yaml
+  // and amiamiItemsApiController tests; not an established full upstream grammar.
   return string(value, 64, code, /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/);
 }
 function taric(value, code = 'INVALID_RESULT') {
@@ -102,7 +103,8 @@ function validateEvidence(value) {
   }
   if (value.facts.name.trim().toLowerCase() === value.gcode.toLowerCase()) fail(code);
   const p = value.provenance;
-  object(p, ['source', 'source_url', 'resolution', 'name_field', 'identity', 'fetched_at', 'fields'], code);
+  object(p, ['source', 'source_url', 'scode', 'resolution', 'name_field', 'identity', 'fetched_at', 'fields'], code);
+  if (Object.hasOwn(p, 'scode')) string(p.scode, 64, code);
   if (p.source !== 'amiami' || p.source_url !== `https://www.amiami.com/eng/detail?gcode=${value.gcode}`
     || !['local_item_code', 'local_jan', 'online_item_code'].includes(p.resolution)
     || !['details.itemName', 'listing.itemName'].includes(p.name_field)

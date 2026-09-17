@@ -65,12 +65,30 @@ describe('TARIC factual resolver (synthetic database and fetch only)', () => {
   });
   test.each([
     { listing: { gcode: 'OTHER' } }, { details: { ...details, gcode: 'OTHER' } },
-    { details: { ...details, scode: 'OTHER' } }, { details: { ...details, janCode: '12345678' } },
+    { details: { ...details, janCode: '12345678' } },
   ])('rejects inconsistent stored identities without repair %j', async (changes) => {
     const fetcher = jest.fn();
     const { service } = setup([local(changes)], fetcher);
     await expect(service.resolve({ ...request, jan: '00123456' })).rejects.toMatchObject({ code: 'IDENTITY_MISMATCH' });
     expect(fetcher).not.toHaveBeenCalled();
+  });
+  test('keeps differing scode as provenance while enforcing selected gcode and JAN', async () => {
+    const fetcher = jest.fn();
+    const state = setup([local({ details: { ...details, scode: 'separate_upstream_code' } })], fetcher);
+    const evidence = await state.service.resolve({ ...request, jan: '00123456' });
+    expect(evidence).toMatchObject({ gcode: request.item_code, jan: '00123456',
+      provenance: { identity: 'both_agree', scode: 'separate_upstream_code' } });
+    expect(evidence.facts).not.toHaveProperty('scode');
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(state.model.updateOne).not.toHaveBeenCalled();
+  });
+  test('persists a fetched differing scode without treating it as identity or a fact', async () => {
+    const state = setup([], jest.fn().mockResolvedValue({ ...details, scode: 'separate_upstream_code' }));
+    const evidence = await state.service.resolve({ ...request, jan: '00123456' });
+    expect(evidence.provenance).toMatchObject({ resolution: 'online_item_code',
+      identity: 'both_agree', scode: 'separate_upstream_code' });
+    expect(state.rows()[0].details).toMatchObject({ gcode: request.item_code, scode: 'separate_upstream_code' });
+    expect(evidence.facts).not.toHaveProperty('scode');
   });
   test('missing JAN cannot assert both identifiers agree', async () => {
     const { service } = setup([local({ details: { ...details, janCode: null } })]);
@@ -88,7 +106,7 @@ describe('TARIC factual resolver (synthetic database and fetch only)', () => {
       expect(JSON.stringify(model.updateOne.mock.calls)).not.toContain('evil.test');
       expect(JSON.stringify(model.updateOne.mock.calls)).not.toContain('secret');
     });
-  test.each([{ ...details, gcode: 'WRONG' }, { ...details, janCode: '12345678' },
+  test.each([{ ...details, gcode: 'WRONG', scode: request.item_code }, { ...details, janCode: '12345678' },
     { ...details, janCode: null }, { ...details, itemName: request.item_code }])(
     'does not persist mismatched, unverifiable or code-as-name responses', async (response) => {
       const { service, model } = setup([], jest.fn().mockResolvedValue(response));
@@ -175,7 +193,7 @@ describe('TARIC factual resolver (synthetic database and fetch only)', () => {
     const state = setup([local({ detailStatus: 'error' })], jest.fn().mockResolvedValue(details));
     state.model.updateOne.mockImplementation((filter) => ({ exec: async () => {
       expect(filter).toEqual({ _id: 'row1', gcode: request.item_code, updatedAt: new Date(1000) });
-      state.setRows([local({ updatedAt: new Date(3000), details: { ...details, scode: 'MISMATCH' } })]);
+      state.setRows([local({ updatedAt: new Date(3000), details: { ...details, gcode: 'MISMATCH' } })]);
       return { matchedCount: 0 };
     } }));
     await expect(state.service.resolve(request)).rejects.toMatchObject({ code: 'IDENTITY_MISMATCH' });

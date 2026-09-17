@@ -15,9 +15,9 @@ function assertIdentity(row, request) {
   gcode(row.gcode, 'EVIDENCE_INVALID');
   if (row.detailsType && !['object', 'missing', 'null'].includes(row.detailsType)) fail('EVIDENCE_INVALID');
   if (!row.listing || row.listing.gcode !== row.gcode) fail('IDENTITY_MISMATCH');
-  for (const code of [row.details?.gcode, row.details?.scode]) {
-    if (code !== undefined && code !== null && code !== '' && code !== row.gcode) fail('IDENTITY_MISMATCH');
-  }
+  const detailCode = row.details?.gcode;
+  if (detailCode !== undefined && detailCode !== null && detailCode !== ''
+    && detailCode !== row.gcode) fail('IDENTITY_MISMATCH');
   if (request.item_code && row.gcode !== request.item_code) fail('IDENTITY_MISMATCH');
   const storedJan = optionalText(row.details?.janCode, 13);
   if (storedJan !== null) jan(storedJan, 'EVIDENCE_INVALID');
@@ -30,6 +30,8 @@ function assertIdentity(row, request) {
 function snapshot(row, request, resolution) {
   const storedJan = assertIdentity(row, request);
   const details = row.details || {};
+  // The upstream normalizer stores scode separately; it is not a product identity.
+  const scode = optionalText(details.scode, 64);
   const credible = (value) => {
     const name = optionalText(value, LIMITS.name);
     return name && name.trim().toLowerCase() !== row.gcode.toLowerCase() ? name : null;
@@ -55,6 +57,7 @@ function snapshot(row, request, resolution) {
   const content = {
     schema_version: SCHEMA_VERSION, gcode: row.gcode, jan: storedJan, facts,
     provenance: { source: 'amiami', source_url: `https://www.amiami.com/eng/detail?gcode=${row.gcode}`,
+      ...(scode === null ? {} : { scode }),
       resolution, name_field: detailName ? 'details.itemName' : 'listing.itemName',
       identity: request.jan ? (request.item_code ? 'both_agree' : 'jan') : 'item_code',
       fetched_at: fetchedAt, fields: Object.fromEntries(FACT_FIELDS.map((field) => [field, facts[field] !== null])) },
@@ -124,6 +127,7 @@ function createTaricEvidenceService({ itemModel, fetchFactual = null, serviceLog
       // Persist an allowlist only. Neither API raw data nor supplied URLs survive.
       const safeDetails = { gcode: candidate.gcode, janCode: evidence.jan,
         apiFetchedAt: fetchedAt, sourceUrl: evidence.provenance.source_url };
+      if (evidence.provenance.scode !== undefined) safeDetails.scode = evidence.provenance.scode;
       for (const field of FACT_FIELDS) safeDetails[DETAIL_FIELDS[field]] = evidence.facts[field];
       const record = { gcode: candidate.gcode, url: evidence.provenance.source_url,
         source: 'taric-amiami-factual', sourceUrl: evidence.provenance.source_url,

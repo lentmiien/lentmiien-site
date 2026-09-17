@@ -13,6 +13,10 @@ describe('TARIC strict contracts', () => {
     expect(c.jan('0000000000000')).toBe('0000000000000');
     expect(c.hash({ b: 2, a: 1 })).toBe(c.hash({ a: 1, b: 2 }));
   });
+  test.each(['FIGURE-205029', 'FIGURE-100001', 'GOODS-200002', 'GOODS-300003'])(
+    'accepts the gcode form %s already documented in the API or existing fixtures', (itemCode) => {
+      expect(c.validateRequest({ ...request, item_code: itemCode }).item_code).toBe(itemCode);
+    });
   test.each([
     { jan: 12345678 }, { jan: '123' }, { jan: '00123456\n' }, { item_code: 'FIGURE-1\n' },
     { jan: ' 00123456' }, { item_code: 'https://amiami.com/a' },
@@ -73,6 +77,19 @@ describe('TARIC strict contracts', () => {
     expect(evidence.warnings).toEqual(['specifications_missing', 'listing_name_fallback', 'source_timestamp_missing']);
     expect(evidence.provenance.fields.specifications).toBe(false);
     expect(() => snapshot({ ...row, details: { ...row.details, specifications: 'x'.repeat(12001) } }, request, 'local_item_code')).toThrow();
+  });
+  test('separate scode provenance is bounded, hash-covered and never a result basis field', () => {
+    const evidence = snapshot({ ...row, details: { ...row.details, scode: 'separate_upstream_code' } }, request, 'local_item_code');
+    expect(c.validateEvidence(evidence)).toEqual(evidence);
+    expect(evidence.hash).not.toBe(snapshot(row, request, 'local_item_code').hash);
+    expect(() => c.validateEvidence({ ...evidence, provenance: { ...evidence.provenance, scode: 'tampered' } }))
+      .toThrow('EVIDENCE_INVALID');
+    for (const scode of [42, 'x'.repeat(65), { gcode: request.item_code }]) {
+      expect(() => snapshot({ ...row, details: { ...row.details, scode } }, request, 'local_item_code'))
+        .toThrow('EVIDENCE_INVALID');
+    }
+    expect(() => validateProviderResult({ code: '0012340000', basis_fields: ['scode'] }, evidence, request, catalog))
+      .toThrow('INVALID_RESULT');
   });
   test('disabled inference remains disabled even after a configuration is structurally validated', () => {
     expect(readiness()).toEqual({ ready: false, code: 'PROVIDER_DISABLED', provider: null });
