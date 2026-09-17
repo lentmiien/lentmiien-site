@@ -49,6 +49,12 @@ block content
                   strong(data-activity-heading) Codex is working
                   span(data-activity-summary) Waiting for the first process detail…
                 span.codex-visually-hidden(data-activity-announcement, aria-live='polite', aria-atomic='true')
+          .codex-remaining-usage(data-remaining-usage, hidden)
+            .codex-remaining-usage__label
+              span Account usage
+              strong(data-remaining-usage-label, aria-live='polite', aria-atomic='true')
+            .codex-remaining-usage__track(role='meter', aria-label='Account usage remaining', aria-valuemin='0', aria-valuemax='100', data-remaining-usage-meter)
+              .codex-remaining-usage__fill(data-remaining-usage-fill)
           .codex-detail-grid
             div
               small Workspace

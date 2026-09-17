@@ -778,6 +778,21 @@
     }
   }
 
+  function updateRemainingUsage(turnId, usage) {
+    if (root.dataset.codexPage !== 'turn' || root.dataset.turnId !== turnId) return;
+    const remaining = usage?.remainingPercent;
+    if (typeof remaining !== 'number' || !Number.isFinite(remaining) || remaining < 0 || remaining > 100) return;
+    const gauge = root.querySelector('[data-remaining-usage]');
+    if (!gauge) return;
+    const label = `${remaining}% remaining`;
+    gauge.querySelector('[data-remaining-usage-label]').textContent = label;
+    const meter = gauge.querySelector('[data-remaining-usage-meter]');
+    meter.setAttribute('aria-valuenow', String(remaining));
+    meter.setAttribute('aria-valuetext', label);
+    gauge.querySelector('[data-remaining-usage-fill]').style.width = `${remaining}%`;
+    gauge.hidden = false;
+  }
+
   async function loadTurnActivity(turnId) {
     const state = getLiveActivityState(turnId);
     if (!turnId || state.loading) return false;
@@ -789,6 +804,7 @@
         `/codex/api/turns/${encodeURIComponent(turnId)}/events?afterSeq=${encodeURIComponent(afterSeq)}`,
         { cache: 'no-store' }
       );
+      updateRemainingUsage(turnId, payload.remainingUsage);
       const knownSeqs = new Set(state.events.flatMap((event) => [
         Number(event.seq) || 0,
         Number(event.startedSeq) || 0,

@@ -1,12 +1,42 @@
 const {
   buildCodexEventPresentation,
   extractCodexItem,
+  latestCodexRemainingUsage,
   presentCodexEvents,
   renderAgentMessageMarkdown,
   sanitizeRawEvent,
 } = require('../../utils/codexEventPresentation');
 
 describe('codexEventPresentation', () => {
+  test.each([[8, 92], [0, 100], [100, 0], [8.25, 91.75]])(
+    'converts %s percent used into %s percent remaining', (usedPercent, remainingPercent) => {
+      expect(latestCodexRemainingUsage([{
+        seq: 1,
+        eventType: 'account.rateLimits.updated',
+        payload: { rateLimits: { primary: { usedPercent } } },
+      }])).toEqual({ seq: 1, remainingPercent });
+    }
+  );
+
+  test.each([undefined, null, '', '8', '<img src=x onerror=alert(1)>', NaN, Infinity, -1, 101, {}, true])(
+    'ignores malformed primary usage %p', (usedPercent) => {
+      expect(latestCodexRemainingUsage([{
+        seq: 1,
+        eventType: 'account.rateLimits.updated',
+        payload: { rateLimits: { primary: { usedPercent } } },
+      }])).toBeNull();
+    }
+  );
+
+  test('does not infer primary account usage from unrelated events or secondary windows', () => {
+    expect(latestCodexRemainingUsage([])).toBeNull();
+    expect(latestCodexRemainingUsage([
+      { eventType: 'item.completed', payload: { rateLimits: { primary: { usedPercent: 8 } } } },
+      { eventType: 'account.rateLimits.updated', payload: { rateLimits: { primary: null, secondary: { usedPercent: 8 } } } },
+      { eventType: 'account.rateLimits.updated' },
+    ])).toBeNull();
+  });
+
   test('extracts items from current and legacy payload envelopes', () => {
     const direct = { type: 'agentMessage', text: 'Direct' };
     const nested = { type: 'todo_list', items: [] };

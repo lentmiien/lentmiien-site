@@ -1,6 +1,7 @@
 const codexToolService = require('../services/codexToolService');
 const codexQueueWorker = require('../services/codexQueueWorker');
 const {
+  latestCodexRemainingUsage,
   presentCodexEvents,
   sanitizeRawEvent,
 } = require('../utils/codexEventPresentation');
@@ -278,6 +279,7 @@ exports.getTurnEvents = async (req, res) => {
     return res.json({
       ok: true,
       events,
+      remainingUsage: latestCodexRemainingUsage(page.events),
       counts: {
         activity: events.length,
         issues: events.filter((event) => event.isIssue).length,

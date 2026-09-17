@@ -144,6 +144,29 @@ describe('Codex turn event APIs', () => {
     });
   });
 
+  test('exposes only the latest primary remaining percentage even when telemetry is filtered out', async () => {
+    codexToolService.listTurnEventPage.mockResolvedValue({
+      events: [
+        { seq: 9, eventType: 'account.rateLimits.updated', payload: {
+          rateLimits: { primary: { usedPercent: 12 }, planType: 'private-plan', credits: { balance: '42' } },
+        } },
+        { seq: 8, eventType: 'account.rateLimits.updated', payload: {
+          rateLimits: { primary: { usedPercent: 8 } },
+        } },
+      ],
+      total: 9,
+    });
+    const res = responseDouble();
+
+    await codexController.getTurnEvents({ params: { turnId: 'turn-1' }, query: {}, user: { _id: 'user-1' } }, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.events).toEqual([]);
+    expect(payload.remainingUsage).toEqual({ seq: 9, remainingPercent: 88 });
+    expect(payload.lastSeq).toBe(9);
+    expect(JSON.stringify(payload)).not.toMatch(/private-plan|credits|rateLimits/);
+  });
+
   test('does not log the account name when an owner-scoped activity read fails', async () => {
     const error = new Error('Turn not found.');
     error.statusCode = 404;

@@ -2,6 +2,8 @@
 
 Feature: Codex turn operational activity feed and raw-event inspector
 
+The turn Status panel also displays the latest primary account usage remaining, derived from stored `account.rateLimits.updated` events through the same authorized activity endpoint. Only a finite percentage in the range 0–100 is exposed; account/plan/credit metadata is omitted. The gauge starts hidden, stays hidden without a valid update, and keeps the last valid percentage between updates. It uses text and numeric DOM properties, with no new requests, mutations, storage, or outbound services. Negative tests cover malformed percentages and unrelated events; the existing capability, owner-scope, and private/no-store policies apply unchanged.
+
 Security zone: logged-in
 
 Interactive principals: admin, family, user

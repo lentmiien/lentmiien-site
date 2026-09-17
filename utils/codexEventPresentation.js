@@ -901,6 +901,21 @@ function genericIssuePresentation(event, options) {
   });
 }
 
+function latestCodexRemainingUsage(events) {
+  let latest = null;
+  for (const event of events) {
+    if (event.eventType !== 'account.rateLimits.updated') continue;
+    const usedPercent = event.payload?.rateLimits?.primary?.usedPercent;
+    if (typeof usedPercent !== 'number' || !Number.isFinite(usedPercent) ||
+      usedPercent < 0 || usedPercent > 100) continue;
+    const seq = Number(event.seq) || 0;
+    if (!latest || seq >= latest.seq) {
+      latest = { seq, remainingPercent: Number((100 - usedPercent).toFixed(2)) };
+    }
+  }
+  return latest;
+}
+
 function limitIsApproaching(payload) {
   let approaching = false;
   const visit = (value, depth = 0) => {
@@ -1164,6 +1179,7 @@ module.exports = {
   canonicalItemType,
   deterministicCommandSummary,
   extractCodexItem,
+  latestCodexRemainingUsage,
   mergeCompletedActivity,
   normalizeFileChangeKind,
   normalizeStatus,

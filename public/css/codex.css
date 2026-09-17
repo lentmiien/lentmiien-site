@@ -1491,6 +1491,44 @@
   gap: 14px;
 }
 
+.codex-remaining-usage {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.codex-remaining-usage[hidden] {
+  display: none;
+}
+
+.codex-remaining-usage__label {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+
+.codex-remaining-usage__label strong {
+  color: var(--text);
+}
+
+.codex-remaining-usage__track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--surface-3);
+}
+
+.codex-remaining-usage__fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+}
+
 .codex-detail-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
