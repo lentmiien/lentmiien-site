@@ -183,12 +183,16 @@ app.use('/webhook', webhook);
 const DEFAULT_BODY_LIMIT = '5mb';
 app.use(require('./middleware/accountSurfaceBody'));
 // Miien applies small, route-specific parsers after authentication/authorization.
+// Dedicated TARIC machine authentication must precede all legacy body parsing/auth.
+const taricTool = require('./services/taric');
+app.use('/api/taric/v1', require('./routes/taric').createTaricRouter(taricTool.service));
+const isTaricAdminPath = req => /^\/admin\/taric(?:\/|$)/i.test(req.path);
 const legacyFormParser = bodyParser.urlencoded({ extended: false, limit: DEFAULT_BODY_LIMIT });
 const legacyJsonParser = express.json({ limit: DEFAULT_BODY_LIMIT });
 const isMusicPath = req => /^\/(?:music|admin\/music-test)(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
-app.use((req, res, next) => (isMiienPath(req) || isMusicPath(req)) ? next() : legacyFormParser(req, res, next));
-app.use((req, res, next) => (isMiienPath(req) || isMusicPath(req)) ? next() : legacyJsonParser(req, res, next));
+app.use((req, res, next) => (isMiienPath(req) || isMusicPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
+app.use((req, res, next) => (isMiienPath(req) || isMusicPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -549,6 +553,7 @@ app.use('/admin/database-viewer', (_req, res, next) => {
   res.set('Cache-Control', 'private, no-store');
   next();
 });
+app.use('/admin/taric', require('./routes/taricAdmin').createTaricAdminRouter(taricTool.service));
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
 app.post(
@@ -751,6 +756,7 @@ function startDatabaseServices() {
   databaseServicesStarted = true;
 
   const starters = [
+    ['TARIC worker', () => taricTool.worker.start()],
     ['daily batch trigger', scheduleDailyBatchTrigger],
     ['database usage monitor', scheduleDatabaseUsageMonitor],
     ['Agent5 scheduler', scheduleAgent5Runner],
@@ -816,11 +822,20 @@ function startDatabaseServices() {
 }
 
 databaseLifecycle.on('ready', startDatabaseServices);
+// Remove our listener before re-raising so normal process termination is preserved.
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.once(signal, () => {
+    taricTool.worker.stop();
+    process.kill(process.pid, signal);
+  });
+}
 databaseLifecycle.on('unavailable', () => {
+  taricTool.worker.stop();
   databaseServicesNeedRecovery = databaseServicesStarted;
   io.disconnectSockets?.(true);
 });
 databaseLifecycle.on('recovered', () => {
+  taricTool.worker.start();
   if (!databaseServicesNeedRecovery) return;
   databaseServicesNeedRecovery = false;
   audioWorkflowService.resumeAfterDatabaseRecovery().catch((error) => {

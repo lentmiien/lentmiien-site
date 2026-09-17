@@ -1,0 +1,197 @@
+openapi: 3.1.0
+info:
+  title: TARIC assisted classification API
+  version: '1.0.0'
+  description: |
+    Private, durable, human-confirmed suggestions. Uses only a dedicated TARIC bearer key;
+    application sessions and the legacy global API key do not grant access. Every result
+    needs manual confirmation. Literal test:true pins the untested training adapter.
+    Missing/false test is closed until the current independent benchmark has a passing
+    adapter with verified runtime identity and an approved catalog. v0 never qualifies.
+    Errors preserve the caller's manual workflow. Private records/idempotency expire after 90 days.
+servers:
+  - url: /
+security:
+  - taricKey: []
+paths:
+  /api/taric/v1/requests:
+    post:
+      operationId: createTaricRequest
+      summary: Queue one assisted classification
+      description: |
+        Authentication precedes the 4 KiB JSON parser. Compression and unknown fields are
+        rejected. Idempotency binds canonical input, mode, and credential generation.
+        JAN is local-only; ambiguity requires item_code. Successful online gcode facts
+        may be fetched and persisted. Facts, URLs, owners and adapters cannot be supplied.
+        No provider call occurs until admission, credential and worker checks pass.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Request'
+      responses:
+        '202':
+          description: Durable job admitted; poll the Location/poll_url until terminal
+          headers:
+            Location:
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        '200':
+          description: Idempotent replay of an eligible terminal result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '413': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/taric/v1/requests/{id}:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    get:
+      operationId: readTaricRequest
+      summary: Poll a scoped job and revalidate its release gate
+      description: |
+        A newer published benchmark, replacement run, revocation, or fingerprint change
+        can hold even an old completed result. Never use cached suggestions to bypass a hold.
+        Terminal failed/interrupted jobs retain IDs for manual feedback.
+      responses:
+        '202':
+          description: Queued or running
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        '200':
+          description: Complete, failed, or interrupted; use manual fallback on failure
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/taric/v1/requests/{id}/feedback:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      operationId: recordTaricFeedback
+      summary: Record the user's final selected code
+      description: |
+        One final choice per terminal request; 1 KiB JSON. Accepted/changed/manual is
+        derived server-side. Verification stays unverified and training_approved false.
+        A syntactically valid code outside the approved catalog is stored as unknown.
+        Feedback remains possible after release closure and key rotation under the same
+        integration/owner. Failure must not block the external application's workflow.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [selected_code]
+              properties:
+                selected_code: {type: string, pattern: '^[0-9]{10}$'}
+      responses:
+        '200':
+          description: Stored or replayed final choice
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string}
+                  decision: {type: string, enum: [accepted, changed, manual]}
+                  selected_code: {type: string, pattern: '^[0-9]{10}$'}
+                  verification: {const: unverified}
+                  training_approved: {const: false}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '413': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    taricKey:
+      type: http
+      scheme: bearer
+      description: Dedicated ttk_ credential generated once in /admin/taric; no query keys
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: {type: string, pattern: '^[A-Za-z0-9_-]{16,128}$'}
+      description: Exactly one header; reuse only with identical canonical payload and mode
+    RequestId:
+      in: path
+      name: id
+      required: true
+      schema: {type: string, pattern: '^[a-f0-9]{32}$'}
+  responses:
+    Error:
+      description: Safe error code; retain manual workflow. No raw provider payload or credentials.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error: {type: string}
+              manual_fallback: {type: boolean}
+  schemas:
+    Request:
+      type: object
+      additionalProperties: false
+      required: [descriptive_name, input_hs_code]
+      anyOf:
+        - required: [jan]
+        - required: [item_code]
+      properties:
+        jan: {type: string, pattern: '^(?:[0-9]{8}|[0-9]{13})$'}
+        item_code: {type: string, maxLength: 64, pattern: '^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$'}
+        descriptive_name: {type: string, minLength: 1, maxLength: 500}
+        input_hs_code: {type: string, pattern: '^(?:[0-9]{6}|[0-9]{4}\.[0-9]{2})$'}
+        test: {type: boolean, default: false}
+    Job:
+      type: object
+      required: [id, state, test, result, error, manual_confirmation_required, adapter, poll_url, feedback_url]
+      properties:
+        id: {type: string, pattern: '^[a-f0-9]{32}$'}
+        state: {type: string, enum: [queued, running, complete, failed, interrupted]}
+        test: {type: boolean}
+        result:
+          oneOf:
+            - type: 'null'
+            - type: object
+              properties:
+                taric_code: {type: string, pattern: '^[0-9]{10}$'}
+                description: {type: string, minLength: 1, maxLength: 255}
+                description_source: {const: model_generated}
+                verification: {const: unverified}
+                training_approved: {const: false}
+                warnings:
+                  type: array
+                  items: {type: string}
+        error: {type: [string, 'null']}
+        baseline: {type: [string, 'null']}
+        manual_confirmation_required: {const: true}
+        adapter: {type: string}
+        benchmark: {type: [string, 'null']}
+        poll_url: {type: string}
+        feedback_url: {type: string}

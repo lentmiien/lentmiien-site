@@ -226,3 +226,13 @@ DASHBOARD_MINUTE_LOGGER_DEVICE_ID=
 # Unset for the default; otherwise use an absolute persistent path, owned by the service UID (0700).
 # Startup and every provider call require a successful private read/write/delete probe.
 # GPT_IMAGE_STORAGE_DIR=/srv/lentmiien-private/gpt-image
+
+# TARIC assisted API: disabled in Mongo until explicitly enabled at /admin/taric.
+# Fixed, operator-controlled Gateway origin; must also appear verbatim in allowlist.
+# No fallback to the legacy gateway or global API key. HTTP is only for a trusted private LAN.
+TARIC_GATEWAY_ORIGIN=
+TARIC_GATEWAY_ALLOWED_ORIGINS=
+# Optional Gateway bearer credential, distinct from the TARIC caller credential.
+TARIC_GATEWAY_TOKEN=
+# Disposable test database only; never set to a production database.
+# TARIC_TEST_MONGO_URL=mongodb://127.0.0.1:32768/taric_test_release

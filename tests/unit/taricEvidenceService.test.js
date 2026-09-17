@@ -46,6 +46,16 @@ describe('TARIC factual resolver (synthetic database and fetch only)', () => {
     expect(JSON.stringify(pipeline[2])).not.toContain('raw');
     expect(model.aggregate.mock.results[0].value.option).toHaveBeenCalledWith({ maxTimeMS: 2000 });
   });
+  test('pending or missing detail containers refresh by gcode even with a listing name; empty specs alone remain valid', async () => {
+    for (const changes of [{ detailStatus: 'pending', details: null }, { detailStatus: 'fetched', details: null }]) {
+      const fetcher = jest.fn().mockResolvedValue({ ...details, specifications: null });
+      const state = setup([local(changes)], fetcher);
+      expect((await state.service.resolve(request)).facts.specifications).toBeNull();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      await state.service.resolve(request);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    }
+  });
   test('JAN-only requires uniqueness; an agreeing item code disambiguates', async () => {
     const a = local();
     const b = local({ gcode: 'FIGURE-2', listing: { gcode: 'FIGURE-2' }, details: { ...details, gcode: 'FIGURE-2' } });

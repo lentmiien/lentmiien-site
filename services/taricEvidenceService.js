@@ -154,7 +154,7 @@ function createTaricEvidenceService({ itemModel, fetchFactual = null, serviceLog
         if (error?.code !== 11000) throw error;
       }
       const winner = await findCode(candidate.gcode);
-      if (!winner || winner.detailStatus === 'error') fail('EVIDENCE_RACE');
+      if (!winner || !winner.details || ['missing', 'null'].includes(winner.detailsType) || ['error', 'pending'].includes(winner.detailStatus)) fail('EVIDENCE_RACE');
       // A raced winner may contain different facts. Return its validated snapshot, never ours.
       const winnerSnapshot = snapshot(winner, request, 'online_item_code');
       return winnerSnapshot.hash === evidence.hash ? winnerSnapshot : snapshot(winner, request, 'local_item_code');
@@ -176,7 +176,7 @@ function createTaricEvidenceService({ itemModel, fetchFactual = null, serviceLog
       if (row) {
         try {
           const evidence = snapshot(row, request, request.item_code ? 'local_item_code' : 'local_jan');
-          if (row.detailStatus !== 'error') return evidence;
+          if (row.detailStatus !== 'error' && row.detailStatus !== 'pending' && row.details && !['missing', 'null'].includes(row.detailsType)) return evidence;
         } catch (error) {
           if (!(error instanceof TaricError)
             || !['EVIDENCE_INCOMPLETE', 'IDENTITY_UNVERIFIABLE'].includes(error.code)) throw error;

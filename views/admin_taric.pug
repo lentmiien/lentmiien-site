@@ -1,0 +1,102 @@
+doctype html
+html(lang='en')
+  head
+    meta(charset='utf-8')
+    meta(name='viewport' content='width=device-width, initial-scale=1')
+    meta(name='csrf-token' content=csrfToken)
+    title TARIC assisted classification
+    link(rel='stylesheet' href='/css/color-theme.css')
+    link(rel='stylesheet' href='/css/taric.css')
+    script(src='/js/taric-admin.js' defer)
+  body
+    main
+      nav
+        a(href='/admin') Administration
+      h1 TARIC assisted classification
+      p A suggestion always needs human confirmation. Training-derived v0 scores diagnose the machinery; they cannot authorize release.
+      p#status(role='status' aria-live='polite') Loading readiness…
+      section
+        h2 Readiness and release reasons
+        button#refresh(type='button') Refresh
+        pre#readiness
+        p If an uncertain remote call or restart holds inference, verify the Gateway has no active TARIC generation before clearing the hold. This does not cancel remote GPU work.
+        label
+          input#confirm-idle(type='checkbox')
+          |  I verified the Gateway is idle
+        button#resume(type='button') Clear inference hold
+      section
+        h2 Dedicated integration credential
+        p One active key, expiring after 90 days. Rotation immediately revokes the previous generation and queued authority. Store the new key in the caller’s secret store.
+        button#rotate(type='button') Create / rotate key
+        button#revoke(type='button') Revoke key
+        div#secret-panel(hidden)
+          p Copy now. This value is shown only once and clears from this page after 60 seconds.
+          output#secret
+          button#clear-secret(type='button') Clear key
+      section
+        h2 Configuration
+        p Enabling permits explicitly requested test calls when v0 is imported. Normal mode still requires the current independent benchmark, approved catalog and verified runtime identity.
+        label
+          input#enabled(type='checkbox')
+          |  Enable tool (clear for kill switch)
+        label(for='max-tokens') Maximum output tokens (1–512)
+        input#max-tokens(type='number' min='1' max='512' value='256')
+        label(for='catalog') Approved catalog JSON (null keeps normal mode closed)
+        textarea#catalog(rows='8' spellcheck='false') null
+        label(for='runtime') Runtime attestations JSON; verification checks fixed Gateway metadata
+        textarea#runtime(rows='8' spellcheck='false') {"adapters":[]}
+        p See the runbook for catalog and runtime field schemas. Saving invalidates earlier scores.
+        button#save-config(type='button') Save configuration
+      section
+        h2 Test a stored AmiAmi item
+        p Uses the pinned untested adapter. Only an item code and caller hints are accepted; facts come from AmiAmi. This action calls the provider when the tool is enabled.
+        label(for='test-code') AmiAmi gcode
+        input#test-code(type='text' maxlength='64')
+        label(for='test-name') Descriptive category
+        input#test-name(type='text' maxlength='500')
+        label(for='test-hs') HS code (six digits, optionally dotted)
+        input#test-hs(type='text' maxlength='7')
+        button#test(type='button') Submit manual-confirmation test
+        button#test-poll(type='button') Poll test
+        pre#test-result
+      section
+        h2 Benchmark import
+        p CSV inputs: descriptive_name, full_item_name, specs, hs_code. Required target: taric_code. Optional description_summary is scored for lexical overlap only. Private rows stay in MongoDB; they are never added to the public catalog as official labels.
+        input#csv(type='file' accept='.csv,text/csv')
+        label(for='version') Version (0 is permanently training-derived)
+        input#version(type='number' min='0' max='10000' value='0')
+        label(for='review') Review and frozen scoring policy JSON
+        textarea#review(rows='12' spellcheck='false') {"targetsReviewed":false,"independent":false,"trainingExcluded":false,"provenance":"Training-derived diagnostic benchmark","reviewer":"operator","sourceLineage":["v0"],"minExact":1,"maxInvalid":0}
+        p Defaults require 100% exact codes and 0 invalid outputs. These are conservative operational thresholds, not evidence of statistical quality. Review and choose explicitly before import; policy is immutable afterward.
+        button#preview(type='button') Preview hash and validation
+        button#import(type='button' disabled) Import immutable draft
+        pre#import-report
+      section
+        h2 Benchmark execution and publication
+        p Drafts are inert for release. Import reviewed independent v1+ only after checking provenance and product-family overlap. Publishing explicitly replaces the current version and holds older normal results. Benchmark runs make live provider calls; run them only during an authorized GPU window.
+        button#adapters(type='button') Load adapter metadata
+        label(for='adapter') Adapter to benchmark
+        select#adapter
+        label(for='benchmark-id') Benchmark ID
+        input#benchmark-id(type='text' maxlength='32')
+        button#run(type='button') Queue adapter benchmark
+        button#publish(type='button') Publish this benchmark
+        label(for='run-id') Run ID to cancel / revoke
+        input#run-id(type='text' maxlength='32')
+        button#cancel(type='button') Cancel future cases / revoke completed run
+      section
+        h2 Private inspection
+        select#kind
+          option(value='requests') Requests
+          option(value='feedback') Feedback
+          option(value='benchmarks') Benchmark versions
+          option(value='runs') Runs and scores
+        button#inspect(type='button') Load first page
+        button#next(type='button' disabled) Next page
+        pre#records
+        label(for='detail-id') Benchmark or run ID for private cases/results
+        input#detail-id(type='text' maxlength='32')
+        label(for='offset') Case/result offset
+        input#offset(type='number' min='0' max='500' step='25' value='0')
+        button#detail(type='button') Show 25 cases/results
+        pre#details

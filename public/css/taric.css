@@ -1,0 +1,15 @@
+body { background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; margin: 0; }
+main { max-width: 1060px; margin: auto; padding: 2rem 1rem; }
+a { color: var(--accent); }
+section { background: var(--surface-1); border: 1px solid var(--border); border-radius: .6rem; padding: 1.4rem; margin-block: 1.4rem; }
+h1, h2 { line-height: 1.25; }
+p { color: var(--text-secondary); }
+label { display: block; margin-top: 1rem; }
+input, textarea, select { box-sizing: border-box; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); padding: .6rem; max-width: 100%; }
+textarea { width: 100%; font: 14px/1.5 monospace; }
+button { border: 0; border-radius: .25rem; background: var(--brand); color: var(--text-inverse); padding: .7rem 1rem; margin: .7rem .6rem .3rem 0; cursor: pointer; font-weight: 600; }
+button:disabled { opacity: .45; cursor: default; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+pre { background: var(--surface-2); padding: 1rem; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 36rem; overflow: auto; }
+#secret { display: block; overflow-wrap: anywhere; color: var(--accent); }
+#status { position: sticky; top: 0; padding: .8rem; background: var(--surface-3); border-bottom: 1px solid var(--divider); }

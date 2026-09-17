@@ -83,6 +83,7 @@ const routes = [
   "chat3",
   "chat4",
   "chat5",
+  "taric.tool.manage",
   "chat.conversation.read",
   "chat.conversation.write",
   "chat.audio.transcribe",

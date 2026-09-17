@@ -90,6 +90,7 @@ const ReceiptMappingRule = require('./models/receipt_mapping_rule');
 // Product Details
 const ProductDetails = require('./models/product_details');
 const AmiAmiItem = require('./models/amiami_item');
+const TaricTool = require('./models/taric_tool');
 // OpenAI Usage
 const OpenAIUsage = require('./models/openai_usage');
 const OpenAISubscriptionPlan = require('./models/openai_subscription_plan');
@@ -265,6 +266,7 @@ module.exports = {
   ReceiptMappingRule,
   ProductDetails,
   AmiAmiItem,
+  TaricTool,
   OpenAIUsage,
   OpenAISubscriptionPlan,
   AIModelCards,
