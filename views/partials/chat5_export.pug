@@ -1,0 +1,28 @@
+details.chat5-export
+  summary Export conversation
+  form(data-chat5-export, action=`/chat5/chat/${conversation._id.toString()}/export`, method='get')
+    p Download the full surviving conversation for later cleanup. Source text stays unchanged. Candidates need review and are not training-ready.
+    fieldset
+      legend Message types
+      .chat5-export-types
+        each choice in [['sent_text', 'Sent prompts (text)'], ['received_text', 'Received responses (text)'], ['image', 'Images'], ['audio', 'Audio'], ['video', 'Video'], ['file', 'Files'], ['tool', 'Tools'], ['reasoning', 'Reasoning'], ['function_call', 'Function calls'], ['function_call_output', 'Function results']]
+          label
+            input(type='checkbox', name='type', value=choice[0], checked=['sent_text', 'received_text'].includes(choice[0]))
+            |  #{choice[1]}
+    label.chat5-export-option
+      input(type='checkbox', name='hidden', value='1')
+      |  Include hidden records of the selected types
+    label.chat5-export-option
+      input(type='checkbox', name='raw', value='1')
+      |  Include selected raw fields (typed parts and URL citations)
+    p.chat5-export-help Hidden records and raw content are excluded by default. Attachments export text/metadata only, never bytes or server paths. Raw fields are allowlisted; provider envelopes and other message types are omitted.
+    label(for='chat5-export-format') Download format
+    select#chat5-export-format(name='format')
+      option(value='json') Ordered conversation JSON (recommended source archive)
+      option(value='jsonl') Prompt-response candidate JSONL (includes review groups)
+    p.chat5-export-help Includes original positions and IDs. Current records cannot reconstruct historical effective prompts, deleted messages, edits or provider context. Wait for active responses to finish before exporting.
+    button(type='submit') Download export
+    p.chat5-export-status(role='status', aria-live='polite')
+    a.chat5-export-download(hidden) Download prepared file again
+    ul.chat5-export-review
+    noscript Enable JavaScript to use the export controls and see download errors.

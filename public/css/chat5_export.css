@@ -1,0 +1,17 @@
+.chat5-export { margin: 1rem 0; padding: 1rem; background: var(--surface-1); color: var(--text); border: 1px solid var(--border); border-radius: .5rem; }
+.chat5-export summary { color: var(--accent); cursor: pointer; font-weight: 600; }
+.chat5-export form { margin-top: 1rem; }
+.chat5-export fieldset { border: 1px solid var(--border); padding: .75rem; margin-bottom: .75rem; }
+.chat5-export legend { font-size: 1rem; }
+.chat5-export-types { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .5rem; }
+.chat5-export-option { display: block; margin: .6rem 0; }
+.chat5-export input { accent-color: var(--brand); }
+.chat5-export select { display: block; max-width: 100%; padding: .5rem; margin: .5rem 0; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.chat5-export button { border: 1px solid var(--brand); border-radius: .3rem; background: var(--brand); color: var(--text-inverse); padding: .6rem 1rem; }
+.chat5-export button:disabled { opacity: .6; }
+.chat5-export :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.chat5-export-help { color: var(--text-secondary); margin-top: .75rem; }
+.chat5-export-status { margin-top: .75rem; }
+.chat5-export-status[data-error='true'] { color: var(--danger); }
+.chat5-export-review { color: var(--text-secondary); }
+.chat5-export a { color: var(--accent); }

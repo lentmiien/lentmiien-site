@@ -2,6 +2,7 @@ extends layout
 
 block styles
   link(rel="stylesheet", href="/vendor/katex/katex.min.css")
+  link(rel="stylesheet", href="/css/chat5_export.css")
 
 block content
   - const personaOptions = Array.isArray(personalities) ? personalities : [];
@@ -67,6 +68,7 @@ block content
   .chat5-header-actions.d-flex.gap-2.mb-3
     a.btn.btn-outline-primary(href=`/chat4/createknowledgefromchat/${conversation._id.toString()}`) Create knowledge entry
     a.btn.btn-outline-secondary(href=`/chat5/voice/${conversation._id.toString()}`) Open voice view
+  include partials/chat5_export
   - const selectedTools = Array.isArray(conversation.metadata && conversation.metadata.tools) ? conversation.metadata.tools : []
   - const configuredStartMessageId = conversation.metadata && conversation.metadata.startMessageId ? conversation.metadata.startMessageId.toString() : ''
   - 
@@ -874,4 +876,5 @@ block content
       });
     })();
   script(src="/js/chat5_quick_settings.js", defer)
+  script(src="/js/chat5_export.js", defer)
   script(src="/js/chat5_5.js", defer)

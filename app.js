@@ -503,6 +503,7 @@ app.use('/chat2', isAuthenticated, authorize("chat2"), chat2Router);
 app.use('/chat3', isAuthenticated, authorize("chat3"), chat3Router);
 app.use('/chat4', isAuthenticated, authorize("chat4"), chat4Router);
 app.use('/chat5/miien', require('./controllers/miienController'));
+app.use('/chat5/chat/:id/export', require('./routes/chat5Export').createChat5ExportRouter());
 app.use('/chat5', isAuthenticated, authorize("chat5"), chat5Router);
 app.use('/openai', isAuthenticated, authorize("openai"), openaiRouter);
 app.use('/embedding', isAuthenticated, authorize("embedding"), embeddingRouter);
