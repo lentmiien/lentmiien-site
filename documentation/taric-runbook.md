@@ -1,6 +1,6 @@
 # TARIC deployment and operator runbook
 
-Management URL: `/admin/taric`. API: `/api/taric/v1`. Read [the release/security plan](taric-assisted-pilot.md) first. This release does not initialize production data at startup and does not run `setup.js` on your behalf.
+Management URL: `/admin/taric`. API: `/api/taric/v1` (shipped jobs use `/requests`, not `/recommendations`). OpenAPI **3.1.0**, contract **1.0.1**: raw `/yaml/taric-assisted.v1.yaml`, viewer `/yaml-viewer/view/taric-assisted.v1.yaml`, parsed spec `/yaml-viewer/spec/taric-assisted.v1.yaml`. Read [the release/security plan](taric-assisted-pilot.md) first. This release does not initialize production data at startup and does not run `setup.js` on your behalf.
 
 ## Human production setup
 
@@ -51,7 +51,7 @@ At `/admin/taric`, an account with `taric.tool.manage` can enable the tool, leav
 
 Choose **Create / rotate key**. The 32-byte random secret is returned once, shown only on that page, cleared after 60 seconds or navigation, and never stored in the session or recoverably in Mongo. Copy directly into the external caller's secure secret store. If lost, rotate again. Expiry is 90 days. Rotation revokes the previous generation, queued jobs and old result read/replay authority; final feedback remains writable by the same stable integration after rotation. **Revoke key** disables all machine access. Clearing **Enable tool** is the inference kill switch; in-flight remote work may finish but its result cannot pass current checks.
 
-No integration secret has been generated or printed by development tools. Do not paste a real one into docs, shell history, tickets or API debug logs.
+No production integration secret has been generated. Disposable integration tests issue transient keys only in memory and the temporary database; they never print those keys. Do not paste a real one into docs, shell history, tickets or API debug logs.
 
 ## Exact machine requests
 
@@ -172,7 +172,7 @@ Choose a realistic short verification expiry; the long date is only a schema ill
 
 This implementation deliberately **does not invent these metadata values or assume the current Gateway exposes all of them**. If fields are absent or mismatched, normal mode stays closed. The separate Gateway work should provide verified immutable base/tokenizer revisions, active deployment revision, adapter artifact digest, and trusted metadata attestation under the documented field contract (or a separately reviewed transport mapping). No Gateway change is required for v0 import or unverified test mode. All normal generate calls re-observe the identity before and after the call; the trusted Gateway must truthfully identify the runtime executing the named adapter and prevent artifact replacement under a fixed digest/revision.
 
-`content` in generation responses must contain the entire strict JSON output; optional `raw_content` must match exactly, and optional `adapter_name` must match the request. Unsupported envelopes fail safely. Historical base/tokenizer revisions are unresolved; testing never turns that uncertainty into a verified claim.
+`content` in generation responses must contain the entire strict JSON output; optional `raw_content` must match exactly. Required `model` must equal `Qwen/Qwen3-4B-Instruct-2507`, and required `adapter_name` must match the request. `tool_calls` must be absent, null or an empty array; any call or malformed value is rejected. Unsupported envelopes fail safely. Historical base/tokenizer revisions are unresolved; testing never turns that uncertainty into a verified claim.
 
 ## Runs, cancellation and rollback
 
@@ -195,4 +195,66 @@ npm run lint:openapi -- taric-assisted.v1.yaml
 npm test
 ```
 
-The opt-in suite drops only its explicitly named synthetic test database. Without the safe test URI it skips. Never use real credentials, CSV rows or an application/production DB in tests. Browser availability and any skipped live checks are reported with the release; software tests do not establish tariff accuracy.
+The opt-in suite drops only its explicitly named synthetic test database. A separate one-off private-source HTTP review is described below; private rows are never test fixtures. Without the safe test URI it skips. Never use real credentials, CSV rows or an application/production DB in tests. Browser availability and any skipped live checks are reported with the release; software tests do not establish tariff accuracy.
+
+## Windows production handoff
+
+Repository root: `C:\Projects\lentmiien-site`. This TARIC release and review add **no dependencies** and do not change `package.json`/`package-lock.json`; no dependency installation is needed if the deployed checkout already has dependencies matching the lockfile. Use the repository-pinned Node **24.20.0**. No training, tuning, Gateway bootstrap or model download is part of deployment.
+
+Transfer `/home/lennart/Programming/data-processing/chat5-699db06614b109d7841a9f65-cleaned.csv` from the Linux source host through the operator's authenticated secure transfer channel to `C:\Private\TARIC\taric-v0.csv`. This is an example private destination outside the web root: restrict its Windows ACL to the operator/service identity. Do not place it in git, `public`, web uploads, logs, or a shared writable directory. The application does not need the source file after import.
+
+After deploying the reviewed commit, use PowerShell from the production repository. The preview commands neither load `.env` nor connect to Mongo. The execute commands below **explicitly** load the existing secured `.env` through Node's `--env-file`; this avoids assuming the script loads it. If the service environment already supplies `MONGOOSE_URL`, omit `--env-file=.env` instead. Never print the URI or copy it into command history. `NODE_ENV` is set explicitly for production logging; setting it alone does not load `MONGOOSE_URL`.
+
+```powershell
+Set-Location 'C:\Projects\lentmiien-site'
+$env:NODE_ENV = 'production'
+$TaricCsv = 'C:\Private\TARIC\taric-v0.csv'
+(Get-FileHash -Algorithm SHA256 -LiteralPath $TaricCsv).Hash.ToLowerInvariant()
+node scripts/taric-tool.js --bootstrap
+node scripts/taric-tool.js --file $TaricCsv --version 0
+# Compare the expected SHA and 67 rows / 53 codes above before executing.
+node --env-file=.env scripts/taric-tool.js --bootstrap --owner taric-tool --execute --allow-database-write
+if ($LASTEXITCODE -ne 0) { throw 'TARIC bootstrap failed; stop and inspect index readiness.' }
+node --env-file=.env scripts/taric-tool.js --file $TaricCsv --version 0 --execute --allow-database-write
+if ($LASTEXITCODE -ne 0) { throw 'TARIC import failed; stop and inspect validation.' }
+```
+
+The two `--execute --allow-database-write` commands are the deliberate production database initialization/import steps; **they have not been run against production**. Seven new collections are `taric_settings`, `taric_credentials`, `taric_benchmarks`, `taric_runs`, `taric_requests`, `taric_outcomes`, and `taric_controls`. The bootstrap also ensures the existing `amiamiitems.gcode` unique index. Existing owner/settings/keys/benchmarks are preserved; specifying a different `--owner` on an initialized tool is rejected. No roles, users or credentials are created by bootstrap. Check each exit status; do not bypass duplicate-index failures. File paths work through Node on Windows; symlinks/directories and oversized files are rejected. PowerShell/Windows execution itself still requires an operator check; development verification ran on Linux.
+
+For the app process, supply `TARIC_GATEWAY_ORIGIN`, identical origin membership in `TARIC_GATEWAY_ALLOWED_ORIGINS`, and optional secret `TARIC_GATEWAY_TOKEN`. Keep existing `MONGOOSE_URL` and `SESSION_SECRET`. Configure `TRUST_PROXY` for the actual trusted proxy topology: the existing production default trusts one hop and is safe only with the intended ingress restriction. IP limits are per process; the credential counter and inference/queue limits are shared through Mongo. Preserve same-origin session cookies and `X-CSRF-Token`; configure existing `CSRF_ALLOWED_ORIGINS` only if the deployment needs explicit trusted origins. Restart through the established service workflow; these instructions do not authorize `npm start`/`setup.js` side effects.
+
+Sign in to `/admin/taric` with an existing `admin` account: its explicit `taric.tool.manage` bundle requires no role mutation. `family`/`user` have no default grant. If a named non-admin manager is deliberately needed, an administrator uses `/admin/manage_roles`, chooses that entry under **Users**, retains its existing permission checkboxes, adds `taric.tool.manage`, then clicks **Update**. The form replaces the selected permission list. This grants management of this whole TARIC tool (including private inspection, keys, configuration and benchmarks); it does not grant arbitrary integration access. Removing a per-user grant cannot override the built-in admin bundle. Queued requests and benchmark cases recheck the manager's current stored authority.
+
+In Configuration enable the tool, retain 256 tokens, catalog `null` and runtime `{"adapters":[]}`. The exact `/admin/taric/config` POST body is:
+
+```json
+{"enabled":true,"maxTokens":256,"catalog":null,"runtime":{"adapters":[]}}
+```
+
+All management POSTs require the authenticated session and `X-CSRF-Token` from the rendered page; the UI handles both. No release identity, fake catalog approval or v1 is needed for tests. **Create / rotate key** calls `POST /admin/taric/credential/rotate` with `{}` and returns `{secret,expires_in_days:90}` once, after deployment. Copy it directly to the integration's secure secret store. There is no production key already waiting to retrieve.
+
+Verify with a legitimate stored gcode or unique local JAN and manually reviewed category/HS hints. **Submit manual-confirmation test** and **Poll test** use `POST /admin/taric/test` and `GET /admin/taric/test/{id}`; the returned `poll_url` and `feedback_url` refer to this same session scope. Enter the ten-digit final code and choose **Record final choice** (`POST /admin/taric/test/{id}/feedback`, `{"selected_code":"…"}`). Use separate jobs to check accepting the suggested code and changing it. Feedback is immutable, remains unverified, and never becomes training-approved. Machine jobs use only the dedicated-key URLs below; session jobs are not readable with that key.
+
+For PowerShell machine handoff, put the exact request JSON from **Exact machine requests** in a private UTF-8 file **without BOM**, after replacing synthetic hints with the legitimate item. Put `{"selected_code":"TEN_DIGIT_SELECTION"}` (replace the placeholder) in a separate private UTF-8 feedback file. These files contain no credential. With `$env:TARIC_TOOL_KEY` already supplied by the caller's secure environment, use `curl.exe` (not PowerShell's `curl` alias):
+
+```powershell
+$TaricOrigin = 'https://YOUR_HOST'
+$TaricRequestFile = 'C:\Private\TARIC\request.json'
+$TaricFeedbackFile = 'C:\Private\TARIC\feedback.json'
+curl.exe -i --request POST "$TaricOrigin/api/taric/v1/requests" --header "Authorization: Bearer $env:TARIC_TOOL_KEY" --header "Idempotency-Key: $([guid]::NewGuid())" --header 'Content-Type: application/json' --data-binary "@$TaricRequestFile"
+$TaricRequestId = 'REPLACE_WITH_RETURNED_ID'
+curl.exe -i "$TaricOrigin/api/taric/v1/requests/$TaricRequestId" --header "Authorization: Bearer $env:TARIC_TOOL_KEY"
+curl.exe -i --request POST "$TaricOrigin/api/taric/v1/requests/$TaricRequestId/feedback" --header "Authorization: Bearer $env:TARIC_TOOL_KEY" --header "Idempotency-Key: $([guid]::NewGuid())" --header 'Content-Type: application/json' --data-binary "@$TaricFeedbackFile"
+```
+
+These are single-attempt smoke commands; persist/reuse each idempotency key for an actual retry. Do not enable shell transcripts, verbose/debug HTTP logging or persist authorization headers. Repeat submission with a fresh key and `test:false`: expect 503 `RELEASE_CLOSED` before scraping/generation, even after a perfect synthetic/v0 run. `test` must be literal boolean, never a string. `jan` is optional when `item_code` is supplied; otherwise a unique stored `jan` is required. `descriptive_name` and `input_hs_code` are required; no caller facts, owner, model, adapter or URL fields are accepted.
+
+To verify the UI import path, select the securely transferred CSV in **Benchmark import**, keep version 0, preview, and import. An existing identical CLI import is reported as already imported. Read the benchmark ID, choose **Load adapter metadata**, select `taric-v1-20260917-2`, and queue the v0 run **only during a separately authorized Gateway reservation window**. Inspect **Runs and scores**, then use the run ID and offsets 0/25/50 for all 67 case results. Do not publish a fabricated v1 or mark observed file fingerprints as verified deployment identity. Normal mode remains closed pending genuine independent labels, approved catalog, immutable runtime verification and a current passing run.
+
+## Review evidence and remaining live check
+
+The final review used isolated Express routers with real session/CSRF handling, native loopback HTTP provider fixtures, and a disposable Mongo 8.0 container. It exercised real bootstrap/index initialization twice, read-only CLI preview, authorized private CSV upload/import/reimport, test-only configuration without runtime attestations, key issue/rotation/revocation, all management mutation CSRF checks, private status/job scope, normal rejection before work, machine/admin polling and accepted/changed/manual feedback, wrong-model failure, contamination/renumbering rejection, inert drafts, and case paging/cancellation. The private-source run completed all 67 cases with a deliberately synthetic per-case responder: **67/67 here tests plumbing, not model accuracy**. The catalog contained all 53 codes and all 67 payloads fit the bound (maximum 1,518 including the 256-token output reserve). Source rows/outputs/keys were not printed or copied into repository fixtures. The test DB was dropped and temporary infrastructure removed; production collections remain uninitialized by this review. Full Jest verification passed 313 suites / 3,655 tests (one unrelated suite / four tests skipped), including the disposable-Mongo suite; coverage thresholds passed. The OpenAPI validator and `git diff --check` passed. UI DOM checks ran in jsdom; no full browser or Windows service was started.
+
+Carry-forward external Gateway evidence (reported by the preceding Gateway session, **not a live Site integration result**): actual `taric-v1-20260917-2`, exact trained messages and greedy parameters above, 67 original training attempts/completions, 23 exact codes (34.33%), no JSON-schema/transport failures or abstentions; p50 3.08 s, p95 3.60 s, cold 13.43 s; 14,140 input / 3,060 output tokens. The reported lease was released at 15:49 UTC and the container stopped with no active queue. This is `external_trainingreplay`, v0-only and release-ineligible. Current cached base snapshot `cdbee75f17c01a7cc42f958dc650907174af0554` is not historical identity; unchanged file fingerprints during replay are not proof of an immutable executing deployment. The inference base tokenizer has the same chat-template text but a different saved truncation setting of 2048. No private diagnostic manifest was imported as a runtime attestation.
+
+No supported Gateway reservation tool was exposed to this review, so no new live GPU call or public AmiAmi scrape was attempted. The remaining check is 1–3 requests through the isolated Site worker during a fresh supported short Gateway reservation, followed by release of that same lease in `finally`. Use a labelled synthetic gcode/local fact fixture for private source facts; inspect only aggregate status and the exact model/adapter envelope. A real public AmiAmi check additionally needs a legitimate product code and the bounded transport. The previous authorization's conservative stop is `2026-09-17T20:45:00Z`; do not reuse that window after it expires. Do not manually start/restart containers, download models, or run a full live 67-case replay for this integration check.

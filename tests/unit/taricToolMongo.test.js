@@ -240,7 +240,9 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       expect((await send('x'.repeat(10000))).status).toBe(401);
       const headers = { Authorization: `Bearer ${secret}`, 'Idempotency-Key': 'router-test-00001' };
       expect((await send('x'.repeat(5000), headers)).status).toBe(413);
-      expect((await send('{"test":true,"test":false}', headers)).status).toBe(400);
+      for (const duplicate of ['{"test":true,"test":false}', '{"test":false,"test":true}', '{"test":false,"t\\u0065st":true}']) {
+        expect((await send(duplicate, headers)).status).toBe(400);
+      }
       expect((await send('{}', { ...headers, 'Content-Encoding': 'gzip' })).status).toBe(400);
       const result = await send(JSON.stringify(requestInput), headers); expect(result.status).toBe(202);
       expect(result.headers.get('cache-control')).toContain('no-store');
@@ -263,6 +265,76 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       const res = await fetch(`${base}/credential/revoke`, { method: 'POST', headers: { 'X-CSRF-Token': csrf, Origin: 'https://evil.test' } }); expect(res.status).toBe(403);
       expect((await fetch(`${base}/credential/revoke`, { method: 'POST', headers: { 'X-CSRF-Token': csrf } })).status).toBe(200);
       expect((await fetch(`${base}/inspect/runs/bad?offset=-1`)).status).toBe(404);
+    } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  });
+  test('management test HTTP polling and final feedback use session scope, CSRF and current authority', async () => {
+    const app = express(); let actor = 'a'.repeat(24); const csrf = 'x'.repeat(43);
+    app.set('views', require('path').join(__dirname, '../../views')); app.set('view engine', 'pug');
+    app.use((req, _res, next) => { req.user = { _id: actor, name: 'synthetic', type_user: 'admin' }; req.isAuthenticated = () => true; req.session = { csrfToken: csrf }; next(); });
+    app.use('/admin/taric', createTaricAdminRouter(service, { roleModel: { findOne: async () => null } }));
+    app.use('/api/taric/v1', createTaricRouter(service));
+    const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const post = (path, body, headers = {}) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf, 'Idempotency-Key': 'admin-http-test-0001', ...headers }, body: JSON.stringify(body) });
+    try {
+      const page = await fetch(base + '/admin/taric');
+      expect(await page.text()).toContain(`name="csrf-token" content="${csrf}"`);
+      const response = await post('/admin/taric/test', requestInput); const job = await response.json();
+      expect(response.status).toBe(202); expect(response.headers.get('location')).toBe(job.poll_url);
+      expect(job.poll_url).toBe(`/admin/taric/test/${job.id}`);
+      expect(job.feedback_url).toBe(`/admin/taric/test/${job.id}/feedback`);
+      expect((await fetch(base + job.poll_url)).status).toBe(202);
+      await worker.tick();
+      const complete = await fetch(base + job.poll_url); expect(complete.status).toBe(200);
+      expect((await complete.json()).state).toBe('complete');
+      expect((await fetch(`${base}/api/taric/v1/requests/${job.id}`, { headers: { Authorization: `Bearer ${secret}` } })).status).toBe(404);
+      expect((await post(job.feedback_url, { selected_code: '0000000001' }, { 'X-CSRF-Token': '' })).status).toBe(403);
+      expect((await post(job.feedback_url, { selected_code: '0000000001', verification: 'verified' })).status).toBe(400);
+      const feedback = await post(job.feedback_url, { selected_code: '0000000001' });
+      expect(await feedback.json()).toMatchObject({ decision: 'accepted', verification: 'unverified', training_approved: false });
+      actor = 'b'.repeat(24);
+      expect((await fetch(base + job.poll_url)).status).toBe(403);
+      expect((await post(job.feedback_url, { selected_code: '0000000001' })).status).toBe(403);
+      const foreign = await models.Request.findById(job.id).lean();
+      await models.Request.updateOne({ _id: job.id }, { $set: { owner: 'foreign-owner', principal: principal.id } });
+      await expect(service.retrieve(principal, foreign._id)).rejects.toThrow('NOT_FOUND');
+    } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  });
+  test('benchmark manager revocation while generating discards the current case and prevents future cases', async () => {
+    worker.stop(); let allowed = true;
+    worker = createWorker(service, { authorizeAdmin: async () => allowed }); worker.start();
+    const b = await benchmark(); const run = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
+    transport.generate.mockImplementationOnce(async () => { allowed = false; return { taric_code: '0000000001', description: 'Synthetic' }; });
+    await worker.tick(); await worker.tick();
+    expect((await models.Run.findById(run.id)).toObject()).toMatchObject({ state: 'failed', passed: false, actualCount: 0, error: 'FORBIDDEN' });
+    expect(transport.generate).toHaveBeenCalledTimes(1);
+  });
+  test('real multipart file plus metadata previews/imports, rejects extra parts, and requires reviewed hash', async () => {
+    const app = express(); const csrf = 'x'.repeat(43);
+    app.use((req, _res, next) => { req.user = { _id: 'a'.repeat(24), name: 'synthetic', type_user: 'admin' }; req.isAuthenticated = () => true; req.session = { csrfToken: csrf }; next(); });
+    app.use('/admin/taric', createTaricAdminRouter(service, { roleModel: { findOne: async () => null } }));
+    const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${server.address().port}/admin/taric/imports`;
+    const csv = 'descriptive_name,full_item_name,specs,hs_code,taric_code\nSynthetic independent,Synthetic new title,,0000.01,0000000001\n';
+    const review = { targetsReviewed: true, independent: true, trainingExcluded: true, provenance: 'Synthetic fixture', reviewer: 'test', sourceLineage: [], minExact: 1, maxInvalid: 0 };
+    const upload = (metadata, extra) => {
+      const form = new FormData(); form.append('file', new Blob([csv]), 'synthetic.csv'); form.append('metadata', JSON.stringify(metadata));
+      if (extra === 'file') form.append('file', new Blob([csv]), 'extra.csv');
+      if (extra === 'field') form.append('extra', 'denied');
+      return fetch(base, { method: 'POST', headers: { 'X-CSRF-Token': csrf }, body: form });
+    };
+    try {
+      await benchmark();
+      const preview = await upload({ action: 'preview' }); expect(preview.status).toBe(200);
+      const manifest = await preview.json(); expect(manifest).toMatchObject({ rows: 1, accepted: 1, distinctCodes: 1 });
+      const metadata = { action: 'import', version: 1, review, expectedSha: manifest.sha256 };
+      expect((await upload({ ...metadata, expectedSha: 'wrong' })).status).toBe(400);
+      const imported = await upload(metadata); expect(imported.status).toBe(200);
+      const record = await imported.json(); expect(record.contaminated).toBe(false);
+      expect((await models.Benchmark.findById(record.id)).state).toBe('draft');
+      expect((await service.settings()).currentBenchmark).toBeNull();
+      expect((await upload(metadata, 'file')).status).toBe(400);
+      expect((await upload(metadata, 'field')).status).toBe(400);
     } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
   });
 });

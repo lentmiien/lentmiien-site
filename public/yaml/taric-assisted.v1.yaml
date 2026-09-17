@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: TARIC assisted classification API
-  version: '1.0.0'
+  version: '1.0.1'
   description: |
     Private, durable, human-confirmed suggestions. Uses only a dedicated TARIC bearer key;
     application sessions and the legacy global API key do not grant access. Every result
@@ -52,6 +52,7 @@ paths:
         '409': {$ref: '#/components/responses/Error'}
         '413': {$ref: '#/components/responses/Error'}
         '429': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
         '503': {$ref: '#/components/responses/Error'}
   /api/taric/v1/requests/{id}:
     parameters:
@@ -79,6 +80,7 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Error'}
         '429': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
         '503': {$ref: '#/components/responses/Error'}
   /api/taric/v1/requests/{id}/feedback:
     parameters:
@@ -124,6 +126,7 @@ paths:
         '409': {$ref: '#/components/responses/Error'}
         '413': {$ref: '#/components/responses/Error'}
         '429': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
         '503': {$ref: '#/components/responses/Error'}
 components:
   securitySchemes:

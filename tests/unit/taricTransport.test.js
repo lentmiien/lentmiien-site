@@ -1,12 +1,15 @@
 const { EventEmitter } = require('events');
+const { Readable } = require('stream');
+const zlib = require('zlib');
 const { boundedJson, createTransport } = require('../../services/taric/transport');
+const { BASE_MODEL, TEST_ADAPTER } = require('../../utils/taricProtocol');
 function stub({ status = 200, headers = {}, chunks = ['{}'], neverEnd = false } = {}) {
   return (_url, _options, callback) => {
     const req = new EventEmitter(); req.destroy = jest.fn();
     req.end = () => process.nextTick(() => {
-      const res = new EventEmitter(); res.statusCode = status; res.headers = { 'content-type': 'application/json', ...headers }; res.destroy = jest.fn();
-      callback(res); if (neverEnd) return;
-      for (const c of chunks) res.emit('data', Buffer.from(c)); res.emit('end');
+      const res = neverEnd ? new Readable({ read() {} }) : Readable.from(chunks.map(c => Buffer.from(c)));
+      res.statusCode = status; res.headers = { 'content-type': 'application/json', ...headers };
+      callback(res);
     }); return req;
   };
 }
@@ -16,14 +19,41 @@ test('absolute deadline even if socket never ends', async () => {
   await expect(boundedJson(new URL('https://synthetic.test/'), { request: stub({ neverEnd: true }), deadlineMs: 10 })).rejects.toThrow('PROVIDER_FAILED');
 });
 test('transport succeeds with bounded chunks', async () => expect(boundedJson(new URL('https://synthetic.test/'), { request: stub({ chunks: ['{"ok":', 'true}'] }) })).resolves.toEqual({ ok: true }));
+test.each([['gzip', zlib.gzipSync], ['deflate', zlib.deflateSync], ['br', zlib.brotliCompressSync]])('bounded %s decoding accepts JSON and rejects decoded bombs', async (encoding, compress) => {
+  const request = text => stub({ headers: { 'content-encoding': encoding }, chunks: [compress(Buffer.from(text))] });
+  await expect(boundedJson(new URL('https://synthetic.test/'), { request: request('{"ok":true}') })).resolves.toEqual({ ok: true });
+  await expect(boundedJson(new URL('https://synthetic.test/'), { request: request(JSON.stringify({ text: 'x'.repeat(10000) })), maxBytes: 100, maxWireBytes: 1000 })).rejects.toThrow('PROVIDER_FAILED');
+  await expect(boundedJson(new URL('https://synthetic.test/'), { request: request('{"ok":true}'), maxBytes: 1000, maxWireBytes: 5 })).rejects.toThrow('PROVIDER_FAILED');
+});
+test('absolute deadline includes waiting for DNS/connect before response headers', async () => {
+  const req = new EventEmitter(); req.end = jest.fn(); req.destroy = jest.fn();
+  await expect(boundedJson(new URL('https://synthetic.test/'), { request: () => req, deadlineMs: 10 })).rejects.toThrow('PROVIDER_FAILED');
+  expect(req.destroy).toHaveBeenCalled();
+});
 test('AmiAmi fixed endpoint, identity, scode independence, no raw persistence', async () => {
   const json = jest.fn().mockResolvedValue({ RSuccess: true, item: { gcode: 'TEST-1', scode: 'OTHER', gname: 'Synthetic object' } });
   const transport = createTransport({ json }); const detail = await transport.fetchFactual('TEST-1');
   expect(detail).toMatchObject({ gcode: 'TEST-1', scode: 'OTHER', itemName: 'Synthetic object' }); expect(detail.raw).toBeUndefined();
   expect(json.mock.calls[0][0].href).toBe('https://api.amiami.com/api/v1.0/item?gcode=TEST-1&lang=eng');
+  expect(json.mock.calls[0][1].headers).toMatchObject({ 'X-User-Key': 'amiami_dev', Referer: 'https://www.amiami.com/eng/detail?gcode=TEST-1' });
   json.mockResolvedValue({ RSuccess: true, item: { gcode: 'WRONG' } });
   await expect(transport.fetchFactual('TEST-1')).rejects.toThrow('IDENTITY_MISMATCH');
   await expect(transport.fetchFactual('https://evil.test')).rejects.toThrow('INVALID_REQUEST');
+});
+test('actual Gateway envelope shape works; wrong/missing identities and tool calls never fall back', async () => {
+  const content = '{"taric_code":"0000000001","description":"Synthetic description"}';
+  const envelope = { model: BASE_MODEL, adapter_name: TEST_ADAPTER, content, raw_content: content, tool_calls: [], usage: { input_tokens: 200, output_tokens: 30 } };
+  const json = jest.fn().mockResolvedValue(envelope);
+  const t = createTransport({ json, env: { TARIC_GATEWAY_ORIGIN: 'http://gateway.test:8080', TARIC_GATEWAY_ALLOWED_ORIGINS: 'http://gateway.test:8080' } });
+  const args = [{ descriptive_name: 'Synthetic', full_item_name: 'Synthetic toy', specs: '', hs_code: '950300' }, TEST_ADAPTER, ['0000000001'], 256];
+  await expect(t.generate(...args)).resolves.toMatchObject({ taric_code: '0000000001', verification: 'unverified', training_approved: false });
+  for (const patch of [{ model: 'wrong' }, { model: undefined }, { adapter_name: 'wrong' }, { adapter_name: undefined }, { tool_calls: [{}] }, { tool_calls: {} }, { tool_calls: 'call' }]) {
+    json.mockResolvedValue({ ...envelope, ...patch });
+    await expect(t.generate(...args)).rejects.toThrow('INVALID_RESULT');
+  }
+  json.mockResolvedValue(null); await expect(t.generate(...args)).rejects.toThrow('INVALID_RESULT');
+  expect(json).toHaveBeenCalledTimes(9);
+  expect(json.mock.calls.every(([url]) => url.pathname === '/qwen3-lora/generate')).toBe(true);
 });
 test('Gateway requires exact allowlisted operator origin and observed runtime identity', async () => {
   const json = jest.fn().mockImplementation(async url => url.pathname.endsWith('/model') ? { deployment_revision: 'd', model_revision: 'b', tokenizer_revision: 't' }

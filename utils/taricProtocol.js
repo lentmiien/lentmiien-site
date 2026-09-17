@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { fail, object, string, validateRequest, taric, hash } = require('./taricContracts');
 const TEST_ADAPTER = 'taric-v1-20260917-2';
+const BASE_MODEL = 'Qwen/Qwen3-4B-Instruct-2507';
 const TRAINING_SHA = '22ea56418479ecc6d962ad1328eef54c3897aa5b99095093e8231984e8d070be';
 const CLEANED_SHA = '799e95dcce447381ca49aeaae65fb7937896971e0d3f943d12c40996b9f51ef8';
 const SYSTEM = 'You are an EU customs classification assistant. Analyze one product request using its category, item name, specifications, and HS code. Return exactly one valid JSON object with two keys: taric_code, containing a single 10-digit EU TARIC code, and description, containing a concise plain-language classification description of fewer than 256 characters. Choose the most likely code and do not list alternatives. Include the product\'s form, material, function, and classification rationale when supported by the request. Output no Markdown, prose, comments, or extra keys.';
@@ -87,6 +88,8 @@ function strictJson(text, code = 'INVALID_RESULT') {
 }
 function output(envelope, codes) {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) fail('INVALID_RESULT');
+  if (envelope.tool_calls !== undefined && envelope.tool_calls !== null
+    && (!Array.isArray(envelope.tool_calls) || envelope.tool_calls.length !== 0)) fail('INVALID_RESULT');
   const raw = envelope.raw_content;
   const content = envelope.content;
   if (typeof content !== 'string' || Buffer.byteLength(content) > 4096
@@ -107,4 +110,4 @@ function lexical(a, b) {
   const union = new Set([...x, ...y]);
   return union.size ? [...x].filter(t => y.has(t)).length / union.size : 0;
 }
-module.exports = { TEST_ADAPTER, TRAINING_SHA, CLEANED_SHA, SYSTEM, VERSIONS, TEMPLATE, sha, hs, input, render, messages, payload, strictJson, output, lexical, hash };
+module.exports = { BASE_MODEL, TEST_ADAPTER, TRAINING_SHA, CLEANED_SHA, SYSTEM, VERSIONS, TEMPLATE, sha, hs, input, render, messages, payload, strictJson, output, lexical, hash };

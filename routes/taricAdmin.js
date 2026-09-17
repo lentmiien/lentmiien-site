@@ -10,8 +10,11 @@ const { sha, strictJson } = require('../utils/taricProtocol');
 const { preview, MAX_IMPORT_BYTES } = require('../services/taric/importer');
 const { privateResponse, errorHandler, rejectCompression, jsonBody } = require('./taric');
 function createTaricAdminRouter(service, { roleModel = Role } = {}) {
+  const adminJob = job => ({ ...job, poll_url: `/admin/taric/test/${job.id}`, feedback_url: `/admin/taric/test/${job.id}/feedback` });
   const router = express.Router(); const csrf = createSessionCsrf();
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_IMPORT_BYTES, files: 1, fields: 1, fieldSize: 8192, parts: 2 } }).single('file');
+  // Busboy emits partsLimit when the count reaches the limit, including the
+  // valid final part. Allow that boundary; files/fields still permit only 1 + 1.
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_IMPORT_BYTES, files: 1, fields: 1, fieldSize: 8192, parts: 3 } }).single('file');
   router.use(privateResponse, (_req, res, next) => {
     res.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"); next();
   });
@@ -25,11 +28,18 @@ function createTaricAdminRouter(service, { roleModel = Role } = {}) {
   router.post('/test', jsonBody('4kb'), async (req, res) => {
     if (req.body.test !== true) fail('INVALID_REQUEST');
     const principal = await service.adminPrincipal(String(req.user._id));
-    res.status(202).json(await service.submit(principal, require('./taric').uniqueHeader(req, 'idempotency-key'), req.body));
+    const job = await service.submit(principal, require('./taric').uniqueHeader(req, 'idempotency-key'), req.body);
+    res.status(['queued', 'running'].includes(job.state) ? 202 : 200).set('Location', adminJob(job).poll_url).json(adminJob(job));
   });
   router.get('/test/:id', async (req, res) => {
     const principal = await service.adminPrincipal(String(req.user._id));
-    res.json(await service.retrieve(principal, req.params.id));
+    const job = await service.retrieve(principal, req.params.id);
+    res.status(['queued', 'running'].includes(job.state) ? 202 : 200).json(adminJob(job));
+  });
+  router.post('/test/:id/feedback', jsonBody('1kb'), async (req, res) => {
+    const principal = await service.adminPrincipal(String(req.user._id));
+    const f = await service.feedback(principal, require('./taric').uniqueHeader(req, 'idempotency-key'), req.params.id, req.body);
+    res.json({ id: f._id, decision: f.decision, selected_code: f.selected_code, verification: f.verification, training_approved: f.training_approved });
   });
   router.post('/inference/resume', jsonBody('1kb'), async (req, res) => {
     object(req.body, ['confirmIdle'], 'INVALID_REQUEST');
@@ -46,6 +56,7 @@ function createTaricAdminRouter(service, { roleModel = Role } = {}) {
   router.post('/credential/revoke', async (_req, res) => { await service.revoke(); res.json({ ok: true }); });
   router.post('/config', jsonBody('256kb'), async (req, res) => { await service.saveConfig(req.body); res.json({ ok: true }); });
   router.post('/imports', rejectCompression, (req, res, next) => upload(req, res, e => e ? next(Object.assign(new Error('Upload rejected'), { status: e.code === 'LIMIT_FILE_SIZE' ? 413 : 400, type: e.code === 'LIMIT_FILE_SIZE' ? 'entity.too.large' : undefined })) : next()), async (req, res) => {
+    if (Object.keys(req.body || {}).some(key => key !== 'metadata')) fail('IMPORT_INVALID');
     if (!req.file || req.file.fieldname !== 'file' || !/\.csv$/i.test(req.file.originalname)) fail('IMPORT_INVALID');
     const meta = strictJson(req.body.metadata || '{}', 'IMPORT_INVALID');
     object(meta, ['action', 'version', 'review', 'expectedSha'], 'IMPORT_INVALID');

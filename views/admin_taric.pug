@@ -59,6 +59,11 @@ html(lang='en')
         button#test(type='button') Submit manual-confirmation test
         button#test-poll(type='button') Poll test
         pre#test-result
+        label(for='test-selected-code') Human-selected final TARIC code (ten digits)
+        input#test-selected-code(type='text' maxlength='10' pattern='[0-9]{10}')
+        p Submit only after reviewing a terminal result or choosing a manual fallback. One final choice is immutable and remains unverified.
+        button#test-feedback(type='button') Record final choice
+        pre#test-feedback-result
       section
         h2 Benchmark import
         p CSV inputs: descriptive_name, full_item_name, specs, hs_code. Required target: taric_code. Optional description_summary is scored for lexical overlap only. Private rows stay in MongoDB; they are never added to the public catalog as official labels.

@@ -30,6 +30,10 @@
     testId = data.id; show('test-result', data);
   });
   on('test-poll', async () => { if (!testId) throw new Error('Submit a test first.'); show('test-result', await api(`/test/${testId}`)); });
+  on('test-feedback', async () => {
+    if (!testId) throw new Error('Submit a test first.');
+    show('test-feedback-result', await api(`/test/${testId}/feedback`, { selected_code: $('test-selected-code').value }, false, { 'Idempotency-Key': `feedback-${testId}` }));
+  });
   on('resume', async () => { if (!$('confirm-idle').checked) throw new Error('Verify the Gateway is idle first.'); await api('/inference/resume', { confirmIdle: true }); $('confirm-idle').checked = false; await refresh(); });
   on('refresh', refresh);
   on('rotate', async () => {
