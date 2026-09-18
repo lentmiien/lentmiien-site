@@ -1,8 +1,8 @@
 const { fail, TaricError } = require('../../utils/taricContracts');
-const { output, payload, BASE_MODEL, TEST_ADAPTER } = require('../../utils/taricProtocol');
+const { output, payload, TEST_ADAPTER } = require('../../utils/taricProtocol');
 // Internal injection contract, NOT a Gateway HTTP contract. No reservation fallback.
 // Capability-bearing provider responses stay in this process and never enter Mongo.
-function createWarmSessions(adapter = null, { now = Date.now, timeoutMs = 5000 } = {}) {
+function createWarmSessions(adapter = null, { now = Date.now, timeoutMs = 7000 } = {}) {
   const owned = new WeakMap();
   const required = ['open', 'status', 'renew', 'generate', 'close', 'probe'];
   const ready = () => Boolean(adapter && required.every(k => typeof adapter[k] === 'function'));
@@ -39,27 +39,28 @@ function createWarmSessions(adapter = null, { now = Date.now, timeoutMs = 5000 }
   }
   return {
     ready,
-    async open({ correlationId, signal }) {
-      const started = now();
-      const raw = await call('open', { adapter: TEST_ADAPTER, correlationId, ttlMs: 90000, hardBudgetMs: 180000, signal });
-      if (!raw || !/^[A-Za-z0-9_-]{1,100}$/.test(raw.id || '') || !Number.isFinite(raw.expiresAt)
-        || !Number.isFinite(raw.hardExpiresAt) || raw.expiresAt <= now() || raw.expiresAt > started + 90000
-        || raw.hardExpiresAt > started + 180000 || raw.expiresAt > raw.hardExpiresAt) fail('INFERENCE_UNCERTAIN');
-      const handle = Object.freeze({ id: raw.id });
+    async open({ correlationId, signal, adapter: adapterName = TEST_ADAPTER }) {
+      const raw = await call('open', { adapter: adapterName, correlationId, ttlMs: 120000, hardBudgetMs: 900000, signal });
+      if (!raw || typeof raw.id !== 'string' || !raw.id.length || raw.id.length > 200 || !Number.isFinite(raw.expiresAt)
+        || !Number.isFinite(raw.hardExpiresAt) || raw.expiresAt <= now() || raw.expiresAt > now() + 120000
+        || raw.hardExpiresAt > now() + 900000 || raw.expiresAt > raw.hardExpiresAt) fail('INFERENCE_UNCERTAIN');
+      raw.adapterName = adapterName;
+      const handle = Object.freeze({ id: raw.id, hardExpiresAt: raw.hardExpiresAt });
       owned.set(handle, raw);
       return handle;
     },
     async renew(handle, signal) {
       const raw = session(handle);
-      const result = await call('renew', { session: raw, ttlMs: 90000, signal });
-      if (!Number.isFinite(result?.expiresAt) || result.expiresAt <= now() || result.expiresAt > Math.min(now() + 90000, raw.hardExpiresAt)) fail('RECOVERY_REQUIRED');
+      const result = await call('renew', { session: raw, ttlMs: 120000, signal });
+      if (!Number.isFinite(result?.expiresAt) || result.expiresAt <= now() || result.expiresAt > Math.min(now() + 120000, raw.hardExpiresAt)) fail('RECOVERY_REQUIRED');
       raw.expiresAt = result.expiresAt;
+      return { expiresAt: raw.expiresAt, hardExpiresAt: raw.hardExpiresAt };
     },
     async generate(handle, row, codes, maxTokens, options = {}) {
       const raw = session(handle);
-      const body = payload(row, TEST_ADAPTER, maxTokens);
+      const body = payload(row, raw.adapterName, maxTokens);
       const envelope = await call('generate', { session: raw, body, correlationId: options.correlationId, signal: options.signal }, 60000);
-      if (!envelope || envelope.model !== BASE_MODEL || envelope.adapter_name !== TEST_ADAPTER) {
+      if (!require('../../utils/taricProtocol').validEnvelope(envelope, raw.adapterName)) {
         return output({ content: envelope?.content, tool_calls: ['invalid envelope'] }, codes, options.onDiagnostics);
       }
       return output(envelope, codes, options.onDiagnostics);
@@ -67,17 +68,17 @@ function createWarmSessions(adapter = null, { now = Date.now, timeoutMs = 5000 }
     async status(handle, correlationId, signal) {
       const result = await call('status', { session: session(handle, true), correlationId, signal });
       return { idle: result?.idle === true, terminal: result?.terminal === true,
-        correlated: result?.correlationId === correlationId };
+        correlated: result?.correlationId === correlationId, reclaimed: result?.reclaimed === true, missing: result?.missing === true };
     },
     async close(handle) {
       const raw = session(handle, true);
-      try { const result = await call('close', { session: raw }); return { idle: result?.idle === true }; }
+      try { const result = await call('close', { session: raw }, 45000); return { idle: result?.idle === true }; }
       finally { owned.delete(handle); }
     },
     async probe() {
-      const result = await call('probe', {});
+      await call('probe', {});
       // Read-only remote status: never opens a session or modifies another owner.
-      return { idle: result?.idle === true, observedAt: new Date(now()).toISOString() };
+      return { idle: false, state: 'idle_unverified', observedAt: new Date(now()).toISOString() };
     },
   };
 }

@@ -39,6 +39,11 @@
     const status = await api('/inference/status'); show('recovery-status', status);
     recoveryEpoch = status.control?.epoch || 0;
   });
+  on('cancel-pending', async () => {
+    if (!$('confirm-idle').checked || recoveryEpoch === null) throw new Error('Read status and confirm cancellation first.');
+    await api('/inference/cancel-pending', { confirm: true, epoch: recoveryEpoch });
+    const status = await api('/inference/status'); show('recovery-status', status); recoveryEpoch = status.control?.epoch || 0;
+  });
   on('resume', async () => {
     if (!$('confirm-idle').checked || recoveryEpoch === null) throw new Error('Read remote status, cancel pending work, and confirm recovery first.');
     await api('/inference/resume', { confirmIdle: true, epoch: recoveryEpoch });

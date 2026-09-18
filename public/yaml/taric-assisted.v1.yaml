@@ -1,13 +1,15 @@
 openapi: 3.1.0
 info:
   title: TARIC assisted classification API
-  version: '1.0.2'
+  version: '1.0.3'
   description: |
     Private, durable, human-confirmed suggestions. Uses only a dedicated TARIC bearer key;
     application sessions and the legacy global API key do not grant access. Every result
     needs manual confirmation. Literal test:true pins the untested training adapter.
     Missing/false test is closed until the current independent benchmark has a passing
     adapter with verified runtime identity and an approved catalog. v0 never qualifies.
+    AmiAmi failures distinguish HTTP_ACCESS_DENIED (HTTP403) and TLS_CHAIN_UNTRUSTED.
+    Neither failure fabricates or saves source data; continue manual classification.
     Errors preserve the caller's manual workflow. Private records/idempotency expire after 90 days.
 servers:
   - url: /

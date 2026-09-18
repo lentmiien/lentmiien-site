@@ -1,0 +1,183 @@
+{
+  "contract": "qwen3-lora-owned-inference-sessions",
+  "version": 1,
+  "origin": {
+    "source": "private Site server configuration",
+    "target": "Gateway origin, normally port 8080; never upstream LoRA origin",
+    "public_url": null,
+    "credentials_in_browser_or_urls": false
+  },
+  "auth": {
+    "admin_header": "X-Admin-Token",
+    "admin_required_when": "Gateway LLM_ADMIN_TOKEN is nonempty; applies to all five endpoints",
+    "owner_header": "X-Inference-Session-Token",
+    "owner_required_after_create": true,
+    "owner_token_returned": "201 create response only; no lookup or reissue",
+    "owner_token_storage": "private durable Site worker state"
+  },
+  "create_request_schema": {
+    "type": "object",
+    "required": ["client_id"],
+    "additionalProperties": false,
+    "properties": {
+      "client_id": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$"},
+      "idle_timeout_sec": {"type": "number", "minimum": 1, "maximum": 180, "default": 120},
+      "max_duration_sec": {"type": "number", "minimum": 1, "maximum": 900, "default": 900}
+    }
+  },
+  "identifiers": {
+    "client_id": "required fresh string; no coercion or default; retained duplicates return 409",
+    "operation_id": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$"},
+    "session_id": "opaque create response value; copy unchanged"
+  },
+  "endpoints": {
+    "create": {
+      "method": "POST",
+      "path": "/qwen3-lora/inference-sessions",
+      "headers": {"Content-Type": "application/json", "X-Admin-Token": "<admin-token-if-configured>"},
+      "body_example": {"client_id": "fresh-run-id", "idle_timeout_sec": 120, "max_duration_sec": 900},
+      "success_statuses": [201],
+      "response": "status plus owner_token:string",
+      "errors": {"400": "invalid client_id, settings, or unknown keys", "401": "missing/invalid configured admin token", "409": "existing reservation, active/queued work, training monitor, or retained duplicate client_id", "422": "FastAPI body/JSON validation", "429": "retained session capacity", "503": "Docker unavailable or required safety prerequisites disabled"},
+      "effects": {"reserves_exclusive_admission": true, "starts_container": false, "loads_model": false}
+    },
+    "status": {
+      "method": "GET",
+      "path": "/qwen3-lora/inference-sessions/{session_id}",
+      "headers": {"X-Admin-Token": "<admin-token-if-configured>", "X-Inference-Session-Token": "<owner_token>"},
+      "body": null,
+      "success_statuses": [200],
+      "response": "status",
+      "errors": {"401": "admin auth", "403": "missing/invalid capability for known session", "404": "unknown session; no idle/completion proof"},
+      "refreshes_deadline": false
+    },
+    "heartbeat": {
+      "method": "POST",
+      "path": "/qwen3-lora/inference-sessions/{session_id}/heartbeat",
+      "headers": {"X-Admin-Token": "<admin-token-if-configured>", "X-Inference-Session-Token": "<owner_token>"},
+      "body": null,
+      "success_statuses": [200],
+      "response": "status",
+      "errors": {"401": "admin auth", "403": "capability", "404": "unknown session", "409": "expired, closing, or ended"},
+      "refreshes_deadline": "idle only, capped by original hard deadline"
+    },
+    "generate": {
+      "method": "POST",
+      "path": "/qwen3-lora/generate",
+      "headers": {"Content-Type": "application/json", "X-Admin-Token": "<admin-token-if-configured>", "X-Inference-Session": "<session_id>", "X-Inference-Session-Token": "<owner_token>", "X-Inference-Operation": "<persisted-fresh-operation-id>"},
+      "body_example": {"prompt": "<case-prompt>", "adapter_name": "taric-v1-20260917-2", "max_new_tokens": 160, "temperature": 0},
+      "body_forwarding": "byte-for-byte; no adapter or test-mode policy",
+      "response": "upstream body and HTTP status unchanged; synthetic Gateway errors use detail:string",
+      "response_headers_for_accepted_operation": ["X-Inference-Session", "X-Inference-Operation"],
+      "correlation_headers_on_pre_acceptance_rejection_guaranteed": false,
+      "errors": {"400": "missing/invalid operation ID or invalid session-header route use; upstream validation may also return 400", "401": "admin auth", "403": "capability", "404": "unknown/missing session ID; upstream missing adapter may also return 404", "409": "duplicate operation, session busy/closing/expired, or upstream conflict", "413": "generation request exceeds 1048576 bytes", "422": "upstream generation validation", "429": "operation capacity or queue timeout", "502": "upstream transport error", "503": "admission/preparation failure", "504": "hard deadline, cancellation, or upstream timeout", "other": "upstream HTTP status forwarded"}
+    },
+    "delete": {
+      "method": "DELETE",
+      "path": "/qwen3-lora/inference-sessions/{session_id}",
+      "headers": {"X-Admin-Token": "<admin-token-if-configured>", "X-Inference-Session-Token": "<owner_token>"},
+      "body": null,
+      "success_statuses": [200, 202],
+      "response": "status; 200 closed/expired, 202 reclaiming/uncertain",
+      "wait_max_sec": 5,
+      "errors": {"401": "admin auth", "403": "capability", "404": "unknown session"},
+      "retry": "same capability may retry failed cleanup; poll status; never substitute generic reservation release"
+    }
+  },
+  "status_shape": {
+    "session_id": "string",
+    "client_id": "string",
+    "state": ["idle", "running", "reclaiming", "closed", "expired", "uncertain"],
+    "server_time": "number: Unix seconds",
+    "created_at": "number: Unix seconds",
+    "hard_expires_at": "number: Unix seconds",
+    "hard_remaining_sec": "number >= 0",
+    "idle_remaining_sec": "number >= 0",
+    "idle_timeout_sec": "number",
+    "max_duration_sec": "number",
+    "idle_proven": "boolean",
+    "reclaim_verified": "boolean",
+    "close_reason": [null, "released", "expired", "operation_failed"],
+    "operations": "array of operation_shape; insertion order; not a map; no last_operation field",
+    "operation_limit": 256,
+    "retention_sec": 900
+  },
+  "operation_shape": {
+    "operation_id": "string",
+    "state": ["pending", "running", "terminal", "uncertain"],
+    "http_status": "integer or null",
+    "outcome_code": [null, "completed", "upstream_http_error", "queue_timeout", "admission_failed", "hard_deadline", "cancelled", "upstream_read_timeout", "upstream_write_timeout", "upstream_connect_timeout", "upstream_pool_timeout", "upstream_timeout", "upstream_transport_error"],
+    "resolution": [null, "completed", "reclaimed"],
+    "submitted_at": "number: Unix seconds",
+    "started_at": "number: Unix seconds, or null",
+    "finished_at": "number: Unix seconds, or null"
+  },
+  "generation_success_shape": {
+    "model": "string: upstream base model ID",
+    "adapter_name": "string or null; Site TARIC test:true requires taric-v1-20260917-2",
+    "content": "string",
+    "raw_content": "string",
+    "tool_calls": "array",
+    "usage": {"prompt_tokens": "integer", "completion_tokens": "integer", "total_tokens": "integer"}
+  },
+  "bounds": {
+    "owned_generation_request_bytes_max": 1048576,
+    "create_request_dedicated_gateway_byte_cap": null,
+    "generation_response_gateway_byte_cap": null,
+    "status_operations_max": 256,
+    "operations_per_session_max": 256,
+    "concurrent_operations_per_session_max": 1,
+    "retained_sessions_max": 128,
+    "terminal_retention_sec": 900,
+    "cleanup_attempt_budget_sec": 90,
+    "upstream_max_new_tokens_default": 512,
+    "upstream_max_new_tokens_min": 1,
+    "upstream_max_new_tokens_cap_default": 4096,
+    "upstream_max_new_tokens_cap_env": "MAX_NEW_TOKENS_CAP"
+  },
+  "proof": {
+    "idle_proven": "session open, unexpired, current reservation, no active owned worker; not physical VRAM-empty proof",
+    "reclaim_verified": "closed/expired session stopped and VRAM reclaim verified; unrelated work may subsequently start",
+    "http_status_200": "remote completion only; does not prove caller received output",
+    "status_unknown_404": "no completion/idle proof",
+    "operation_absent": "not non-dispatch proof: original body receipt may still be pending"
+  },
+  "reconciliation": {
+    "before_send": "persist operation_id; identify by operations.find(op => op.operation_id === persistedId)",
+    "http_abort_after_acceptance": "Gateway-owned task and lease continue; caller abort does not cancel",
+    "pending_running_uncertain": "poll authenticated status; do not submit next case",
+    "matching_terminal_completed_and_idle_proven": "next case may proceed with fresh ID; lost-output case remains failed even for HTTP 200",
+    "reclaim_verified": "old session work ended; fresh session admission required for next case",
+    "operation_absent": "close owned session and verify reclaim before new admission",
+    "duplicate_409": "no re-execution; count failed attempt; reconcile original ID",
+    "generation_auto_retry": false,
+    "result_recovery_api": false
+  },
+  "site_taric_policy": {
+    "site_test_true_adapter_name": "taric-v1-20260917-2",
+    "send_site_test_flag_to_gateway_required": false,
+    "gateway_interprets_test_flag": false,
+    "base_default_fallback_allowed": false,
+    "success_checks": ["received HTTP success and valid generation JSON", "adapter_name matches taric-v1-20260917-2", "content/raw_content strings, tool_calls array, usage token counts"],
+    "checks_model_quality": false
+  },
+  "legacy_hold_recovery": {
+    "implemented_in": "Site; this file specifies integration behavior, not a new Gateway endpoint",
+    "passive_probe_result": "idle_unverified",
+    "clear_from_get_snapshots": false,
+    "remote_busy_action": "no-op for clearing; keep hold",
+    "requires_fresh_explicit_admin_initiation": true,
+    "requires_global_mongo_lease_and_fencing_generation": true,
+    "requires_old_pending_workers_cancelled_or_fenced": true,
+    "atomic_remote_admission": "POST create 201; idle_proven=true; no intervening await between conflict checks and reservation installation",
+    "create_starts_gpu": false,
+    "first_generate_starts_gpu": true,
+    "gpu_canary_requires_fresh_runtime_authorization": true,
+    "clear_condition": "compare-and-set old hold to new owned session while Mongo lease and unexpired owned reservation remain valid; every subsequent dispatch capability-owned",
+    "reservation_must_remain_held_during_handoff": true,
+    "legacy_unowned_dispatch_may_resume": false,
+    "ambiguous_create_action": "keep hold; no capability recovery; no fresh-ID retry to recover ownership",
+    "manual_alternative": "continuous admission fence over all producers, cancel/drain pending work, verify remote completion and container/VRAM idle under fence, Mongo compare-and-set",
+    "limitations": "scheduled Gateway traffic and startup fence assumed; direct upstream work or unfenceable producers require manual recovery"
+  }
+}

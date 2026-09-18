@@ -46,6 +46,11 @@ function createTaricAdminRouter(service, { roleModel = Role } = {}) {
     if (req.body.confirmIdle !== true) fail('INVALID_REQUEST');
     await service.resumeInference(req.body.epoch); res.json({ ok: true });
   });
+  router.post('/inference/cancel-pending', jsonBody('1kb'), async (req, res) => {
+    object(req.body, ['confirm', 'epoch'], 'INVALID_REQUEST');
+    if (req.body.confirm !== true) fail('INVALID_REQUEST');
+    await service.cancelPending(req.body.epoch); res.json({ ok: true });
+  });
   router.get('/inference/status', async (_req, res) => res.json(await service.recoveryStatus()));
   router.post('/runs/:id/resume', jsonBody('1kb'), async (req, res) => {
     object(req.body, ['confirm'], 'INVALID_REQUEST');

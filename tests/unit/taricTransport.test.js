@@ -1,3 +1,4 @@
+jest.mock('../../services/taric/amiamiBounded', () => ({ fetchImpersonated: jest.fn(() => { throw new Error('Network forbidden in unit tests'); }) }));
 const { EventEmitter } = require('events');
 const { Readable } = require('stream');
 const zlib = require('zlib');
@@ -32,7 +33,7 @@ test('absolute deadline includes waiting for DNS/connect before response headers
 });
 test('AmiAmi fixed endpoint, identity, scode independence, no raw persistence', async () => {
   const json = jest.fn().mockResolvedValue({ RSuccess: true, item: { gcode: 'TEST-1', scode: 'OTHER', gname: 'Synthetic object' } });
-  const transport = createTransport({ json }); const detail = await transport.fetchFactual('TEST-1');
+  const transport = createTransport({ json, env: { TARIC_AMIAMI_TRANSPORT: 'native' } }); const detail = await transport.fetchFactual('TEST-1');
   expect(detail).toMatchObject({ gcode: 'TEST-1', scode: 'OTHER', itemName: 'Synthetic object' }); expect(detail.raw).toBeUndefined();
   expect(json.mock.calls[0][0].href).toBe('https://api.amiami.com/api/v1.0/item?gcode=TEST-1&lang=eng');
   expect(json.mock.calls[0][1].headers).toMatchObject({ 'X-User-Key': 'amiami_dev', Referer: 'https://www.amiami.com/eng/detail?gcode=TEST-1' });
@@ -42,7 +43,7 @@ test('AmiAmi fixed endpoint, identity, scode independence, no raw persistence', 
 });
 test('actual Gateway envelope shape works; wrong/missing identities and tool calls never fall back', async () => {
   const content = '{"taric_code":"0000000001","description":"Synthetic description"}';
-  const envelope = { model: BASE_MODEL, adapter_name: TEST_ADAPTER, content, raw_content: content, tool_calls: [], usage: { input_tokens: 200, output_tokens: 30 } };
+  const envelope = { model: BASE_MODEL, adapter_name: TEST_ADAPTER, content, raw_content: content, tool_calls: [], usage: { prompt_tokens: 200, completion_tokens: 30, total_tokens: 230 } };
   const json = jest.fn().mockResolvedValue(envelope);
   const t = createTransport({ json, env: { TARIC_GATEWAY_ORIGIN: 'http://gateway.test:8080', TARIC_GATEWAY_ALLOWED_ORIGINS: 'http://gateway.test:8080' } });
   const args = [{ descriptive_name: 'Synthetic', full_item_name: 'Synthetic toy', specs: '', hs_code: '950300' }, TEST_ADAPTER, ['0000000001'], 256];
@@ -97,4 +98,32 @@ test('JSON, decompression, size and abort failures expose bounded structured cat
   }
   const controller = new AbortController(); controller.abort();
   await expect(boundedJson(new URL('https://synthetic.test/'), { signal: controller.signal, request: stub() })).rejects.toMatchObject({ transport: { phase: 'clientabort', dispatched: false } });
+});
+
+test('fixed AmiAmi native trust adds OS CAs per request only; Gateway headers and trust stay independent', async () => {
+  const json = jest.fn().mockResolvedValue({ RSuccess: true, item: { gcode: 'TEST-1', gname: 'Synthetic' } });
+  const env = { TARIC_AMIAMI_TRANSPORT: 'native', TARIC_GATEWAY_ORIGIN: 'http://gateway.test', TARIC_GATEWAY_ALLOWED_ORIGINS: 'http://gateway.test',
+    TARIC_GATEWAY_TOKEN: 'PRIVATE-PROXY', TARIC_GATEWAY_ADMIN_TOKEN: 'PRIVATE-ADMIN' };
+  const t = createTransport({ json, env }); await t.fetchFactual('TEST-1');
+  const opts = json.mock.calls[0][1];
+  expect(opts.tlsOptions.rejectUnauthorized).toBe(true); expect(opts.tlsOptions.ca.length).toBeGreaterThan(0);
+  expect(opts.headers.Accept).toBe('application/json,text/plain,*/*');
+  expect(opts.headers).not.toHaveProperty('X-Admin-Token'); expect(opts.headers).not.toHaveProperty('Authorization');
+  json.mockResolvedValue([]); await t.adapters();
+  expect(json.mock.calls[1][1]).not.toHaveProperty('tlsOptions');
+  expect(json.mock.calls[1][1].headers).toEqual({ Authorization: 'Bearer PRIVATE-PROXY', 'X-Admin-Token': 'PRIVATE-ADMIN' });
+});
+test.each([[{ phase: 'tls', socketCode: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' }, 'TLS_CHAIN_UNTRUSTED'],
+  [{ phase: 'http', status: 403 }, 'HTTP_ACCESS_DENIED']])('AmiAmi distinguishes %p without exposing upstream text', async (transport, code) => {
+  const json = jest.fn().mockRejectedValue(Object.assign(new Error('PRIVATE-CERT-OR-BODY'), { transport }));
+  const t = createTransport({ json, env: { TARIC_AMIAMI_TRANSPORT: 'native' } });
+  const error = await t.fetchFactual('TEST-1').catch(e => e);
+  expect(error.code).toBe(code); expect(JSON.stringify(error)).not.toContain('PRIVATE');
+});
+test('default impersonating transport is explicitly injected, normalized and never falls back after HTTP403', async () => {
+  const json = jest.fn(); const impersonated = jest.fn().mockResolvedValue({ RSuccess: true, item: { gcode: 'TEST-1', gname: 'Synthetic' } });
+  const t = createTransport({ json, impersonated, env: {} });
+  expect(await t.fetchFactual('TEST-1')).toMatchObject({ gcode: 'TEST-1' }); expect(impersonated).toHaveBeenCalledWith('TEST-1');
+  impersonated.mockRejectedValue(Object.assign(new Error('PRIVATE'), { transport: { phase: 'http', status: 403 } }));
+  await expect(t.fetchFactual('TEST-2')).rejects.toThrow('HTTP_ACCESS_DENIED'); expect(json).not.toHaveBeenCalled();
 });

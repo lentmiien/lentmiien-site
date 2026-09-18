@@ -86,6 +86,12 @@ function strictJson(text, code = 'INVALID_RESULT') {
   if (i !== text.length) fail(code);
   return result;
 }
+function validEnvelope(value, adapter) {
+  return Boolean(value && value.model === BASE_MODEL && value.adapter_name === adapter
+    && typeof value.content === 'string' && typeof value.raw_content === 'string'
+    && Array.isArray(value.tool_calls) && value.usage && ['prompt_tokens', 'completion_tokens', 'total_tokens']
+      .every(k => Number.isSafeInteger(value.usage[k]) && value.usage[k] >= 0));
+}
 function validateOutput(envelope, codes, diagnostic) {
   diagnostic.stage = 'envelope';
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) fail('INVALID_RESULT');
@@ -133,4 +139,4 @@ function lexical(a, b) {
   const union = new Set([...x, ...y]);
   return union.size ? [...x].filter(t => y.has(t)).length / union.size : 0;
 }
-module.exports = { BASE_MODEL, TEST_ADAPTER, TRAINING_SHA, CLEANED_SHA, SYSTEM, VERSIONS, TEMPLATE, sha, hs, input, render, messages, payload, strictJson, output, lexical, hash };
+module.exports = { BASE_MODEL, TEST_ADAPTER, TRAINING_SHA, CLEANED_SHA, SYSTEM, VERSIONS, TEMPLATE, sha, hs, input, render, messages, payload, strictJson, output, validEnvelope, lexical, hash };

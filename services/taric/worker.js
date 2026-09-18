@@ -17,6 +17,18 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
     await Control.updateOne({ _id: 'inference', holder }, { $set: { blocked: true, reason }, $inc: { epoch: 1 } }).exec();
     logger.error('TARIC inference held: prove Gateway idle before explicit recovery', { category: 'taric', metadata: { code: reason } });
   }
+  async function trackSession(holder, session) {
+    await fence(holder);
+    const saved = await Control.updateOne({ _id: 'inference', holder, until: { $gt: date() } },
+      { $set: { sessionId: session.id, recoveryPhase: 'owned' } }).exec();
+    if (!saved.matchedCount) fail('INTERRUPTED');
+  }
+  async function closeSession(holder, session) {
+    const result = await service.warmSessions.close(session);
+    if (result.idle) await Control.updateOne({ _id: 'inference', holder, sessionId: session.id },
+      { $set: { sessionId: null, recoveryPhase: null } }).exec();
+    return result;
+  }
   async function finishRequest(r, holder, update) {
     await fence(holder);
     await Request.updateOne({ _id: r._id, state: 'running', fence: holder }, { $set: {
@@ -28,7 +40,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
     return code;
   }
   async function processRequest(r, holder) {
-    let evidence = null; let diagnostics = null;
+    let evidence = null; let diagnostics = null; let session = null;
     try {
       await service.authorize(service.principalFrom(r), SCOPES[0]);
       const selected = await service.checkAdmission(r);
@@ -39,9 +51,16 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
       await service.checkAdmission(r);
       const row = { descriptive_name: request.descriptive_name, full_item_name: evidence.facts.name,
         specs: evidence.facts.specifications || '', hs_code: request.input_hs_code };
-      const result = await service.transport.generate(row, r.admission.adapter,
+      session = await service.warmSessions.open({ correlationId: id(), signal: controller.signal, adapter: r.admission.adapter });
+      await trackSession(holder, session);
+      const correlationId = id();
+      const persisted = await Request.updateOne({ _id: r._id, state: 'running', fence: holder },
+        { $set: { sessionId: session.id, correlationId } }).exec();
+      if (!persisted.matchedCount) fail('INTERRUPTED');
+      await fence(holder);
+      const result = await service.warmSessions.generate(session, row,
         (test ? selected.settings.testCatalog : selected.settings.catalog).codes,
-        selected.settings.maxTokens, r.admission.identity, { signal: controller.signal, correlationId: id(),
+        selected.settings.maxTokens, { signal: controller.signal, correlationId,
           onDiagnostics: test ? value => { diagnostics = value; } : undefined });
       await service.authorize(service.principalFrom(r), SCOPES[0]);
       await service.checkAdmission(r);
@@ -49,9 +68,14 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
       await finishRequest(r, holder, { state: 'complete', evidence, diagnostics, result, error: null });
     } catch (e) {
       const error = report(e, 'request');
-      if (error === 'INFERENCE_UNCERTAIN') await hold(holder, error);
+      if (!session && error === 'INFERENCE_UNCERTAIN') await hold(holder, error);
       await finishRequest(r, holder, { state: error === 'INTERRUPTED' ? 'interrupted' : 'failed', result: null,
         evidence, diagnostics: r.input.test === true ? diagnostics : null, errorStatus: errorStatus(e.transport), error });
+    } finally {
+      if (session) {
+        try { if (!(await closeSession(holder, session)).idle) await hold(holder, 'RECOVERY_REQUIRED'); }
+        catch (e) { report(e, 'request.session.close'); await hold(holder, 'RECOVERY_REQUIRED'); }
+      }
     }
   }
   async function runContext(r) {
@@ -92,8 +116,10 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
       await fence(holder);
       try {
         const state = await service.warmSessions.status(session, correlationId, controller.signal);
-        if (state.idle && state.terminal && state.correlated) return true;
-      } catch (e) { report(e, 'session.status'); return false; }
+        if (state.reclaimed) return 'rotate';
+        if (state.idle && state.terminal && state.correlated) return 'continue';
+        if (state.missing) break;
+      } catch (e) { report(e, 'session.status'); break; }
       if (service.now() >= until) break;
       await new Promise(resolve => setTimeout(resolve, Math.min(1000, Math.max(1, until - service.now()))));
     }
@@ -103,12 +129,15 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
     let r = initial; let session = null; let unsafe = false;
     const started = service.now();
     try {
+      if (r.dispatchContract !== 'owned-v1') { await pause(r, holder, 'RECOVERY_REQUIRED'); return; }
       let context = await runContext(r);
-      if (context.benchmark.version === 0 && r.actualCount < r.requestedCount) {
+      if (r.actualCount < r.requestedCount) {
         if (r.warmSessionRequired !== true) {
           await pause(r, holder, 'RECOVERY_REQUIRED'); return;
         }
-        session = await service.warmSessions.open({ correlationId: id(), signal: controller.signal });
+        session = await service.warmSessions.open({ correlationId: id(), signal: controller.signal, adapter: r.adapter });
+        await trackSession(holder, session);
+        await Run.updateOne({ _id: r._id, fence: holder }, { $set: { sessionId: session.id, sessionHardExpiresAt: new Date(session.hardExpiresAt || service.now() + 900000) } }).exec();
       }
       for (let count = 0; count < (session ? batchCases : 1); count++) {
         await fence(holder);
@@ -118,7 +147,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
         const index = r.actualCount;
         if (index >= benchmark.cases.length) break;
         if (session && count > 0) {
-          if (service.now() - started >= batchMs || await Request.exists({ state: 'queued', active: true }).maxTimeMS(2000).exec()) break;
+          if (service.now() - started >= batchMs || (session.hardExpiresAt && session.hardExpiresAt - service.now() < 70000) || await Request.exists({ state: 'queued', active: true }).maxTimeMS(2000).exec()) break;
           await service.warmSessions.renew(session, controller.signal);
         }
         const c = benchmark.cases[index];
@@ -138,8 +167,10 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
         try {
           const options = { signal: controller.signal, correlationId: claim.correlationId, onDiagnostics: value => { diagnostics = value; } };
           const codes = (benchmark.version === 0 ? settings.testCatalog : settings.catalog).codes;
-          result = session ? await service.warmSessions.generate(session, c.input, codes, settings.maxTokens, options)
-            : await service.transport.generate(c.input, r.adapter, codes, settings.maxTokens, r.configuration.runtime, options);
+          if (benchmark.version > 0) await service.transport.verifyIdentity(r.adapter, r.configuration.runtime);
+          await fence(holder);
+          result = await service.warmSessions.generate(session, c.input, codes, settings.maxTokens, options);
+          if (benchmark.version > 0) await service.transport.verifyIdentity(r.adapter, r.configuration.runtime);
         } catch (e) { error = report(e, 'benchmark.case'); transportStatus = errorStatus(e.transport); }
         const attempt = { ...claim, state: 'finished', finishedAt: date(), result, diagnostics, error,
           errorStatus: transportStatus, exact: result?.taric_code === c.target,
@@ -148,9 +179,19 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
         // Save the attempt before any uncertainty/authority/cancel transition.
         await Attempt.updateOne({ _id: claim._id, fence: holder, state: 'running' }, { $set: attempt }).exec();
         r = await record(r, holder, attempt);
-        if (error === 'INFERENCE_UNCERTAIN' || error === 'RECOVERY_REQUIRED') {
-          unsafe = !session || !await correlatedIdle(session, claim.correlationId, holder);
-          if (unsafe) { await hold(holder, error); await pause(r, holder, error); return; }
+        // HTTP success alone is not permission to dispatch another operation.
+        // Reconcile every persisted ID. Lost output is permanently a failed case.
+        const proof = await correlatedIdle(session, claim.correlationId, holder);
+        if (proof !== 'continue') {
+          let closed = false;
+          try { closed = (await closeSession(holder, session)).idle; }
+          catch (e) { report(e, 'session.reconcile.close'); }
+          session = null;
+          if (!closed && proof !== 'rotate') {
+            unsafe = true; await hold(holder, 'RECOVERY_REQUIRED'); await pause(r, holder, 'RECOVERY_REQUIRED'); return;
+          }
+          // Reclaimed session: finish this batch; next tick acquires FRESH admission.
+          break;
         }
         // Revocation/cancel stops NEXT case; the performed attempt remains history.
         await runContext(r);
@@ -165,7 +206,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
       }
     } finally {
       if (session) {
-        try { if (!(await service.warmSessions.close(session)).idle) unsafe = true; }
+        try { if (!(await closeSession(holder, session)).idle) unsafe = true; }
         catch (e) { report(e, 'session.close'); unsafe = true; }
         if (unsafe) { await hold(holder, 'RECOVERY_REQUIRED'); await pause(r, holder, 'RECOVERY_REQUIRED'); }
       }
@@ -174,7 +215,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
     r = await query(Run.findById(r._id));
     if (r.fence !== holder) return;
     const complete = r.actualCount === r.requestedCount;
-    const passed = complete && !unsafe && !r.cancelRequested && r.score >= r.policy.minExact && r.invalid / r.requestedCount <= r.policy.maxInvalid;
+    const passed = complete && !r.errorCount && !unsafe && !r.cancelRequested && r.score >= r.policy.minExact && r.invalid / r.requestedCount <= r.policy.maxInvalid;
     await Run.updateOne({ _id: r._id, fence: holder, cancelRequested: false }, { $set: {
       fence: null, active: !complete, state: complete ? 'complete' : 'running', passed,
       ...(complete ? { finishedAt: date() } : {}) } }).exec();
@@ -231,6 +272,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
       const orphans = await Request.updateMany({ state: 'running', active: true }, { $set: { state: 'interrupted', active: false,
         result: null, error: 'INTERRUPTED', finishedAt: date() } }).exec();
       const orphanCount = await orphanRuns(holder);
+      if (lease.sessionId) { await hold(holder, 'RECOVERY_REQUIRED'); return; }
       if (orphans.modifiedCount || orphanCount) { if (orphans.modifiedCount) await hold(holder, 'INTERRUPTED'); return; }
       const request = await query(Request.findOneAndUpdate({ state: 'queued', active: true },
         { $set: { state: 'running', fence: holder } }, { returnDocument: 'after', sort: { createdAt: 1, _id: 1 } }));

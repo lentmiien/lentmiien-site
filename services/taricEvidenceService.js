@@ -118,7 +118,7 @@ function createTaricEvidenceService({ itemModel, fetchFactual = null, serviceLog
       try {
         details = await fetchFactual(request.item_code);
       } catch (cause) {
-        const error = new TaricError('FETCH_FAILED');
+        const error = new TaricError(['HTTP_ACCESS_DENIED', 'TLS_CHAIN_UNTRUSTED', 'FETCH_DISABLED'].includes(cause.code) ? cause.code : 'FETCH_FAILED');
         error.transport = require('../utils/taricDiagnostics').errorStatus(cause.transport);
         throw error;
       }

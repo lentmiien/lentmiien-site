@@ -19,13 +19,14 @@ html(lang='en')
         h2 Readiness and release reasons
         button#refresh(type='button') Refresh
         pre#readiness
-        p Recovery never cancels remote work. Read remote status, cancel unwanted pending runs, then explicitly clear the hold only after the server proves remote idle and no active local worker. Clearing alone does not resume paused runs. Missing Gateway session support blocks recovery.
+        p Read status, explicitly cancel pending work, then request recovery. Recovery acquires exclusive Gateway admission without starting GPU, holds it during the database handoff, and releases only that session with verified cleanup. Busy or uncertain recovery keeps the hold. Passive status is idle_unverified. Clearing does not resume paused runs.
         button#remote-status(type='button') Read remote status (no GPU work)
         pre#recovery-status
         label
           input#confirm-idle(type='checkbox')
-          |  I reviewed remote idle and cancelled pending work
-        button#resume(type='button') Clear inference hold
+          |  I authorize pending-work cancellation / exclusive admission recovery (no inference)
+        button#cancel-pending(type='button') Cancel all pending local work (keep remote hold)
+        button#resume(type='button') Recover hold using exclusive admission
       section
         h2 Dedicated integration credential
         p One active key, expiring after 90 days. Rotation immediately revokes the previous generation and queued authority. Store the new key in the caller’s secret store.
@@ -82,7 +83,7 @@ html(lang='en')
       section
         h2 Benchmark execution and publication
         p Drafts are inert for release. Import reviewed independent v1+ only after checking provenance and product-family overlap. Publishing explicitly replaces the current version and holds older normal results. Benchmark runs make live provider calls; run them only during an authorized GPU window.
-        p v0 benchmarks require owned Gateway inference sessions. WARM_SESSION_NOT_READY means this integration is unavailable; no reservation or cold-loop fallback is used.
+        p Benchmarks use exclusive owned Gateway sessions in bounded batches. Each session has a 120-second idle cap and an absolute 15-minute cap; heartbeat cannot extend that cap. Batches rotate safely between completed cases.
         button#adapters(type='button') Load adapter metadata
         label(for='adapter') Adapter to benchmark
         select#adapter
@@ -97,7 +98,7 @@ html(lang='en')
         button#cancel(type='button') Cancel future cases / revoke completed run
         button#run-progress(type='button') Load progress and case outputs
         pre#run-progress-output
-        p Progress persists after this page closes. Errors count against the full benchmark denominator; uncertain attempts are never silently retried. Open private results below for further pages.
+        p The run deadline and current session expiry are visible in private run records below. Closing this page does not cancel a run; use Cancel run to stop it. Progress persists after this page closes. Errors count against the full benchmark denominator; uncertain attempts are never silently retried. Open private results below for further pages.
         label
           input#confirm-run(type='checkbox')
           |  I authorize the next cases during the current GPU window

@@ -192,6 +192,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
       for (const code of value.catalog.codes) string(code, 10, 'INVALID_REQUEST', /^[0-9]{10}$/);
     }
     object(value.runtime, ['adapters'], 'INVALID_REQUEST');
+    if (!Object.keys(value.runtime).length) value = { ...value, runtime: { adapters: [] } };
     if (!Array.isArray(value.runtime.adapters) || value.runtime.adapters.length > 20) fail('INVALID_REQUEST');
     const identities = new Set(); const names = new Set();
     for (const a of value.runtime.adapters) {
@@ -254,7 +255,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     const known = await transport.adapters(); if (!known.some(a => a.name === adapter)) fail('INVALID_REQUEST');
     const s = await settings(); if (!s?.enabled) fail('CONFIG_NOT_READY');
     const b = await query(Benchmark.findById(benchmarkId)); if (!b) fail('NOT_FOUND');
-    if (b.version === 0 && (adapter !== TEST_ADAPTER || !warmSessions.ready())) fail('WARM_SESSION_NOT_READY');
+    if (!warmSessions.ready() || (b.version === 0 && adapter !== TEST_ADAPTER)) fail('WARM_SESSION_NOT_READY');
     if (b.version > 0 && b.state !== 'published') fail('CONFIG_NOT_READY');
     const config = configuration(s, adapter, version());
     if (b.version > 0 && (!config.runtime?.verified || !s.catalog?.approved)) fail('CONFIG_NOT_READY');
@@ -265,7 +266,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
       try {
         const row = await Run.create({ _id: id(), sequence, benchmark: b._id, adapter, identity: config.runtime?.identity || hash({ adapter, unverified: true }),
           fingerprint: hash(config), configuration: config, policy: b.policy, state: 'pending', active: true, slot,
-          warmSessionRequired: b.version === 0, attemptedCount: 0, errorCount: 0, catalogRejected: 0, codeExact: 0,
+          warmSessionRequired: true, dispatchContract: 'owned-v1', attemptedCount: 0, errorCount: 0, catalogRejected: 0, codeExact: 0,
           requestedCount: b.cases.length, actualCount: 0, exact: 0, invalid: 0, results: [], score: 0, passed: false,
           cancelRequested: false, deadline: new Date(now() + 6 * 3600000), actor });
         return { id: row._id };
@@ -314,22 +315,78 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
   }
   async function resumeInference(epoch) {
     if (!Number.isSafeInteger(epoch) || epoch < 0) fail('INVALID_REQUEST');
-    // Hold a new fenced lease during the remote read and checks. The block stays set
-    // until the final CAS. Clearing never starts legacy queued work implicitly.
     const holder = id();
     const epochFilter = epoch === 0 ? { $or: [{ epoch: 0 }, { epoch: { $exists: false } }] } : { epoch };
     const lease = await query(Control.findOneAndUpdate({ _id: 'inference', blocked: true,
-      until: { $lte: new Date(now()) }, ...epochFilter }, { $set: { holder, until: new Date(now() + 30000) } }, { returnDocument: 'after' }));
+      until: { $lte: new Date(now()) }, ...epochFilter }, { $set: { holder, until: new Date(now() + 120000) } }, { returnDocument: 'after' }));
     if (!lease) fail('STALE');
+    let session; let handedOff = false; let cleaned = false;
     try {
       if (await Run.exists({ active: true }).maxTimeMS(2000).exec() || await Request.exists({ active: true }).maxTimeMS(2000).exec()) fail('RECOVERY_REQUIRED');
-      const remote = await warmSessions.probe();
-      if (!remote.idle) fail('RECOVERY_REQUIRED');
-      const released = await Control.updateOne({ _id: 'inference', holder, blocked: true, until: { $gt: new Date(now()) }, ...epochFilter },
-        { $set: { blocked: false, reason: null }, $inc: { epoch: 1 } }).exec();
+      // Mutating exclusive admission, not a passive probe. Busy/ambiguous create
+      // leaves the old hold untouched and never releases an operator reservation.
+      session = await warmSessions.open({ correlationId: id() });
+      const renewed = await warmSessions.renew(session);
+      if (!renewed || ![renewed.expiresAt, renewed.hardExpiresAt].every(Number.isFinite)
+        || Math.min(renewed.expiresAt, renewed.hardExpiresAt) < now() + 5000) fail('RECOVERY_REQUIRED');
+      const changed = await Control.updateOne({ _id: 'inference', holder, blocked: true,
+        until: { $gt: new Date(now()) }, ...epochFilter }, { $set: {
+        sessionId: session.id, recoveryPhase: 'owned_cleanup', reason: 'RECOVERY_REQUIRED' }, $inc: { epoch: 1 } }).exec();
+      if (!changed.matchedCount) fail('STALE');
+      handedOff = true;
+      // Keep admission AND the Mongo lease through the CAS above. Only our own
+      // capability may release. Local admission stays blocked through cleanup.
+      cleaned = (await warmSessions.close(session)).idle;
+      session = null;
+      if (!cleaned) fail('RECOVERY_REQUIRED');
+      const released = await Control.updateOne({ _id: 'inference', holder, blocked: true,
+        sessionId: { $type: 'string' }, epoch: epoch + 1, until: { $gt: new Date(now()) } },
+      { $set: { blocked: false, reason: null, recoveryPhase: null, sessionId: null } }).exec();
       if (!released.matchedCount) fail('STALE');
-      logger.warning('TARIC inference hold cleared after remote idle proof and pending-work cancellation', { category: 'taric' });
-    } finally { await Control.updateOne({ _id: 'inference', holder }, { $set: { until: new Date(0) } }).exec(); }
+      logger.warning('TARIC hold cleared through exclusive owned admission and verified cleanup; pending work remains stopped', { category: 'taric' });
+    } catch (error) {
+      logger.warning('TARIC recovery kept admission closed', { category: 'taric', metadata: {
+        code: error instanceof TaricError ? error.code : 'STORAGE_FAILED', handedOff, cleaned } });
+      throw error;
+    } finally {
+      if (session) {
+        try { await warmSessions.close(session); }
+        catch (_) { logger.warning('TARIC recovery session cleanup unverified; hold retained', { category: 'taric' }); }
+      }
+      await Control.updateOne({ _id: 'inference', holder }, { $set: { until: new Date(0) } }).exec();
+    }
+  }
+  async function cancelPending(epoch) {
+    if (!Number.isSafeInteger(epoch) || epoch < 0) fail('INVALID_REQUEST');
+    const holder = id();
+    const lease = await query(Control.findOneAndUpdate({ _id: 'inference', blocked: true, ...(epoch === 0 ? { $or: [{ epoch: 0 }, { epoch: { $exists: false } }] } : { epoch }),
+      until: { $lte: new Date(now()) } }, { $set: { holder, until: new Date(now() + 120000) }, $inc: { epoch: 1 } }, { returnDocument: 'after' }));
+    if (!lease) fail('STALE');
+    const checkLease = async () => {
+      if (!await query(Control.findOne({ _id: 'inference', holder, blocked: true, epoch: epoch + 1, until: { $gt: new Date(now()) } }))) fail('STALE');
+    };
+    try {
+      await checkLease();
+      // Explicit cancellation, not recovery proof. Preserve already finished history.
+      await Request.updateMany({ active: true }, { $set: { active: false, state: 'interrupted', error: 'INTERRUPTED', finishedAt: new Date(now()) } }).maxTimeMS(2000).exec();
+      const runs = await query(Run.find({ active: true }).limit(8));
+      for (const r of runs) {
+        await checkLease();
+        const claim = await query(Attempt.findOne({ run: r._id, index: r.actualCount }));
+        if (claim) {
+          const attempt = claim.state === 'finished' ? claim : { ...claim, state: 'finished', finishedAt: new Date(now()),
+            result: null, exact: false, error: 'INFERENCE_UNCERTAIN' };
+          await Attempt.updateOne({ _id: claim._id }, { $set: attempt }).maxTimeMS(2000).exec();
+          await Run.updateOne({ _id: r._id, active: true, actualCount: claim.index }, {
+            $push: { results: attempt }, $inc: { actualCount: 1, exact: attempt.exact ? 1 : 0, invalid: attempt.result ? 0 : 1,
+              errorCount: attempt.error ? 1 : 0, codeExact: attempt.proposalExact ? 1 : 0, catalogRejected: attempt.error === 'CATALOG_REJECTED' ? 1 : 0 },
+            $set: { score: (r.exact + (attempt.exact ? 1 : 0)) / r.requestedCount, currentAttempt: null } }).maxTimeMS(2000).exec();
+        }
+        await Run.updateOne({ _id: r._id, active: true }, { $set: { state: 'cancelled', active: false,
+          passed: false, cancelRequested: true, fence: null, finishedAt: new Date(now()) } }).maxTimeMS(2000).exec();
+      }
+      logger.warning('TARIC pending work explicitly cancelled under recovery fence; remote hold retained', { category: 'taric' });
+    } finally { await Control.updateOne({ _id: 'inference', holder }, { $set: { until: new Date(0) } }).maxTimeMS(2000).exec(); }
   }
   async function resumeRun(runId) {
     validId(runId);
@@ -341,8 +398,8 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
       const r = await query(Run.findOne({ _id: runId, state: { $in: ['paused', 'recovery_required'] }, active: false, cancelRequested: false }));
       if (!r || r.currentAttempt) fail('STALE');
       const s = await settings();
-      if (!warmSessions.ready() || r.fingerprint !== hash(configuration(s, r.adapter, version()))) fail('STALE');
-      if (!(await warmSessions.probe()).idle) fail('RECOVERY_REQUIRED');
+      if (r.dispatchContract !== 'owned-v1' || !warmSessions.ready() || r.fingerprint !== hash(configuration(s, r.adapter, version()))) fail('STALE');
+      // Dispatch acquires fresh exclusive owned admission; GET snapshots cannot prove idle.
       const stillHeld = await query(Control.findOne({ _id: 'inference', holder, blocked: { $ne: true }, until: { $gt: new Date(now()) } }));
       if (!stillHeld) fail('STALE');
       try {
@@ -370,6 +427,6 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
   }
   return { models, transport, evidence, warmSessions, settings, authenticate, authorize, adminPrincipal, rate, rotate, revoke, admission, checkAdmission,
     principalFrom, submit, retrieve, feedback, saveConfig, importBenchmark, publish, queueRun, cancelRun,
-    inspect, detail, readiness, recoveryStatus, resumeInference, resumeRun, version, now };
+    inspect, detail, readiness, recoveryStatus, resumeInference, cancelPending, resumeRun, version, now };
 }
 module.exports = { createService, query, id, validId, SCOPES };

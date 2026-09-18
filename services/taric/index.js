@@ -29,6 +29,7 @@ const authorizeAdmin = async actor => {
   const user = await User.findById(actor).maxTimeMS(2000).lean().exec();
   return hasCapabilities(user, [MANAGE], { roleModel: Role, roleCapabilityBundles: ROLE_BUNDLES });
 };
-const service = createService({ models, transport, evidence, authorizeAdmin });
+const warmSessions = require('./warmSession').createWarmSessions(transport.sessionAdapter);
+const service = createService({ models, transport, evidence, warmSessions, authorizeAdmin });
 const worker = createWorker(service, { ready: () => mongoose.connection.readyState === 1, authorizeAdmin });
 module.exports = { service, worker };

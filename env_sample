@@ -236,3 +236,9 @@ TARIC_GATEWAY_ALLOWED_ORIGINS=
 TARIC_GATEWAY_TOKEN=
 # Disposable test database only; never set to a production database.
 # TARIC_TEST_MONGO_URL=mongodb://127.0.0.1:32768/taric_test_release
+
+# Dedicated optional Gateway admin secret (X-Admin-Token); proxy bearer stays TARIC_GATEWAY_TOKEN.
+TARIC_GATEWAY_ADMIN_TOKEN=
+# Fixed AmiAmi transport: curl (default, Chrome136, bounded libcurl 8.15.0-IMPERSONATE)
+# or native (Node verified default+OS CA, may still return HTTP403). No automatic fallback.
+TARIC_AMIAMI_TRANSPORT=curl
