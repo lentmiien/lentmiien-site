@@ -46,21 +46,19 @@ source `689c68a` while the Sep 16 container still ran `5c2802a`, without the ses
 or OpenAPI routes. Health/ready 200 did not establish compatibility. This is supplied
 runtime evidence, not a new production probe by this change.
 
-The deployment coordinator must supply the **existing project name and both Compose
-files**, including the live override, before the human rebuild. Do not use bare
-`docker compose up`: it can choose the wrong project or omit live configuration. The
-following is a parameterized command shape, **not confirmed deployment commands**:
+The confirmed human rebuild uses existing project `ai-gateway` and both Compose files,
+preserving the existing mounts and live override:
 
 ```sh
-docker compose --project-name "${GATEWAY_PROJECT:?confirmed existing project}" \
-  -f "${GATEWAY_BASE_COMPOSE:?confirmed base file}" \
-  -f "${GATEWAY_LIVE_OVERRIDE:?confirmed live override}" \
-  up -d --build --force-recreate "${GATEWAY_SERVICE:?confirmed Gateway service}"
+cd /home/lennart/ai-services/ai-gateway && docker compose -p ai-gateway -f /home/lennart/ai-services/ai-gateway/docker-compose.yml -f /home/lennart/ai-services/llm-batching-poc/runtime/gateway.override.yml up -d --build --no-deps ai_gateway
 ```
 
+No extra env file or prerequisite override is needed; `LLM_ADMIN_TOKEN` is confirmed unset.
+This command is for the human and was not executed during the contract check.
 Preserve the established override, environment and project. Verify the running image and
 container include the session module and publish the four explicit owned-session operations
-plus generation POST. Site's **Refresh status** checks only bounded `/openapi.json`; it
+plus generation POST through `/qwen3-lora/{path}` (no literal `/qwen3-lora/generate`
+OpenAPI entry). Site's **Refresh status** checks only bounded `/openapi.json`; it
 never probes an unknown session route or starts inference. A human rebuild is still needed
 when the source checkout is current but the running image is old.
 
@@ -90,7 +88,12 @@ An unset Gateway LLM_ADMIN_TOKEN does not remove Site's mandatory external TARIC
 authentication. Preserve the existing key/v0/settings; do not rotate or reimport as a
 migration shortcut. Neither Gateway secret nor owner capability appears in the key response.
 
-From the Site checkout, first preview actual additive schema/index changes:
+For the latest readiness-only redeploy, **skip database bootstrap**: the operator already
+verified the eight production collections and `taric_attempts` unique index. No new schema
+or index change is needed. The following bootstrap steps are retained only for an initial
+installation where those prerequisites have not been established.
+
+For such an initial installation, preview actual additive schema/index changes:
 
 ```sh
 node scripts/taric-tool.js --bootstrap

@@ -448,7 +448,10 @@ Site now probes only GET `/openapi.json`, through the fixed allowlisted Gateway 
 existing private proxy Bearer / `X-Admin-Token` headers. It does not follow redirects. The
 request has a four-second deadline and separate 2 MiB wire and decoded limits, including
 compressed responses. Exact create/status/heartbeat/delete paths/methods and their success
-responses are required, with POST generation's published literal or FastAPI proxy route.
+responses are required, with POST generation's published FastAPI proxy route
+`/qwen3-lora/{path}`. The actual schema has no literal `/qwen3-lora/generate` entry;
+the validator accepts either publication and does not require documentation-only paths,
+owner-token fields or typed response schemas.
 Missing roles yield `GATEWAY_UPGRADE_REQUIRED`; unavailable, malformed, non-JSON or oversized
 discovery yields `READINESS_UNVERIFIED`. Neither means inference was dispatched, and neither
 creates a new global inference hold.
@@ -462,16 +465,24 @@ proof and capability even if discovery later fails; it never substitutes operato
 Cache freshness is bounded, not an atomic guarantee against an image changing immediately
 after discovery. Deployments must continue to stop/drain workers and preserve the hold.
 
-1. The deployment coordinator supplies the confirmed **two Compose files and existing
-   project**. The human rebuilds and recreates the running Gateway image using all of them,
-   preserving the live override. See the [handoff](taric-owned-release.md#human-deployment-separate-runtime-authorization).
-   No default project or one-file rebuild command is safe to assume.
+1. The human rebuilds the Gateway in confirmed existing project `ai-gateway`, using both
+   confirmed Compose files to preserve the existing mounts and live override:
+
+   ```sh
+   cd /home/lennart/ai-services/ai-gateway && docker compose -p ai-gateway -f /home/lennart/ai-services/ai-gateway/docker-compose.yml -f /home/lennart/ai-services/llm-batching-poc/runtime/gateway.override.yml up -d --build --no-deps ai_gateway
+   ```
+
+   No extra env file or prerequisite override is needed; `LLM_ADMIN_TOKEN` is confirmed
+   unset. This is a human deployment command, not executed by this contract check. See the
+   [handoff](taric-owned-release.md#human-deployment-separate-runtime-authorization).
 2. Deploy the Site follow-up through the established procedure. Open `/admin/taric` and
    click **Refresh status**. With old Gateway, the page shows upgrade instructions and
    disables manual tests and benchmark execution. Configuration, credentials, imports,
    benchmark selection, inspection and remote status remain available. No model/adapters
    endpoint is called by dashboard readiness. Normal runtime identity checking remains a
    dispatch prerequisite; locally qualifying stored scores are not new runtime proof.
+   This readiness-only update needs no database bootstrap: the eight production collections
+   and `taric_attempts` unique index were already verified by the operator.
 3. Click **Read remote status** to load the current numeric epoch. If there is a hold,
    confirm cancellation/recovery and click **Cancel all pending local work**. This remains
    enabled while Gateway is old or unavailable and preserves finished history and the hold.

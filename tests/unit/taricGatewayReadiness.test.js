@@ -6,6 +6,26 @@ const { createGatewayCapabilities, REQUIRED, validate } = require('../../service
 const { gatewayFixture, openapi } = require('../helpers/taricGateway');
 let fixture;
 afterEach(async () => { if (fixture) await fixture.close(); fixture = null; });
+test('published Gateway with proxy-only generation passes without documentation-only paths or schemas', async () => {
+  fixture = await gatewayFixture();
+  expect(Object.keys(fixture.document.paths).sort()).toEqual([
+    '/qwen3-lora/inference-sessions',
+    '/qwen3-lora/inference-sessions/{session_id}',
+    '/qwen3-lora/inference-sessions/{session_id}/heartbeat',
+    '/qwen3-lora/{path}',
+  ]);
+  expect(fixture.document.paths['/qwen3-lora/generate']).toBeUndefined();
+  expect(fixture.document.paths['/qwen3-lora/{path:path}']).toBeUndefined();
+  expect(fixture.document.paths['/qwen3-lora/{path}'].post.responses['200'].content['application/json'].schema).toEqual({});
+  expect(fixture.document.components).toBeUndefined();
+  const adapter = createTransport({ env: fixture.env }).sessionAdapter;
+  await expect(adapter.preflight()).resolves.toMatchObject({ protocol: 'owned-v1' });
+  expect(fixture.requests.map(({ path, method }) => ({ path, method }))).toEqual([{ path: '/openapi.json', method: 'GET' }]);
+  const session = await adapter.open({ correlationId: 'proxy-only-client' });
+  await expect(adapter.close({ session })).resolves.toEqual({ idle: true });
+  expect(fixture.sessions).toHaveLength(1);
+  expect(fixture.generateCount).toBe(0);
+});
 test.each(REQUIRED)('missing published role %s %s never passes health or a partial document', (path, method) => {
   const document = openapi(); delete document.paths[path][method];
   expect(() => validate(document)).toThrow('GATEWAY_UPGRADE_REQUIRED');
@@ -16,7 +36,12 @@ test('missing generation route, malformed operations and fake health fail closed
   expect(() => validate(document)).toThrow('GATEWAY_UPGRADE_REQUIRED');
 });
 test('old healthy Gateway: every owned entrypoint stops at read-only OpenAPI', async () => {
-  fixture = await gatewayFixture(); fixture.document = { openapi: '3.1.0', paths: { '/health': { get: {} } } };
+  fixture = await gatewayFixture();
+  // The old Gateway still publishes the generic proxy; it cannot prove owned support.
+  for (const path of Object.keys(fixture.document.paths)) {
+    if (path !== '/qwen3-lora/{path}') delete fixture.document.paths[path];
+  }
+  fixture.document.paths['/health'] = { get: { operationId: 'health', responses: { '200': { description: 'Successful Response' } } } };
   const adapter = createTransport({ env: fixture.env }).sessionAdapter;
   const session = { id: 'untrusted', ownerToken: 'never-send' };
   for (const [method, args] of [['open', { correlationId: 'fresh' }], ['status', { session }], ['renew', { session }],
