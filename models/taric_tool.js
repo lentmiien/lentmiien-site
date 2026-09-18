@@ -16,18 +16,20 @@ const Benchmark = model('taric_benchmarks', { _id: String, version: Number, stat
   releaseEligible: Boolean, contaminated: Boolean, sourceLineage: [String], manifest: mixed,
   cases: [mixed], policy: mixed, review: mixed, publishedAt: Date, publishedBy: String }, [
   [{ version: 1 }, { unique: true, name: 'benchmark_version' }],
+  [{ createdAt: -1, _id: -1 }, { name: 'benchmark_chronology' }],
 ]);
 const Run = model('taric_runs', { _id: String, benchmark: String, adapter: String, identity: String, sequence: Number,
   fingerprint: String, configuration: mixed, policy: mixed, state: String, active: Boolean, slot: Number,
   requestedCount: Number, actualCount: Number, exact: Number, invalid: Number, results: [mixed],
   score: Number, passed: Boolean, cancelRequested: Boolean, deadline: Date, actor: String, fence: String,
-  error: String, finishedAt: Date }, [
+  error: String, finishedAt: Date, warmSessionRequired: Boolean, attemptedCount: Number,
+  errorCount: Number, catalogRejected: Number, codeExact: Number, currentAttempt: mixed, recoveryRequired: Boolean }, [
   [{ slot: 1 }, { unique: true, partialFilterExpression: { active: true }, name: 'bounded_run_slots' }],
   [{ benchmark: 1, adapter: 1, sequence: -1 }, { name: 'authoritative_runs' }],
 ]);
 const Request = model('taric_requests', { _id: String, owner: String, principal: String, generation: Number,
   key: String, digest: String, input: mixed, admission: mixed, state: String, active: Boolean, slot: Number,
-  fence: String, evidence: mixed, result: mixed, error: String, finishedAt: Date, expiresAt: expiry }, [
+  fence: String, evidence: mixed, result: mixed, diagnostics: mixed, errorStatus: mixed, error: String, finishedAt: Date, expiresAt: expiry }, [
   [{ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'request_retention_90d' }],
   [{ principal: 1, key: 1 }, { unique: true, name: 'request_idempotency' }],
   [{ slot: 1 }, { unique: true, partialFilterExpression: { active: true }, name: 'bounded_request_slots' }],
@@ -41,5 +43,11 @@ const Feedback = model('taric_outcomes', { _id: String, owner: String, principal
   [{ principal: 1, key: 1 }, { unique: true, name: 'feedback_idempotency' }],
   [{ request: 1 }, { unique: true, name: 'one_final_feedback' }],
 ]);
-const Control = model('taric_controls', { _id: String, holder: String, until: Date, attempts: [mixed], blocked: Boolean, reason: String });
-module.exports = { Settings, Credential, Benchmark, Run, Request, Feedback, Control };
+const Control = model('taric_controls', { _id: String, holder: String, until: Date, attempts: [mixed], blocked: Boolean, reason: String, epoch: { type: Number, default: 0 } });
+const Attempt = model('taric_attempts', { _id: String, run: String, index: Number, fence: String,
+  correlationId: String, sessionId: String, state: String, claimedAt: Date, startedAt: Date,
+  finishedAt: Date, result: mixed, diagnostics: mixed, error: String, errorStatus: mixed,
+  inputHash: String, exact: Boolean, proposalExact: Boolean, lexicalSimilarity: Number }, [
+  [{ run: 1, index: 1 }, { unique: true, name: 'one_attempt_per_case' }],
+]);
+module.exports = { Settings, Credential, Benchmark, Run, Request, Feedback, Control, Attempt };

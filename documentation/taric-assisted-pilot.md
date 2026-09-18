@@ -1,6 +1,6 @@
 # TARIC assisted classification release plan
 
-Status: implementation complete for operator deployment; **not deployed or classification-validated**. Foundation: `e6bd072e0fa5899357dddb07f94c16a4bacca45c`. The external application is unchanged. Deployment steps are in [taric-runbook.md](taric-runbook.md); machine contract is [taric-assisted.v1.yaml](../public/yaml/taric-assisted.v1.yaml).
+Status: feedback patch implemented with synthetic validation; **owned Gateway session integration pending, not deployed or live-validated**. See the September 18 addendum in the runbook. Foundation: `e6bd072e0fa5899357dddb07f94c16a4bacca45c`. The external application is unchanged. Deployment steps are in [taric-runbook.md](taric-runbook.md); machine contract is [taric-assisted.v1.yaml](../public/yaml/taric-assisted.v1.yaml).
 
 ## Product boundary
 
@@ -11,7 +11,7 @@ Only literal JSON `test:true` selects the pinned `taric-v1-20260917-2` adapter. 
 ## Implemented architecture
 
 - `routes/taric.js` mounts `/api/taric/v1` before the global 5 MB parsers and legacy `/api` authentication. Dedicated bearer authentication precedes a 4 KiB JSON parser (1 KiB feedback), with strict duplicate-key/header rejection, no compression, and terminal JSON 404 handling.
-- `models/taric_tool.js` registers seven named collections through `database.js`: settings, credentials, benchmarks (embedded immutable cases), runs (bounded case results), requests (durable jobs and immutable terminal outcomes), outcomes (final feedback), and controls (leases and fetch budget). Named unique indexes enforce scoped idempotency and queue capacity.
+- `models/taric_tool.js` registers eight named collections through `database.js`: settings, credentials, benchmarks (embedded immutable cases), runs (bounded case results), requests (durable jobs and immutable terminal outcomes), outcomes (final feedback), controls (leases and fetch budget), and attempts (unique durable per-case claims and private terminal diagnostics). Named unique indexes enforce scoped idempotency and queue capacity.
 - `services/taric/service.js` owns authentication, admission, scope, credentials, feedback, configuration, import and publication. `worker.js` runs only after database readiness, pauses when unavailable, and participates in application shutdown.
 - The foundation `taricEvidenceService` retains local JAN uniqueness, identity assertions, successful-only upserts/CAS refreshes and validated winner rereads. Pending/missing detail containers refresh by explicit gcode; missing specs on a fetched item remain valid. The new bounded native transport uses the scraper's fixed endpoint, headers and pure `normalizeDetail(..., {includeRaw:false})`; legacy scraper behavior is unchanged.
 - `services/taric/transport.js` implements private Gateway calls without the legacy payload logger/retry wrapper. Only allowlisted, operator-configured origin and fixed paths are used. No request-selected destinations, redirects, retries, or challenge fallback. Identity/gzip/deflate/Brotli responses have separate streaming wire and decoded byte limits under one absolute deadline.
@@ -68,7 +68,7 @@ Without an available matching tokenizer, input UTF-8 bytes count as tokens, plus
 | Data | Private source facts, benchmark cases and normalized results; credentials secret. Raw provider envelopes/prompt instances are not persisted |
 | Browser CSRF | Non-GET, shared session token header and Origin check before upload parsing; no fake principals |
 | Abuse | 180 unauthenticated ingress requests/minute/IP/process; 120 authenticated requests/minute across processes per integration; admin 120/minute/IP/process; 20 durable interactive slots, 8 benchmark slots; 500 cases/import, 6-hour run deadline |
-| Provider concurrency | Shared Mongo inference lease, one case at a time; interactive priority between benchmark cases. Lease fencing rejects late results. Uncertain in-flight claims become interrupted, never automatic repeat; a durable inference hold requires explicit operator confirmation that the Gateway is idle. Cancellation stops future cases; it does not claim remote GPU cancellation |
+| Provider concurrency | Shared Mongo inference lease, one case at a time; interactive priority between benchmark cases. Lease fencing rejects late results. Uncertain in-flight claims become interrupted, never automatic repeat; a durable inference hold requires explicit operator action plus a server-checked remote idle proof and fenced recovery epoch. Future v0 runs use bounded owned warm sessions; unresolved attempts pause as recovery_required. Cancellation stops future cases; it does not claim remote GPU cancellation |
 | Source cooldown | Shared 20 fetch attempts/rolling minute and once/gcode/minute under inference lease, in addition to foundation local limiter |
 | Upload | Authenticated admin only, CSRF first; memory upload <=2 MiB, one CSV and one <=8 KiB metadata field; strict UTF-8/header/row validation, preview hash required before UI import; buffers cleared after processing |
 | Rendering/cache | Escaped Pug/textContent; restrictive CSP, no external scripts/analytics; private/no-store/no-referrer/noindex; safe JSON errors |
@@ -85,3 +85,21 @@ Without an available matching tokenizer, input UTF-8 bytes count as tokens, plus
 4. **Future improvement:** separately authorized data review/training, held-out benchmarks, drift monitoring and possibly restricted automation. No training or automation wrapper is implemented here.
 
 Software validation is synthetic, including disposable Mongo index/race tests. It proves control behavior, not tariff accuracy. No live scrape, Gateway inference/training, production initialization or deployment occurred in the implementation turn. The separately running Gateway GPU smoke is outside this work.
+
+
+## Feedback patch security contract extension
+
+The existing logged-in, admin-managed security contract applies unchanged. Diagnostic
+reads require current machine principal/generation/owner or taric.tool.manage session
+scope; test mode is persisted, never query-selectable. Browser recovery mutations require
+shared CSRF and explicit confirmation. Outputs are private escaped plain text with
+private/no-store headers; no analytics, public media, arbitrary outbound destinations or
+new role grants. Visible answers are bounded to 4096 UTF-8 bytes, proposals to the strict
+existing schema; raw envelopes/tools/reasoning/prompts/headers are excluded. Request TTL
+remains 90 days; attempt history has the benchmark's explicit operator retention policy.
+Operational failures log allowlisted status/phase/counts and opaque generated IDs only.
+The owned-session adapter is unavailable by default; no fallback reservation authority
+or auth configuration is inferred. The additive bootstrap/index migration is human-run,
+preserving all existing objects. Negative tests cover normal/foreign/revoked access,
+CSRF/epoch races, duplicate JSON keys, inert output, bounds, missing Gateway support,
+wrong/expired owner handles, lease loss and unresolved remote completion.

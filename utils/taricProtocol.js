@@ -86,7 +86,8 @@ function strictJson(text, code = 'INVALID_RESULT') {
   if (i !== text.length) fail(code);
   return result;
 }
-function output(envelope, codes) {
+function validateOutput(envelope, codes, diagnostic) {
+  diagnostic.stage = 'envelope';
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) fail('INVALID_RESULT');
   if (envelope.tool_calls !== undefined && envelope.tool_calls !== null
     && (!Array.isArray(envelope.tool_calls) || envelope.tool_calls.length !== 0)) fail('INVALID_RESULT');
@@ -94,12 +95,34 @@ function output(envelope, codes) {
   const content = envelope.content;
   if (typeof content !== 'string' || Buffer.byteLength(content) > 4096
     || (raw !== undefined && (typeof raw !== 'string' || raw !== content))) fail('INVALID_RESULT');
+  diagnostic.stage = 'json';
   const result = strictJson(content);
+  diagnostic.stage = 'proposal';
   object(result, ['taric_code', 'description'], 'INVALID_RESULT');
   taric(result.taric_code);
   string(result.description, 255, 'INVALID_RESULT');
-  if (!codes.includes(result.taric_code)) fail('CATALOG_REJECTED');
+  diagnostic.proposal = { taric_code: result.taric_code, description: result.description };
+  diagnostic.recognizedCode = codes.includes(result.taric_code);
+  diagnostic.stage = 'catalog';
+  if (!diagnostic.recognizedCode) fail('CATALOG_REJECTED');
   return { ...result, description_source: 'model_generated', verification: 'unverified', training_approved: false };
+}
+function output(envelope, codes, capture) {
+  const diagnostic = { label: 'UNVALIDATED', stage: 'envelope', reasons: [],
+    proposal: null, recognizedCode: null, applicable: false, training_approved: false,
+    ...(typeof envelope?.content === 'string' ? require('./taricDiagnostics').preview(envelope.content) : { visibleText: null, outputBytes: 0, truncated: false }) };
+  try {
+    const result = validateOutput(envelope, codes, diagnostic);
+    diagnostic.stage = 'validated';
+    return result;
+  } catch (error) {
+    diagnostic.label = 'REJECTED';
+    diagnostic.reasons = [error.code || 'INVALID_RESULT'];
+    throw error;
+  } finally {
+    // Copy before publishing: callbacks cannot change the validated suggestion.
+    if (capture) capture(JSON.parse(JSON.stringify(diagnostic)));
+  }
 }
 const TEMPLATE = Object.freeze({ ...VERSIONS, systemHash: sha(SYSTEM),
   trainingSha: TRAINING_SHA, cleanedSha: CLEANED_SHA, matchedPrompts: 67,

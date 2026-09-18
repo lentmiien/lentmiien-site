@@ -19,10 +19,12 @@ html(lang='en')
         h2 Readiness and release reasons
         button#refresh(type='button') Refresh
         pre#readiness
-        p If an uncertain remote call or restart holds inference, verify the Gateway has no active TARIC generation before clearing the hold. This does not cancel remote GPU work.
+        p Recovery never cancels remote work. Read remote status, cancel unwanted pending runs, then explicitly clear the hold only after the server proves remote idle and no active local worker. Clearing alone does not resume paused runs. Missing Gateway session support blocks recovery.
+        button#remote-status(type='button') Read remote status (no GPU work)
+        pre#recovery-status
         label
           input#confirm-idle(type='checkbox')
-          |  I verified the Gateway is idle
+          |  I reviewed remote idle and cancelled pending work
         button#resume(type='button') Clear inference hold
       section
         h2 Dedicated integration credential
@@ -58,6 +60,7 @@ html(lang='en')
         input#test-hs(type='text' maxlength='7')
         button#test(type='button') Submit manual-confirmation test
         button#test-poll(type='button') Poll test
+        p Generated diagnostic text is UNVALIDATED / REJECTED and cannot be applied as an approved suggestion. A test allowlist rejection is not a legal TARIC validity judgment. Historical discarded output is not captured and cannot be recovered.
         pre#test-result
         label(for='test-selected-code') Human-selected final TARIC code (ten digits)
         input#test-selected-code(type='text' maxlength='10' pattern='[0-9]{10}')
@@ -79,16 +82,26 @@ html(lang='en')
       section
         h2 Benchmark execution and publication
         p Drafts are inert for release. Import reviewed independent v1+ only after checking provenance and product-family overlap. Publishing explicitly replaces the current version and holds older normal results. Benchmark runs make live provider calls; run them only during an authorized GPU window.
+        p v0 benchmarks require owned Gateway inference sessions. WARM_SESSION_NOT_READY means this integration is unavailable; no reservation or cold-loop fallback is used.
         button#adapters(type='button') Load adapter metadata
         label(for='adapter') Adapter to benchmark
         select#adapter
-        label(for='benchmark-id') Benchmark ID
-        input#benchmark-id(type='text' maxlength='32')
-        button#run(type='button') Queue adapter benchmark
-        button#publish(type='button') Publish this benchmark
+        label(for='benchmark-id') Benchmark version (newest first)
+        select#benchmark-id(disabled)
+        p#benchmark-help Loading benchmark versions…
+        button#benchmarks-more(type='button' disabled) Load more versions
+        button#run(type='button' disabled) Queue adapter benchmark
+        button#publish(type='button' disabled) Publish this benchmark
         label(for='run-id') Run ID to cancel / revoke
         input#run-id(type='text' maxlength='32')
         button#cancel(type='button') Cancel future cases / revoke completed run
+        button#run-progress(type='button') Load progress and case outputs
+        pre#run-progress-output
+        p Progress persists after this page closes. Errors count against the full benchmark denominator; uncertain attempts are never silently retried. Open private results below for further pages.
+        label
+          input#confirm-run(type='checkbox')
+          |  I authorize the next cases during the current GPU window
+        button#resume-run(type='button') Resume paused run after idle recovery
       section
         h2 Private inspection
         select#kind

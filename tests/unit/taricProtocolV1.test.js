@@ -92,3 +92,18 @@ test('monotonic run sequence beats random IDs and equal timestamps for replaceme
   const replacement = { ...r, _id: 'a', sequence: 2, state: 'failed' };
   expect(() => selectWinner(s, b, [{ ...r, _id: 'z', sequence: 1 }, replacement], 'code')).toThrow('RELEASE_CLOSED');
 });
+
+test('bounded visible diagnostics survive JSON/catalog rejection without raw envelopes, tools or reasoning', () => {
+  const { output } = require('../../utils/taricProtocol');
+  for (const content of ['not JSON <script>alert(1)</script>', '{"taric_code":"9999999999","description":"Synthetic"}', '{"taric_code":"0000000001","taric_code":"9999999999","description":"Synthetic"}']) {
+    let diagnostic;
+    expect(() => output({ content, reasoning_content: 'PRIVATE-REASONING', tool_arguments: 'PRIVATE-TOOL' }, ['0000000001'], value => { diagnostic = value; })).toThrow();
+    expect(diagnostic).toMatchObject({ visibleText: content, label: 'REJECTED', applicable: false, training_approved: false });
+    expect(JSON.stringify(diagnostic)).not.toContain('PRIVATE');
+  }
+  let diagnostic;
+  expect(() => output({ content: 'あ'.repeat(3000), raw_content: 'PRIVATE-RAW' }, [], value => { diagnostic = value; })).toThrow();
+  expect(diagnostic.outputBytes).toBe(9000); expect(diagnostic.truncated).toBe(true);
+  expect(Buffer.byteLength(diagnostic.visibleText)).toBeLessThanOrEqual(4096);
+  expect(diagnostic.proposal).toBeNull();
+});

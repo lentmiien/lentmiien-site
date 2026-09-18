@@ -117,7 +117,11 @@ function createTaricEvidenceService({ itemModel, fetchFactual = null, serviceLog
       let details;
       try {
         details = await fetchFactual(request.item_code);
-      } catch (_) { fail('FETCH_FAILED'); }
+      } catch (cause) {
+        const error = new TaricError('FETCH_FAILED');
+        error.transport = require('../utils/taricDiagnostics').errorStatus(cause.transport);
+        throw error;
+      }
       if (!details || details.gcode !== request.item_code) fail('IDENTITY_MISMATCH');
       const fetchedAt = new Date(now());
       const candidate = { gcode: request.item_code,
@@ -189,7 +193,7 @@ function createTaricEvidenceService({ itemModel, fetchFactual = null, serviceLog
       const safe = error instanceof TaricError ? error : new TaricError('STORAGE_FAILED');
       if (!['JAN_AMBIGUOUS', 'EVIDENCE_NOT_FOUND', 'FETCH_DISABLED', 'FETCH_LIMITED'].includes(safe.code)) {
         serviceLogger.warning('TARIC evidence resolution requires follow-up', {
-          category: 'taric-evidence', metadata: { code: safe.code },
+          category: 'taric-evidence', metadata: { code: safe.code, transport: require('../utils/taricDiagnostics').errorStatus(safe.transport) },
         });
       }
       throw safe;

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: TARIC assisted classification API
-  version: '1.0.1'
+  version: '1.0.2'
   description: |
     Private, durable, human-confirmed suggestions. Uses only a dedicated TARIC bearer key;
     application sessions and the legacy global API key do not grant access. Every result
@@ -59,11 +59,18 @@ paths:
       - $ref: '#/components/parameters/RequestId'
     get:
       operationId: readTaricRequest
-      summary: Poll a scoped job and revalidate its release gate
+      summary: Poll a scoped job; normal results revalidate the current release gate
       description: |
         A newer published benchmark, replacement run, revocation, or fingerprint change
         can hold even an old completed result. Never use cached suggestions to bypass a hold.
         Terminal failed/interrupted jobs retain IDs for manual feedback.
+        Terminal test:true jobs use their persisted mode and remain readable during
+        holds, disabled settings or provider outage without work admission. Current
+        credential generation, expiry, revocation, scope and ownership still apply.
+        Future test output diagnostics are private, bounded and never applicable or
+        training-approved. Previously discarded outputs cannot be reconstructed.
+        CATALOG_REJECTED in test mode means outside the training-derived allowlist,
+        not a determination of global TARIC legality. Normal jobs omit diagnostics.
       responses:
         '202':
           description: Queued or running
@@ -192,9 +199,73 @@ components:
                   type: array
                   items: {type: string}
         error: {type: [string, 'null']}
+        diagnostics:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/TestDiagnostics'
+        diagnosticsStatus:
+          type: string
+          enum: [captured, not_captured]
+          description: Present only for persisted test mode; historical missing output is not recoverable.
+        evidence:
+          type: [object, 'null']
+          description: Test-only resolved factual snapshot, including facts, provenance and hash; null if unresolved.
+        errorStatus:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/TransportStatus'
+        help: {type: [string, 'null'], description: Test-only manual lookup guidance.}
         baseline: {type: [string, 'null']}
         manual_confirmation_required: {const: true}
         adapter: {type: string}
         benchmark: {type: [string, 'null']}
         poll_url: {type: string}
         feedback_url: {type: string}
+
+    TestDiagnostics:
+      type: object
+      additionalProperties: false
+      required: [label, stage, reasons, visibleText, outputBytes, truncated, proposal, recognizedCode, applicable, training_approved]
+      description: |
+        Immutable private review snapshot separate from result. Only visible answer content
+        is captured, never raw envelopes, reasoning fields, tool arguments, prompts or headers.
+        UTF-8 preview is at most 4096 bytes; outputBytes reports full visible content size.
+        Render as escaped plain text. Even validated-stage diagnostics are UNVALIDATED for
+        applicability and training purposes; they are never an approved classification.
+      properties:
+        label: {type: string, enum: [UNVALIDATED, REJECTED]}
+        stage: {type: string, enum: [envelope, json, proposal, catalog, validated]}
+        reasons:
+          type: array
+          maxItems: 1
+          items: {type: string}
+        visibleText: {type: [string, 'null'], maxLength: 4096}
+        outputBytes: {type: integer, minimum: 0}
+        truncated: {type: boolean}
+        proposal:
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [taric_code, description]
+              properties:
+                taric_code: {type: string, pattern: '^[0-9]{10}$'}
+                description: {type: string, minLength: 1, maxLength: 255}
+        recognizedCode: {type: [boolean, 'null'], description: Membership in selected allowlist only.}
+        applicable: {const: false}
+        training_approved: {const: false}
+    TransportStatus:
+      type: object
+      additionalProperties: false
+      required: [phase, dispatched, terminal]
+      description: Sanitized status only. No remote response body, URL, headers, address or exception message.
+      properties:
+        phase: {type: string, enum: [dns, connect, tls, http, decode, limit, json, envelope, timeout, clientabort]}
+        dispatched: {type: boolean}
+        terminal: {type: boolean}
+        status: {type: integer, minimum: 0}
+        socketCode: {type: string, maxLength: 64}
+        wireBytes: {type: integer, minimum: 0}
+        decodedBytes: {type: integer, minimum: 0}
+        durationMs: {type: integer, minimum: 0}
+        correlationId: {type: string, pattern: '^[a-f0-9]{32}$'}

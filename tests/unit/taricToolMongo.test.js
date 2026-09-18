@@ -18,7 +18,7 @@ const requestInput = { item_code: 'SYNTHETIC-1', descriptive_name: 'Synthetic ob
 const row = { input: { descriptive_name: 'Synthetic object', full_item_name: 'Synthetic toy', specs: '', hs_code: '950300' }, target: '0000000001', summary: 'Synthetic description', inputHash: 'synthetic', overlapHash: 'synthetic', sourceHash: 'synthetic' };
 const policy = { version: 'exact-all-cases/1', minExact: 1, maxInvalid: 0, denominator: 2 };
 run('TARIC durable pipeline with real Mongo indexes', () => {
-  let service, transport, evidence, principal, secret, worker;
+  let service, transport, evidence, principal, secret, worker, warmSessions;
   beforeAll(async () => {
     await mongoose.connect(uri, { autoCreate: false, autoIndex: false, serverSelectionTimeoutMS: 3000 });
     for (const model of [...Object.values(models), AmiAmiItem]) { await model.createCollection(); await model.createIndexes(); }
@@ -32,9 +32,14 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
     transport = { configured: jest.fn(), adapters: jest.fn().mockResolvedValue([{ name: TEST_ADAPTER }]), verifyIdentity: jest.fn().mockResolvedValue(undefined),
       generate: jest.fn().mockResolvedValue({ taric_code: '0000000001', description: 'Synthetic description', verification: 'unverified', training_approved: false }) };
     evidence = { resolve: jest.fn().mockResolvedValue({ facts: { name: 'Synthetic toy', specifications: '' }, hash: 'synthetic' }) };
-    service = createService({ models, transport, evidence, codeVersion: 'synthetic-code', authorizeAdmin: async actor => actor === 'a'.repeat(24) });
+    warmSessions = { ready: () => true, open: jest.fn().mockResolvedValue({ id: 'synthetic-session' }),
+      renew: jest.fn().mockResolvedValue(undefined), close: jest.fn().mockResolvedValue({ idle: true }),
+      status: jest.fn().mockResolvedValue({ idle: true, terminal: true, correlated: true }),
+      probe: jest.fn().mockResolvedValue({ idle: true }),
+      generate: jest.fn((session, input, codes, tokens, options) => transport.generate(input, TEST_ADAPTER, codes, tokens, null, options)) };
+    service = createService({ warmSessions, models, transport, evidence, codeVersion: 'synthetic-code', authorizeAdmin: async actor => actor === 'a'.repeat(24) });
     secret = await service.rotate('synthetic-admin'); principal = await service.authenticate(secret);
-    worker = createWorker(service, { authorizeAdmin: async () => true }); worker.start();
+    worker = createWorker(service, { authorizeAdmin: async () => true, batchCases: 1 }); worker.start();
   });
   afterEach(() => worker?.stop());
   async function benchmark(version = 0) {
@@ -58,6 +63,139 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       results: [{}, {}], score: 1, passed: true, cancelRequested: false });
     return b;
   }
+  test('rejected visible output and resolved evidence survive holds, disablement and provider failure without bypassing scope', async () => {
+    const { output } = require('../../utils/taricProtocol');
+    const text = JSON.stringify({ taric_code: '9999999999', description: '<script>unsafe()</script>' });
+    const r = await service.submit(principal, 'diagnostic-test-001', requestInput);
+    transport.generate.mockImplementationOnce(async (...args) => output({ content: text, reasoning: 'hidden', tools: 'hidden' }, ['0000000001'], args[5].onDiagnostics));
+    await worker.tick();
+    await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true } });
+    await models.Settings.updateOne({ _id: 'tool' }, { $set: { enabled: false } });
+    transport.configured.mockImplementation(() => { throw new Error('provider unavailable'); });
+    const result = await service.retrieve(principal, r.id);
+    expect(result).toMatchObject({ state: 'failed', result: null, error: 'CATALOG_REJECTED',
+      diagnostics: { label: 'REJECTED', visibleText: text, recognizedCode: false, applicable: false, training_approved: false }, evidence: { hash: 'synthetic' } });
+    expect(result.help).toContain('does not establish');
+    expect(JSON.stringify(result)).not.toContain('hidden');
+    await expect(service.retrieve({ ...principal, owner: 'foreign' }, r.id)).rejects.toThrow('FORBIDDEN');
+    await service.revoke(); await expect(service.retrieve(principal, r.id)).rejects.toThrow('FORBIDDEN');
+  });
+  test.each(['EVIDENCE_NOT_FOUND', 'JAN_AMBIGUOUS'])('JAN %s resolves no fabricated evidence and performs no inference', async code => {
+    const { TaricError } = require('../../utils/taricContracts');
+    const r = await service.submit(principal, 'missing-jan-00001', { jan: '1234567890123', descriptive_name: 'Synthetic', input_hs_code: '950300', test: true });
+    evidence.resolve.mockRejectedValueOnce(new TaricError(code)); await worker.tick();
+    const result = await service.retrieve(principal, r.id);
+    expect(result).toMatchObject({ error: code, evidence: null, diagnostics: null, diagnosticsStatus: 'not_captured' });
+    expect(result.help).toContain('item code'); expect(transport.generate).not.toHaveBeenCalled();
+  });
+  test('synthetic 67-case run records uncertain case twelve, correlates terminal idle and continues case thirteen without retry', async () => {
+    worker.stop(); worker = createWorker(service, { authorizeAdmin: async () => true, batchCases: 8 }); worker.start();
+    const b = await benchmark();
+    await models.Benchmark.updateOne({ _id: b._id }, { $set: { cases: Array.from({ length: 67 }, (_, i) => ({ ...row, inputHash: `synthetic-${i}` })), policy: { ...policy, denominator: 67 } } });
+    let calls = 0;
+    transport.generate.mockImplementation(async () => {
+      calls++;
+      if (calls === 12) throw new (require('../../utils/taricContracts').TaricError)('INFERENCE_UNCERTAIN');
+      return { taric_code: '0000000001', description: 'Synthetic' };
+    });
+    const run = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
+    for (let i = 0; i < 9; i++) await worker.tick();
+    const result = await models.Run.findById(run.id).lean();
+    expect(result).toMatchObject({ state: 'complete', attemptedCount: 67, actualCount: 67, requestedCount: 67, exact: 66, invalid: 1, passed: false });
+    expect(result.results).toHaveLength(67); expect(result.results[11]).toMatchObject({ index: 11, error: 'INFERENCE_UNCERTAIN', exact: false });
+    expect(await models.Attempt.countDocuments({ run: run.id })).toBe(67);
+    expect(transport.generate).toHaveBeenCalledTimes(67); expect(warmSessions.status).toHaveBeenCalledTimes(1);
+    expect(warmSessions.close).toHaveBeenCalledTimes(9);
+    await expect(models.Attempt.create({ _id: 'duplicate', run: run.id, index: 11 })).rejects.toMatchObject({ code: 11000 });
+  });
+  test('uncorrelated/in-flight recovery pauses with an attempted result, never hands off or passes', async () => {
+    worker.stop(); worker = createWorker(service, { authorizeAdmin: async () => true, recoveryMs: 0 }); worker.start();
+    const b = await benchmark(); const run = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
+    transport.generate.mockRejectedValueOnce(new (require('../../utils/taricContracts').TaricError)('INFERENCE_UNCERTAIN'));
+    warmSessions.status.mockResolvedValue({ idle: false, terminal: false, correlated: false });
+    warmSessions.close.mockResolvedValue({ idle: false });
+    await worker.tick(); await worker.tick();
+    expect((await models.Run.findById(run.id)).toObject()).toMatchObject({ state: 'recovery_required', actualCount: 1, passed: false, active: false });
+    expect(transport.generate).toHaveBeenCalledTimes(1);
+    await expect(service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin')).rejects.toThrow('RECOVERY_REQUIRED');
+    const epoch = (await models.Control.findById('inference')).epoch;
+    warmSessions.probe.mockResolvedValue({ idle: false }); await expect(service.resumeInference(epoch)).rejects.toThrow('RECOVERY_REQUIRED');
+    warmSessions.probe.mockResolvedValue({ idle: true }); await service.resumeInference(epoch);
+    expect((await models.Run.findById(run.id)).state).toBe('recovery_required');
+    await service.resumeRun(run.id); await worker.tick();
+    expect((await models.Run.findById(run.id)).actualCount).toBe(2);
+    expect(transport.generate).toHaveBeenCalledTimes(2);
+  });
+  test('legacy pending work requires explicit cancellation before epoch-fenced remote-idle recovery', async () => {
+    const b = await benchmark(); const run = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
+    await models.Run.updateOne({ _id: run.id }, { $unset: { warmSessionRequired: 1 } });
+    await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, epoch: 3 } });
+    await worker.tick(); expect(transport.generate).not.toHaveBeenCalled();
+    await expect(service.resumeInference(3)).rejects.toThrow('RECOVERY_REQUIRED');
+    await service.cancelRun(run.id);
+    await expect(service.resumeInference(2)).rejects.toThrow('STALE');
+    const attempts = await Promise.allSettled([service.resumeInference(3), service.resumeInference(3)]);
+    expect(attempts.filter(a => a.status === 'fulfilled')).toHaveLength(1);
+    await worker.tick(); expect(transport.generate).not.toHaveBeenCalled();
+    expect((await models.Run.findById(run.id)).state).toBe('cancelled');
+  });
+  test('lease heartbeats protect long generation and lost ownership aborts locally and preserves an unavailable attempt', async () => {
+    worker.stop(); worker = createWorker(service, { authorizeAdmin: async () => true, leaseMs: 150 }); worker.start();
+    const b = await benchmark(); const run = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
+    transport.generate.mockImplementationOnce(async (...args) => {
+      const first = await models.Control.findById('inference').lean();
+      await new Promise(resolve => setTimeout(resolve, 220));
+      const current = await models.Control.findById('inference').lean();
+      expect(current.holder).toBe(first.holder); expect(current.until.getTime()).toBeGreaterThan(first.until.getTime());
+      await models.Control.updateOne({ _id: 'inference' }, { $set: { holder: 'lost', until: new Date(0) } });
+      await new Promise(resolve => setTimeout(resolve, 70));
+      expect(args[5].signal.aborted).toBe(true);
+      throw new (require('../../utils/taricContracts').TaricError)('INFERENCE_UNCERTAIN');
+    });
+    await worker.tick(); await worker.tick();
+    expect(transport.generate).toHaveBeenCalledTimes(1);
+    expect(await models.Attempt.countDocuments({ run: run.id })).toBe(1);
+    expect((await models.Run.findById(run.id)).toObject()).toMatchObject({ passed: false, actualCount: 1, state: 'recovery_required' });
+  });
+  test('benchmark pages are chronological with stable ties, bounded pagination and no random-ID ordering', async () => {
+    const time = new Date('2026-01-01');
+    for (let i = 0; i < 28; i++) await models.Benchmark.create({ _id: (100 - i).toString(16).padStart(32, '0'), version: i,
+      createdAt: i < 2 ? time : new Date(time.getTime() + i * 1000), state: 'draft', cases: [row], manifest: { accepted: 1 } });
+    const first = await service.inspect('benchmarks'); const second = await service.inspect('benchmarks', first.at(-1)._id);
+    expect(first).toHaveLength(25); expect(second).toHaveLength(3); expect(first[0].version).toBe(27);
+    expect(second.map(r => r.version)).toEqual([2, 0, 1]);
+    expect(new Set([...first, ...second].map(r => r._id)).size).toBe(28);
+  });
+  test('recovery HTTP mutations require management capability, CSRF and a fresh epoch; GET status is read-only', async () => {
+    const app = express(); let role = 'user'; const csrf = 'x'.repeat(43);
+    app.set('views', require('path').join(__dirname, '../../views')); app.set('view engine', 'pug');
+    app.use((req, _res, next) => { req.user = { _id: 'a'.repeat(24), name: 'synthetic', type_user: role }; req.isAuthenticated = () => true; req.session = { csrfToken: csrf }; next(); });
+    app.use('/admin/taric', createTaricAdminRouter(service, { roleModel: { findOne: async () => null } }));
+    const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${server.address().port}/admin/taric`;
+    const post = (body, token = csrf) => fetch(base + '/inference/resume', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token }, body: JSON.stringify(body) });
+    try {
+      await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, epoch: 4 } });
+      expect((await post({ confirmIdle: true, epoch: 4 })).status).toBe(403); role = 'admin';
+      expect((await post({ confirmIdle: true, epoch: 4 }, '')).status).toBe(403);
+      expect((await fetch(base + '/inference/status')).status).toBe(200);
+      expect((await models.Control.findById('inference')).blocked).toBe(true); expect(warmSessions.open).not.toHaveBeenCalled();
+      expect((await post({ confirmIdle: true, epoch: 3 })).status).toBe(409);
+      expect((await post({ confirmIdle: true, epoch: 4 })).status).toBe(200);
+      expect((await post({ confirmIdle: true, epoch: 4 })).status).toBe(409);
+    } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  });
+  test('normal API omits diagnostic fields and test mode cannot be selected by a polling query', async () => {
+    await normalReady(); const r = await service.submit(principal, 'normal-fields-0001', { ...requestInput, test: false }); await worker.tick();
+    const result = await service.retrieve(principal, r.id);
+    expect(result).not.toHaveProperty('diagnostics'); expect(result).not.toHaveProperty('evidence');
+    const app = express(); app.use('/api/taric/v1', createTaricRouter(service));
+    const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+    try {
+      const response = await fetch(`http://127.0.0.1:${server.address().port}/api/taric/v1/requests/${r.id}?test=true`, { headers: { Authorization: `Bearer ${secret}` } });
+      expect(response.status).toBe(400);
+    } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  });
   test('real AmiAmi aggregate projections, unique upsert race, JAN ambiguity and successful reuse', async () => {
     const fetchFactual = jest.fn(async code => ({ gcode: code, scode: 'independent-source', itemName: 'Synthetic database item', janCode: '00123456', specifications: null }));
     const a = createTaricEvidenceService({ itemModel: AmiAmiItem, fetchFactual });
@@ -106,7 +244,7 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
   test('atomic idempotency claim generates once across concurrent requests and workers', async () => {
     const rows = await Promise.all(Array.from({ length: 5 }, () => service.submit(principal, 'concurrent-key-01', requestInput)));
     expect(new Set(rows.map(r => r.id)).size).toBe(1); expect(await models.Request.countDocuments()).toBe(1);
-    const second = createWorker(service, { authorizeAdmin: async () => true }); second.start();
+    const second = createWorker(service, { authorizeAdmin: async () => true, batchCases: 1 }); second.start();
     try { await Promise.all([worker.tick(), second.tick()]); } finally { second.stop(); }
     expect(transport.generate).toHaveBeenCalledTimes(1);
     expect(transport.generate.mock.calls[0][1]).toBe(TEST_ADAPTER);
@@ -187,7 +325,7 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
     expect((await models.Request.findById(r.id)).error).toBe('INFERENCE_UNCERTAIN');
     expect((await models.Control.findById('inference')).blocked).toBe(true);
     await expect(service.submit(principal, 'uncertain-0000002', requestInput)).rejects.toThrow('INFERENCE_UNCERTAIN');
-    await service.resumeInference();
+    await service.resumeInference((await models.Control.findById('inference')).epoch);
     await service.submit(principal, 'uncertain-0000002', requestInput); await worker.tick();
     expect(transport.generate).toHaveBeenCalledTimes(2);
   });
@@ -300,13 +438,13 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       await expect(service.retrieve(principal, foreign._id)).rejects.toThrow('NOT_FOUND');
     } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
   });
-  test('benchmark manager revocation while generating discards the current case and prevents future cases', async () => {
+  test('benchmark manager revocation retains attempted history and prevents future cases', async () => {
     worker.stop(); let allowed = true;
     worker = createWorker(service, { authorizeAdmin: async () => allowed }); worker.start();
     const b = await benchmark(); const run = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
     transport.generate.mockImplementationOnce(async () => { allowed = false; return { taric_code: '0000000001', description: 'Synthetic' }; });
     await worker.tick(); await worker.tick();
-    expect((await models.Run.findById(run.id)).toObject()).toMatchObject({ state: 'failed', passed: false, actualCount: 0, error: 'FORBIDDEN' });
+    expect((await models.Run.findById(run.id)).toObject()).toMatchObject({ state: 'failed', passed: false, actualCount: 1, error: 'FORBIDDEN' });
     expect(transport.generate).toHaveBeenCalledTimes(1);
   });
   test('real multipart file plus metadata previews/imports, rejects extra parts, and requires reviewed hash', async () => {

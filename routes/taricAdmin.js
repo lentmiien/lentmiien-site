@@ -42,9 +42,15 @@ function createTaricAdminRouter(service, { roleModel = Role } = {}) {
     res.json({ id: f._id, decision: f.decision, selected_code: f.selected_code, verification: f.verification, training_approved: f.training_approved });
   });
   router.post('/inference/resume', jsonBody('1kb'), async (req, res) => {
-    object(req.body, ['confirmIdle'], 'INVALID_REQUEST');
+    object(req.body, ['confirmIdle', 'epoch'], 'INVALID_REQUEST');
     if (req.body.confirmIdle !== true) fail('INVALID_REQUEST');
-    await service.resumeInference(); res.json({ ok: true });
+    await service.resumeInference(req.body.epoch); res.json({ ok: true });
+  });
+  router.get('/inference/status', async (_req, res) => res.json(await service.recoveryStatus()));
+  router.post('/runs/:id/resume', jsonBody('1kb'), async (req, res) => {
+    object(req.body, ['confirm'], 'INVALID_REQUEST');
+    if (req.body.confirm !== true) fail('INVALID_REQUEST');
+    await service.resumeRun(req.params.id); res.json({ ok: true });
   });
   router.get('/state', async (_req, res) => res.json(await service.readiness()));
   router.get('/adapters', async (_req, res) => res.json(await service.transport.adapters()));

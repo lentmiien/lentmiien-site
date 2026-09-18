@@ -65,3 +65,36 @@ test('Gateway requires exact allowlisted operator origin and observed runtime id
   await expect(t.verifyIdentity('test', { ...identity, deploymentRevision: 'invented' })).rejects.toThrow('RELEASE_CLOSED');
   await expect(t.verifyIdentity('unknown', identity)).rejects.toThrow('RELEASE_CLOSED');
 });
+
+test.each([['ENOTFOUND', 'dns'], ['ECONNREFUSED', 'connect'], ['CERT_HAS_EXPIRED', 'tls']])('sanitized pre-dispatch %s preserves phase without address, body or credential', async (code, phase) => {
+  const req = new EventEmitter(); req.destroy = jest.fn(); req.end = () => process.nextTick(() => req.emit('error', Object.assign(new Error('SECRET-hostname'), { code })));
+  const error = await boundedJson(new URL('https://synthetic.test/'), { request: () => req, correlationId: 'b'.repeat(32) }).catch(e => e);
+  expect(error.transport).toMatchObject({ phase, dispatched: false, terminal: false, socketCode: code, correlationId: 'b'.repeat(32) });
+  expect(JSON.stringify(error)).not.toContain('SECRET');
+});
+test.each([[503, 'http'], [403, 'http']])('confirmed HTTP %i is terminal without reading its body', async (status, phase) => {
+  const error = await boundedJson(new URL('https://synthetic.test/'), { request: stub({ status, chunks: ['SECRET-provider-error'] }) }).catch(e => e);
+  expect(error.transport).toMatchObject({ phase, status, terminal: true, wireBytes: 0 });
+  expect(JSON.stringify(error)).not.toContain('SECRET');
+});
+test('timeout after dispatch is uncertain; confirmed HTTP response and DNS failure are definite', async () => {
+  const { TaricError } = require('../../utils/taricContracts');
+  const json = jest.fn();
+  const t = createTransport({ json, env: { TARIC_GATEWAY_ORIGIN: 'https://synthetic.test', TARIC_GATEWAY_ALLOWED_ORIGINS: 'https://synthetic.test' } });
+  const row = { descriptive_name: 'Synthetic', full_item_name: 'Synthetic', specs: '', hs_code: '950300' };
+  for (const [transport, code] of [[{ phase: 'timeout', dispatched: true, terminal: false }, 'INFERENCE_UNCERTAIN'],
+    [{ phase: 'http', dispatched: true, terminal: true, status: 503 }, 'PROVIDER_FAILED'], [{ phase: 'dns', dispatched: false, terminal: false }, 'PROVIDER_FAILED']]) {
+    json.mockRejectedValueOnce(Object.assign(new TaricError('PROVIDER_FAILED'), { transport }));
+    await expect(t.generate(row, TEST_ADAPTER, ['0000000001'], 256)).rejects.toMatchObject({ code, transport });
+  }
+});
+test('JSON, decompression, size and abort failures expose bounded structured categories', async () => {
+  const cases = [[stub({ chunks: ['bad json'] }), {}, 'json'], [stub({ chunks: ['bad gzip'], headers: { 'content-encoding': 'gzip' } }), {}, 'decode'],
+    [stub({ chunks: ['{"large":"data"}'] }), { maxBytes: 5 }, 'limit']];
+  for (const [request, options, phase] of cases) {
+    const error = await boundedJson(new URL('https://synthetic.test/'), { request, ...options }).catch(e => e);
+    expect(error.transport.phase).toBe(phase); expect(error.transport.durationMs).toBeGreaterThanOrEqual(0);
+  }
+  const controller = new AbortController(); controller.abort();
+  await expect(boundedJson(new URL('https://synthetic.test/'), { signal: controller.signal, request: stub() })).rejects.toMatchObject({ transport: { phase: 'clientabort', dispatched: false } });
+});

@@ -31,3 +31,52 @@ test('app mounts terminal private machine router before legacy parsers/auth and 
   expect(source).toContain('isTaricAdminPath(req)) ? next() : legacyJsonParser');
   expect(source.indexOf("app.use('/admin/taric'")).toBeLessThan(source.indexOf("app.use('/admin', isAuthenticated"));
 });
+
+test('benchmark selector defaults newest, preserves older choice, paginates, autoselects import and handles empty lists', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric.pug'), { csrfToken: 'synthetic' }), { url: 'http://localhost/admin/taric', runScripts: 'outside-only' });
+  const doc = dom.window.document;
+  const rows = Array.from({ length: 27 }, (_, i) => ({ _id: String(i + 1).padStart(32, '0'), version: 27 - i,
+    state: 'draft', contaminated: i === 26, manifest: { accepted: 67 }, review: { provenance: '<img src=x onerror=alert(1)>' } }));
+  let data = [...rows]; let deleted = false;
+  dom.window.fetch = jest.fn(async (url, options) => {
+    let result;
+    if (url === '/admin/taric/state') result = { settings: { enabled: false } };
+    else if (url === '/admin/taric/inspect/benchmarks') result = data.slice(0, 25);
+    else if (url.includes('/inspect/benchmarks?before=')) result = data.slice(25);
+    else if (url.includes('/inspect/benchmarks/')) result = deleted ? null : rows.find(r => url.endsWith(r._id));
+    else if (url === '/admin/taric/imports') {
+      const meta = JSON.parse(options.body.get('metadata'));
+      result = meta.action === 'preview' ? { sha256: 'synthetic' } : { id: rows[1]._id };
+    }
+    return { ok: true, json: async () => result };
+  });
+  const settle = () => new Promise(setImmediate);
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-admin.js'), 'utf8')); await settle();
+  const select = doc.querySelector('#benchmark-id');
+  expect(select.tagName).toBe('SELECT'); expect(select.value).toBe(rows[0]._id); expect(select.options).toHaveLength(25);
+  doc.querySelector('#benchmarks-more').click(); await settle();
+  expect(select.options).toHaveLength(27); expect(doc.querySelector('#benchmarks-more').disabled).toBe(true);
+  select.value = rows[26]._id; doc.querySelector('#refresh').click(); await settle();
+  expect(select.value).toBe(rows[26]._id); expect(doc.querySelectorAll('img')).toHaveLength(0);
+  Object.defineProperty(doc.querySelector('#csv'), 'files', { value: [new dom.window.File(['synthetic'], 'synthetic.csv')] });
+  doc.querySelector('#preview').click(); await settle(); doc.querySelector('#import').click(); await settle();
+  expect(select.value).toBe(rows[1]._id);
+  deleted = true; data = []; doc.querySelector('#refresh').click(); await settle();
+  expect(select.options).toHaveLength(0); expect(select.disabled).toBe(true); expect(doc.querySelector('#run').disabled).toBe(true);
+  expect(doc.querySelector('#benchmark-help').textContent).toContain('Import');
+  dom.window.close();
+});
+test('test diagnostics display literal rejected text without executing HTML and list failures are actionable', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric.pug'), { csrfToken: 'synthetic' }), { url: 'http://localhost/admin/taric', runScripts: 'outside-only' });
+  const attack = '<img src=x onerror="window.compromised=true">';
+  dom.window.fetch = jest.fn(async url => ({ ok: !url.endsWith('/benchmarks'), json: async () => url.endsWith('/test') ?
+    { id: 'a'.repeat(32), result: null, error: 'CATALOG_REJECTED', diagnostics: { label: 'REJECTED', visibleText: attack } } : url.endsWith('/benchmarks') ? { error: 'STORAGE_FAILED' } : { settings: {} } }));
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-admin.js'), 'utf8')); await new Promise(setImmediate);
+  expect(dom.window.document.querySelector('#benchmark-help').textContent).toContain('Refresh to retry');
+  dom.window.document.querySelector('#test').click(); await new Promise(setImmediate);
+  expect(dom.window.document.querySelector('#test-result').textContent).toContain('REJECTED');
+  expect(dom.window.document.querySelectorAll('img')).toHaveLength(0); expect(dom.window.compromised).toBeUndefined();
+  dom.window.close();
+});

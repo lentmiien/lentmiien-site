@@ -8,8 +8,8 @@ const SCOPES = ['taric.requests.create', 'taric.requests.read', 'taric.feedback.
 const id = () => crypto.randomBytes(16).toString('hex');
 const validId = value => string(value, 32, 'NOT_FOUND', /^[a-f0-9]{32}$/);
 const query = q => q.maxTimeMS(2000).lean().exec();
-function createService({ models, transport, evidence, codeVersion, authorizeAdmin = async () => false, now = Date.now } = {}) {
-  const { Settings, Credential, Benchmark, Run, Request, Feedback, Control } = models;
+function createService({ models, transport, evidence, codeVersion, authorizeAdmin = async () => false, now = Date.now, warmSessions = require('./warmSession').createWarmSessions() } = {}) {
+  const { Settings, Credential, Benchmark, Run, Request, Feedback, Control, Attempt } = models;
   // Freeze at startup: an old worker must not advertise hashes of newly replaced files.
   const implementationVersion = transport.fingerprint
     ? hash({ code: codeVersion || codeFingerprint(), gateway: transport.fingerprint() })
@@ -119,7 +119,8 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     const previous = await query(Request.findOne({ principal: principal.id, key }));
     if (previous) {
       if (previous.digest !== digest) fail('IDEMPOTENCY_CONFLICT');
-      await checkAdmission(previous); return publicRequest(previous);
+      if (!(previous.input.test === true && !previous.active)) await checkAdmission(previous);
+      return publicRequest(previous);
     }
     const selected = await admission(normalized.test);
     for (let slot = 0; slot < 20; slot++) {
@@ -133,7 +134,8 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
         const winner = await query(Request.findOne({ principal: principal.id, key }));
         if (winner) {
           if (winner.digest !== digest) fail('IDEMPOTENCY_CONFLICT');
-          await checkAdmission(winner); return publicRequest(winner);
+          if (!(winner.input.test === true && !winner.active)) await checkAdmission(winner);
+          return publicRequest(winner);
         }
       }
     }
@@ -141,6 +143,9 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
   }
   function publicRequest(r) {
     return { id: r._id, state: r.state, test: r.input.test, result: r.result || null, error: r.error || null,
+      ...(r.input.test === true ? { diagnostics: r.diagnostics || null, diagnosticsStatus: r.diagnostics ? 'captured' : 'not_captured',
+        evidence: r.evidence || null, errorStatus: require('../../utils/taricDiagnostics').errorStatus(r.errorStatus),
+        help: require('../../utils/taricDiagnostics').help(r.error, r.errorStatus) } : {}),
       manual_confirmation_required: true, baseline: r.input.test ? 'untested' : null,
       adapter: r.admission.adapter, benchmark: r.admission.benchmark,
       poll_url: `/api/taric/v1/requests/${r._id}`, feedback_url: `/api/taric/v1/requests/${r._id}/feedback` };
@@ -150,7 +155,8 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     const r = await query(Request.findOne({ _id: requestId, owner: principal.owner, principal: principal.id }));
     if (!r) fail('NOT_FOUND');
     if (r.generation !== principal.generation) fail('FORBIDDEN');
-    await checkAdmission(r); return publicRequest(r);
+    if (!(r.input.test === true && !r.active)) await checkAdmission(r);
+    return publicRequest(r);
   }
   async function feedback(principal, key, requestId, value) {
     validId(requestId); key = sha(idempotencyKey(key)); const parsed = validateFeedback(value);
@@ -243,9 +249,12 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
   }
   async function queueRun(benchmarkId, adapter, actor) {
     validId(benchmarkId); string(adapter, 100, 'INVALID_REQUEST', /^[A-Za-z0-9][A-Za-z0-9_.-]*$/);
+    const control = await query(Control.findById('inference'));
+    if (!control || control.blocked) fail('RECOVERY_REQUIRED');
     const known = await transport.adapters(); if (!known.some(a => a.name === adapter)) fail('INVALID_REQUEST');
     const s = await settings(); if (!s?.enabled) fail('CONFIG_NOT_READY');
     const b = await query(Benchmark.findById(benchmarkId)); if (!b) fail('NOT_FOUND');
+    if (b.version === 0 && (adapter !== TEST_ADAPTER || !warmSessions.ready())) fail('WARM_SESSION_NOT_READY');
     if (b.version > 0 && b.state !== 'published') fail('CONFIG_NOT_READY');
     const config = configuration(s, adapter, version());
     if (b.version > 0 && (!config.runtime?.verified || !s.catalog?.approved)) fail('CONFIG_NOT_READY');
@@ -256,6 +265,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
       try {
         const row = await Run.create({ _id: id(), sequence, benchmark: b._id, adapter, identity: config.runtime?.identity || hash({ adapter, unverified: true }),
           fingerprint: hash(config), configuration: config, policy: b.policy, state: 'pending', active: true, slot,
+          warmSessionRequired: b.version === 0, attemptedCount: 0, errorCount: 0, catalogRejected: 0, codeExact: 0,
           requestedCount: b.cases.length, actualCount: 0, exact: 0, invalid: 0, results: [], score: 0, passed: false,
           cancelRequested: false, deadline: new Date(now() + 6 * 3600000), actor });
         return { id: row._id };
@@ -265,28 +275,82 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
   }
   async function cancelRun(runId) {
     validId(runId);
-    await Run.updateOne({ _id: runId }, { $set: { cancelRequested: true, passed: false } }).exec();
+    await Run.updateOne({ _id: runId, state: { $nin: ['failed', 'interrupted'] } }, { $set: { cancelRequested: true, passed: false } }).exec();
+    await Run.updateOne({ _id: runId, fence: null, state: { $in: ['pending', 'running', 'paused', 'recovery_required'] } },
+      { $set: { state: 'cancelled', active: false, finishedAt: new Date(now()) } }).exec();
   }
   async function inspect(kind, before) {
     const available = { requests: Request, feedback: Feedback, benchmarks: Benchmark, runs: Run };
     if (!Object.hasOwn(available, kind)) fail('NOT_FOUND');
-    const filter = before ? { _id: { $lt: validId(before) } } : {};
-    // Random opaque ID keyset pagination is stable; ordering intentionally isn't time.
+    let filter = {};
+    if (before) {
+      const anchor = await query(available[kind].findById(validId(before)).select('createdAt'));
+      if (!anchor) fail('INVALID_REQUEST');
+      filter = { $or: [{ createdAt: { $lt: anchor.createdAt } }, { createdAt: anchor.createdAt, _id: { $lt: anchor._id } }] };
+    }
     const projection = kind === 'benchmarks' ? '-cases' : kind === 'runs' ? '-results -configuration.catalog' : '-key -digest';
-    return query(available[kind].find(filter).select(projection).sort({ _id: -1 }).limit(25));
+    return query(available[kind].find(filter).select(projection).sort({ createdAt: -1, _id: -1 }).limit(25));
   }
+
   async function detail(kind, itemId, offset = 0) {
     validId(itemId);
     if (!Number.isInteger(offset) || offset < 0 || offset > 500) fail('INVALID_REQUEST');
     const model = kind === 'benchmarks' ? Benchmark : kind === 'runs' ? Run : null;
     if (!model) fail('NOT_FOUND');
-    return query(model.findById(itemId).select(kind === 'benchmarks' ? { cases: { $slice: [offset, 25] } } : { results: { $slice: [offset, 25] } }));
+    const record = await query(model.findById(itemId).select(kind === 'benchmarks' ? { cases: { $slice: [offset, 25] } } : { results: { $slice: [offset, 25] } }));
+    if (record && kind === 'runs') {
+      // Durable attempts remain inspectable even after a crash between attempt and
+      // parent persistence. No tokens are stored in this collection.
+      record.attempts = await query(Attempt.find({ run: itemId, index: { $gte: offset } }).sort({ index: 1 }).limit(25));
+    }
+    return record;
   }
-  async function resumeInference() {
-    const released = await Control.updateOne({ _id: 'inference', blocked: true, until: { $lte: new Date(now()) } },
-      { $set: { blocked: false, reason: null } }).exec();
-    if (!released.matchedCount) fail('STALE');
-    logger.warning('TARIC inference hold cleared after operator idle confirmation', { category: 'taric' });
+  async function recoveryStatus() {
+    const control = await query(Control.findById('inference').select('-holder -attempts'));
+    let remote;
+    try { remote = await warmSessions.probe(); } catch (e) { remote = { idle: false, reason: e instanceof TaricError ? e.code : 'PROVIDER_FAILED' }; }
+    return { control, remote, pending: await query(Run.find({ active: true }).select('_id state actualCount requestedCount cancelRequested').limit(8)),
+      queuedRequests: await Request.countDocuments({ active: true }).exec() };
+  }
+  async function resumeInference(epoch) {
+    if (!Number.isSafeInteger(epoch) || epoch < 0) fail('INVALID_REQUEST');
+    // Hold a new fenced lease during the remote read and checks. The block stays set
+    // until the final CAS. Clearing never starts legacy queued work implicitly.
+    const holder = id();
+    const epochFilter = epoch === 0 ? { $or: [{ epoch: 0 }, { epoch: { $exists: false } }] } : { epoch };
+    const lease = await query(Control.findOneAndUpdate({ _id: 'inference', blocked: true,
+      until: { $lte: new Date(now()) }, ...epochFilter }, { $set: { holder, until: new Date(now() + 30000) } }, { returnDocument: 'after' }));
+    if (!lease) fail('STALE');
+    try {
+      if (await Run.exists({ active: true }).maxTimeMS(2000).exec() || await Request.exists({ active: true }).maxTimeMS(2000).exec()) fail('RECOVERY_REQUIRED');
+      const remote = await warmSessions.probe();
+      if (!remote.idle) fail('RECOVERY_REQUIRED');
+      const released = await Control.updateOne({ _id: 'inference', holder, blocked: true, until: { $gt: new Date(now()) }, ...epochFilter },
+        { $set: { blocked: false, reason: null }, $inc: { epoch: 1 } }).exec();
+      if (!released.matchedCount) fail('STALE');
+      logger.warning('TARIC inference hold cleared after remote idle proof and pending-work cancellation', { category: 'taric' });
+    } finally { await Control.updateOne({ _id: 'inference', holder }, { $set: { until: new Date(0) } }).exec(); }
+  }
+  async function resumeRun(runId) {
+    validId(runId);
+    const holder = id();
+    const lease = await query(Control.findOneAndUpdate({ _id: 'inference', blocked: { $ne: true }, until: { $lte: new Date(now()) } },
+      { $set: { holder, until: new Date(now() + 30000) } }, { returnDocument: 'after' }));
+    if (!lease) fail('RECOVERY_REQUIRED');
+    try {
+      const r = await query(Run.findOne({ _id: runId, state: { $in: ['paused', 'recovery_required'] }, active: false, cancelRequested: false }));
+      if (!r || r.currentAttempt) fail('STALE');
+      const s = await settings();
+      if (!warmSessions.ready() || r.fingerprint !== hash(configuration(s, r.adapter, version()))) fail('STALE');
+      if (!(await warmSessions.probe()).idle) fail('RECOVERY_REQUIRED');
+      const stillHeld = await query(Control.findOne({ _id: 'inference', holder, blocked: { $ne: true }, until: { $gt: new Date(now()) } }));
+      if (!stillHeld) fail('STALE');
+      try {
+        const changed = await Run.updateOne({ _id: runId, state: r.state, active: false, cancelRequested: false },
+          { $set: { state: 'pending', active: true, recoveryRequired: false, error: null, deadline: new Date(now() + 6 * 3600000) } }).exec();
+        if (!changed.matchedCount) fail('STALE');
+      } catch (e) { if (e.code === 11000) fail('QUEUE_FULL'); throw e; }
+    } finally { await Control.updateOne({ _id: 'inference', holder }, { $set: { until: new Date(0) } }).exec(); }
   }
   async function readiness() {
     const s = await settings(); let normal; let test;
@@ -302,10 +366,10 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     if (!s?.runtime?.adapters?.some(a => a.verified)) blockers.push('No verified runtime identity');
     if (!candidates.length) blockers.push('No authoritative runs for configured adapters');
     if (!normal.ready) blockers.push('No current qualifying winner or observed runtime identity mismatch; inspect candidate status, fingerprint, policy and counts');
-    return { normal: { ...normal, blockers, candidates }, test, inference: await query(Control.findById('inference').select('-holder -attempts')), settings: s, credential: await query(Credential.findById('integration')), template: TEMPLATE, codeFingerprint: version() };
+    return { normal: { ...normal, blockers, candidates }, test, benchmark: { ready: warmSessions.ready(), reason: warmSessions.ready() ? null : 'WARM_SESSION_NOT_READY' }, inference: await query(Control.findById('inference').select('-holder -attempts')), settings: s, credential: await query(Credential.findById('integration')), template: TEMPLATE, codeFingerprint: version() };
   }
-  return { models, transport, evidence, settings, authenticate, authorize, adminPrincipal, rate, rotate, revoke, admission, checkAdmission,
+  return { models, transport, evidence, warmSessions, settings, authenticate, authorize, adminPrincipal, rate, rotate, revoke, admission, checkAdmission,
     principalFrom, submit, retrieve, feedback, saveConfig, importBenchmark, publish, queueRun, cancelRun,
-    inspect, detail, readiness, resumeInference, version, now };
+    inspect, detail, readiness, recoveryStatus, resumeInference, resumeRun, version, now };
 }
 module.exports = { createService, query, id, validId, SCOPES };
