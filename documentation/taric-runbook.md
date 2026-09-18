@@ -316,8 +316,8 @@ The copied non-private contract fixture matches Gateway main
 Source: `/home/lennart/ai-services/documentation/contracts/qwen3-lora-inference-sessions.json`.
 The user-required Site policy deliberately keeps owner tokens **memory only**, overriding
 that document's suggestion of durable private token storage. Persisted session/operation
-IDs cannot restore capability after a crash; expiry/reclaim plus fresh exclusive admission
-is required. No owner token or Gateway/proxy secret is exposed in Mongo, API, UI or logs.
+IDs cannot restore capability after a crash; verified reclaim / standard Gateway recovery
+plus fresh exclusive admission is required. No owner token or Gateway/proxy secret is exposed in Mongo, API, UI or logs.
 
 Create uses POST `/qwen3-lora/inference-sessions`, fresh ASCII client ID, idle timeout 120s,
 and hard duration 900s. Creation reserves exclusive admission without starting GPU; only
@@ -329,7 +329,9 @@ terminal/completed **and** idle_proven permits the next case. Lost output remain
 even if that operation has HTTP200. Reclaim_verified permits fresh-session rotation.
 Missing operations, 404, pending/uncertain status and unverified cleanup never count as
 completion. Duplicate IDs are not retried. DELETE200/202 bodies require reclaim_verified;
-cleanup polls at most six times, within a 45-second outer budget. Failure retains the hold.
+cleanup uses a 100-second total wall deadline, 6-second DELETE, 5-second GETs and
+1–2-second backoff, inside a 110-second outer budget. Failure retains both the hold and
+the private owner capability.
 
 Each batch performs at most eight cases, checks its 120-second budget between cases,
 yields to interactive work, and stops admitting cases within 70 seconds of hard expiry.
@@ -338,8 +340,10 @@ using fresh sessions between batches, rather than one long GPU reservation. Ever
 closes its own session in finally, including cancellation/disablement/revocation/failure.
 Closing the UI does not cancel the logical run; the UI explains this and exposes cancel,
 run deadline and current session hard expiry. No idle reservation remains between batches.
-An unresolved remote cleanup may remain fenced remotely until expiry/recovery; it is never
-reported as released. The Mongo lease renews every 60s and fences lost workers. A durable
+A failed cleanup fence persists until verified reclaim or standard Gateway recovery;
+the 120-second idle and 900-second hard deadlines do not automatically unlock it.
+Unresolved cleanup is never reported as released. The worker Mongo lease renews every
+60s (recovery every 30s) and fences lost workers. A durable
 non-secret control session marker prevents a crash after result persistence but before
 cleanup from silently reopening dispatch.
 
@@ -364,8 +368,10 @@ scores; no old diagnostic run is silently made release eligible.
    work (keep remote hold)**. This fresh capability+CSRF+epoch action leases/fences Mongo,
    terminalizes existing attempt claims without dropping them, cancels queued runs and
    interrupts queued requests. It never cancels remote work or edits old failed results.
-4. Refresh status/epoch, confirm, and choose **Recover hold using exclusive admission**.
-   It refuses active local work, creates an owned reservation without inference, heartbeats,
+4. Refresh status/epoch, confirm, and choose **Acquire recovery admission** (or **Continue
+   owned cleanup** when the matching private handle remains). It refuses active local
+   work, creates an owned reservation without inference or reuses the matching private
+   handle, renews its Mongo lease,
    and CAS-replaces the hold with its non-secret session marker **while that reservation is
    still held**. Local dispatch remains blocked through owned DELETE and verified reclaim.
    Busy, wrong auth, ambiguous create, expired lease or failed cleanup keeps the hold. No
@@ -488,8 +494,9 @@ after discovery. Deployments must continue to stop/drain workers and preserve th
    enabled while Gateway is old or unavailable and preserves finished history and the hold.
    It refreshes the epoch after cancellation. Inspect existing runs and terminal test
    diagnostics while held; cancellation is not proof of remote idle.
-4. When discovery verifies the new API and pending work is zero, **Recover hold using
-   exclusive admission** becomes available. It POSTs `{confirm:true,epoch:<number>}` with
+4. When discovery verifies the new API and pending work is zero, **Acquire recovery
+   admission** (or **Continue owned cleanup** on its owning instance) becomes available.
+   It POSTs `{confirm:true,epoch:<number>}` with
    shared CSRF. It acquires exclusive owned admission without inference, preserves admission
    during the Mongo handoff, and clears the hold only after verified owned cleanup. Busy,
    stale, auth, HTTP400/404, pre-dispatch network or discovery failures retain the original
@@ -523,3 +530,8 @@ compressed discovery failures, cache invalidation, cleanup after failed rediscov
 pre-dispatch errors, actual Pug/browser/controller CSRF and numeric recovery bodies,
 revision-3 held/disabled settings, cancellation and recovery with disposable Mongo, and
 unchanged normal release rejection. They establish plumbing, not production readiness.
+
+For the 2026-09-18 cleanup repair, bounded asynchronous response contract, same-instance
+capability retention and ordered dual deployment, follow the
+[owned cleanup repair](taric-owned-release.md#owned-cleanup-repair-and-dual-deployment-2026-09-18).
+The memory-only capability cannot be restored by an epoch, session ID or passive status.

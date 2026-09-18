@@ -64,18 +64,20 @@ test('missing operation / HTTP404 / wrong owner / busy operator do not provide c
   await expect(warm.status(handle, 'absent')).rejects.toMatchObject({ transport: { status: 404 } });
 });
 test('close202 polls bounded and never trusts status code alone; verified reclaim allows fresh session', async () => {
-  const gateway = jest.fn().mockResolvedValue({ ...status(), state: 'uncertain', idle_proven: false });
-  const adapter = createGatewaySessions(withDiscovery(gateway), { closePolls: 2, delayMs: 1 });
-  expect(await adapter.close({ session: { id: 'session-1' } })).toEqual({ idle: false });
-  expect(gateway).toHaveBeenCalledTimes(3);
+  const gateway = jest.fn().mockResolvedValue({ ...status(), state: 'reclaiming', idle_proven: false });
+  const adapter = createGatewaySessions(withDiscovery(gateway), { closeDeadlineMs: 30, delayMs: 1 });
+  expect(await adapter.close({ session: { id: 'session-1' } })).toEqual({ idle: false, reason: 'CLEANUP_PENDING' });
+  expect(gateway.mock.calls.length).toBeGreaterThan(6);
   gateway.mockResolvedValue({ ...status(), state: 'expired', idle_proven: false, reclaim_verified: true });
   expect(await adapter.status({ session: { id: 'session-1' }, correlationId: 'op' })).toMatchObject({ reclaimed: true, terminal: false });
   expect(await adapter.close({ session: { id: 'session-1' } })).toEqual({ idle: true });
   fixture = await gatewayFixture(); fixture.closePending = true;
   const warm = createWarmSessions(createTransport({ env: fixture.env }).sessionAdapter);
   const first = await warm.open({ correlationId: 'first' }); await warm.close(first);
+  expect(fixture.closePollCount).toBeGreaterThan(6);
+  expect(fixture.sessions[0].reclaim_verified).toBe(true);
   const second = await warm.open({ correlationId: 'second' }); expect(second.id).not.toBe(first.id); await warm.close(second);
-});
+}, 25000);
 test('hard deadline cannot be extended by heartbeat or server clock skew', async () => {
   let now = 0;
   const gateway = jest.fn().mockImplementation(async () => ({ ...status(), server_time: 99999999, owner_token: 'synthetic-owner-capability', hard_remaining_sec: 900 - now / 1000 }));
@@ -91,4 +93,54 @@ test('ambiguous create is uncertain, never retried and never exposes body/header
   const gateway = jest.fn().mockRejectedValue(Object.assign(new Error('PRIVATE-TOKEN'), { transport: { phase: 'timeout', dispatched: true, terminal: false } }));
   const error = await createGatewaySessions(withDiscovery(gateway)).open({ correlationId: 'fresh' }).catch(e => e);
   expect(error.code).toBe('INFERENCE_UNCERTAIN'); expect(JSON.stringify(error)).not.toContain('PRIVATE'); expect(gateway).toHaveBeenCalledTimes(1);
+});
+
+test('terminal failed cleanup retries DELETE with the same owner; no generation or fresh ownership', async () => {
+  fixture = await gatewayFixture(); fixture.cleanup = false;
+  const warm = createWarmSessions(createTransport({ env: fixture.env }).sessionAdapter);
+  const handle = await warm.open({ correlationId: 'a'.repeat(32) });
+  expect(await warm.close(handle)).toEqual({ idle: false, reason: 'BACKEND_RECLAIM_FAILED' });
+  expect(warm.lookup(handle.id)).toBe(handle);
+  fixture.cleanup = true;
+  expect(await warm.close(handle)).toEqual({ idle: true });
+  expect(await warm.close(handle)).toEqual({ idle: true });
+  expect(fixture.sessions).toHaveLength(1); expect(fixture.generateCount).toBe(0);
+  const deletes = fixture.requests.filter(r => r.method === 'DELETE');
+  expect(deletes).toHaveLength(2);
+  expect(deletes[0].headers['x-inference-session-token']).toBe(deletes[1].headers['x-inference-session-token']);
+});
+test('a lost DELETE reply is reconciled by terminal GET proof', async () => {
+  const gateway = jest.fn().mockRejectedValueOnce(Object.assign(new Error('private'), { transport: { phase: 'timeout' } }))
+    .mockResolvedValue({ ...status(), state: 'closed', reclaim_verified: true });
+  const adapter = createGatewaySessions(withDiscovery(gateway), { delayMs: 1 });
+  expect(await adapter.close({ session: { id: 'session-1' } })).toEqual({ idle: true });
+});
+
+test('default cleanup deadline is 100 seconds with six/five second requests and bounded backoff', async () => {
+  jest.useFakeTimers();
+  try {
+    const gateway = jest.fn().mockResolvedValue({ ...status(), state: 'reclaiming', idle_proven: false });
+    const adapter = createGatewaySessions(withDiscovery(gateway));
+    const task = adapter.close({ session: { id: 'session-1' } });
+    await jest.advanceTimersByTimeAsync(100001);
+    expect(await task).toEqual({ idle: false, reason: 'CLEANUP_PENDING' });
+    expect(gateway.mock.calls.length).toBeGreaterThan(6);
+    expect(gateway.mock.calls.length).toBeLessThan(100);
+    expect(gateway.mock.calls[0][1].deadlineMs).toBe(6000);
+    expect(gateway.mock.calls.slice(1).every(([, options]) => options.deadlineMs <= 5000)).toBe(true);
+  } finally { jest.useRealTimers(); }
+});
+test('HTTP cleanup observations preserve safe cause, clock and correlation without credentials or bodies', async () => {
+  fixture = await gatewayFixture(); fixture.cleanup = false;
+  fixture.onClose = session => { session.cleanup = { phase: 'verify_vram', reclaim_kind: 'full_runtime', status_code: 504, elapsed_sec: 30, exception: 'PRIVATE-BODY' }; session.reclaim_basis = 'PRIVATE-BASIS'; };
+  const logger = require('../../utils/logger'); const log = jest.spyOn(logger, 'warning').mockImplementation(() => {});
+  try {
+    const warm = createWarmSessions(createTransport({ env: fixture.env }).sessionAdapter);
+    const handle = await warm.open({ correlationId: 'a'.repeat(32) });
+    await warm.close(handle, { epoch: 5 });
+    expect(warm.describe(handle.id)).toMatchObject({ cleanupPhase: 'verify_vram', cleanupStatus: 504, reclaimKind: 'full_runtime', gatewayElapsedSec: 30 });
+    expect(log.mock.calls.at(-1)[1].metadata).toMatchObject({ epoch: 5, correlationId: 'a'.repeat(32), originClock: 'site',
+      cleanupPhase: 'verify_vram', transport: { status: 202, wireBytes: expect.any(Number), durationMs: expect.any(Number) } });
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/synthetic-owner-capability|synthetic-proxy|synthetic-admin|PRIVATE/);
+  } finally { log.mockRestore(); }
 });

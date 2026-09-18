@@ -24,7 +24,9 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
     if (!saved.matchedCount) fail('INTERRUPTED');
   }
   async function closeSession(holder, session) {
-    const result = await service.warmSessions.close(session);
+    await fence(holder);
+    const result = await service.warmSessions.close(session, { signal: controller.signal });
+    await fence(holder);
     if (result.idle) await Control.updateOne({ _id: 'inference', holder, sessionId: session.id },
       { $set: { sessionId: null, recoveryPhase: null } }).exec();
     return result;

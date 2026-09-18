@@ -202,7 +202,7 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
     service = createService({ models, transport: actualTransport, evidence,
       warmSessions: require('../../services/taric/warmSession').createWarmSessions(actualTransport.sessionAdapter),
       codeVersion: 'synthetic', authorizeAdmin: async () => true });
-    const recoverSpy = jest.spyOn(service, 'resumeInference');
+    const recoverSpy = jest.spyOn(service, 'startRecovery');
     fixture.document = { openapi: '3.1.0', paths: { '/health': { get: {} } } };
     const app = express(); const csrf = 'x'.repeat(43);
     app.set('views', path.join(__dirname, '../../views')); app.set('view engine', 'pug');
@@ -252,8 +252,8 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       await click('save-config'); expect((await service.settings()).revision).toBe(4);
       const stringEpoch = await post('/inference/resume', { confirm: true, epoch: '8' }); expect(stringEpoch.status).toBe(400);
       fixture.document = openapi(); await click('refresh'); await click('remote-status');
-      expect(element('resume').disabled).toBe(false); await click('resume');
-      expect(recoverSpy).toHaveBeenLastCalledWith(8, expect.stringMatching(/^[a-f0-9]{32}$/));
+      expect(element('resume').disabled).toBe(false); element('confirm-idle').checked = true; await click('resume');
+      expect(recoverSpy).toHaveBeenLastCalledWith(8, expect.stringMatching(/^[a-f0-9]{32}$/), 'a'.repeat(24));
       expect(element('status').textContent).toContain('done.');
       expect((await models.Control.findById('inference')).toObject()).toMatchObject({ blocked: false, reason: null,
         capabilityProof: { digest: expect.stringMatching(/^[a-f0-9]{64}$/), protocol: 'owned-v1' } });
@@ -269,6 +269,139 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       expect(element('save-config').disabled).toBe(false); await click('inspect');
     } finally { dom?.window.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await fixture.close(); }
   });
+  test('failed handoff refreshes the browser to actual Mongo epoch and continues the same private owner', async () => {
+    worker.stop();
+    const { JSDOM } = await import('jsdom');
+    const { gatewayFixture } = require('../helpers/taricGateway');
+    const fixture = await gatewayFixture(); fixture.cleanup = false;
+    const actualTransport = require('../../services/taric/transport').createTransport({ env: fixture.env });
+    const privateSessions = require('../../services/taric/warmSession').createWarmSessions(actualTransport.sessionAdapter);
+    service = createService({ models, transport: actualTransport, evidence, warmSessions: privateSessions, authorizeAdmin: async () => true });
+    await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, epoch: 4 } });
+    const app = express(); const csrf = 'x'.repeat(43);
+    app.set('views', require('path').join(__dirname, '../../views')); app.set('view engine', 'pug');
+    app.use((req, _res, next) => { req.user = { _id: 'a'.repeat(24), name: 'synthetic', type_user: 'admin' }; req.isAuthenticated = () => true; req.session = { csrfToken: csrf }; next(); });
+    app.use('/admin/taric', createTaricAdminRouter(service, { roleModel: { findOne: async () => null } }));
+    const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${server.address().port}`; let dom;
+    const until = async predicate => {
+      const end = Date.now() + 5000;
+      while (!predicate() && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 10));
+      expect(predicate()).toBeTruthy();
+    };
+    try {
+      dom = new JSDOM(await (await fetch(base + '/admin/taric')).text(), { url: base + '/admin/taric', runScripts: 'outside-only' });
+      const posts = [];
+      dom.window.fetch = (url, options) => { if (url.endsWith('/resume')) posts.push(JSON.parse(options.body)); return fetch(base + url, options); };
+      dom.window.eval(require('fs').readFileSync(require('path').join(__dirname, '../../public/js/taric-admin.js'), 'utf8'));
+      const el = id => dom.window.document.getElementById(id);
+      await until(() => el('status').textContent === 'Readiness loaded.');
+      el('remote-status').click(); await until(() => el('resume').disabled === false);
+      el('confirm-idle').checked = true; el('resume').click();
+      await until(() => el('status').textContent.includes('BACKEND_RECLAIM_FAILED'));
+      expect((await models.Control.findById('inference')).toObject()).toMatchObject({ blocked: true, epoch: 5, recoveryPhase: 'owned_cleanup', reason: 'BACKEND_RECLAIM_FAILED' });
+      expect(el('recovery-status').textContent).toContain('"epoch": 5');
+      expect(el('resume').textContent).toBe('Continue owned cleanup');
+      expect(el('resume').disabled).toBe(false); expect(el('confirm-idle').checked).toBe(false);
+      expect(el('status').textContent).toContain('HTTP 409');
+      expect(el('recovery-status').textContent).not.toContain('synthetic-owner-capability');
+      fixture.cleanup = true; el('confirm-idle').checked = true; el('resume').click();
+      await until(() => el('status').textContent.includes('done.'));
+      expect(posts.map(p => p.epoch)).toEqual([4, 5]);
+      expect(fixture.sessions).toHaveLength(1); expect(fixture.generateCount).toBe(0);
+      expect((await models.Control.findById('inference')).blocked).toBe(false);
+      const deletes = fixture.requests.filter(r => r.method === 'DELETE');
+      expect(deletes).toHaveLength(2); expect(deletes[0].headers['x-inference-session-token']).toBe(deletes[1].headers['x-inference-session-token']);
+    } finally { dom?.window.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await fixture.close(); }
+  });
+  test.each(['complete', 'fence', 'revoked'])('recovery heartbeat and private capability survive long cleanup: %s', async mode => {
+    worker.stop(); let allowed = true; let entered; let release;
+    const enteredPromise = new Promise(resolve => { entered = resolve; });
+    const waiting = new Promise(resolve => { release = resolve; });
+    const adapter = { ...warmSessions,
+      open: async () => ({ id: 'owned-long-cleanup', ownerToken: 'PRIVATE-CAPABILITY', expiresAt: Date.now() + 120000, hardExpiresAt: Date.now() + 900000 }),
+      close: jest.fn(async ({ signal }) => {
+        entered(signal); await waiting; return { idle: true };
+      }),
+    };
+    const privateSessions = require('../../services/taric/warmSession').createWarmSessions(adapter);
+    service = createService({ models, transport, evidence, warmSessions: privateSessions, authorizeAdmin: async () => allowed, recoveryLeaseMs: 200 });
+    await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, epoch: 4 } });
+    const task = service.resumeInference(4, 'b'.repeat(32), 'a'.repeat(24)).then(() => null, e => e);
+    const signal = await enteredPromise;
+    const first = await models.Control.findById('inference').lean();
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const current = await models.Control.findById('inference').lean();
+    expect(current.until.getTime()).toBeGreaterThan(first.until.getTime()); expect(current.blocked).toBe(true);
+    if (mode === 'fence') await models.Control.updateOne({ _id: 'inference' }, { $set: { holder: 'different-holder', epoch: 9 } });
+    if (mode === 'revoked') allowed = false;
+    if (mode !== 'complete') {
+      await new Promise(resolve => setTimeout(resolve, 90)); expect(signal.aborted).toBe(true);
+      const error = await task; expect(error.code).toBe('INFERENCE_UNCERTAIN');
+      expect(privateSessions.lookup('owned-long-cleanup')).not.toBeNull();
+      expect((await models.Control.findById('inference')).blocked).toBe(true);
+    }
+    release();
+    if (mode === 'complete') { expect(await task).toBeNull(); expect((await models.Control.findById('inference')).blocked).toBe(false); }
+    expect(adapter.close).toHaveBeenCalledTimes(1);
+  });
+  test('terminal reclaim proof survives a failed local handoff and next admin continuation does not DELETE again', async () => {
+    worker.stop();
+    const adapter = { ...warmSessions,
+      open: jest.fn(async () => ({ id: 'terminal-cleanup', ownerToken: 'PRIVATE-CAPABILITY', expiresAt: Date.now() + 120000, hardExpiresAt: Date.now() + 900000 })),
+      close: jest.fn(async () => {
+        await models.Control.updateOne({ _id: 'inference' }, { $set: { holder: 'changed', epoch: 9, until: new Date(0) } });
+        return { idle: true };
+      }),
+    };
+    const privateSessions = require('../../services/taric/warmSession').createWarmSessions(adapter);
+    service = createService({ models, transport, evidence, warmSessions: privateSessions, authorizeAdmin: async () => true });
+    await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, epoch: 4 } });
+    await expect(service.resumeInference(4, undefined, 'a'.repeat(24))).rejects.toThrow('STALE');
+    expect(privateSessions.retainedId()).toBeNull();
+    expect(privateSessions.describe('terminal-cleanup')).toEqual({ reclaimVerified: true });
+    expect((await models.Control.findById('inference')).blocked).toBe(true);
+    await service.resumeInference(9, undefined, 'a'.repeat(24));
+    expect((await models.Control.findById('inference')).blocked).toBe(false);
+    expect(adapter.open).toHaveBeenCalledTimes(1); expect(adapter.close).toHaveBeenCalledTimes(1);
+  });
+  test('lost legacy capability is actionable; exclusive admission cannot clear another owner or bypass admin scope', async () => {
+    worker.stop(); const { gatewayFixture } = require('../helpers/taricGateway'); const fixture = await gatewayFixture();
+    const actualTransport = require('../../services/taric/transport').createTransport({ env: fixture.env });
+    service = createService({ models, transport: actualTransport, evidence,
+      warmSessions: require('../../services/taric/warmSession').createWarmSessions(actualTransport.sessionAdapter), authorizeAdmin: async actor => actor === 'a'.repeat(24) });
+    await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, epoch: 5, sessionId: 'legacy-lost', recoveryPhase: 'owned_cleanup' } });
+    try {
+      expect((await service.recoveryStatus()).ownership).toMatchObject({ state: 'OWNERSHIP_LOST', available: false });
+      await expect(service.resumeInference(5, undefined, 'foreign')).rejects.toThrow('FORBIDDEN');
+      fixture.busy = true;
+      await expect(service.resumeInference(5, undefined, 'a'.repeat(24))).rejects.toThrow('OWNERSHIP_LOST');
+      expect((await models.Control.findById('inference')).blocked).toBe(true);
+      expect(fixture.requests.filter(r => r.method === 'DELETE')).toHaveLength(0);
+      fixture.busy = false;
+      await service.resumeInference(5, undefined, 'a'.repeat(24));
+      expect((await models.Control.findById('inference')).blocked).toBe(false); expect(fixture.generateCount).toBe(0);
+    } finally { await fixture.close(); }
+  });
+  test('HTTP recovery returns reconcilable 202 while the existing control lease continues cleanup', async () => {
+    worker.stop(); let release;
+    warmSessions.close.mockImplementation(() => new Promise(resolve => { release = () => resolve({ idle: true }); }));
+    await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, epoch: 4 } });
+    const app = express(); const csrf = 'x'.repeat(43);
+    app.use((req, _res, next) => { req.user = { _id: 'a'.repeat(24), name: 'synthetic', type_user: 'admin' }; req.isAuthenticated = () => true; req.session = { csrfToken: csrf }; next(); });
+    app.use('/admin/taric', createTaricAdminRouter(service, { roleModel: { findOne: async () => null } }));
+    const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${server.address().port}/admin/taric`;
+    try {
+      const response = await fetch(base + '/inference/resume', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify({ confirm: true, epoch: 4 }) });
+      expect(response.status).toBe(202); expect(await response.json()).toMatchObject({ pending: true, state: 'CLEANUP_PENDING', poll_url: '/admin/taric/inference/status' });
+      expect((await service.recoveryStatus()).ownership.active).toBe(true);
+      expect((await models.Control.findById('inference')).blocked).toBe(true);
+      release();
+      for (let i = 0; i < 50 && (await service.recoveryStatus()).ownership.active; i++) await new Promise(resolve => setTimeout(resolve, 10));
+      expect((await models.Control.findById('inference')).blocked).toBe(false);
+    } finally { release?.(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  });
   test('exclusive recovery is held during Mongo CAS and cleanup; busy admission preserves old hold', async () => {
     const { gatewayFixture } = require('../helpers/taricGateway'); const fixture = await gatewayFixture(); worker.stop();
     try {
@@ -277,7 +410,7 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       service = createService({ models, transport: actualTransport, evidence, warmSessions: actualSessions, codeVersion: 'synthetic', authorizeAdmin: async () => true });
       await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, reason: 'INFERENCE_UNCERTAIN', epoch: 7 } });
       fixture.busy = true;
-      await expect(service.resumeInference(7)).rejects.toThrow('PROVIDER_FAILED');
+      await expect(service.resumeInference(7, undefined, 'a'.repeat(24))).rejects.toThrow('PROVIDER_FAILED');
       expect(fixture.sessions).toHaveLength(0);
       expect((await models.Control.findById('inference')).epoch).toBe(7);
       fixture.busy = false;
@@ -288,7 +421,7 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
         expect(control).toMatchObject({ blocked: true, epoch: 8, sessionId: session.session_id, recoveryPhase: 'owned_cleanup' });
         expect(control.until.getTime()).toBeGreaterThan(Date.now()); observed = true;
       };
-      await service.resumeInference(7); expect(observed).toBe(true); expect(fixture.generateCount).toBe(0);
+      await service.resumeInference(7, undefined, 'a'.repeat(24)); expect(observed).toBe(true); expect(fixture.generateCount).toBe(0);
       expect((await models.Control.findById('inference')).blocked).toBe(false);
       expect(fixture.sessions[0].reclaim_verified).toBe(true);
     } finally { await fixture.close(); }
@@ -300,12 +433,12 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
     await models.Run.create({ _id: 'e'.repeat(32), state: 'failed', active: false, results: [{ error: 'OLD_FAILURE' }], actualCount: 1 });
     const old = await models.Run.findById('e'.repeat(32)).lean();
     await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, epoch: 2 } });
-    await expect(service.resumeInference(2)).rejects.toThrow('RECOVERY_REQUIRED');
+    await expect(service.resumeInference(2, undefined, 'a'.repeat(24))).rejects.toThrow('RECOVERY_REQUIRED');
     await service.cancelPending(2); await worker.tick();
     expect((await models.Run.findById(queued.id)).state).toBe('cancelled');
     expect((await models.Request.findById(r.id)).state).toBe('interrupted');
     expect(await models.Run.findById(old._id).lean()).toEqual(old);
-    await service.resumeInference(3); await worker.tick();
+    await service.resumeInference(3, undefined, 'a'.repeat(24)); await worker.tick();
     expect(transport.generate).not.toHaveBeenCalled();
   });
   test('actual bootstrap source dry-run and execute twice preserve existing config/key and add indexes idempotently', async () => {
@@ -355,8 +488,8 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
     await expect(service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin')).rejects.toThrow('RECOVERY_REQUIRED');
     const epoch = (await models.Control.findById('inference')).epoch;
     warmSessions.open.mockRejectedValueOnce(new (require('../../utils/taricContracts').TaricError)('RECOVERY_REQUIRED'));
-    await expect(service.resumeInference(epoch)).rejects.toThrow('RECOVERY_REQUIRED');
-    warmSessions.close.mockResolvedValue({ idle: true }); await service.resumeInference(epoch);
+    await expect(service.resumeInference(epoch, undefined, 'a'.repeat(24))).rejects.toThrow('RECOVERY_REQUIRED');
+    warmSessions.close.mockResolvedValue({ idle: true }); await service.resumeInference(epoch, undefined, 'a'.repeat(24));
     warmSessions.status.mockResolvedValue({ idle: true, terminal: true, correlated: true });
     expect((await models.Run.findById(run.id)).state).toBe('recovery_required');
     await service.resumeRun(run.id); await worker.tick();
@@ -368,10 +501,10 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
     await models.Run.updateOne({ _id: run.id }, { $unset: { warmSessionRequired: 1 } });
     await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, epoch: 3 } });
     await worker.tick(); expect(transport.generate).not.toHaveBeenCalled();
-    await expect(service.resumeInference(3)).rejects.toThrow('RECOVERY_REQUIRED');
+    await expect(service.resumeInference(3, undefined, 'a'.repeat(24))).rejects.toThrow('RECOVERY_REQUIRED');
     await service.cancelRun(run.id);
-    await expect(service.resumeInference(2)).rejects.toThrow('STALE');
-    const attempts = await Promise.allSettled([service.resumeInference(3), service.resumeInference(3)]);
+    await expect(service.resumeInference(2, undefined, 'a'.repeat(24))).rejects.toThrow('STALE');
+    const attempts = await Promise.allSettled([service.resumeInference(3, undefined, 'a'.repeat(24)), service.resumeInference(3, undefined, 'a'.repeat(24))]);
     expect(attempts.filter(a => a.status === 'fulfilled')).toHaveLength(1);
     await worker.tick(); expect(transport.generate).not.toHaveBeenCalled();
     expect((await models.Run.findById(run.id)).state).toBe('cancelled');
@@ -565,7 +698,7 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
     expect((await models.Request.findById(r.id)).error).toBe('INFERENCE_UNCERTAIN');
     expect((await models.Control.findById('inference')).blocked).toBe(true);
     await expect(service.submit(principal, 'uncertain-0000002', requestInput)).rejects.toThrow('INFERENCE_UNCERTAIN');
-    await service.resumeInference((await models.Control.findById('inference')).epoch);
+    await service.resumeInference((await models.Control.findById('inference')).epoch, undefined, 'a'.repeat(24));
     await service.submit(principal, 'uncertain-0000002', requestInput); await worker.tick();
     expect(transport.generate).toHaveBeenCalledTimes(2);
   });

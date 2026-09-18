@@ -8,7 +8,7 @@ const { strictJson, payload, output, hash } = require('../../utils/taricProtocol
 const { normalizeDetail } = require('../amiamiScraperService');
 
 function boundedJson(url, { method = 'GET', body, headers = {}, deadlineMs = 15000, maxBytes = 262144,
-  maxWireBytes = maxBytes, signal, correlationId, successStatuses = [200], tlsOptions = {},
+  maxWireBytes = maxBytes, signal, correlationId, onDiagnostic, successStatuses = [200], tlsOptions = {},
   request = url.protocol === 'https:' ? https.request : http.request } = {}) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
@@ -16,7 +16,11 @@ function boundedJson(url, { method = 'GET', body, headers = {}, deadlineMs = 150
     let dispatched = false; let terminal = false; let wireSize = 0; let size = 0; let phase = 'connect';
     const finish = (error, value) => {
       if (settled) return;
-      settled = true; clearTimeout(timer); signal?.removeEventListener('abort', abort);
+      settled = true;
+      onDiagnostic?.(require('../../utils/taricDiagnostics').errorStatus({ phase: error?.transport?.phase || 'http',
+        dispatched, terminal, status: response?.statusCode, wireBytes: wireSize, decodedBytes: size,
+        durationMs: Date.now() - started, correlationId }));
+      clearTimeout(timer); signal?.removeEventListener('abort', abort);
       if (error) { response?.destroy(); decoder?.destroy(); req?.destroy(); reject(error); } else resolve(value);
     };
     const rejectSafe = (where, cause) => {

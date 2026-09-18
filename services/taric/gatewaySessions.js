@@ -1,7 +1,7 @@
 const { fail, TaricError } = require('../../utils/taricContracts');
 // Wire contract: Gateway 689c68a, documentation/contracts/qwen3-lora-inference-sessions.json.
 // This module alone sees the capability. Never persist or serialize raw responses.
-function createGatewaySessions(gateway, { now = Date.now, closePolls = 6, delayMs = 1000, capabilities = require('./gatewayCapabilities').createGatewayCapabilities(gateway, { now }) } = {}) {
+function createGatewaySessions(gateway, { now = Date.now, closeDeadlineMs = 100000, delayMs = 1000, capabilities = require('./gatewayCapabilities').createGatewayCapabilities(gateway, { now }) } = {}) {
   const proofs = new WeakMap();
   async function known(session, signal, refresh = false) {
     if (!refresh && proofs.has(session)) return proofs.get(session);
@@ -38,7 +38,7 @@ function createGatewaySessions(gateway, { now = Date.now, closePolls = 6, delayM
       const proof = await capabilities.preflight({ signal });
       const started = now();
       let response;
-      try { response = await gateway(base, { method: 'POST', successStatuses: [201], signal,
+      try { response = await gateway(base, { method: 'POST', successStatuses: [201], signal, correlationId,
         body: { client_id: correlationId, idle_timeout_sec: 120, max_duration_sec: 900 } }); }
       catch (cause) {
         capabilities.invalidate();
@@ -81,15 +81,53 @@ function createGatewaySessions(gateway, { now = Date.now, closePolls = 6, delayM
       }
     },
     status,
-    async close({ session, signal }) {
+    async close({ session, signal, correlationId = session.correlationId, epoch, onCleanup }) {
       await known(session, signal);
-      let raw = validate(await gateway(path(session), { method: 'DELETE', successStatuses: [200, 202],
-        headers: headers(session), signal, deadlineMs: 6000 }), session.id);
-      for (let i = 0; !raw.reclaim_verified && i < closePolls; i++) {
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        raw = validate(await gateway(path(session), { headers: headers(session), signal }), session.id);
+      const started = Date.now();
+      const deadline = started + Math.min(100000, Math.max(1, closeDeadlineMs));
+      let raw; let counter = 0; let lastTransport = null;
+      const diagnostics = require('../../utils/taricDiagnostics');
+      const logger = require('../../utils/logger');
+      const observe = value => {
+        lastTransport = diagnostics.errorStatus(value);
+      };
+      const request = async method => {
+        counter++;
+        try {
+          raw = validate(await gateway(path(session), { method, successStatuses: method === 'DELETE' ? [200, 202] : [200],
+            headers: headers(session), signal, correlationId, onDiagnostic: observe,
+            deadlineMs: Math.max(1, Math.min(method === 'DELETE' ? 6000 : 5000, deadline - Date.now())) }), session.id);
+        } catch (error) {
+          observe(error.transport);
+          if (signal?.aborted) throw error;
+          // A lost DELETE reply cannot override a later terminal reclaim proof.
+        }
+        onCleanup?.(raw);
+        const remote = diagnostics.cleanupStatus(raw);
+        if (method === 'DELETE' || counter === 2 || counter % 10 === 0 || raw?.reclaim_verified || raw?.state === 'uncertain') {
+          logger.warning('TARIC owned cleanup observation', { category: 'taric', metadata: {
+            method, counter, epoch, correlationId: lastTransport?.correlationId,
+            originClock: 'site', elapsedMs: Date.now() - started, transport: lastTransport, ...remote,
+          } });
+        }
+      };
+      await request('DELETE');
+      while (!raw?.reclaim_verified && Date.now() < deadline) {
+        if (raw?.state === 'uncertain') return { idle: false, reason: 'BACKEND_RECLAIM_FAILED' };
+        if (signal?.aborted) fail('INTERRUPTED');
+        await new Promise((resolve, reject) => {
+          const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new TaricError('INTERRUPTED')); };
+          const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); },
+            Math.min(Math.max(1, delayMs) * (counter > 5 ? 2 : 1), deadline - Date.now()));
+          signal?.addEventListener('abort', abort, { once: true });
+        });
+        if (Date.now() < deadline) await request('GET');
       }
-      return { idle: raw.reclaim_verified === true };
+      if (raw?.reclaim_verified) return { idle: true };
+      logger.warning('TARIC owned cleanup deadline exhausted; capability retained', { category: 'taric', metadata: {
+        counter, epoch, elapsedMs: Date.now() - started, transport: lastTransport, ...diagnostics.cleanupStatus(raw),
+      } });
+      return { idle: false, reason: 'CLEANUP_PENDING' };
     },
     async probe() { return { idle: false, state: 'idle_unverified', capabilityProof: await capabilities.preflight({ force: true }) }; },
   };

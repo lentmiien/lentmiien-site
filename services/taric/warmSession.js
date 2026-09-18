@@ -4,6 +4,8 @@ const { output, payload, TEST_ADAPTER } = require('../../utils/taricProtocol');
 // Capability-bearing provider responses stay in this process and never enter Mongo.
 function createWarmSessions(adapter = null, { now = Date.now, timeoutMs = 7000 } = {}) {
   const owned = new WeakMap();
+  const terminal = new WeakSet();
+  let retained = null; let lastTerminal = null; let opening = false;
   const required = ['open', 'status', 'renew', 'generate', 'close', 'probe'];
   const ready = () => Boolean(adapter && required.every(k => typeof adapter[k] === 'function'));
   async function call(method, args, deadline = timeoutMs) {
@@ -39,17 +41,25 @@ function createWarmSessions(adapter = null, { now = Date.now, timeoutMs = 7000 }
   }
   return {
     ready,
+    // One private reachable capability, never evicted on timeout or idle expiry.
+    lookup: id => retained?.id === id ? retained : lastTerminal?.id === id ? lastTerminal : null,
+    retainedId: () => retained?.id || null,
+    describe: id => retained?.id === id ? owned.get(retained)?.cleanup || null : lastTerminal?.id === id ? { reclaimVerified: true } : null,
     preflight: options => adapter?.preflight ? adapter.preflight(options) : Promise.resolve(null),
     async open({ correlationId, signal, adapter: adapterName = TEST_ADAPTER }) {
-      if (adapter?.preflight) await adapter.preflight({ signal });
-      const raw = await call('open', { adapter: adapterName, correlationId, ttlMs: 120000, hardBudgetMs: 900000, signal });
-      if (!raw || typeof raw.id !== 'string' || !raw.id.length || raw.id.length > 200 || !Number.isFinite(raw.expiresAt)
-        || !Number.isFinite(raw.hardExpiresAt) || raw.expiresAt <= now() || raw.expiresAt > now() + 120000
-        || raw.hardExpiresAt > now() + 900000 || raw.expiresAt > raw.hardExpiresAt) fail('INFERENCE_UNCERTAIN');
-      raw.adapterName = adapterName;
-      const handle = Object.freeze({ id: raw.id, hardExpiresAt: raw.hardExpiresAt, ...(raw.capabilityProof ? { capabilityProof: raw.capabilityProof } : {}) });
-      owned.set(handle, raw);
-      return handle;
+      if (retained || opening) fail('CLEANUP_PENDING');
+      opening = true;
+      try {
+        if (adapter?.preflight) await adapter.preflight({ signal });
+        const raw = await call('open', { adapter: adapterName, correlationId, ttlMs: 120000, hardBudgetMs: 900000, signal });
+        if (!raw || typeof raw.id !== 'string' || !raw.id.length || raw.id.length > 200 || !Number.isFinite(raw.expiresAt)
+          || !Number.isFinite(raw.hardExpiresAt) || raw.expiresAt <= now() || raw.expiresAt > now() + 120000
+          || raw.hardExpiresAt > now() + 900000 || raw.expiresAt > raw.hardExpiresAt) fail('INFERENCE_UNCERTAIN');
+        raw.adapterName = adapterName; raw.correlationId = correlationId;
+        const handle = Object.freeze({ id: raw.id, hardExpiresAt: raw.hardExpiresAt, ...(raw.capabilityProof ? { capabilityProof: raw.capabilityProof } : {}) });
+        owned.set(handle, raw); retained = handle;
+        return handle;
+      } finally { opening = false; }
     },
     async renew(handle, signal) {
       const raw = session(handle);
@@ -72,10 +82,18 @@ function createWarmSessions(adapter = null, { now = Date.now, timeoutMs = 7000 }
       return { idle: result?.idle === true, terminal: result?.terminal === true,
         correlated: result?.correlationId === correlationId, reclaimed: result?.reclaimed === true, missing: result?.missing === true };
     },
-    async close(handle) {
+    async close(handle, { signal, epoch } = {}) {
+      if (terminal.has(handle)) return { idle: true };
       const raw = session(handle, true);
-      try { const result = await call('close', { session: raw }, 45000); return { idle: result?.idle === true }; }
-      finally { owned.delete(handle); }
+      const result = await call('close', { session: raw, correlationId: raw.correlationId, signal, epoch,
+        onCleanup: value => { raw.cleanup = require('../../utils/taricDiagnostics').cleanupStatus(value); },
+      }, 110000);
+      if (result?.idle === true) {
+        terminal.add(handle); lastTerminal = handle; owned.delete(handle);
+        if (retained === handle) retained = null;
+        return { idle: true };
+      }
+      return { idle: false, reason: result?.reason === 'BACKEND_RECLAIM_FAILED' ? result.reason : 'CLEANUP_PENDING' };
     },
     async probe() {
       const result = adapter?.preflight ? await adapter.probe() : await call('probe', {});

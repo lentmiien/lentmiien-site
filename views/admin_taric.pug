@@ -20,7 +20,7 @@ html(lang='en')
         button#refresh(type='button') Refresh status
         p#execution-help
         pre#readiness
-        p Read status, explicitly cancel pending work, then request recovery. Recovery acquires exclusive Gateway admission without starting GPU, holds it during the database handoff, and releases only that session with verified cleanup. Busy or uncertain recovery keeps the hold. Passive status is idle_unverified. Clearing does not resume paused runs.
+        p Read status, explicitly cancel pending work, then request recovery. Recovery acquires exclusive Gateway admission without starting GPU, holds it during the database handoff, and releases only that session with verified cleanup. Busy or uncertain recovery keeps the hold. Passive status is idle_unverified, an observation rather than an error. Cleanup may continue on the server for up to 100 seconds; closing this page does not cancel it. Clearing does not resume paused runs.
         button#remote-status(type='button') Read remote status (no GPU work)
         pre#recovery-status
         p#recovery-help
@@ -28,7 +28,7 @@ html(lang='en')
           input#confirm-idle(type='checkbox')
           |  I authorize pending-work cancellation / exclusive admission recovery (no inference)
         button#cancel-pending(type='button' disabled) Cancel all pending local work (keep remote hold)
-        button#resume(type='button' disabled) Recover hold using exclusive admission
+        button#resume(type='button' disabled) Acquire recovery admission
       section
         h2 Dedicated integration credential
         p One active key, expiring after 90 days. Rotation immediately revokes the previous generation and queued authority. Store the new key in the caller’s secret store.

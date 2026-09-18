@@ -3,7 +3,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const token = document.querySelector('meta[name="csrf-token"]').content;
-  let readiness = null; let recovery = null;
+  let readiness = null; let recovery = null; let recoveryTimer = null; let recoveryPolls = 0; let mutationBusy = false;
   let previewSha = null; let cursor = null; let benchmarkCursor = null; let recoveryEpoch = null; let benchmarksMore = false; let inspectMore = false;
   const show = (id, value) => { $(id).textContent = JSON.stringify(value, null, 2); };
   async function api(path, body, multipart = false, extraHeaders = {}) {
@@ -21,11 +21,13 @@
   }
   const on = (id, fn) => $(id).addEventListener('click', async () => {
     $(id).disabled = true; $('status').textContent = 'Working…';
-    try { await fn(); $('status').textContent = `${$(id).textContent}: done.`; } catch (e) { $('status').textContent = `${$(id).textContent}: ${e.message}`; }
+    try { const result = await fn(); $('status').textContent = result?.pending ? 'Cleanup continues on the server. Status will refresh; closing this page does not cancel cleanup.' : `${$(id).textContent}: done.`; } catch (e) { $('status').textContent = `${$(id).textContent}: ${e.message}`; }
     finally { $(id).disabled = (id === 'import' && !previewSha) || (id === 'benchmarks-more' && !benchmarksMore) || (id === 'next' && !inspectMore); updateBenchmarkActions(); }
   });
   async function refresh() {
-    const state = await api('/state'); readiness = state; recovery = null; recoveryEpoch = null; show('readiness', { gateway: state.gateway, normal: state.normal, test: state.test, inference: state.inference, benchmark: state.benchmark, credential: state.credential, template: state.template, codeFingerprint: state.codeFingerprint });
+    clearTimeout(recoveryTimer); clearSecret(); $('confirm-idle').checked = false;
+    recovery = null; recoveryEpoch = null; show('recovery-status', {});
+    const state = await api('/state'); readiness = state; show('readiness', { gateway: state.gateway, normal: state.normal, test: state.test, inference: state.inference, benchmark: state.benchmark, credential: state.credential, template: state.template, codeFingerprint: state.codeFingerprint });
     $('enabled').checked = state.settings?.enabled === true; $('max-tokens').value = state.settings?.maxTokens || 256;
     $('catalog').value = JSON.stringify(state.settings?.catalog || null, null, 2);
     $('runtime').value = JSON.stringify(state.settings?.runtime || { adapters: [] }, null, 2);
@@ -44,20 +46,47 @@
     if (!testId) throw new Error('Submit a test first.');
     show('test-feedback-result', await api(`/test/${testId}/feedback`, { selected_code: $('test-selected-code').value }, false, { 'Idempotency-Key': `feedback-${testId}` }));
   });
-  on('remote-status', async () => {
-    const status = await api('/inference/status'); show('recovery-status', status);
-    setRecovery(status);
-  });
-  on('cancel-pending', async () => {
-    if (!$('confirm-idle').checked || recoveryEpoch === null) throw new Error('Read status and confirm cancellation first.');
-    await api('/inference/cancel-pending', { confirm: true, epoch: recoveryEpoch });
+  async function readRecovery() {
     const status = await api('/inference/status'); show('recovery-status', status); setRecovery(status);
-  });
-  on('resume', async () => {
-    if (!$('confirm-idle').checked || recoveryEpoch === null) throw new Error('Read remote status, cancel pending work, and confirm recovery first.');
-    await api('/inference/resume', { confirm: true, epoch: recoveryEpoch });
-    recoveryEpoch = null; $('confirm-idle').checked = false; await refresh();
-  });
+    return status;
+  }
+  function pollRecovery() {
+    clearTimeout(recoveryTimer);
+    if (++recoveryPolls > 60) return;
+    recoveryTimer = setTimeout(async () => {
+      try {
+        const status = await readRecovery();
+        if (status.ownership?.active) pollRecovery();
+        else if (!status.control?.blocked) {
+          await refresh(); await readRecovery();
+          $('status').textContent = 'Owned cleanup verified. Inference hold cleared; normal release requirements still apply.';
+        } else $('status').textContent = `Recovery remains held: ${status.control?.reason || 'CLEANUP_PENDING'}. ${$('recovery-help').textContent}`;
+      } catch (error) { $('status').textContent = `Status refresh failed: ${error.message}. Read remote status to reconcile.`; }
+    }, 2000);
+  }
+  async function recoveryMutation(path) {
+    if (!$('confirm-idle').checked || recoveryEpoch === null) throw new Error('Read remote status and confirm the action first.');
+    mutationBusy = true; updateBenchmarkActions();
+    let result; let failure;
+    try { result = await api(path, { confirm: true, epoch: recoveryEpoch }); }
+    catch (error) { failure = error; }
+    // Failed handoff may have advanced the durable epoch. Never reuse it blindly.
+    recoveryEpoch = null; $('confirm-idle').checked = false;
+    try {
+      if (path.endsWith('/resume') && result?.ok) await refresh();
+      await readRecovery();
+    } catch (error) {
+      recoveryEpoch = null;
+      if (!failure) failure = error;
+      else failure.message += ` Status refresh also failed: ${error.message}`;
+    } finally { mutationBusy = false; updateBenchmarkActions(); }
+    if (recovery?.ownership?.active || result?.pending) { recoveryPolls = 0; pollRecovery(); }
+    if (failure) throw failure;
+    return result;
+  }
+  on('remote-status', async () => { const status = await readRecovery(); if (status.ownership?.active) { recoveryPolls = 0; pollRecovery(); } });
+  on('cancel-pending', () => recoveryMutation('/inference/cancel-pending'));
+  on('resume', () => recoveryMutation('/inference/resume'));
   on('resume-run', async () => {
     if (!$('confirm-run').checked) throw new Error('Confirm a current authorized GPU window before resuming.');
     await api(`/runs/${encodeURIComponent($('run-id').value)}/resume`, { confirm: true });
@@ -101,13 +130,17 @@
       : readiness?.test?.ready ? 'Manual-confirmation tests are available. v0 benchmarks remain diagnostic and cannot pass normal release.' : 'Refresh status to verify execution prerequisites.';
     if (available && readiness?.benchmark?.ready === true && !$('adapter').value) $('execution-help').textContent += ' Load adapter metadata and choose an adapter before queuing a benchmark.';
     const held = recovery?.control?.blocked === true;
-    $('cancel-pending').disabled = !held || recoveryEpoch === null;
-    $('resume').disabled = !held || recoveryEpoch === null || readiness?.gateway?.ready !== true
+    $('cancel-pending').disabled = mutationBusy || recovery?.ownership?.active || !held || recoveryEpoch === null;
+    $('resume').textContent = recovery?.ownership?.available ? 'Continue owned cleanup' : 'Acquire recovery admission';
+    $('resume').disabled = mutationBusy || recovery?.ownership?.active || !held || recoveryEpoch === null || readiness?.gateway?.ready !== true
       || recovery.pending?.length > 0 || recovery.queuedRequests > 0;
     $('recovery-help').textContent = !recovery ? 'Read remote status to load the current recovery epoch. Status and inspection are available while inference is held or disabled.'
-      : !held ? 'No inference hold to recover.' : readiness?.gateway?.ready !== true ? 'Rebuild the running Gateway image, then Refresh status and Read remote status. Pending local work can still be cancelled.'
+      : recovery.ownership?.active ? 'Owned cleanup is running under the server lease. No inference is requested. Closing this page does not cancel it.'
+        : recovery.ownership?.state === 'OWNERSHIP_LOST' ? 'OWNERSHIP_LOST: this process has no matching private capability. Use the owning Site instance or standard Gateway recovery/rebuild. Acquire recovery admission only after the old Gateway fence has safely cleared; never reset the Mongo hold.'
+        : recovery.ownership?.available ? `Private owner capability is available on this instance. ${recovery.control?.reason || 'CLEANUP_PENDING'}: confirm to continue the same owned cleanup without inference.`
+        : !held ? 'No inference hold to recover.' : readiness?.gateway?.ready !== true ? 'Rebuild the running Gateway image, then Refresh status and Read remote status. Pending local work can still be cancelled.'
         : recovery.pending?.length || recovery.queuedRequests ? 'Cancel all pending local work before exclusive recovery. Existing results remain inspectable.'
-          : 'Exclusive recovery is available. Confirm the action below; recovery requests no inference. After success, submit a fresh test or queue a fresh v0 benchmark.';
+          : 'Passive idle_unverified is expected and is not cleanup proof. Exclusive recovery is available. Confirm the action below; recovery requests no inference. After success, submit a fresh test or queue a fresh v0 benchmark.';
   }
   async function loadBenchmarks(more = false, preferred = null) {
     const selected = preferred || $('benchmark-id').value;

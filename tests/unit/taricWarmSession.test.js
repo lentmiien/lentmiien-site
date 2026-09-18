@@ -24,7 +24,8 @@ test('only the original opaque owner handle can generate or release; capability 
   expect(await sessions.status(handle, 'a'.repeat(32))).toEqual({ idle: true, terminal: true, correlated: true, reclaimed: false, missing: false });
   await sessions.renew(handle); await sessions.close(handle);
   expect(adapter.close.mock.calls[0][0].session.ownerToken).toBe('PRIVATE-CAPABILITY');
-  await expect(sessions.close(handle)).rejects.toThrow('FORBIDDEN');
+  await expect(sessions.close(handle)).resolves.toEqual({ idle: true });
+  expect(adapter.close).toHaveBeenCalledTimes(1);
 });
 test('expired handles cannot generate or renew; own release remains permitted', async () => {
   const { sessions, advance, adapter } = fixture(); const handle = await sessions.open({}); advance(90001);
@@ -53,4 +54,45 @@ test('local lease abort returns promptly even when adapter ignores abort; remote
   controller.abort();
   await expect(promise).rejects.toMatchObject({ code: 'INFERENCE_UNCERTAIN', transport: { phase: 'clientabort', dispatched: true, terminal: false } });
   await sessions.close(handle);
+});
+
+test('unverified and thrown close retain the only private capability across expiry and retry', async () => {
+  const { sessions, adapter, advance } = fixture();
+  const handle = await sessions.open({ correlationId: 'a'.repeat(32) });
+  adapter.close.mockResolvedValueOnce({ idle: false }).mockRejectedValueOnce(new Error('PRIVATE-CAPABILITY'));
+  expect(await sessions.close(handle)).toEqual({ idle: false, reason: 'CLEANUP_PENDING' });
+  advance(1000000);
+  expect(sessions.lookup(handle.id)).toBe(handle);
+  await expect(sessions.open({})).rejects.toThrow('CLEANUP_PENDING');
+  const error = await sessions.close(handle).catch(e => e);
+  expect(JSON.stringify(error)).not.toContain('PRIVATE');
+  expect(sessions.lookup(handle.id)).toBe(handle);
+  await sessions.close(handle);
+  expect(sessions.retainedId()).toBeNull();
+  expect(sessions.lookup(handle.id)).toBe(handle);
+  expect(sessions.describe(handle.id)).toEqual({ reclaimVerified: true });
+  expect(adapter.close.mock.calls.every(([args]) => args.session.ownerToken === 'PRIVATE-CAPABILITY')).toBe(true);
+  expect(adapter.close.mock.calls.every(([args]) => args.correlationId === 'a'.repeat(32))).toBe(true);
+  expect(JSON.stringify(handle)).not.toContain('PRIVATE');
+});
+test('concurrent open cannot allocate a second capability', async () => {
+  const { sessions, adapter } = fixture();
+  const results = await Promise.allSettled([sessions.open({}), sessions.open({})]);
+  expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+  expect(adapter.open).toHaveBeenCalledTimes(1);
+});
+
+test('outer close allows the inner 100 second budget plus margin, then retains capability on timeout', async () => {
+  jest.useFakeTimers();
+  try {
+    const { sessions, adapter } = fixture(); const handle = await sessions.open({});
+    adapter.close.mockImplementation(() => new Promise(() => {}));
+    const task = sessions.close(handle).catch(e => e);
+    await jest.advanceTimersByTimeAsync(100001);
+    expect(adapter.close.mock.calls[0][0].signal.aborted).toBe(false);
+    await jest.advanceTimersByTimeAsync(10000);
+    expect((await task).code).toBe('INFERENCE_UNCERTAIN');
+    expect(sessions.lookup(handle.id)).toBe(handle);
+    expect(adapter.close.mock.calls[0][0].signal.aborted).toBe(true);
+  } finally { jest.useRealTimers(); }
 });

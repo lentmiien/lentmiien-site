@@ -8,7 +8,8 @@ const SCOPES = ['taric.requests.create', 'taric.requests.read', 'taric.feedback.
 const id = () => crypto.randomBytes(16).toString('hex');
 const validId = value => string(value, 32, 'NOT_FOUND', /^[a-f0-9]{32}$/);
 const query = q => q.maxTimeMS(2000).lean().exec();
-function createService({ models, transport, evidence, codeVersion, authorizeAdmin = async () => false, now = Date.now, warmSessions = require('./warmSession').createWarmSessions() } = {}) {
+function createService({ models, transport, evidence, codeVersion, authorizeAdmin = async () => false, now = Date.now, warmSessions = require('./warmSession').createWarmSessions(), recoveryLeaseMs = 120000 } = {}) {
+  let recoveryTask = null;
   const { Settings, Credential, Benchmark, Run, Request, Feedback, Control, Attempt } = models;
   // Freeze at startup: an old worker must not advertise hashes of newly replaced files.
   const implementationVersion = transport.fingerprint
@@ -314,59 +315,118 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     return record;
   }
   async function recoveryStatus() {
-    const control = await query(Control.findById('inference').select('-holder -attempts'));
     let remote;
     try { remote = await warmSessions.probe(); } catch (e) { remote = { idle: false, ...require('../../utils/taricDiagnostics').readinessError(e) }; }
-    return { control, remote, pending: await query(Run.find({ active: true }).select('_id state actualCount requestedCount cancelRequested').limit(8)),
+    const wasActive = Boolean(recoveryTask);
+    const control = await query(Control.findById('inference').select('-holder -attempts'));
+    const owned = Boolean(control?.sessionId && warmSessions.lookup?.(control.sessionId));
+    const ownership = { available: owned, state: owned ? 'owned' : control?.sessionId ? 'OWNERSHIP_LOST' : 'none',
+      active: wasActive || Boolean(recoveryTask), cleanup: owned ? warmSessions.describe?.(control.sessionId) || null : null, action: owned ? 'continue_owned_cleanup' : 'acquire_recovery_admission' };
+    return { control, remote, ownership, pending: await query(Run.find({ active: true }).select('_id state actualCount requestedCount cancelRequested').limit(8)),
       queuedRequests: await Request.countDocuments({ active: true }).exec() };
   }
-  async function resumeInference(epoch, requestId) {
+  // Reuse the global control record and its lease as the recovery task lifecycle.
+  // The HTTP response need not remain open for Gateway's 90-second cleanup.
+  async function startRecovery(epoch, requestId, actor) {
+    if (recoveryTask) fail('STALE');
+    let timer;
+    const task = resumeInference(epoch, requestId, actor);
+    recoveryTask = task;
+    const settled = task.then(() => ({ ok: true }), error => {
+      if (!(error instanceof TaricError)) logger.error('TARIC recovery storage operation failed; hold requires reconciliation', {
+        category: 'taric', metadata: { code: 'STORAGE_FAILED', requestId },
+      });
+      return { error };
+    });
+    settled.then(() => { if (recoveryTask === task) recoveryTask = null; });
+    try {
+      const result = await Promise.race([settled, new Promise(resolve => {
+        timer = setTimeout(() => resolve({ pending: true, state: 'CLEANUP_PENDING', poll_url: '/admin/taric/inference/status' }), 1000);
+      })]);
+      if (result.error) throw result.error;
+      return result;
+    } finally { clearTimeout(timer); }
+  }
+  async function resumeInference(epoch, requestId, actor) {
     if (!Number.isSafeInteger(epoch) || epoch < 0) fail('INVALID_REQUEST');
+    if (!await authorizeAdmin(actor)) fail('FORBIDDEN');
     const holder = id();
     const epochFilter = epoch === 0 ? { $or: [{ epoch: 0 }, { epoch: { $exists: false } }] } : { epoch };
     const lease = await query(Control.findOneAndUpdate({ _id: 'inference', blocked: true,
-      until: { $lte: new Date(now()) }, ...epochFilter }, { $set: { holder, until: new Date(now() + 120000) } }, { returnDocument: 'after' }));
+      until: { $lte: new Date(now()) }, ...epochFilter }, { $set: { holder, until: new Date(now() + recoveryLeaseMs) } }, { returnDocument: 'after' }));
     if (!lease) fail('STALE');
-    let session; let handedOff = false; let cleaned = false; let stage = 'recovery.pending';
+    const controller = new AbortController();
+    let currentEpoch = epoch; let renewal = null; let session; let handedOff = false; let cleaned = false; let stage = 'recovery.pending';
+    const filter = () => ({ _id: 'inference', holder, blocked: true, ...(handedOff ? { epoch: currentEpoch } : epochFilter), until: { $gt: new Date(now()) } });
+    const check = async () => {
+      if (controller.signal.aborted) fail('INTERRUPTED');
+      if (!await authorizeAdmin(actor)) fail('FORBIDDEN');
+      if (!await query(Control.findOne(filter()))) fail('STALE');
+    };
+    const heartbeat = setInterval(() => {
+      if (renewal || controller.signal.aborted) return;
+      renewal = (async () => {
+        try {
+          await check();
+          const renewed = await Control.updateOne(filter(), { $set: { until: new Date(now() + recoveryLeaseMs) } }).maxTimeMS(2000).exec();
+          if (!renewed.matchedCount) fail('STALE');
+        } catch (error) {
+          controller.abort();
+          logger.warning('TARIC recovery lease or authority lost; remote ownership remains unknown', { category: 'taric', metadata: {
+            code: error instanceof TaricError ? error.code : 'STORAGE_FAILED', epoch: currentEpoch, requestId,
+          } });
+        } finally { renewal = null; }
+      })();
+    }, Math.max(1, Math.floor(recoveryLeaseMs / 4)));
+    heartbeat.unref?.();
     try {
       if (await Run.exists({ active: true }).maxTimeMS(2000).exec() || await Request.exists({ active: true }).maxTimeMS(2000).exec()) fail('RECOVERY_REQUIRED');
-      // Mutating exclusive admission, not a passive probe. Busy/ambiguous create
-      // leaves the old hold untouched and never releases an operator reservation.
-      stage = 'session.create';
-      session = await warmSessions.open({ correlationId: requestId || id() });
-      stage = 'session.heartbeat';
-      const renewed = await warmSessions.renew(session);
-      if (!renewed || ![renewed.expiresAt, renewed.hardExpiresAt].every(Number.isFinite)
-        || Math.min(renewed.expiresAt, renewed.hardExpiresAt) < now() + 5000) fail('RECOVERY_REQUIRED');
+      await check();
+      session = lease.sessionId ? warmSessions.lookup?.(lease.sessionId) : null;
+      if (!session && warmSessions.retainedId?.()) fail('OWNERSHIP_LOST');
+      if (!session) {
+        stage = 'session.create';
+        try { session = await warmSessions.open({ correlationId: requestId || id(), signal: controller.signal }); }
+        catch (error) {
+          if (lease.sessionId && error.transport?.status === 409) {
+            const lost = new TaricError('OWNERSHIP_LOST'); lost.transport = error.transport; throw lost;
+          }
+          throw error;
+        }
+      }
+      // Persist ownership before any further remote operation can fail. A known
+      // matching local handle is reused, including after an earlier close timeout.
       stage = 'recovery.handoff';
-      const changed = await Control.updateOne({ _id: 'inference', holder, blocked: true,
-        until: { $gt: new Date(now()) }, ...epochFilter }, { $set: {
-        sessionId: session.id, capabilityProof: session.capabilityProof, recoveryPhase: 'owned_cleanup', reason: 'RECOVERY_REQUIRED' }, $inc: { epoch: 1 } }).exec();
+      await check();
+      const changed = await Control.updateOne(filter(), { $set: {
+        sessionId: session.id, capabilityProof: session.capabilityProof, recoveryPhase: 'owned_cleanup', reason: 'CLEANUP_PENDING' }, $inc: { epoch: 1 } }).maxTimeMS(2000).exec();
       if (!changed.matchedCount) fail('STALE');
-      handedOff = true;
-      // Keep admission AND the Mongo lease through the CAS above. Only our own
-      // capability may release. Local admission stays blocked through cleanup.
+      currentEpoch = epoch + 1; handedOff = true;
       stage = 'session.cleanup';
-      cleaned = (await warmSessions.close(session)).idle;
-      session = null;
-      if (!cleaned) fail('RECOVERY_REQUIRED');
-      const released = await Control.updateOne({ _id: 'inference', holder, blocked: true,
-        sessionId: { $type: 'string' }, epoch: epoch + 1, until: { $gt: new Date(now()) } },
-      { $set: { blocked: false, reason: null, recoveryPhase: null, sessionId: null } }).exec();
+      await check();
+      const result = await warmSessions.close(session, { signal: controller.signal, epoch: currentEpoch });
+      cleaned = result.idle;
+      if (!cleaned) fail(result.reason || 'CLEANUP_PENDING');
+      await check();
+      const released = await Control.updateOne({ ...filter(), sessionId: session.id },
+        { $set: { blocked: false, reason: null, recoveryPhase: null, sessionId: null } }).maxTimeMS(2000).exec();
       if (!released.matchedCount) fail('STALE');
       logger.warning('TARIC hold cleared through exclusive owned admission and verified cleanup; pending work remains stopped', { category: 'taric' });
     } catch (error) {
       error.stage = error.stage || stage;
+      const code = error instanceof TaricError ? error.code : 'STORAGE_FAILED';
+      // Never clear a fence or forget a known capability on failure. Persist only
+      // nonsecret ownership metadata while we still hold the matching lease.
+      if (session || code === 'OWNERSHIP_LOST') await Control.updateOne(filter(), { $set: {
+        reason: code, ...(session ? { sessionId: session.id, recoveryPhase: 'owned_cleanup' } : {}),
+      } }).maxTimeMS(2000).exec();
       logger.warning('TARIC recovery kept admission closed', { category: 'taric', metadata: {
-        code: error instanceof TaricError ? error.code : 'STORAGE_FAILED', action: 'inference.recover',
-        requestId, stage: error.stage, transport: require('../../utils/taricDiagnostics').errorStatus(error.transport), handedOff, cleaned } });
+        code, action: 'inference.recover', requestId, epoch: currentEpoch, stage: error.stage,
+        transport: require('../../utils/taricDiagnostics').errorStatus(error.transport), handedOff, cleaned } });
       throw error;
     } finally {
-      if (session) {
-        try { await warmSessions.close(session); }
-        catch (_) { logger.warning('TARIC recovery session cleanup unverified; hold retained', { category: 'taric' }); }
-      }
-      await Control.updateOne({ _id: 'inference', holder }, { $set: { until: new Date(0) } }).exec();
+      clearInterval(heartbeat); if (renewal) await renewal;
+      await Control.updateOne({ _id: 'inference', holder }, { $set: { until: new Date(0) } }).maxTimeMS(2000).exec();
     }
   }
   async function cancelPending(epoch) {
@@ -452,6 +512,6 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
   }
   return { models, transport, evidence, warmSessions, settings, authenticate, authorize, adminPrincipal, rate, rotate, revoke, admission, checkAdmission,
     principalFrom, submit, retrieve, feedback, saveConfig, importBenchmark, publish, queueRun, cancelRun,
-    inspect, detail, readiness, recoveryStatus, resumeInference, cancelPending, resumeRun, version, now };
+    inspect, detail, readiness, recoveryStatus, resumeInference, startRecovery, cancelPending, resumeRun, version, now };
 }
 module.exports = { createService, query, id, validId, SCOPES };

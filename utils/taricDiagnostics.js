@@ -11,6 +11,18 @@ function errorStatus(value) {
   if (/^[a-f0-9]{32}$/.test(value.correlationId || '')) out.correlationId = value.correlationId;
   return out;
 }
+function cleanupStatus(raw) {
+  const out = {};
+  if (['idle', 'running', 'reclaiming', 'closed', 'expired', 'uncertain'].includes(raw?.state)) out.remoteState = raw.state;
+  if (['released', 'idle_timeout', 'hard_timeout', 'shutdown'].includes(raw?.close_reason)) out.closeReason = raw.close_reason;
+  if (['no_work_container_inactive', 'runtime_stopped_vram_verified'].includes(raw?.reclaim_basis)) out.reclaimBasis = raw.reclaim_basis;
+  if (['drain_worker', 'drain_scheduler', 'verify_owner', 'complete', 'inspect_unused', 'lifecycle_lock', 'inspect_runtime', 'stop_runtime', 'verify_stopped', 'verify_vram'].includes(raw?.cleanup?.phase)) out.cleanupPhase = raw.cleanup.phase;
+  if (['no_work', 'full_runtime'].includes(raw?.cleanup?.reclaim_kind)) out.reclaimKind = raw.cleanup.reclaim_kind;
+  if (Number.isFinite(raw?.cleanup?.elapsed_sec) && raw.cleanup.elapsed_sec >= 0 && raw.cleanup.elapsed_sec <= 900) out.gatewayElapsedSec = raw.cleanup.elapsed_sec;
+  if ([200, 503, 504].includes(raw?.cleanup?.status_code)) out.cleanupStatus = raw.cleanup.status_code;
+  if (typeof raw?.reclaim_verified === 'boolean') out.reclaimVerified = raw.reclaim_verified;
+  return out;
+}
 function preview(text) {
   const bytes = Buffer.from(text);
   // Decode only complete UTF-8 sequences, keeping the final preview <= 4096 bytes.
@@ -20,6 +32,9 @@ function preview(text) {
 }
 function help(code, status) {
   const messages = {
+    CLEANUP_PENDING: 'Owned cleanup is not yet verified. The private capability is retained. Continue owned cleanup; inference remains held.',
+    BACKEND_RECLAIM_FAILED: 'Gateway cleanup failed. Inspect the safe cleanup phase, then explicitly retry the same owned cleanup. No inference is repeated.',
+    OWNERSHIP_LOST: 'This Site process has no matching private owner capability. Use the owning instance, or the standard Gateway recovery/rebuild. After its old fence is safely cleared, acquire new exclusive recovery admission. Do not reset the Mongo hold.',
     EVIDENCE_NOT_FOUND: 'No local JAN match. Supply the AmiAmi item code or classify manually; JAN alone does not trigger an online lookup.',
     JAN_AMBIGUOUS: 'This JAN matches multiple local item codes. Supply the specific AmiAmi item code or classify manually.',
     CATALOG_REJECTED: 'Outside the training-derived test allowlist (v0 has 53 target codes). This does not establish whether the code is legally valid TARIC. Review manually.',
@@ -48,4 +63,4 @@ function readinessError(error) {
   return { reason, stage: 'gateway.preflight', message: help(reason), transport: errorStatus(error.transport) };
 }
 const STAGES = new Set(['request.validation', 'request.operation', 'gateway.preflight', 'session.create', 'session.heartbeat', 'session.cleanup', 'recovery.pending', 'recovery.handoff']);
-module.exports = { errorStatus, preview, help, readinessError, STAGES };
+module.exports = { cleanupStatus, errorStatus, preview, help, readinessError, STAGES };

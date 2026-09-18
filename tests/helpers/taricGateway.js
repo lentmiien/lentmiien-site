@@ -29,7 +29,7 @@ function openapi() {
   return { openapi: '3.1.0', info: { title: 'Synthetic Gateway', version: '1' }, paths };
 }
 async function gatewayFixture() {
-  const fixture = { document: openapi(), discoveryStatus: 200, requests: [], sessions: [], generateCount: 0, dropAt: null, busy: false, cleanup: true, closePending: false, statusPatch: null };
+  const fixture = { document: openapi(), discoveryStatus: 200, requests: [], sessions: [], generateCount: 0, dropAt: null, busy: false, cleanup: true, closePending: false, closePollCount: 0, statusPatch: null };
   const server = http.createServer(async (req, res) => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks)) : null;
@@ -60,9 +60,12 @@ async function gatewayFixture() {
     }
     if (req.method === 'DELETE') {
       if (fixture.onClose) await fixture.onClose(session);
-      session.state = fixture.cleanup ? 'closed' : 'uncertain'; session.idle_proven = false;
-      session.reclaim_verified = fixture.cleanup; session.close_reason = 'released';
+      session.state = fixture.closePending ? 'reclaiming' : fixture.cleanup ? 'closed' : 'uncertain'; session.idle_proven = false;
+      session.reclaim_verified = fixture.cleanup && !fixture.closePending; session.close_reason = 'released';
       return send(fixture.closePending || !fixture.cleanup ? 202 : 200, session);
+    }
+    if (req.method === 'GET' && session.state === 'reclaiming' && ++fixture.closePollCount > 8) {
+      session.reclaim_verified = fixture.cleanup; session.state = fixture.cleanup ? 'closed' : 'uncertain';
     }
     if (fixture.onStatus) await fixture.onStatus(session, req);
     return send(200, fixture.statusPatch ? fixture.statusPatch(session) : session);

@@ -118,7 +118,7 @@ only the updated Site service through the established operator workflow.
 2. Check the explicit confirmation and select **Cancel all pending local work (keep remote
    hold)**. It cancels local queued work under a fenced Mongo lease and retains durable
    attempts/history. The old failed run is unchanged. It performs no Gateway generation.
-3. Read the new status/epoch. Confirm and select **Recover hold using exclusive admission**.
+3. Read the new status/epoch. Confirm and select **Acquire recovery admission** or **Continue owned cleanup**.
    This fresh POST obtains an exclusive owned Gateway reservation, holds it through the
    Mongo CAS, releases only that session, and requires verified reclaim before clearing.
    Create does not start GPU; cleanup may stop the container. Busy/ambiguous/expired/failed
@@ -195,3 +195,87 @@ coverage thresholds met (one unrelated suite / four tests skipped). The final fo
 also passed after the last cache/UI refinements. `git diff --check` passed. No curated
 OpenAPI YAML changed, no dependency changed, and no database migration is required; the
 control proof fields are optional and contain no owner capability.
+
+## Owned cleanup repair and dual deployment (2026-09-18)
+
+This supersedes the six-poll / discarded-handle behavior. Cleanup has a **100s wall
+budget** (DELETE 6s, GET 5s, 1–2s backoff), a **110s outer timeout**, and a **120s Mongo
+lease renewed every 30s** throughout recovery. Lease/fence loss or revoked management
+capability aborts local calls and retains the hold; it never establishes remote release.
+Only `reclaim_verified` clears the hold. Normal release remains closed without its existing
+independent benchmark/runtime/catalog proof; `RELEASE_CLOSED` is expected for v0.
+
+Security contract: logged-in `taric.tool.manage`, admin-managed global inference control;
+no machine recovery principal; shared CSRF on POST and numeric epoch CAS; current admin
+scope is revalidated before remote effects and each lease renewal. Gateway is the fixed
+configured private origin. API and page remain private/no-store with escaped output.
+Owner credentials stay exclusively in process memory, never Mongo/API/logs/browser storage.
+The private cache allows **one unresolved session** and rejects new ownership rather than
+evicting it. Its single bounded metadata record lasts until verified cleanup or process
+exit, even beyond idle/hard expiry. One latest terminal handle is retained without a token so a failed Mongo handoff can
+reconcile its verified proof; repeated close is a local idempotent success. No automatic DELETE retry after terminal cleanup failure;
+explicit admin continuation retries the same owner and never repeats inference.
+
+Supported topology is **one Site TARIC service/worker instance**. A matching nonsecret
+control session ID resolves only to that instance's private handle under the global lease.
+Other instances fail closed with `OWNERSHIP_LOST` / exclusive-admission conflict; there is
+no durable capability routing. A process restart loses the capability. Standard Gateway
+recovery must clear the old fence before a new exclusive admission can succeed. No
+credential is reconstructed and no unrelated owner is released. No schema/index changes
+or bootstrap writes are required by this repair.
+
+Admin response contract (machine OpenAPI paths unchanged):
+
+- POST `/admin/taric/inference/resume`, `{confirm:true, epoch:<fresh integer>}`, keeps the
+  existing capability and CSRF checks. Completion within 1s returns `200 {ok:true}`;
+  otherwise `202 {pending:true,state:"CLEANUP_PENDING",poll_url:"/admin/taric/inference/status"}`.
+  The existing control lease owns the bounded server task; no new queue/platform is added.
+- GET status is read-only and returns the control epoch/reason plus sanitized `ownership`:
+  `available`, `state`, `active`, `action`, and allowlisted cleanup phase/status/reclaim basis.
+  The browser polls every 2s at most 60 times, or the admin can explicitly read status.
+  Closing the browser does not cancel cleanup. No background action repeats generation.
+- Immediate failures retain HTTP errors; after a 202, final failure is in status/control.
+  `CLEANUP_PENDING`, `BACKEND_RECLAIM_FAILED`, and `OWNERSHIP_LOST` distinguish the next step.
+  All mutation outcomes refresh the epoch; errors remain visible and confirmation resets.
+  Passive `idle_unverified` is informational. A failed backend cleanup permits **Continue
+  owned cleanup** only after a fresh explicit confirmation, with no pending local work.
+
+Cleanup diagnostics allowlist HTTP status, byte counts, Site duration/counter, original
+create correlation ID, recovery epoch and Gateway phase/reclaim kind/basis/status. Gateway
+elapsed seconds are labelled separately; wall clocks across hosts are not assumed equal.
+No exception bodies, credentials, model inputs or outputs enter these diagnostics.
+
+Human deployment sequence (not executed by this change):
+
+1. Stop Site so old producers cannot run. Preserve v0, keys, settings and all history.
+2. Update Gateway to the reviewed unused-session root fix and rebuild its correct project:
+   `docker compose -p ai-gateway -f ai-gateway/docker-compose.yml -f llm-batching-poc/runtime/gateway.override.yml up -d --build --no-deps ai_gateway`
+   Run from the ai-services root. The existing lost-token session requires Gateway's
+   standard startup fence/recovery; do not manually set Mongo `blocked:false`.
+3. Update Site and restart it. No reset, import, key rotation or database bootstrap is
+   needed for this repair. Read status, explicitly cancel pending local work if any, then
+   acquire recovery admission. New create-only recovery with inactive Qwen and unrelated
+   residents should clear quickly via Gateway's verified no-work path.
+4. If cleanup remains pending/failed, inspect safe phase/status, then continue the same
+   owned cleanup on the same Site process. Hard expiry is **not** a 15-minute auto-unlock:
+   failed cleanup retains Gateway's admission fence until verified reclaim or recovery.
+5. No GPU generation is authorized by this sequence. A benchmark canary requires a later
+   fresh human action; all normal release gates remain unchanged.
+
+Local contract verification uses `tests/unit/taricPythonGateway.test.js` with
+`TARIC_GATEWAY_CONTRACT_HELPER=/home/lennart/ai-services/ai-gateway/tests/helpers/qwen_session_contract_server.py`
+and `TARIC_GATEWAY_CONTRACT_PYTHON=<isolated Python with Gateway requirements>`:
+`npm test -- tests/unit/taricPythonGateway.test.js --coverage=false --runInBand`.
+The actual Python ASGI routes, session manager and scheduler run against fake hardware only,
+with no production lifespan, GPU, Docker socket, inference or scrape. All three scenarios
+passed: unused residents, delayed cleanup beyond six GETs, and failed cleanup/same-owner
+retry. Only discovery is injected because the isolated helper excludes `/openapi.json`;
+separate tests exercise real HTTP discovery and the admin Pug/HTTP/disposable-Mongo path.
+
+Verification for this repair: full suite **318 passed / 3,748 tests passed**, four unrelated
+tests skipped; configured coverage **71.78% statements / 50% branches / 80.79% functions /
+72.64% lines**, all thresholds passed. After the final terminal-proof/fencing changes,
+focused **14 suites / 248 tests passed**, including **51 disposable Mongo tests** and all
+three actual Python scenarios against Gateway commit
+`64c50ef851a649c9b47aa430a51e11bc42fd30a9`. OpenAPI `taric-assisted.v1.yaml` and diff checks
+passed. The machine OpenAPI has no changes. No production services or data were touched.
