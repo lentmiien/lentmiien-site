@@ -1,4 +1,5 @@
 jest.mock('../../services/taric/amiamiBounded', () => ({ fetchImpersonated: jest.fn(() => { throw new Error('Network forbidden in unit tests'); }) }));
+jest.mock('../../utils/logger', () => ({ notice: jest.fn(), warning: jest.fn(), error: jest.fn() }));
 const { EventEmitter } = require('events');
 const { Readable } = require('stream');
 const zlib = require('zlib');
@@ -56,15 +57,35 @@ test('actual Gateway envelope shape works; wrong/missing identities and tool cal
   expect(json).toHaveBeenCalledTimes(9);
   expect(json.mock.calls.every(([url]) => url.pathname === '/qwen3-lora/generate')).toBe(true);
 });
-test('Gateway requires exact allowlisted operator origin and observed runtime identity', async () => {
-  const json = jest.fn().mockImplementation(async url => url.pathname.endsWith('/model') ? { deployment_revision: 'd', model_revision: 'b', tokenizer_revision: 't' }
-    : { adapters: [{ adapter_name: 'test', metadata: { artifact_sha256: 'a'.repeat(64) } }] });
+test('immutable identity and unsafe adapter fallback fail closed without any Gateway I/O', async () => {
+  const json = jest.fn();
   expect(() => createTransport({ env: {} }).configured()).toThrow('CONFIG_NOT_READY');
   const t = createTransport({ json, env: { TARIC_GATEWAY_ORIGIN: 'http://gateway.test:8080', TARIC_GATEWAY_ALLOWED_ORIGINS: 'http://gateway.test:8080' } });
   const identity = { deploymentRevision: 'd', baseRevision: 'b', tokenizerRevision: 't', adapterSha256: 'a'.repeat(64) };
-  await expect(t.verifyIdentity('test', identity)).resolves.toBeUndefined();
-  await expect(t.verifyIdentity('test', { ...identity, deploymentRevision: 'invented' })).rejects.toThrow('RELEASE_CLOSED');
-  await expect(t.verifyIdentity('unknown', identity)).rejects.toThrow('RELEASE_CLOSED');
+  await expect(t.verifyIdentity('test', identity)).rejects.toThrow('RELEASE_CLOSED');
+  await expect(t.adapters()).rejects.toThrow('METADATA_UNAVAILABLE');
+  expect(json).not.toHaveBeenCalled();
+});
+
+test('provider stage events log allowlisted correlation and budgets without request or provider text', async () => {
+  const logger = require('../../utils/logger');
+  const json = jest.fn(async (_url, options) => {
+    expect(options.deadlineMs).toBe(60000);
+    for (const event of ['start', 'outbound_finished', 'failed']) options.onEvent(event, {
+      phase: 'http', correlationId: 'c'.repeat(32), operationId: 'c'.repeat(32), sessionId: 'd'.repeat(32),
+      deadlineMs: 60000, socketTimeoutStartMs: 5000, socketTimeoutMs: 60000,
+      sessionRemainingMs: 850000, sessionHardBudgetMs: 900000, socketCode: 'ECONNRESET',
+      header: 'PRIVATE-HEADER', content: 'PRIVATE-PROVIDER-TEXT', abortReason: 'PRIVATE-REASON',
+    });
+    throw new Error('PRIVATE-PROVIDER-ERROR');
+  });
+  const t = createTransport({ json, env: { TARIC_GATEWAY_ORIGIN: 'http://synthetic.test', TARIC_GATEWAY_ALLOWED_ORIGINS: 'http://synthetic.test', TARIC_GATEWAY_TOKEN: 'PRIVATE-TOKEN' } });
+  await expect(t.generate({ descriptive_name: 'PRIVATE-PRODUCT', full_item_name: 'Synthetic', specs: '', hs_code: '950300' }, TEST_ADAPTER, [], 256)).rejects.toThrow('INFERENCE_UNCERTAIN');
+  expect(logger.notice).toHaveBeenCalledWith('TARIC provider generation transport', expect.objectContaining({
+    category: 'taric', metadata: expect.objectContaining({ event: 'outbound_finished', transport: expect.objectContaining({ operationId: 'c'.repeat(32), deadlineMs: 60000 }) }),
+  }));
+  expect(logger.warning).toHaveBeenCalledWith('TARIC provider generation transport', expect.objectContaining({ metadata: expect.objectContaining({ event: 'failed' }) }));
+  expect(JSON.stringify([logger.notice.mock.calls, logger.warning.mock.calls])).not.toContain('PRIVATE');
 });
 
 test.each([['ENOTFOUND', 'dns'], ['ECONNREFUSED', 'connect'], ['CERT_HAS_EXPIRED', 'tls']])('sanitized pre-dispatch %s preserves phase without address, body or credential', async (code, phase) => {
@@ -109,9 +130,8 @@ test('fixed AmiAmi native trust adds OS CAs per request only; Gateway headers an
   expect(opts.tlsOptions.rejectUnauthorized).toBe(true); expect(opts.tlsOptions.ca.length).toBeGreaterThan(0);
   expect(opts.headers.Accept).toBe('application/json,text/plain,*/*');
   expect(opts.headers).not.toHaveProperty('X-Admin-Token'); expect(opts.headers).not.toHaveProperty('Authorization');
-  json.mockResolvedValue([]); await t.adapters();
-  expect(json.mock.calls[1][1]).not.toHaveProperty('tlsOptions');
-  expect(json.mock.calls[1][1].headers).toEqual({ Authorization: 'Bearer PRIVATE-PROXY', 'X-Admin-Token': 'PRIVATE-ADMIN' });
+  await expect(t.adapters()).rejects.toThrow('METADATA_UNAVAILABLE');
+  expect(json).toHaveBeenCalledTimes(1);
 });
 test.each([[{ phase: 'tls', socketCode: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' }, 'TLS_CHAIN_UNTRUSTED'],
   [{ phase: 'http', status: 403 }, 'HTTP_ACCESS_DENIED']])('AmiAmi distinguishes %p without exposing upstream text', async (transport, code) => {

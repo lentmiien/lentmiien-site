@@ -1,14 +1,28 @@
 // Private review data only. Never serialize provider envelopes or arbitrary errors.
 const PHASES = ['dns', 'connect', 'tls', 'http', 'decode', 'limit', 'json', 'envelope', 'timeout', 'clientabort'];
 const SOCKET_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_HAS_EXPIRED', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'SELF_SIGNED_CERT_IN_CHAIN', 'ERR_STREAM_PREMATURE_CLOSE']);
+const ABORT_ORIGINS = new Set(['absolute_deadline', 'warm_deadline', 'worker_stop', 'lease_lost', 'caller_signal']);
+function abortReason(value) {
+  if (ABORT_ORIGINS.has(value)) return value;
+  return (require('util').types.isNativeError(value) || value instanceof DOMException)
+    && value.name === 'AbortError' ? 'abort_error' : 'unspecified';
+}
 function errorStatus(value) {
   if (!value || !PHASES.includes(value.phase)) return null;
   const out = { phase: value.phase, dispatched: value.dispatched === true, terminal: value.terminal === true };
-  for (const key of ['status', 'wireBytes', 'decodedBytes', 'durationMs']) {
+  for (const key of ['status', 'wireBytes', 'decodedBytes', 'durationMs', 'deadlineMs', 'socketId', 'socketTimeoutMs', 'socketTimeoutStartMs', 'requestTimeoutMs', 'outboundBytes', 'sessionRemainingMs', 'sessionHardBudgetMs']) {
     if (Number.isSafeInteger(value[key]) && value[key] >= 0) out[key] = value[key];
+  }
+  for (const key of ['reusedSocket', 'socketTimeoutObserved', 'requestTimeoutObserved', 'requestFinished']) {
+    if (typeof value[key] === 'boolean') out[key] = value[key];
   }
   if (SOCKET_CODES.has(value.socketCode)) out.socketCode = value.socketCode;
   if (/^[a-f0-9]{32}$/.test(value.correlationId || '')) out.correlationId = value.correlationId;
+  if (/^[a-f0-9]{32}$/.test(value.operationId || '')) out.operationId = value.operationId;
+  if (/^[a-f0-9-]{32,36}$/.test(value.sessionId || '')) out.sessionId = value.sessionId;
+  if (ABORT_ORIGINS.has(value.abortOrigin)) out.abortOrigin = value.abortOrigin;
+  if (value.abortTag === 'LOCAL_ABORT') out.abortTag = value.abortTag;
+  if (ABORT_ORIGINS.has(value.abortReason) || ['abort_error', 'unspecified'].includes(value.abortReason)) out.abortReason = value.abortReason;
   return out;
 }
 function cleanupStatus(raw) {
@@ -32,6 +46,9 @@ function preview(text) {
 }
 function help(code, status) {
   const messages = {
+    ADMISSION_BUSY: 'Gateway has an existing reservation. No inference was dispatched and this rejection creates no Site hold. Retry a fresh request after the existing owner releases it; Site acquires its own session automatically.',
+    ADMISSION_UNCERTAIN: 'The session-create acknowledgement was lost. No generation was dispatched, but reservation ownership is unknown. Inspect the current Site hold before exclusive recovery.',
+    METADATA_UNAVAILABLE: 'GPU-free adapter metadata is unavailable. The Gateway must advertise its read-only metadata capability and have the adapter mount present.',
     CLEANUP_PENDING: 'Owned cleanup is not yet verified. The private capability is retained. Continue owned cleanup; inference remains held.',
     BACKEND_RECLAIM_FAILED: 'Gateway cleanup failed. Inspect the safe cleanup phase, then explicitly retry the same owned cleanup. No inference is repeated.',
     OWNERSHIP_LOST: 'This Site process has no matching private owner capability. Use the owning instance, or the standard Gateway recovery/rebuild. After its old fence is safely cleared, acquire new exclusive recovery admission. Do not reset the Mongo hold.',
@@ -50,10 +67,10 @@ function help(code, status) {
     INVALID_REQUEST: 'Check the supplied fields and numeric epoch; refresh the page if its controls are stale.',
     PROVIDER_FAILED: [401, 403].includes(status?.status) ? 'Gateway authentication rejected this action. Check the private proxy credential and X-Admin-Token configuration; keep the existing hold and refresh status.'
       : status?.status === 404 ? 'Gateway did not recognize this operation. Check the running image and routing, then Refresh status. Recovery retains the existing hold.'
-        : status?.status === 409 ? 'Gateway exclusive admission is busy. Keep the hold and retry only after the other owner finishes; do not release another reservation.'
+        : status?.status === 409 ? 'Gateway exclusive admission is busy. Retry after its existing owner finishes. This HTTP rejection does not itself require a Site hold.'
           : 'Gateway rejected or could not complete this operation. Check the action, stage and upstream HTTP status. Recovery retains the existing hold and requests no inference.',
     RELEASE_CLOSED: 'Normal mode needs a published independent v1+ benchmark, approved catalog, verified runtime and a current passing run. Manual-confirmation tests do not open normal mode.',
-    INFERENCE_UNCERTAIN: 'An existing hold or ambiguous remote operation requires inspection. Read status, cancel all pending work, then recover through exclusive admission.',
+    INFERENCE_UNCERTAIN: 'The generation outcome was not confirmed. The failed case stays recorded; Site reconciles its exact operation and owned cleanup. Check current status: recovery is needed only if a hold remains.',
     RECOVERY_REQUIRED: 'Remote idle has not been proved. Inspect and cancel pending work before explicit recovery.',
   };
   return messages[code] || null;
@@ -63,4 +80,4 @@ function readinessError(error) {
   return { reason, stage: 'gateway.preflight', message: help(reason), transport: errorStatus(error.transport) };
 }
 const STAGES = new Set(['request.validation', 'request.operation', 'gateway.preflight', 'session.create', 'session.heartbeat', 'session.cleanup', 'recovery.pending', 'recovery.handoff']);
-module.exports = { cleanupStatus, errorStatus, preview, help, readinessError, STAGES };
+module.exports = { cleanupStatus, errorStatus, abortReason, preview, help, readinessError, STAGES };

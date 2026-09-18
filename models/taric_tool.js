@@ -23,13 +23,14 @@ const Run = model('taric_runs', { _id: String, benchmark: String, adapter: Strin
   requestedCount: Number, actualCount: Number, exact: Number, invalid: Number, results: [mixed],
   score: Number, passed: Boolean, cancelRequested: Boolean, deadline: Date, actor: String, fence: String,
   error: String, finishedAt: Date, dispatchContract: String, sessionId: String, sessionHardExpiresAt: Date, warmSessionRequired: Boolean, attemptedCount: Number,
+  successfulGenerations: Number, sessionCount: Number, sessionEndReasons: mixed, lastYieldAt: Date,
   errorCount: Number, catalogRejected: Number, codeExact: Number, currentAttempt: mixed, recoveryRequired: Boolean }, [
   [{ slot: 1 }, { unique: true, partialFilterExpression: { active: true }, name: 'bounded_run_slots' }],
   [{ benchmark: 1, adapter: 1, sequence: -1 }, { name: 'authoritative_runs' }],
 ]);
 const Request = model('taric_requests', { _id: String, owner: String, principal: String, generation: Number,
   key: String, digest: String, input: mixed, admission: mixed, state: String, active: Boolean, slot: Number,
-  fence: String, sessionId: String, correlationId: String, evidence: mixed, result: mixed, diagnostics: mixed, errorStatus: mixed, error: String, finishedAt: Date, expiresAt: expiry }, [
+  fence: String, sessionId: String, correlationId: String, evidence: mixed, result: mixed, diagnostics: mixed, errorStatus: mixed, errorStage: String, inferenceDispatched: Boolean, retryable: Boolean, error: String, finishedAt: Date, expiresAt: expiry }, [
   [{ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'request_retention_90d' }],
   [{ principal: 1, key: 1 }, { unique: true, name: 'request_idempotency' }],
   [{ slot: 1 }, { unique: true, partialFilterExpression: { active: true }, name: 'bounded_request_slots' }],
@@ -46,7 +47,7 @@ const Feedback = model('taric_outcomes', { _id: String, owner: String, principal
 const Control = model('taric_controls', { _id: String, holder: String, until: Date, attempts: [mixed], blocked: Boolean, reason: String, epoch: { type: Number, default: 0 }, sessionId: String, capabilityProof: { digest: String, observedAt: String, protocol: String }, recoveryPhase: String });
 const Attempt = model('taric_attempts', { _id: String, run: String, index: Number, fence: String,
   correlationId: String, sessionId: String, state: String, claimedAt: Date, startedAt: Date,
-  finishedAt: Date, result: mixed, diagnostics: mixed, error: String, errorStatus: mixed,
+  finishedAt: Date, result: mixed, diagnostics: mixed, generationSucceeded: Boolean, error: String, errorStatus: mixed,
   inputHash: String, exact: Boolean, proposalExact: Boolean, lexicalSimilarity: Number }, [
   [{ run: 1, index: 1 }, { unique: true, name: 'one_attempt_per_case' }],
 ]);

@@ -5,10 +5,13 @@ const { errorStatus } = require('../../utils/taricDiagnostics');
 const { configuration, runtimeReady } = require('./gate');
 const { query, id, SCOPES } = require('./service');
 function createWorker(service, { authorizeAdmin = async () => false, ready = () => true,
-  leaseMs = 180000, batchCases = 8, batchMs = 120000, recoveryMs = 10000 } = {}) {
+  leaseMs = 180000, recoveryMs = 10000 } = {}) {
   const { Control, Request, Run, Benchmark, Attempt } = service.models;
   let timer; let busy = false; let stopped = true; let lastBootstrapWarning = 0; let controller;
   const date = () => new Date(service.now());
+  // Reserve a 60s generation, up to 80s exact-operation reconciliation, 110s
+  // cleanup and 10s bookkeeping. Never dispatch against the hard-expiry edge.
+  const nextCaseReserveMs = 260000;
   async function fence(holder) {
     const lease = await query(Control.findOne({ _id: 'inference', holder, until: { $gt: date() } }));
     if (!lease || stopped || !ready() || controller?.signal.aborted) fail('INTERRUPTED');
@@ -38,11 +41,13 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
   }
   function report(error, operation) {
     const code = error instanceof TaricError ? error.code : 'STORAGE_FAILED';
-    logger.warning('TARIC background operation requires follow-up', { category: 'taric', metadata: { operation, code, transport: errorStatus(error.transport) } });
+    logger.warning('TARIC background operation requires follow-up', { category: 'taric', metadata: { operation, code, transport: errorStatus(error.transport),
+      stage: require('../../utils/taricDiagnostics').STAGES.has(error.stage) ? error.stage : undefined,
+      inferenceDispatched: typeof error.inferenceDispatched === 'boolean' ? error.inferenceDispatched : undefined } });
     return code;
   }
   async function processRequest(r, holder) {
-    let evidence = null; let diagnostics = null; let session = null;
+    let evidence = null; let diagnostics = null; let session = null; let transportStatus = null;
     try {
       await service.authorize(service.principalFrom(r), SCOPES[0]);
       const selected = await service.checkAdmission(r);
@@ -63,16 +68,18 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
       const result = await service.warmSessions.generate(session, row,
         (test ? selected.settings.testCatalog : selected.settings.catalog).codes,
         selected.settings.maxTokens, { signal: controller.signal, correlationId,
+          onTransport: value => { transportStatus = errorStatus(value); },
           onDiagnostics: test ? value => { diagnostics = value; } : undefined });
       await service.authorize(service.principalFrom(r), SCOPES[0]);
       await service.checkAdmission(r);
       result.warnings = result.taric_code.startsWith(request.input_hs_code) ? [] : ['input_hs_prefix_mismatch'];
-      await finishRequest(r, holder, { state: 'complete', evidence, diagnostics, result, error: null });
+      await finishRequest(r, holder, { state: 'complete', evidence, diagnostics, result, errorStatus: transportStatus, inferenceDispatched: true, error: null });
     } catch (e) {
       const error = report(e, 'request');
-      if (!session && error === 'INFERENCE_UNCERTAIN') await hold(holder, error);
+      if (!session && ['INFERENCE_UNCERTAIN', 'ADMISSION_UNCERTAIN'].includes(error)) await hold(holder, error);
       await finishRequest(r, holder, { state: error === 'INTERRUPTED' ? 'interrupted' : 'failed', result: null,
-        evidence, diagnostics: r.input.test === true ? diagnostics : null, errorStatus: errorStatus(e.transport), error });
+        evidence, diagnostics: r.input.test === true ? diagnostics : null, errorStatus: errorStatus(e.transport) || transportStatus,
+        errorStage: e.stage, inferenceDispatched: e.inferenceDispatched ?? Boolean(session), retryable: error === 'ADMISSION_BUSY', error });
     } finally {
       if (session) {
         try { if (!(await closeSession(holder, session)).idle) await hold(holder, 'RECOVERY_REQUIRED'); }
@@ -106,7 +113,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
     const saved = await Run.updateOne({ _id: r._id, fence: holder, actualCount: attempt.index,
       'currentAttempt.correlationId': attempt.correlationId }, { $set: {
       actualCount, exact, invalid, score: exact / r.requestedCount, passed: false, currentAttempt: null },
-    $inc: { codeExact: attempt.proposalExact ? 1 : 0, errorCount: attempt.error ? 1 : 0, catalogRejected: attempt.error === 'CATALOG_REJECTED' ? 1 : 0 },
+    $inc: { ...(Number.isSafeInteger(r.successfulGenerations) ? { successfulGenerations: attempt.generationSucceeded ? 1 : 0 } : {}), codeExact: attempt.proposalExact ? 1 : 0, errorCount: attempt.error ? 1 : 0, catalogRejected: attempt.error === 'CATALOG_REJECTED' ? 1 : 0 },
     $push: { results: attempt } }).exec();
     if (!saved.matchedCount) fail('INTERRUPTED');
     return query(Run.findById(r._id));
@@ -128,28 +135,41 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
     return false;
   }
   async function processRun(initial, holder) {
-    let r = initial; let session = null; let unsafe = false;
-    const started = service.now();
+    let r = initial; let session = null; let unsafe = false; let endReason = 'finished'; let endRecorded = false; let opened = false;
+    const recordEnd = async () => {
+      if (endRecorded || !opened) return;
+      endRecorded = true;
+      await Run.updateOne({ _id: r._id, fence: holder }, { $inc: { [`sessionEndReasons.${endReason}`]: 1 },
+        $set: { lastYieldAt: date() } }).exec();
+    };
     try {
       if (r.dispatchContract !== 'owned-v1') { await pause(r, holder, 'RECOVERY_REQUIRED'); return; }
       let context = await runContext(r);
+      // Normal identity is currently unavailable. Fail before owning a session;
+      // never issue unowned /model or adapter discovery inside warm admission.
+      if (context.benchmark.version > 0) await service.transport.verifyIdentity(r.adapter, r.configuration.runtime);
       if (r.actualCount < r.requestedCount) {
         if (r.warmSessionRequired !== true) {
           await pause(r, holder, 'RECOVERY_REQUIRED'); return;
         }
         session = await service.warmSessions.open({ correlationId: id(), signal: controller.signal, adapter: r.adapter });
+        opened = true;
         await trackSession(holder, session);
-        await Run.updateOne({ _id: r._id, fence: holder }, { $set: { sessionId: session.id, sessionHardExpiresAt: new Date(session.hardExpiresAt || service.now() + 900000) } }).exec();
+        await Run.updateOne({ _id: r._id, fence: holder }, { $set: { sessionId: session.id, sessionHardExpiresAt: new Date(session.hardExpiresAt || service.now() + 900000) }, $inc: { sessionCount: 1 } }).exec();
       }
-      for (let count = 0; count < (session ? batchCases : 1); count++) {
+      for (let count = 0; ; count++) {
         await fence(holder);
         r = await query(Run.findById(r._id));
         context = await runContext(r);
         const { settings, benchmark } = context;
         const index = r.actualCount;
         if (index >= benchmark.cases.length) break;
-        if (session && count > 0) {
-          if (service.now() - started >= batchMs || (session.hardExpiresAt && session.hardExpiresAt - service.now() < 70000) || await Request.exists({ state: 'queued', active: true }).maxTimeMS(2000).exec()) break;
+        if (session?.hardExpiresAt && session.hardExpiresAt - service.now() <= nextCaseReserveMs) { endReason = 'hard_lifetime'; break; }
+        if (count >= 256) { endReason = 'operation_limit'; break; }
+        if (count > 0) {
+          if (await Request.exists({ state: 'queued', active: true }).maxTimeMS(2000).exec()) { endReason = 'interactive_priority'; break; }
+          // Generation is bounded at 60s, below the 120s idle lease. Renew before
+          // each next case; Mongo's independent heartbeat holds the worker claim.
           await service.warmSessions.renew(session, controller.signal);
         }
         const c = benchmark.cases[index];
@@ -167,14 +187,12 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
         }
         let result = null; let error = null; let diagnostics = null; let transportStatus = null;
         try {
-          const options = { signal: controller.signal, correlationId: claim.correlationId, onDiagnostics: value => { diagnostics = value; } };
+          const options = { signal: controller.signal, correlationId: claim.correlationId, onDiagnostics: value => { diagnostics = value; }, onTransport: value => { transportStatus = errorStatus(value); } };
           const codes = (benchmark.version === 0 ? settings.testCatalog : settings.catalog).codes;
-          if (benchmark.version > 0) await service.transport.verifyIdentity(r.adapter, r.configuration.runtime);
           await fence(holder);
           result = await service.warmSessions.generate(session, c.input, codes, settings.maxTokens, options);
-          if (benchmark.version > 0) await service.transport.verifyIdentity(r.adapter, r.configuration.runtime);
-        } catch (e) { error = report(e, 'benchmark.case'); transportStatus = errorStatus(e.transport); }
-        const attempt = { ...claim, state: 'finished', finishedAt: date(), result, diagnostics, error,
+        } catch (e) { error = report(e, 'benchmark.case'); transportStatus = errorStatus(e.transport) || transportStatus; }
+        const attempt = { ...claim, state: 'finished', finishedAt: date(), result, diagnostics, error, generationSucceeded: transportStatus?.status === 200 && transportStatus.terminal === true && transportStatus.phase === 'http',
           errorStatus: transportStatus, exact: result?.taric_code === c.target,
           proposalExact: (diagnostics?.proposal?.taric_code || result?.taric_code) === c.target,
           lexicalSimilarity: result && c.summary ? lexical(result.description, c.summary) : null };
@@ -190,9 +208,9 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
           catch (e) { report(e, 'session.reconcile.close'); }
           session = null;
           if (!closed && proof !== 'rotate') {
-            unsafe = true; await hold(holder, 'RECOVERY_REQUIRED'); await pause(r, holder, 'RECOVERY_REQUIRED'); return;
+            unsafe = true; endReason = 'cleanup_unverified'; await recordEnd(); await hold(holder, 'RECOVERY_REQUIRED'); await pause(r, holder, 'RECOVERY_REQUIRED'); return;
           }
-          // Reclaimed session: finish this batch; next tick acquires FRESH admission.
+          endReason = proof === 'rotate' ? 'remote_reclaimed' : 'uncertain_operation';
           break;
         }
         // Revocation/cancel stops NEXT case; the performed attempt remains history.
@@ -200,7 +218,9 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
       }
     } catch (e) {
       const error = report(e, 'benchmark');
-      unsafe = ['INFERENCE_UNCERTAIN', 'INTERRUPTED', 'RECOVERY_REQUIRED'].includes(error);
+      endReason = error === 'CANCELLED' ? 'cancelled' : error === 'FORBIDDEN' ? 'revoked' : 'failed';
+      unsafe = ['INFERENCE_UNCERTAIN', 'ADMISSION_UNCERTAIN', 'INTERRUPTED', 'RECOVERY_REQUIRED'].includes(error);
+      await recordEnd();
       if (unsafe) { await hold(holder, error); await pause(r, holder, error); }
       else {
         await Run.updateOne({ _id: r._id, fence: holder }, { $set: { state: error === 'CANCELLED' ? 'cancelled' : 'failed',
@@ -212,6 +232,8 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
         catch (e) { report(e, 'session.close'); unsafe = true; }
         if (unsafe) { await hold(holder, 'RECOVERY_REQUIRED'); await pause(r, holder, 'RECOVERY_REQUIRED'); }
       }
+      // Observability writes must never prevent owned cleanup.
+      await recordEnd();
     }
     await fence(holder);
     r = await query(Run.findById(r._id));
@@ -234,7 +256,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
         await Attempt.updateOne({ _id: attempt._id, state: 'running' }, { $set: terminal }).exec();
         await Run.updateOne({ _id: r._id, fence: r.fence, actualCount: attempt.index }, { $push: { results: terminal },
           $set: { currentAttempt: null, attemptedCount: attempt.index + 1, score: (r.exact + (terminal.exact ? 1 : 0)) / r.requestedCount },
-          $inc: { actualCount: 1, codeExact: terminal.proposalExact ? 1 : 0, catalogRejected: terminal.error === 'CATALOG_REJECTED' ? 1 : 0, exact: terminal.exact ? 1 : 0, invalid: terminal.result ? 0 : 1, errorCount: terminal.error ? 1 : 0 } }).exec();
+          $inc: { actualCount: 1, ...(Number.isSafeInteger(r.successfulGenerations) ? { successfulGenerations: terminal.generationSucceeded ? 1 : 0 } : {}), codeExact: terminal.proposalExact ? 1 : 0, catalogRejected: terminal.error === 'CATALOG_REJECTED' ? 1 : 0, exact: terminal.exact ? 1 : 0, invalid: terminal.result ? 0 : 1, errorCount: terminal.error ? 1 : 0 } }).exec();
       }
       await Run.updateOne({ _id: r._id, fence: r.fence }, { $set: { state: 'recovery_required', active: false,
         passed: false, error: 'INTERRUPTED', recoveryRequired: true, fence: null } }).exec();
@@ -266,7 +288,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
             const renewed = await Control.updateOne({ _id: 'inference', holder, until: { $gt: date() } },
               { $set: { until: new Date(service.now() + leaseMs) } }).exec();
             if (!renewed.matchedCount) fail('INTERRUPTED');
-          } catch (e) { controller.abort(); report(e, 'lease.renew'); }
+          } catch (e) { controller.abort('lease_lost'); report(e, 'lease.renew'); }
           finally { renewing = false; }
         })();
       }, Math.max(1, Math.floor(leaseMs / 3)));
@@ -280,7 +302,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
         { $set: { state: 'running', fence: holder } }, { returnDocument: 'after', sort: { createdAt: 1, _id: 1 } }));
       if (request) return await processRequest(request, holder);
       const run = await query(Run.findOneAndUpdate({ active: true, state: { $in: ['pending', 'running'] }, fence: null },
-        { $set: { state: 'running', fence: holder } }, { returnDocument: 'after', sort: { createdAt: 1, _id: 1 } }));
+        { $set: { state: 'running', fence: holder } }, { returnDocument: 'after', sort: { lastYieldAt: 1, createdAt: 1, _id: 1 } }));
       if (run) await processRun(run, holder);
     } catch (e) { report(e, 'worker'); }
     finally {
@@ -293,7 +315,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
     }
   }
   function start() { if (!stopped) return; stopped = false; timer = setInterval(tick, 1000); timer.unref?.(); }
-  function stop() { stopped = true; clearInterval(timer); controller?.abort(); }
+  function stop() { stopped = true; clearInterval(timer); controller?.abort('worker_stop'); }
   return { start, stop, tick };
 }
 module.exports = { createWorker };

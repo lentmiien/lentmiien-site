@@ -151,6 +151,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     return { id: r._id, state: r.state, test: r.input.test, result: r.result || null, error: r.error || null,
       ...(r.input.test === true ? { diagnostics: r.diagnostics || null, diagnosticsStatus: r.diagnostics ? 'captured' : 'not_captured',
         evidence: r.evidence || null, errorStatus: require('../../utils/taricDiagnostics').errorStatus(r.errorStatus),
+        stage: r.errorStage, inferenceDispatched: r.inferenceDispatched, retryable: r.retryable === true,
         help: require('../../utils/taricDiagnostics').help(r.error, r.errorStatus) } : {}),
       manual_confirmation_required: true, baseline: r.input.test ? 'untested' : null,
       adapter: r.admission.adapter, benchmark: r.admission.benchmark,
@@ -260,11 +261,11 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     const control = await query(Control.findById('inference'));
     if (!control || control.blocked) fail('RECOVERY_REQUIRED');
     await warmSessions.preflight?.();
-    const known = await transport.adapters(); if (!known.some(a => a.name === adapter)) fail('INVALID_REQUEST');
     const s = await settings(); if (!s?.enabled) fail('CONFIG_NOT_READY');
     const b = await query(Benchmark.findById(benchmarkId)); if (!b) fail('NOT_FOUND');
     if (!warmSessions.ready() || (b.version === 0 && adapter !== TEST_ADAPTER)) fail('WARM_SESSION_NOT_READY');
     if (b.version > 0 && b.state !== 'published') fail('CONFIG_NOT_READY');
+    if (b.version > 0) await transport.verifyIdentity(adapter, configuration(s, adapter, version()).runtime);
     const config = configuration(s, adapter, version());
     if (b.version > 0 && (!config.runtime?.verified || !s.catalog?.approved)) fail('CONFIG_NOT_READY');
     const sequenced = await query(Settings.findOneAndUpdate({ _id: 'tool' }, { $inc: { nextRunSequence: 1 } }, { returnDocument: 'after' }));
@@ -274,7 +275,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
       try {
         const row = await Run.create({ _id: id(), sequence, benchmark: b._id, adapter, identity: config.runtime?.identity || hash({ adapter, unverified: true }),
           fingerprint: hash(config), configuration: config, policy: b.policy, state: 'pending', active: true, slot,
-          warmSessionRequired: true, dispatchContract: 'owned-v1', attemptedCount: 0, errorCount: 0, catalogRejected: 0, codeExact: 0,
+          warmSessionRequired: true, dispatchContract: 'owned-v1', attemptedCount: 0, errorCount: 0, catalogRejected: 0, codeExact: 0, successfulGenerations: 0, sessionCount: 0, sessionEndReasons: {},
           requestedCount: b.cases.length, actualCount: 0, exact: 0, invalid: 0, results: [], score: 0, passed: false,
           cancelRequested: false, deadline: new Date(now() + 6 * 3600000), actor });
         return { id: row._id };
@@ -321,7 +322,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     const control = await query(Control.findById('inference').select('-holder -attempts'));
     const owned = Boolean(control?.sessionId && warmSessions.lookup?.(control.sessionId));
     const ownership = { available: owned, state: owned ? 'owned' : control?.sessionId ? 'OWNERSHIP_LOST' : 'none',
-      active: wasActive || Boolean(recoveryTask), cleanup: owned ? warmSessions.describe?.(control.sessionId) || null : null, action: owned ? 'continue_owned_cleanup' : 'acquire_recovery_admission' };
+      active: wasActive || Boolean(recoveryTask), cleanup: owned ? warmSessions.describe?.(control.sessionId) || null : null, action: control?.blocked !== true ? 'recovery_not_needed' : owned ? 'continue_owned_cleanup' : 'acquire_recovery_admission' };
     return { control, remote, ownership, pending: await query(Run.find({ active: true }).select('_id state actualCount requestedCount cancelRequested').limit(8)),
       queuedRequests: await Request.countDocuments({ active: true }).exec() };
   }
@@ -451,7 +452,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
             result: null, exact: false, error: 'INFERENCE_UNCERTAIN' };
           await Attempt.updateOne({ _id: claim._id }, { $set: attempt }).maxTimeMS(2000).exec();
           await Run.updateOne({ _id: r._id, active: true, actualCount: claim.index }, {
-            $push: { results: attempt }, $inc: { actualCount: 1, exact: attempt.exact ? 1 : 0, invalid: attempt.result ? 0 : 1,
+            $push: { results: attempt }, $inc: { actualCount: 1, ...(Number.isSafeInteger(r.successfulGenerations) ? { successfulGenerations: attempt.generationSucceeded ? 1 : 0 } : {}), exact: attempt.exact ? 1 : 0, invalid: attempt.result ? 0 : 1,
               errorCount: attempt.error ? 1 : 0, codeExact: attempt.proposalExact ? 1 : 0, catalogRejected: attempt.error === 'CATALOG_REJECTED' ? 1 : 0 },
             $set: { score: (r.exact + (attempt.exact ? 1 : 0)) / r.requestedCount, currentAttempt: null } }).maxTimeMS(2000).exec();
         }
@@ -492,7 +493,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     const b = s?.currentBenchmark ? await query(Benchmark.findById(s.currentBenchmark)) : null;
     const candidates = b ? await releaseRuns(s, b._id) : [];
     // Dashboard never calls model/adapters endpoints: old catchalls may start GPU.
-    try { selectWinner(s, b, candidates, version(), now()); normal = { ready: false, locallyQualified: true, reason: 'READINESS_UNVERIFIED', runtimeCheck: 'Runtime identity is checked at dispatch; dashboard does not call model endpoints' }; }
+    try { selectWinner(s, b, candidates, version(), now()); normal = { ready: false, locallyQualified: true, reason: 'RELEASE_CLOSED', runtimeCheck: 'Immutable GPU-free runtime identity capability is unavailable' }; }
     catch (e) { normal = { ready: false, reason: e instanceof TaricError ? e.code : 'STORAGE_FAILED' }; }
     const executionReasons = [];
     if (!s?.enabled || !inference) executionReasons.push('CONFIG_NOT_READY');
@@ -501,14 +502,14 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     try { testAdmission(s, version()); test = { ready: !executionReasons.length, reasons: [...executionReasons], adapter: TEST_ADAPTER, status: 'untested baseline; manual confirmation required' }; }
     catch (e) { test = { ready: false, reasons: [...new Set([...executionReasons, e instanceof TaricError ? e.code : 'STORAGE_FAILED'])] }; }
     test.reason = test.reasons[0] || null;
-    const blockers = [];
+    const blockers = ['Immutable GPU-free runtime identity capability unavailable'];
     if (!s?.enabled) blockers.push('Tool disabled or bootstrap missing');
     if (!b || b.version < 1 || b.contaminated || !b.releaseEligible) blockers.push('No published independent release-eligible v1+ benchmark');
     if (!s?.catalog?.approved) blockers.push('No approved catalog');
     if (!s?.runtime?.adapters?.some(a => a.verified)) blockers.push('No verified runtime identity');
     if (!candidates.length) blockers.push('No authoritative runs for configured adapters');
     if (!normal.locallyQualified) blockers.push('No current qualifying winner; inspect candidate status, fingerprint, policy and counts');
-    return { normal: { ...normal, blockers, candidates }, test, gateway, benchmark: { ready: !executionReasons.length, reasons: executionReasons, reason: executionReasons[0] || null }, inference, settings: s, credential: await query(Credential.findById('integration')), template: TEMPLATE, codeFingerprint: version() };
+    return { normal: { ...normal, blockers, candidates, identityCapability: 'UNAVAILABLE' }, test, gateway, benchmark: { ready: !executionReasons.length, reasons: executionReasons, reason: executionReasons[0] || null }, inference, settings: s, credential: await query(Credential.findById('integration')), template: TEMPLATE, codeFingerprint: version() };
   }
   return { models, transport, evidence, warmSessions, settings, authenticate, authorize, adminPrincipal, rate, rotate, revoke, admission, checkAdmission,
     principalFrom, submit, retrieve, feedback, saveConfig, importBenchmark, publish, queueRun, cancelRun,

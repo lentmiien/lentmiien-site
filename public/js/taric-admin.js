@@ -27,7 +27,12 @@
   async function refresh() {
     clearTimeout(recoveryTimer); clearSecret(); $('confirm-idle').checked = false;
     recovery = null; recoveryEpoch = null; show('recovery-status', {});
-    const state = await api('/state'); readiness = state; show('readiness', { gateway: state.gateway, normal: state.normal, test: state.test, inference: state.inference, benchmark: state.benchmark, credential: state.credential, template: state.template, codeFingerprint: state.codeFingerprint });
+    const state = await api('/state'); readiness = state;
+    if (state.inference?.blocked === false) setRecovery({ control: state.inference, ownership: { action: 'recovery_not_needed' } });
+    if (!$('adapter').options.length && state.test?.adapter) {
+      const option = document.createElement('option'); option.value = state.test.adapter; option.textContent = `${state.test.adapter} (fixed v0 test adapter)`; $('adapter').append(option);
+    }
+    show('readiness', { gateway: state.gateway, normal: state.normal, test: state.test, inference: state.inference, benchmark: state.benchmark, credential: state.credential, template: state.template, codeFingerprint: state.codeFingerprint });
     $('enabled').checked = state.settings?.enabled === true; $('max-tokens').value = state.settings?.maxTokens || 256;
     $('catalog').value = JSON.stringify(state.settings?.catalog || null, null, 2);
     $('runtime').value = JSON.stringify(state.settings?.runtime || { adapters: [] }, null, 2);
@@ -41,7 +46,7 @@
     const data = await api('/test', request, false, { 'Idempotency-Key': crypto.randomUUID() });
     testId = data.id; show('test-result', data);
   });
-  on('test-poll', async () => { if (!testId) throw new Error('Submit a test first.'); show('test-result', await api(`/test/${testId}`)); });
+  on('test-poll', async () => { if (!testId) throw new Error('Submit a test first.'); show('test-result', await api(`/test/${testId}`)); await readRecovery(); });
   on('test-feedback', async () => {
     if (!testId) throw new Error('Submit a test first.');
     show('test-feedback-result', await api(`/test/${testId}/feedback`, { selected_code: $('test-selected-code').value }, false, { 'Idempotency-Key': `feedback-${testId}` }));
@@ -114,7 +119,7 @@
     recoveryEpoch = Number.isSafeInteger(status.control?.epoch) ? status.control.epoch : status.control && status.control.epoch === undefined ? 0 : null;
     if (readiness) {
       readiness.inference = status.control;
-      readiness.gateway = status.remote?.reason ? { ready: false, ...status.remote } : { ready: Boolean(status.remote?.capabilityProof) };
+      if (status.remote) readiness.gateway = status.remote?.reason ? { ready: false, ...status.remote } : { ready: Boolean(status.remote?.capabilityProof) };
     }
     updateBenchmarkActions();
   }
@@ -128,13 +133,14 @@
     const reasons = [...new Set([...(readiness?.benchmark?.reasons || []), ...(readiness?.test?.reasons || []), ...(readiness?.gateway?.reason ? [readiness.gateway.reason] : [])])];
     $('execution-help').textContent = reasons.length ? `Execution unavailable: ${reasons.join(', ')}. ${readiness?.gateway?.message || ''} ${!readiness?.settings?.enabled ? 'Enable the tool in Configuration after completing bootstrap.' : ''} ${!readiness?.settings?.testCatalog?.codes?.length ? 'Import the reviewed training-derived v0 test catalog.' : ''} ${readiness?.inference?.blocked ? 'Read remote status, cancel all pending local work, then recover the hold using exclusive admission.' : ''}`
       : readiness?.test?.ready ? 'Manual-confirmation tests are available. v0 benchmarks remain diagnostic and cannot pass normal release.' : 'Refresh status to verify execution prerequisites.';
-    if (available && readiness?.benchmark?.ready === true && !$('adapter').value) $('execution-help').textContent += ' Load adapter metadata and choose an adapter before queuing a benchmark.';
+    if (available && readiness?.benchmark?.ready === true && !$('adapter').value) $('execution-help').textContent += ' Choose the fixed v0 test adapter before queuing a benchmark.';
     const held = recovery?.control?.blocked === true;
     $('cancel-pending').disabled = mutationBusy || recovery?.ownership?.active || !held || recoveryEpoch === null;
-    $('resume').textContent = recovery?.ownership?.available ? 'Continue owned cleanup' : 'Acquire recovery admission';
+    $('resume').textContent = recovery && !held ? 'Recovery not needed' : recovery?.ownership?.available ? 'Continue owned cleanup' : 'Acquire recovery admission';
     $('resume').disabled = mutationBusy || recovery?.ownership?.active || !held || recoveryEpoch === null || readiness?.gateway?.ready !== true
       || recovery.pending?.length > 0 || recovery.queuedRequests > 0;
     $('recovery-help').textContent = !recovery ? 'Read remote status to load the current recovery epoch. Status and inspection are available while inference is held or disabled.'
+      : !held ? 'No inference hold; recovery not needed. Site acquires its own Gateway session when an explicit job runs.'
       : recovery.ownership?.active ? 'Owned cleanup is running under the server lease. No inference is requested. Closing this page does not cancel it.'
         : recovery.ownership?.state === 'OWNERSHIP_LOST' ? 'OWNERSHIP_LOST: this process has no matching private capability. Use the owning Site instance or standard Gateway recovery/rebuild. Acquire recovery admission only after the old Gateway fence has safely cleared; never reset the Mongo hold.'
         : recovery.ownership?.available ? `Private owner capability is available on this instance. ${recovery.control?.reason || 'CLEANUP_PENDING'}: confirm to continue the same owned cleanup without inference.`
@@ -184,8 +190,11 @@
   on('run-progress', async () => {
     const run = await api(`/inspect/runs/${encodeURIComponent($('run-id').value)}`);
     if (!run) throw new Error('Run not found.');
-    show('run-progress-output', { state: run.state, attempted: run.attemptedCount ?? run.actualCount,
-      completed: run.actualCount, requested: run.requestedCount, errors: run.errorCount ?? run.invalid,
+    const errors = run.errorCount ?? run.invalid;
+    show('run-progress-output', { state: run.state === 'complete' ? `Completed with ${errors} errors` : run.state, attempted: run.attemptedCount ?? run.actualCount,
+      recorded: run.actualCount, successfulGenerations: run.successfulGenerations ?? null, validOutputs: run.actualCount - run.invalid,
+      requested: run.requestedCount, errors, cancelled: run.state === 'cancelled' ? run.requestedCount - (run.attemptedCount ?? run.actualCount) : 0,
+      sessionCount: run.sessionCount, sessionEndReasons: run.sessionEndReasons, deadline: run.deadline, sessionHardExpiresAt: run.sessionHardExpiresAt,
       catalogRejected: run.catalogRejected, exact: run.exact, codeExact: run.codeExact, codeAccuracy: run.codeExact === undefined ? null : run.codeExact / run.requestedCount, score: run.score, passed: run.passed,
       remaining: run.requestedCount - run.actualCount, reason: run.error, currentAttempt: run.currentAttempt });
     $('kind').value = 'runs'; $('detail-id').value = run._id;

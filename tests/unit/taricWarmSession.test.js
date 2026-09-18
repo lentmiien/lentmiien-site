@@ -35,9 +35,9 @@ test('expired handles cannot generate or renew; own release remains permitted', 
 });
 test('open hard budget violations and lost remote response remain uncertain; no owner guessing', async () => {
   const { sessions, adapter } = fixture(); adapter.open.mockResolvedValue({ id: 'id', expiresAt: 90000, hardExpiresAt: 999999 });
-  await expect(sessions.open({})).rejects.toThrow('INFERENCE_UNCERTAIN'); expect(adapter.close).not.toHaveBeenCalled();
+  await expect(sessions.open({})).rejects.toThrow('ADMISSION_UNCERTAIN'); expect(adapter.close).not.toHaveBeenCalled();
   adapter.open.mockImplementation(() => new Promise(() => {}));
-  await expect(sessions.open({})).rejects.toThrow('INFERENCE_UNCERTAIN');
+  await expect(sessions.open({})).rejects.toMatchObject({ code: 'ADMISSION_UNCERTAIN', inferenceDispatched: false, transport: { phase: 'timeout', deadlineMs: 10 } });
 });
 test('status does not trust unrelated completion and probe strips provider data', async () => {
   const { sessions, adapter } = fixture(); const handle = await sessions.open({});
@@ -94,5 +94,26 @@ test('outer close allows the inner 100 second budget plus margin, then retains c
     expect((await task).code).toBe('INFERENCE_UNCERTAIN');
     expect(sessions.lookup(handle.id)).toBe(handle);
     expect(adapter.close.mock.calls[0][0].signal.aborted).toBe(true);
+  } finally { jest.useRealTimers(); }
+});
+
+test('outer generation deadline wins over its propagated inner abort and reports the 60s budget', async () => {
+  jest.useFakeTimers();
+  try {
+    const { sessions, adapter } = fixture(); const handle = await sessions.open({});
+    adapter.generate.mockImplementation(({ signal, onDiagnostic }) => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => {
+        onDiagnostic({ phase: 'timeout', dispatched: true, terminal: false, socketId: 17, socketTimeoutStartMs: 5000, socketTimeoutMs: 60000 });
+        reject(Object.assign(new (require('../../utils/taricContracts').TaricError)('INFERENCE_UNCERTAIN'), {
+          transport: { phase: 'clientabort', dispatched: true, terminal: false },
+        }));
+      }, { once: true });
+    }));
+    const generated = sessions.generate(handle, row, ['0000000001'], 256).catch(e => e);
+    await jest.advanceTimersByTimeAsync(60000);
+    expect(await generated).toMatchObject({ code: 'INFERENCE_UNCERTAIN', transport: { phase: 'timeout', deadlineMs: 60000,
+      abortTag: 'LOCAL_ABORT', abortOrigin: 'warm_deadline', socketId: 17, socketTimeoutStartMs: 5000, socketTimeoutMs: 60000 } });
+    expect(adapter.generate.mock.calls[0][0].signal.aborted).toBe(true);
+    await sessions.close(handle);
   } finally { jest.useRealTimers(); }
 });

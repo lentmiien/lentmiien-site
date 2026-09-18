@@ -167,18 +167,17 @@ Normal mode requires runtime configuration for every candidate adapter:
 }
 ```
 
-Choose a realistic short verification expiry; the long date is only a schema illustration. Saving a verified entry performs read-only checks against the fixed trusted Gateway:
+Choose a realistic short verification expiry; the long date is only a schema illustration. Verified entries cannot currently be accepted because the required identity capability is unavailable:
 
-- `GET /qwen3-lora/model`: exact `deployment_revision`, `model_revision`, `tokenizer_revision`.
-- `GET /qwen3-lora/adapters`: array or `{adapters:[...]}`, exact adapter name and `metadata.artifact_sha256`.
+Immutable runtime identity capability is currently **UNAVAILABLE**. The Site transport fails normal identity verification with `RELEASE_CLOSED` without calling `/model` or `/adapters`. `/model` is unowned and conflicts with an owned session; the existing upstream lacks the required immutable revisions. `/adapters` may acquire GPU work when its local mount is absent, so metadata discovery fails closed with `METADATA_UNAVAILABLE`. The fixed v0 adapter remains selectable without a metadata call; its exact identity is required in every generation envelope.
 
-This implementation deliberately **does not invent these metadata values or assume the current Gateway exposes all of them**. If fields are absent or mismatched, normal mode stays closed. The separate Gateway work should provide verified immutable base/tokenizer revisions, active deployment revision, adapter artifact digest, and trusted metadata attestation under the documented field contract (or a separately reviewed transport mapping). No Gateway change is required for v0 import or unverified test mode. All normal generate calls re-observe the identity before and after the call; the trusted Gateway must truthfully identify the runtime executing the named adapter and prevent artifact replacement under a fixed digest/revision.
+A future reviewed, guaranteed GPU-free metadata capability must prove immutable deployment/base/tokenizer revisions and the selected adapter artifact digest before normal verification can be implemented. User-entered attestations and publishing a benchmark do not satisfy this missing capability. No guessed revisions, manual-reservation borrowing or unowned identity calls are permitted inside an owned session.
 
 `content` in generation responses must contain the entire strict JSON output; optional `raw_content` must match exactly. Required `model` must equal `Qwen/Qwen3-4B-Instruct-2507`, and required `adapter_name` must match the request. `tool_calls` must be absent, null or an empty array; any call or malformed value is rejected. Unsupported envelopes fail safely. Historical base/tokenizer revisions are unresolved; testing never turns that uncertainty into a verified claim.
 
 ## Runs, cancellation and rollback
 
-Use **Load adapter metadata**, select an adapter and a benchmark from the newest-first version selector, and explicitly queue a run during an authorized GPU window. Load more to view older versions; selection survives refresh and imports select their new version. Maximum eight active runs. All worker generation uses the owned-session integration described below; deploy both repositories before enabling work. Cases run sequentially in bounded warm batches with interactive priority at boundaries, a six-hour total run deadline, all required cases in the denominator, and optional diagnostic lexical similarity. Each new run supersedes the previous run's release authority for that adapter/configuration immediately. Inspect run state/counts/fingerprint/results and the readiness winner/reason.
+Use the fixed v0 test adapter and select a benchmark from the newest-first version selector, and explicitly queue a run during an authorized GPU window. Load more to view older versions; selection survives refresh and imports select their new version. Maximum eight active runs. All worker generation uses the owned-session integration described below; deploy both repositories before enabling work. Cases run sequentially in one warm session where its hard lifetime permits, with interactive priority after each completed case, a six-hour total run deadline, all required cases in the denominator, and optional diagnostic lexical similarity. Each new run supersedes the previous run's release authority for that adapter/configuration immediately. Inspect run state/counts/fingerprint/results and the readiness winner/reason.
 
 An uncertain dispatched generation is recorded as a failed/unavailable attempted case before recovery. Bounded correlated terminal/idle status can permit the NEXT case, never a retry. If safety cannot be proved, the run enters recovery_required and the global hold blocks admission. Every owned operation is reconciled by its persisted ID, including HTTP errors; an HTTP status alone never permits the next case. Recovery requires the explicit remote-status and epoch-checked workflow below; a checkbox alone is insufficient. Cancellation stops future cases without claiming remote cancellation.
 
@@ -333,13 +332,9 @@ cleanup uses a 100-second total wall deadline, 6-second DELETE, 5-second GETs an
 1–2-second backoff, inside a 110-second outer budget. Failure retains both the hold and
 the private owner capability.
 
-Each batch performs at most eight cases, checks its 120-second budget between cases,
-yields to interactive work, and stops admitting cases within 70 seconds of hard expiry.
-Heartbeat renews only idle time; hard expiry never moves. A logical run can last six hours,
-using fresh sessions between batches, rather than one long GPU reservation. Every batch
-closes its own session in finally, including cancellation/disablement/revocation/failure.
-Closing the UI does not cancel the logical run; the UI explains this and exposes cancel,
-run deadline and current session hard expiry. No idle reservation remains between batches.
+Successful cases retain the same worker claim and owned session. Mongo's 180-second lease renews every 60 seconds. Gateway's 120-second idle lease renews before each next case; a generation has a 60-second absolute deadline. There is no eight-case or 120-second batch teardown. The fixed 900-second hard lifetime never extends: before each dispatch, reserve 260 seconds (60 generation + up to 80 reconciliation + 110 cleanup + 10 bookkeeping). Rotate only before that boundary, at the Gateway's 256-operation limit, for interactive priority, or after verified remote reclaim/uncertainty reconciliation. Rotated runs move behind other waiting benchmarks. Interactive work runs first after the current case and owned cleanup; it does not wait for the whole run. All exits close the owned session; unverified cleanup retains the fence.
+
+A logical run has a six-hour total deadline, but cannot retain uninterrupted GPU admission for six hours. Closing the UI does not cancel it; use Cancel run. Private progress shows session count/end reasons, attempt/recorded/successful-generation/valid-output/exact/error/cancelled counts and run/session deadlines. Successful generation means a complete HTTP200 JSON response; envelope/content/catalog checks can still reject it. Missing historical success counts remain unknown. All errors remain in the full denominator; v0 never releases normal mode.
 A failed cleanup fence persists until verified reclaim or standard Gateway recovery;
 the 120-second idle and 900-second hard deadlines do not automatically unlock it.
 Unresolved cleanup is never reported as released. The worker Mongo lease renews every
@@ -535,3 +530,28 @@ For the 2026-09-18 cleanup repair, bounded asynchronous response contract, same-
 capability retention and ordered dual deployment, follow the
 [owned cleanup repair](taric-owned-release.md#owned-cleanup-repair-and-dual-deployment-2026-09-18).
 The memory-only capability cannot be restored by an epoch, session ID or passive status.
+
+
+## Partial warm-session fix and controlled production diagnostic
+
+The warm-session, admission and reporting improvements are a **partial root fix,
+not a full resolution** of the production five-second ECONNRESET. See
+[review evidence and exact diagnostic fields](taric-reset-loopback-review.md#shipping-diagnostics-and-one-request-handoff).
+The final local fixture source is Gateway `704bccf64541889679fd827bbd24b83a9303db9b`;
+production needs its Docker image rebuilt/recreated with the existing two Compose
+files and project preserved, as well as the updated Site.
+
+Preserve database configuration, keys, immutable v0, pending run history and all
+prior failures. No bootstrap, key import or reset is part of this rollout.
+Coordinator last reported current control unblocked at epoch 7 with no jobs:
+**recovery is not needed**. Current readiness takes precedence over old error rows.
+Site acquires owned admission through the existing GpuScheduler; no manual
+reservation is needed.
+
+After deployment and a newly authorized human GPU start, submit **one `test:true`
+request with a fresh idempotency key**, preferably with existing local evidence.
+Collect the request ID, operation/correlation ID, session ID and safe Site/Gateway
+stage logs. Let owned cleanup finish. If the same five-second reset recurs, stop
+and send those records to the coordinator; do not launch the 67-case benchmark.
+After an individual request succeeds, a full benchmark requires a fresh explicit
+start. No v0 clone, v1 relabeling, catalog or model identity change is required.

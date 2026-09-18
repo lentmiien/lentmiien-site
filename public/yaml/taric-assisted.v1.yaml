@@ -216,6 +216,9 @@ components:
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/TransportStatus'
+        stage: {type: string, description: Test-only failure stage, including session.create.}
+        inferenceDispatched: {type: boolean, description: False for create admission failures; HTTP create dispatch is not inference dispatch.}
+        retryable: {type: boolean, description: True for ADMISSION_BUSY; submit a fresh request after the existing reservation is released.}
         help: {type: [string, 'null'], description: Test-only manual lookup guidance.}
         baseline: {type: [string, 'null']}
         manual_confirmation_required: {const: true}
@@ -270,4 +273,21 @@ components:
         wireBytes: {type: integer, minimum: 0}
         decodedBytes: {type: integer, minimum: 0}
         durationMs: {type: integer, minimum: 0}
+        deadlineMs: {type: integer, minimum: 0, description: Requested absolute budget for this HTTP operation.}
+        socketId: {type: integer, minimum: 0, description: Process-local diagnostic identifier with no address information.}
+        socketTimeoutMs: {type: integer, minimum: 0}
+        socketTimeoutStartMs: {type: integer, minimum: 0, description: Socket timeout observed at assignment.}
+        requestTimeoutMs: {type: integer, minimum: 0}
+        outboundBytes: {type: integer, minimum: 0}
+        sessionRemainingMs: {type: integer, minimum: 0, description: Owned hard lifetime remaining before dispatch.}
+        sessionHardBudgetMs: {type: integer, minimum: 0}
+        reusedSocket: {type: boolean}
+        socketTimeoutObserved: {type: boolean}
+        requestTimeoutObserved: {type: boolean}
+        requestFinished: {type: boolean}
+        operationId: {type: string, pattern: '^[a-f0-9]{32}$'}
+        sessionId: {type: string, pattern: '^[a-f0-9-]{32,36}$'}
+        abortTag: {const: LOCAL_ABORT}
+        abortOrigin: {enum: [absolute_deadline, warm_deadline, worker_stop, lease_lost, caller_signal]}
+        abortReason: {enum: [absolute_deadline, warm_deadline, worker_stop, lease_lost, caller_signal, abort_error, unspecified]}
         correlationId: {type: string, pattern: '^[a-f0-9]{32}$'}

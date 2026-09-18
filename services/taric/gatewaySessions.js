@@ -43,21 +43,25 @@ function createGatewaySessions(gateway, { now = Date.now, closeDeadlineMs = 1000
       catch (cause) {
         capabilities.invalidate();
         if ((cause.transport?.phase === 'http' && cause.transport.status >= 400) || cause.transport?.dispatched === false) {
-          const error = new TaricError('PROVIDER_FAILED');
+          const error = new TaricError(cause.transport?.status === 409 ? 'ADMISSION_BUSY' : 'PROVIDER_FAILED');
           error.stage = 'session.create'; error.inferenceDispatched = false;
           error.transport = require('../../utils/taricDiagnostics').errorStatus(cause.transport);
           throw error;
         }
-        const error = new TaricError('INFERENCE_UNCERTAIN');
-        error.stage = 'session.create';
+        const error = new TaricError('ADMISSION_UNCERTAIN');
+        error.stage = 'session.create'; error.inferenceDispatched = false;
         error.transport = require('../../utils/taricDiagnostics').errorStatus(cause.transport); throw error;
       }
-      const raw = validate(response);
-      if (raw.state !== 'idle' || raw.idle_proven !== true || typeof raw.owner_token !== 'string'
-        || !raw.owner_token.length || raw.owner_token.length > 1024) fail('INFERENCE_UNCERTAIN');
-      const session = { id: raw.session_id, ownerToken: raw.owner_token, capabilityProof: proof, ...deadlines(raw, started) };
-      proofs.set(session, proof);
-      return session;
+      try {
+        const raw = validate(response);
+        if (raw.state !== 'idle' || raw.idle_proven !== true || typeof raw.owner_token !== 'string'
+          || !raw.owner_token.length || raw.owner_token.length > 1024) fail('INFERENCE_UNCERTAIN');
+        const session = { id: raw.session_id, ownerToken: raw.owner_token, capabilityProof: proof, ...deadlines(raw, started) };
+        proofs.set(session, proof);
+        return session;
+      } catch (cause) {
+        throw Object.assign(new TaricError('ADMISSION_UNCERTAIN'), { stage: 'session.create', inferenceDispatched: false, transport: cause.transport });
+      }
     },
     async renew({ session, signal }) {
       await known(session, signal, true);
@@ -66,10 +70,12 @@ function createGatewaySessions(gateway, { now = Date.now, closeDeadlineMs = 1000
       if (!['idle', 'running'].includes(raw.state)) fail('RECOVERY_REQUIRED');
       return deadlines(raw, started, session.hardExpiresAt);
     },
-    async generate({ session, body, correlationId, signal }) {
+    async generate({ session, body, correlationId, signal, onDiagnostic }) {
       await known(session, signal, true);
       try {
-        return await gateway('/qwen3-lora/generate', { method: 'POST', body, signal, correlationId,
+        return await gateway('/qwen3-lora/generate', { method: 'POST', body, signal, correlationId, onDiagnostic,
+          diagnosticContext: { operationId: correlationId, sessionId: session.id,
+            sessionRemainingMs: Math.max(0, Math.floor(session.hardExpiresAt - now())), sessionHardBudgetMs: 900000 },
           deadlineMs: 60000, maxBytes: 1048576, headers: { ...headers(session),
             'X-Inference-Session': session.id, 'X-Inference-Operation': correlationId } });
       } catch (cause) {

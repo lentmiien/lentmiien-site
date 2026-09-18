@@ -103,3 +103,32 @@ test('action errors include safe HTTP, stage and permission context and stay ine
   expect(doc.querySelector('#status').textContent).not.toContain('private upstream body');
   dom.window.close();
 });
+
+test('unheld current state clears stale recovery controls and 67 errors are not presented as successful completion', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric.pug'), { csrfToken: 'synthetic' }), { url: 'http://localhost/admin/taric', runScripts: 'outside-only' });
+  const doc = dom.window.document;
+  let blocked = true;
+  dom.window.fetch = jest.fn(async url => ({ ok: true, json: async () => {
+    if (url === '/admin/taric/state') return { settings: { enabled: true }, gateway: { ready: true }, inference: { blocked, epoch: 7 }, test: { ready: !blocked, adapter: 'taric-v1-20260917-2' } };
+    if (url === '/admin/taric/inference/status') return { control: { blocked, epoch: 7 }, ownership: { available: false }, remote: { capabilityProof: { protocol: 'owned-v1' } }, pending: [], queuedRequests: 0 };
+    if (url.startsWith('/admin/taric/inspect/runs/')) return { _id: 'a'.repeat(32), state: 'complete', requestedCount: 67,
+      attemptedCount: 67, actualCount: 67, successfulGenerations: 1, invalid: 67, errorCount: 67, exact: 0,
+      score: 0, passed: false, sessionCount: 67, sessionEndReasons: { uncertain_operation: 66, finished: 1 } };
+    return [];
+  } }));
+  const settle = () => new Promise(setImmediate);
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-admin.js'), 'utf8')); await settle();
+  doc.querySelector('#remote-status').click(); await settle();
+  expect(doc.querySelector('#resume').disabled).toBe(false);
+  blocked = false; doc.querySelector('#refresh').click(); await settle();
+  expect(doc.querySelector('#resume').disabled).toBe(true);
+  expect(doc.querySelector('#resume').textContent).toBe('Recovery not needed');
+  expect(doc.querySelector('#test').disabled).toBe(false);
+  expect(doc.querySelector('#recovery-help').textContent).toContain('No inference hold');
+  doc.querySelector('#run-id').value = 'a'.repeat(32); doc.querySelector('#run-progress').click(); await settle();
+  const summary = JSON.parse(doc.querySelector('#run-progress-output').textContent);
+  expect(summary).toMatchObject({ state: 'Completed with 67 errors', recorded: 67, successfulGenerations: 1, validOutputs: 0, exact: 0, errors: 67, passed: false });
+  expect(dom.window.fetch.mock.calls.some(([url]) => /\/model|\/adapters/.test(url))).toBe(false);
+  dom.window.close();
+});

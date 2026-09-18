@@ -39,7 +39,7 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       generate: jest.fn((session, input, codes, tokens, options) => transport.generate(input, TEST_ADAPTER, codes, tokens, null, options)) };
     service = createService({ warmSessions, models, transport, evidence, codeVersion: 'synthetic-code', authorizeAdmin: async actor => actor === 'a'.repeat(24) });
     secret = await service.rotate('synthetic-admin'); principal = await service.authenticate(secret);
-    worker = createWorker(service, { authorizeAdmin: async () => true, batchCases: 1 }); worker.start();
+    worker = createWorker(service, { authorizeAdmin: async () => true }); worker.start();
   });
   afterEach(() => worker?.stop());
   async function benchmark(version = 0) {
@@ -89,7 +89,7 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
     expect(result.help).toContain('item code'); expect(transport.generate).not.toHaveBeenCalled();
   });
   test('synthetic 67-case run records uncertain case twelve, correlates terminal idle and continues case thirteen without retry', async () => {
-    worker.stop(); worker = createWorker(service, { authorizeAdmin: async () => true, batchCases: 8 }); worker.start();
+    worker.stop(); worker = createWorker(service, { authorizeAdmin: async () => true }); worker.start();
     const b = await benchmark();
     await models.Benchmark.updateOne({ _id: b._id }, { $set: { cases: Array.from({ length: 67 }, (_, i) => ({ ...row, inputHash: `synthetic-${i}` })), policy: { ...policy, denominator: 67 } } });
     let calls = 0;
@@ -99,14 +99,74 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       return { taric_code: '0000000001', description: 'Synthetic' };
     });
     const run = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
-    for (let i = 0; i < 9; i++) await worker.tick();
+    await worker.tick();
     const result = await models.Run.findById(run.id).lean();
     expect(result).toMatchObject({ state: 'complete', attemptedCount: 67, actualCount: 67, requestedCount: 67, exact: 66, invalid: 1, passed: false });
     expect(result.results).toHaveLength(67); expect(result.results[11]).toMatchObject({ index: 11, error: 'INFERENCE_UNCERTAIN', exact: false });
     expect(await models.Attempt.countDocuments({ run: run.id })).toBe(67);
     expect(transport.generate).toHaveBeenCalledTimes(67); expect(warmSessions.status).toHaveBeenCalledTimes(67);
-    expect(warmSessions.close).toHaveBeenCalledTimes(9);
+    expect(warmSessions.close).toHaveBeenCalledTimes(1);
+    expect(warmSessions.open).toHaveBeenCalledTimes(1);
+    expect(warmSessions.renew).toHaveBeenCalledTimes(66);
     await expect(models.Attempt.create({ _id: 'duplicate', run: run.id, index: 11 })).rejects.toMatchObject({ code: 11000 });
+  });
+  test.each([[67, 3000, 1], [20, 45000, 2]])('logical %i-case run at %ims rotates only for hard-lifetime headroom (%i sessions)', async (count, duration, expectedSessions) => {
+    worker.stop(); let clock = Date.now(); let opened = 0;
+    service = createService({ warmSessions, models, transport, evidence, now: () => clock, codeVersion: 'synthetic-clock', authorizeAdmin: async () => true });
+    // Real heartbeat fencing has its own 150ms test. The logical clock below
+    // advances minutes in a millisecond without advancing Node's real timers.
+    worker = createWorker(service, { authorizeAdmin: async () => true, leaseMs: 3600000 }); worker.start();
+    warmSessions.open.mockImplementation(async () => ({ id: `logical-${++opened}`, hardExpiresAt: clock + 900000 }));
+    transport.generate.mockImplementation(async () => { clock += duration; return { taric_code: '0000000001', description: 'Synthetic' }; });
+    const b = await benchmark();
+    await models.Benchmark.updateOne({ _id: b._id }, { $set: { cases: Array.from({ length: count }, (_, i) => ({ ...row, inputHash: `logical-${i}` })), policy: { ...policy, denominator: count } } });
+    const queued = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
+    await worker.tick();
+    const first = await models.Run.findById(queued.id).lean();
+    if (expectedSessions === 2) {
+      expect(first).toMatchObject({ actualCount: 15, sessionEndReasons: { hard_lifetime: 1 } });
+      expect(first.results.at(-1).finishedAt.getTime()).toBeLessThan(first.sessionHardExpiresAt.getTime() - 110000);
+      await worker.tick();
+    }
+    const completed = await models.Run.findById(queued.id).lean();
+    expect(completed).toMatchObject({ state: 'complete', actualCount: count, exact: count, sessionCount: expectedSessions });
+    expect(opened).toBe(expectedSessions); expect(warmSessions.close).toHaveBeenCalledTimes(expectedSessions);
+    expect(new Set(completed.results.map(r => r.sessionId)).size).toBe(expectedSessions);
+  });
+  test('a pending historical run retains unknown generation counts when continued', async () => {
+    const b = await benchmark();
+    const queued = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
+    await models.Run.updateOne({ _id: queued.id }, { $unset: { successfulGenerations: 1 } });
+    await worker.tick();
+    const completed = await models.Run.findById(queued.id).lean();
+    expect(completed.state).toBe('complete');
+    expect(completed).not.toHaveProperty('successfulGenerations');
+    expect(completed.actualCount).toBe(completed.requestedCount);
+  });
+  test('interactive queue yields after a completed case; another waiting benchmark runs before the yielded run', async () => {
+    const b = await benchmark();
+    const first = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
+    const second = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
+    let request;
+    transport.generate.mockImplementationOnce(async () => {
+      request = await service.submit(principal, 'interactive-yield-001', requestInput);
+      return { taric_code: '0000000001', description: 'Synthetic' };
+    });
+    await worker.tick();
+    expect((await models.Run.findById(first.id)).toObject()).toMatchObject({ actualCount: 1, active: true, sessionEndReasons: { interactive_priority: 1 } });
+    await worker.tick(); expect((await models.Request.findById(request.id)).state).toBe('complete');
+    await worker.tick(); expect((await models.Run.findById(second.id)).state).toBe('complete');
+    expect((await models.Run.findById(first.id)).actualCount).toBe(1);
+    await worker.tick(); expect((await models.Run.findById(first.id)).state).toBe('complete');
+  });
+  test('unknown create acknowledgement fences admission without claiming generation was dispatched', async () => {
+    warmSessions.open.mockRejectedValueOnce(Object.assign(new (require('../../utils/taricContracts').TaricError)('ADMISSION_UNCERTAIN'), {
+      stage: 'session.create', inferenceDispatched: false, transport: { phase: 'timeout', dispatched: true, terminal: false, deadlineMs: 5000, durationMs: 5001 },
+    }));
+    const job = await service.submit(principal, 'unknown-admission-01', requestInput); await worker.tick();
+    expect(await service.retrieve(principal, job.id)).toMatchObject({ error: 'ADMISSION_UNCERTAIN', inferenceDispatched: false, retryable: false });
+    expect((await models.Control.findById('inference')).blocked).toBe(true);
+    expect(warmSessions.generate).not.toHaveBeenCalled(); expect(warmSessions.close).not.toHaveBeenCalled();
   });
   test('cross-contract real HTTP + Mongo: 67 durable results, case12 disconnect remote200 failed, cases13–67 complete', async () => {
     const { gatewayFixture } = require('../helpers/taricGateway');
@@ -120,7 +180,7 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       const b = await benchmark();
       await models.Benchmark.updateOne({ _id: b._id }, { $set: { cases: Array.from({ length: 67 }, (_, i) => ({ ...row, inputHash: `contract-${i}` })), policy: { ...policy, denominator: 67 } } });
       const run = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
-      for (let i = 0; i < 9; i++) await worker.tick();
+      await worker.tick();
       const result = await models.Run.findById(run.id).lean();
       expect(result).toMatchObject({ state: 'complete', actualCount: 67, attemptedCount: 67, exact: 66, invalid: 1, errorCount: 1, passed: false });
       expect(result.results).toHaveLength(67);
@@ -131,7 +191,7 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       expect(result.results.every(a => a.sessionId)).toBe(true);
       expect(JSON.stringify(result)).not.toContain('synthetic-owner-capability');
       expect(JSON.stringify(await models.Control.find({}).lean())).not.toContain('synthetic-owner-capability');
-      expect(fixture.generateCount).toBe(67); expect(fixture.sessions).toHaveLength(9);
+      expect(fixture.generateCount).toBe(67); expect(fixture.sessions).toHaveLength(1);
       expect(fixture.sessions.every(s => s.reclaim_verified)).toBe(true);
       expect((await models.Benchmark.findById(b._id)).releaseEligible).toBe(false);
     } finally { worker.stop(); await fixture.close(); }
@@ -257,8 +317,8 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       expect(element('status').textContent).toContain('done.');
       expect((await models.Control.findById('inference')).toObject()).toMatchObject({ blocked: false, reason: null,
         capabilityProof: { digest: expect.stringMatching(/^[a-f0-9]{64}$/), protocol: 'owned-v1' } });
-      expect(element('run').disabled).toBe(true); expect(element('test').disabled).toBe(false);
-      await click('adapters'); expect(element('run').disabled).toBe(false);
+      expect(element('run').disabled).toBe(false); expect(element('test').disabled).toBe(false);
+      await click('adapters'); expect(element('status').textContent).toContain('METADATA_UNAVAILABLE'); expect(element('run').disabled).toBe(false);
       expect(fixture.generateCount).toBe(0); expect(fixture.sessions.every(session => session.reclaim_verified)).toBe(true);
       await expect(service.admission(false)).rejects.toThrow('RELEASE_CLOSED');
       // New diagnostic v0 run is admitted; no execution or passing result invented.
@@ -410,7 +470,7 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       service = createService({ models, transport: actualTransport, evidence, warmSessions: actualSessions, codeVersion: 'synthetic', authorizeAdmin: async () => true });
       await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, reason: 'INFERENCE_UNCERTAIN', epoch: 7 } });
       fixture.busy = true;
-      await expect(service.resumeInference(7, undefined, 'a'.repeat(24))).rejects.toThrow('PROVIDER_FAILED');
+      await expect(service.resumeInference(7, undefined, 'a'.repeat(24))).rejects.toThrow('ADMISSION_BUSY');
       expect(fixture.sessions).toHaveLength(0);
       expect((await models.Control.findById('inference')).epoch).toBe(7);
       fixture.busy = false;
@@ -616,7 +676,7 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
   test('atomic idempotency claim generates once across concurrent requests and workers', async () => {
     const rows = await Promise.all(Array.from({ length: 5 }, () => service.submit(principal, 'concurrent-key-01', requestInput)));
     expect(new Set(rows.map(r => r.id)).size).toBe(1); expect(await models.Request.countDocuments()).toBe(1);
-    const second = createWorker(service, { authorizeAdmin: async () => true, batchCases: 1 }); second.start();
+    const second = createWorker(service, { authorizeAdmin: async () => true }); second.start();
     try { await Promise.all([worker.tick(), second.tick()]); } finally { second.stop(); }
     expect(transport.generate).toHaveBeenCalledTimes(1);
     expect(transport.generate.mock.calls[0][1]).toBe(TEST_ADAPTER);
@@ -677,7 +737,8 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
   });
   test('cancelled benchmark stops future cases, never promotes', async () => {
     const b = await benchmark(); const run = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
-    await worker.tick(); await service.cancelRun(run.id); await worker.tick();
+    transport.generate.mockImplementationOnce(async () => { await service.cancelRun(run.id); return { taric_code: '0000000001', description: 'Synthetic' }; });
+    await worker.tick();
     expect(transport.generate).toHaveBeenCalledTimes(1);
     expect((await models.Run.findById(run.id)).state).toBe('cancelled');
   });

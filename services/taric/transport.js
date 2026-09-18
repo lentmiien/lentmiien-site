@@ -5,45 +5,82 @@ const zlib = require('zlib');
 const { Transform, Writable, pipeline } = require('stream');
 const { TaricError, fail, gcode, object } = require('../../utils/taricContracts');
 const { strictJson, payload, output, hash } = require('../../utils/taricProtocol');
+const diagnostics = require('../../utils/taricDiagnostics');
+const logger = require('../../utils/logger');
+// Private bounded pools; active work uses its own absolute deadline. Idle sockets
+// keep a short eviction timeout without imposing it on the next request.
+const agents = {
+  'http:': new http.Agent({ keepAlive: true, maxSockets: 4, maxTotalSockets: 8, maxFreeSockets: 2, timeout: 5000 }),
+  'https:': new https.Agent({ keepAlive: true, maxSockets: 4, maxTotalSockets: 8, maxFreeSockets: 2, timeout: 5000 }),
+};
+const socketIds = new WeakMap();
+let nextSocketId = 0;
+let runtimeReported = false;
 const { normalizeDetail } = require('../amiamiScraperService');
 
 function boundedJson(url, { method = 'GET', body, headers = {}, deadlineMs = 15000, maxBytes = 262144,
-  maxWireBytes = maxBytes, signal, correlationId, onDiagnostic, successStatuses = [200], tlsOptions = {},
+  maxWireBytes = maxBytes, signal, correlationId, onDiagnostic, onEvent, diagnosticContext = {}, successStatuses = [200], tlsOptions = {},
   request = url.protocol === 'https:' ? https.request : http.request } = {}) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
-    let settled = false; let req; let response; let decoder; let timer;
+    let settled = false; let req; let response; let decoder; let timer; let socket;
+    let socketTimeoutObserved = false; let requestTimeoutObserved = false; let requestFinished = false;
+    let socketTimeoutStartMs; let abortOrigin; let safeAbortReason; let outboundBytes = 0;
+    const socketListeners = [];
+    const listen = (event, fn) => { socket.once(event, fn); socketListeners.push([event, fn]); };
+    const diagnostic = where => diagnostics.errorStatus({
+      ...diagnosticContext,
+      phase: where, dispatched, terminal, status: response?.statusCode, wireBytes: wireSize, decodedBytes: size,
+      durationMs: Date.now() - started, deadlineMs, correlationId, reusedSocket: req?.reusedSocket === true,
+      socketId: socket && socketIds.get(socket), socketTimeoutMs: socket?.timeout, socketTimeoutStartMs,
+      requestTimeoutMs: deadlineMs, socketTimeoutObserved, requestTimeoutObserved, requestFinished, outboundBytes,
+      abortOrigin, abortTag: abortOrigin ? 'LOCAL_ABORT' : undefined, abortReason: safeAbortReason,
+    });
+    const emit = (event, value = diagnostic(phase)) => onEvent?.(event, value);
     let dispatched = false; let terminal = false; let wireSize = 0; let size = 0; let phase = 'connect';
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
-      onDiagnostic?.(require('../../utils/taricDiagnostics').errorStatus({ phase: error?.transport?.phase || 'http',
-        dispatched, terminal, status: response?.statusCode, wireBytes: wireSize, decodedBytes: size,
-        durationMs: Date.now() - started, correlationId }));
       clearTimeout(timer); signal?.removeEventListener('abort', abort);
+      for (const [event, fn] of socketListeners) socket.removeListener(event, fn);
+      req?.removeListener('timeout', requestTimeout);
+      const valueDiagnostic = error?.transport || diagnostic('http');
+      onDiagnostic?.(valueDiagnostic);
+      emit(error ? 'failed' : 'complete', valueDiagnostic);
       if (error) { response?.destroy(); decoder?.destroy(); req?.destroy(); reject(error); } else resolve(value);
     };
     const rejectSafe = (where, cause) => {
       if (settled) return;
       const error = new TaricError('PROVIDER_FAILED');
-      error.transport = require('../../utils/taricDiagnostics').errorStatus({ phase: where,
-        dispatched, terminal, status: response?.statusCode, socketCode: cause?.code,
-        wireBytes: wireSize, decodedBytes: size, durationMs: Date.now() - started, correlationId });
+      error.transport = require('../../utils/taricDiagnostics').errorStatus({ ...diagnostic(where), socketCode: cause?.code });
       finish(error);
     };
-    const abort = () => rejectSafe('clientabort');
+    const abort = () => {
+      safeAbortReason = diagnostics.abortReason(signal?.reason);
+      abortOrigin = ['warm_deadline', 'worker_stop', 'lease_lost'].includes(safeAbortReason) ? safeAbortReason : 'caller_signal';
+      rejectSafe(abortOrigin === 'warm_deadline' ? 'timeout' : 'clientabort');
+    };
+    const requestTimeout = () => {
+      if (settled || req.socket !== socket) return;
+      requestTimeoutObserved = true; emit('request_timeout');
+    };
     if (signal?.aborted) return abort();
+    let serialized;
+    try { serialized = body === undefined ? null : JSON.stringify(body); }
+    catch (cause) { return rejectSafe('json', cause); }
+    outboundBytes = serialized ? Buffer.byteLength(serialized) : 0;
     signal?.addEventListener('abort', abort, { once: true });
-    const serialized = body === undefined ? null : JSON.stringify(body);
     if (serialized && Buffer.byteLength(serialized) > 16384) return rejectSafe('limit');
-    timer = setTimeout(() => rejectSafe('timeout'), deadlineMs);
+    timer = setTimeout(() => { abortOrigin = 'absolute_deadline'; rejectSafe('timeout'); }, deadlineMs);
+    emit('start');
     try {
-      req = request(url, { ...tlsOptions, method, headers: { Accept: 'application/json', 'Accept-Encoding': 'identity',
+      req = request(url, { agent: agents[url.protocol], ...tlsOptions, timeout: deadlineMs, method, headers: { Accept: 'application/json', 'Accept-Encoding': 'identity',
         ...(serialized ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(serialized) } : {}), ...headers } }, res => {
         response = res; phase = 'http';
         if (settled) { res.destroy(); return; }
         // A received HTTP status is a confirmed response, not a lost generation reply.
         terminal = res.statusCode !== 200;
+        emit('response_headers');
         if (!successStatuses.includes(res.statusCode)) return rejectSafe('http');
         if (!/^application\/json(?:\s*;|$)/i.test(res.headers['content-type'] || '')) return rejectSafe('envelope');
         const encoding = (res.headers['content-encoding'] || 'identity').trim().toLowerCase();
@@ -79,15 +116,25 @@ function boundedJson(url, { method = 'GET', body, headers = {}, deadlineMs = 150
           catch (error) { rejectSafe('json', error); }
         });
       });
-      req.on('socket', socket => {
+      // Align active inactivity observation with this request, not the pool's idle
+      // timeout. Only the absolute timer destroys work; it also bounds DNS/body.
+      req.setTimeout?.(deadlineMs);
+      req.once('timeout', requestTimeout);
+      req.on('socket', assigned => {
+        if (settled) return;
+        socket = assigned;
+        socketTimeoutStartMs = socket.timeout;
+        if (!socketIds.has(socket)) socketIds.set(socket, ++nextSocketId);
+        listen('timeout', () => { if (!settled && req.socket === socket) { socketTimeoutObserved = true; emit('socket_timeout'); } });
+        emit('socket_assigned');
         const connected = () => { dispatched = true; phase = 'http'; };
         if (socket.connecting) {
-          socket.once('lookup', error => { phase = error ? 'dns' : 'connect'; });
-          socket.once(url.protocol === 'https:' ? 'secureConnect' : 'connect', connected);
-          if (url.protocol === 'https:') socket.once('connect', () => { phase = 'tls'; });
+          listen('lookup', error => { phase = error ? 'dns' : 'connect'; });
+          listen(url.protocol === 'https:' ? 'secureConnect' : 'connect', connected);
+          if (url.protocol === 'https:') listen('connect', () => { phase = 'tls'; });
         } else if (!socket.encrypted || socket.authorized) connected();
       });
-      req.on('finish', () => { dispatched = true; });
+      req.on('finish', () => { if (!settled) { dispatched = true; requestFinished = true; emit('outbound_finished'); } });
       req.on('error', cause => {
         const where = ['ENOTFOUND', 'EAI_AGAIN'].includes(cause.code) ? 'dns'
           : /TLS|CERT|VERIFY/.test(cause.code || '') ? 'tls' : phase;
@@ -98,6 +145,20 @@ function boundedJson(url, { method = 'GET', body, headers = {}, deadlineMs = 150
   });
 }
 function createTransport({ json = boundedJson, env = process.env, impersonated = require('./amiamiBounded').fetchImpersonated } = {}) {
+  if (!runtimeReported) {
+    runtimeReported = true;
+    const className = agent => /^[A-Za-z0-9_$]{1,80}$/.test(agent?.constructor?.name || '') ? agent.constructor.name : 'unknown';
+    // Fixed package labels only; never log module paths, preload flags or env values.
+    const importedApm = ['dd-trace', 'newrelic', 'elastic-apm-node', '@opentelemetry'].filter(name =>
+      Object.keys(require.cache).some(file => file.replaceAll('\\', '/').includes(`/node_modules/${name}/`)));
+    logger.notice('TARIC transport runtime', { category: 'taric', metadata: {
+      nodeVersion: process.version, agentSource: 'taric_private_pool', httpAgentConstructor: className(agents['http:']),
+      httpsAgentConstructor: className(agents['https:']), globalHttpAgentConstructor: className(http.globalAgent),
+      globalHttpsAgentConstructor: className(https.globalAgent), importedApm,
+      timeoutSource: 'per_request_deadline', generationDeadlineMs: 60000, idleAgentTimeoutMs: 5000,
+      proxyPolicy: 'explicit_private_agent_no_env_proxy_configuration',
+    } });
+  }
   // Gateway configuration is immutable for this client, including owned cleanup.
   env = { ...env };
   function gatewayOrigin() {
@@ -113,7 +174,12 @@ function createTransport({ json = boundedJson, env = process.env, impersonated =
     return json(url, { deadlineMs: 5000, ...options, headers: { ...options.headers,
       ...(env.TARIC_GATEWAY_TOKEN ? { Authorization: `Bearer ${env.TARIC_GATEWAY_TOKEN}` } : {}),
       ...(env.TARIC_GATEWAY_ADMIN_TOKEN ? { 'X-Admin-Token': env.TARIC_GATEWAY_ADMIN_TOKEN } : {}),
-    } });
+    }, ...(path === '/qwen3-lora/generate' ? { onEvent: (event, transport) => {
+      const log = event === 'failed' ? 'warning' : 'notice';
+      logger[log]('TARIC provider generation transport', { category: 'taric', metadata: {
+        stage: 'provider.generate', event, transport: diagnostics.errorStatus(transport),
+      } });
+    } } : {}) });
   };
   const sessionAdapter = require('./gatewaySessions').createGatewaySessions(gateway, {
     capabilities: require('./gatewayCapabilities').createGatewayCapabilities(gateway, { fingerprint: () => hash({
@@ -122,22 +188,14 @@ function createTransport({ json = boundedJson, env = process.env, impersonated =
     }) }),
   });
   async function adapters() {
-    const raw = await gateway('/qwen3-lora/adapters');
-    const list = Array.isArray(raw) ? raw : raw?.adapters;
-    if (!Array.isArray(list) || list.length > 500) fail('PROVIDER_FAILED');
-    return list.map(a => ({ name: a.adapter_name || a.name || a.metadata?.adapter_name,
-      artifactSha256: a.metadata?.artifact_sha256 || null })).filter(a =>
-      typeof a.name === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/.test(a.name));
+    // The current Gateway /adapters route falls back to a GPU-acquiring upstream
+    // call if its mount is absent. Do not call it as read-only UI metadata.
+    fail('METADATA_UNAVAILABLE');
   }
-  async function verifyIdentity(adapter, expected) {
-    // Never interpret an arbitrary user-entered hash as observation of the runtime.
-    // The fixed trusted gateway must expose these exact immutable metadata fields.
-    const model = await gateway('/qwen3-lora/model');
-    const known = await adapters();
-    const active = known.find(a => a.name === adapter);
-    if (!expected || model.deployment_revision !== expected.deploymentRevision
-      || model.model_revision !== expected.baseRevision || model.tokenizer_revision !== expected.tokenizerRevision
-      || active?.artifactSha256 !== expected.adapterSha256) fail('RELEASE_CLOSED');
+  async function verifyIdentity() {
+    // /model is unowned and conflicts with a held session; current metadata also
+    // lacks immutable revisions. No caller-supplied attestation can repair that.
+    fail('RELEASE_CLOSED');
   }
   async function generate(row, adapter, codes, maxTokens, identity, options = {}) {
     const body = payload(row, adapter, maxTokens);

@@ -52,7 +52,7 @@ test.each([
 });
 test('missing operation / HTTP404 / wrong owner / busy operator do not provide completion proof or mutate others', async () => {
   fixture = await gatewayFixture(); const t = createTransport({ env: fixture.env }); const warm = createWarmSessions(t.sessionAdapter);
-  fixture.busy = true; await expect(warm.open({ correlationId: 'client' })).rejects.toThrow('PROVIDER_FAILED');
+  fixture.busy = true; await expect(warm.open({ correlationId: 'client' })).rejects.toMatchObject({ code: 'ADMISSION_BUSY', stage: 'session.create', inferenceDispatched: false });
   expect(fixture.sessions).toHaveLength(0); fixture.busy = false;
   const handle = await warm.open({ correlationId: 'client-2' });
   expect(await warm.status(handle, 'absent')).toMatchObject({ missing: true, correlated: false, terminal: false });
@@ -92,7 +92,7 @@ test('hard deadline cannot be extended by heartbeat or server clock skew', async
 test('ambiguous create is uncertain, never retried and never exposes body/header secrets', async () => {
   const gateway = jest.fn().mockRejectedValue(Object.assign(new Error('PRIVATE-TOKEN'), { transport: { phase: 'timeout', dispatched: true, terminal: false } }));
   const error = await createGatewaySessions(withDiscovery(gateway)).open({ correlationId: 'fresh' }).catch(e => e);
-  expect(error.code).toBe('INFERENCE_UNCERTAIN'); expect(JSON.stringify(error)).not.toContain('PRIVATE'); expect(gateway).toHaveBeenCalledTimes(1);
+  expect(error.code).toBe('ADMISSION_UNCERTAIN'); expect(error.inferenceDispatched).toBe(false); expect(JSON.stringify(error)).not.toContain('PRIVATE'); expect(gateway).toHaveBeenCalledTimes(1);
 });
 
 test('terminal failed cleanup retries DELETE with the same owner; no generation or fresh ownership', async () => {

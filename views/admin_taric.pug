@@ -48,7 +48,7 @@ html(lang='en')
         input#max-tokens(type='number' min='1' max='512' value='256')
         label(for='catalog') Approved catalog JSON (null keeps normal mode closed)
         textarea#catalog(rows='8' spellcheck='false') null
-        label(for='runtime') Runtime attestations JSON; verification checks fixed Gateway metadata
+        label(for='runtime') Runtime attestations JSON; immutable identity capability is currently UNAVAILABLE
         textarea#runtime(rows='8' spellcheck='false') {"adapters":[]}
         p See the runbook for catalog and runtime field schemas. Saving invalidates earlier scores.
         button#save-config(type='button') Save configuration
@@ -85,8 +85,9 @@ html(lang='en')
       section
         h2 Benchmark execution and publication
         p Drafts are inert for release. Import reviewed independent v1+ only after checking provenance and product-family overlap. Publishing explicitly replaces the current version and holds older normal results. Benchmark runs make live provider calls; run them only during an authorized GPU window.
-        p Benchmarks use exclusive owned Gateway sessions in bounded batches. Each session has a 120-second idle cap and an absolute 15-minute cap; heartbeat cannot extend that cap. Batches rotate safely between completed cases.
-        button#adapters(type='button') Load adapter metadata
+        p Successful cases share one owned session. Its 120-second idle lease is renewed; its 15-minute hard cap cannot be extended. Rotation reserves 260 seconds for the next generation, reconciliation and cleanup, or occurs at 256 operations. Interactive requests take priority after the current case and cleanup; rotated runs go behind waiting benchmarks. The whole run has a six-hour deadline and can be cancelled here.
+        p The fixed v0 test adapter is available without metadata calls. Adapter discovery is unavailable until Gateway provides a guaranteed GPU-free route; its current fallback can acquire the GPU. Immutable runtime identity is also unavailable, so normal release remains closed.
+        button#adapters(type='button') Check adapter metadata availability
         label(for='adapter') Adapter to benchmark
         select#adapter
         label(for='benchmark-id') Benchmark version (newest first)

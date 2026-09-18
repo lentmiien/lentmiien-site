@@ -12,23 +12,35 @@ function createWarmSessions(adapter = null, { now = Date.now, timeoutMs = 7000 }
     if (!ready()) fail('WARM_SESSION_NOT_READY');
     const controller = new AbortController();
     const started = now();
-    const uncertain = phase => Object.assign(new TaricError('INFERENCE_UNCERTAIN'), {
+    let lastTransport;
+    const onDiagnostic = value => { lastTransport = value; args.onDiagnostic?.(value); };
+    const uncertain = phase => Object.assign(new TaricError(method === 'open' ? 'ADMISSION_UNCERTAIN' : 'INFERENCE_UNCERTAIN'), {
+      ...(method === 'open' ? { stage: 'session.create', inferenceDispatched: false } : {}),
       transport: require('../../utils/taricDiagnostics').errorStatus({ phase, dispatched: true, terminal: false,
-        durationMs: Math.max(0, now() - started), correlationId: args.correlationId }),
+        durationMs: Math.max(0, now() - started), deadlineMs: deadline, correlationId: args.correlationId,
+        abortTag: 'LOCAL_ABORT', abortOrigin: phase === 'timeout' ? 'warm_deadline' : 'caller_signal',
+        abortReason: phase === 'timeout' ? 'warm_deadline' : require('../../utils/taricDiagnostics').abortReason(args.signal?.reason) }),
     });
     if (args.signal?.aborted) fail('INTERRUPTED');
     let rejectAbort;
     const aborted = new Promise((_, reject) => { rejectAbort = reject; });
-    const abort = () => { controller.abort(); rejectAbort(uncertain('clientabort')); };
+    const abort = () => {
+      const error = uncertain('clientabort'); rejectAbort(error); controller.abort(args.signal?.reason);
+      error.transport = { ...lastTransport, ...error.transport };
+    };
     args.signal?.addEventListener('abort', abort, { once: true });
     let timer;
     try {
-      return await Promise.race([adapter[method]({ ...args, signal: controller.signal }), aborted, new Promise((_, reject) => {
-        timer = setTimeout(() => { controller.abort(); reject(uncertain('timeout')); }, deadline);
+      return await Promise.race([adapter[method]({ ...args, signal: controller.signal, onDiagnostic }), aborted, new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = uncertain('timeout'); reject(error); controller.abort('warm_deadline');
+          error.transport = { ...lastTransport, ...error.transport };
+        }, deadline);
       })]);
     } catch (cause) {
       if (cause instanceof TaricError) throw cause;
-      const error = new TaricError('INFERENCE_UNCERTAIN');
+      const error = new TaricError(method === 'open' ? 'ADMISSION_UNCERTAIN' : 'INFERENCE_UNCERTAIN');
+      if (method === 'open') { error.stage = 'session.create'; error.inferenceDispatched = false; }
       error.transport = require('../../utils/taricDiagnostics').errorStatus(cause?.transport);
       throw error;
     } finally { clearTimeout(timer); args.signal?.removeEventListener('abort', abort); }
@@ -54,7 +66,7 @@ function createWarmSessions(adapter = null, { now = Date.now, timeoutMs = 7000 }
         const raw = await call('open', { adapter: adapterName, correlationId, ttlMs: 120000, hardBudgetMs: 900000, signal });
         if (!raw || typeof raw.id !== 'string' || !raw.id.length || raw.id.length > 200 || !Number.isFinite(raw.expiresAt)
           || !Number.isFinite(raw.hardExpiresAt) || raw.expiresAt <= now() || raw.expiresAt > now() + 120000
-          || raw.hardExpiresAt > now() + 900000 || raw.expiresAt > raw.hardExpiresAt) fail('INFERENCE_UNCERTAIN');
+          || raw.hardExpiresAt > now() + 900000 || raw.expiresAt > raw.hardExpiresAt) throw Object.assign(new TaricError('ADMISSION_UNCERTAIN'), { stage: 'session.create', inferenceDispatched: false });
         raw.adapterName = adapterName; raw.correlationId = correlationId;
         const handle = Object.freeze({ id: raw.id, hardExpiresAt: raw.hardExpiresAt, ...(raw.capabilityProof ? { capabilityProof: raw.capabilityProof } : {}) });
         owned.set(handle, raw); retained = handle;
@@ -71,7 +83,7 @@ function createWarmSessions(adapter = null, { now = Date.now, timeoutMs = 7000 }
     async generate(handle, row, codes, maxTokens, options = {}) {
       const raw = session(handle);
       const body = payload(row, raw.adapterName, maxTokens);
-      const envelope = await call('generate', { session: raw, body, correlationId: options.correlationId, signal: options.signal }, 60000);
+      const envelope = await call('generate', { session: raw, body, correlationId: options.correlationId, signal: options.signal, onDiagnostic: options.onTransport }, 60000);
       if (!require('../../utils/taricProtocol').validEnvelope(envelope, raw.adapterName)) {
         return output({ content: envelope?.content, tool_calls: ['invalid envelope'] }, codes, options.onDiagnostics);
       }
