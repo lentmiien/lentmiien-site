@@ -1,8 +1,9 @@
 const { createTransport, boundedJson } = require('../../services/taric/transport');
 const { createWarmSessions } = require('../../services/taric/warmSession');
 const { createGatewaySessions } = require('../../services/taric/gatewaySessions');
-const { contract, operation, status, envelope, gatewayFixture } = require('../helpers/taricGateway');
+const { openapi, contract, operation, status, envelope, gatewayFixture } = require('../helpers/taricGateway');
 const { TEST_ADAPTER, payload } = require('../../utils/taricProtocol');
+const withDiscovery = gateway => (path, options) => path === '/openapi.json' ? Promise.resolve(openapi()) : gateway(path, options);
 const row = { descriptive_name: 'Synthetic', full_item_name: 'Synthetic', specs: '', hs_code: '950300' };
 let fixture;
 afterEach(async () => { if (fixture) await fixture.close(); fixture = null; });
@@ -28,7 +29,7 @@ test('real isolated HTTP: one-time owner, separate admin/proxy headers, exact na
   expect(generation.body.adapter_name).toBe('taric-v1-20260917-2');
   expect(generation.headers).toMatchObject({ 'x-inference-session': handle.id, 'x-inference-session-token': 'synthetic-owner-capability', 'x-inference-operation': 'persisted-op' });
   expect(fixture.requests.every(r => r.headers['x-admin-token'] === 'synthetic-admin' && r.headers.authorization === 'Bearer synthetic-proxy')).toBe(true);
-  expect(fixture.requests[0].body).toEqual({ ...contract.endpoints.create.body_example, client_id: 'fresh-client' });
+  expect(fixture.requests.find(r => r.path === contract.endpoints.create.path).body).toEqual({ ...contract.endpoints.create.body_example, client_id: 'fresh-client' });
 });
 test('HTTP abort with remote 200 remains failed; matching ARRAY entry allows NEXT case only; duplicate never executes', async () => {
   fixture = await gatewayFixture(); fixture.dropAt = 1;
@@ -47,7 +48,7 @@ test.each([
   s => ({ ...s, operations: { 'op-1': operation('op-1') } }),
 ])('missing idle proof or map operations fails closed', async patch => {
   const gateway = jest.fn().mockResolvedValue(patch(status()));
-  await expect(createGatewaySessions(gateway).status({ session: { id: 'session-1' }, correlationId: 'op-1' })).rejects.toThrow('INFERENCE_UNCERTAIN');
+  await expect(createGatewaySessions(withDiscovery(gateway)).status({ session: { id: 'session-1' }, correlationId: 'op-1' })).rejects.toThrow('INFERENCE_UNCERTAIN');
 });
 test('missing operation / HTTP404 / wrong owner / busy operator do not provide completion proof or mutate others', async () => {
   fixture = await gatewayFixture(); const t = createTransport({ env: fixture.env }); const warm = createWarmSessions(t.sessionAdapter);
@@ -64,7 +65,7 @@ test('missing operation / HTTP404 / wrong owner / busy operator do not provide c
 });
 test('close202 polls bounded and never trusts status code alone; verified reclaim allows fresh session', async () => {
   const gateway = jest.fn().mockResolvedValue({ ...status(), state: 'uncertain', idle_proven: false });
-  const adapter = createGatewaySessions(gateway, { closePolls: 2, delayMs: 1 });
+  const adapter = createGatewaySessions(withDiscovery(gateway), { closePolls: 2, delayMs: 1 });
   expect(await adapter.close({ session: { id: 'session-1' } })).toEqual({ idle: false });
   expect(gateway).toHaveBeenCalledTimes(3);
   gateway.mockResolvedValue({ ...status(), state: 'expired', idle_proven: false, reclaim_verified: true });
@@ -78,7 +79,7 @@ test('close202 polls bounded and never trusts status code alone; verified reclai
 test('hard deadline cannot be extended by heartbeat or server clock skew', async () => {
   let now = 0;
   const gateway = jest.fn().mockImplementation(async () => ({ ...status(), server_time: 99999999, owner_token: 'synthetic-owner-capability', hard_remaining_sec: 900 - now / 1000 }));
-  const warm = createWarmSessions(createGatewaySessions(gateway, { now: () => now }), { now: () => now });
+  const warm = createWarmSessions(createGatewaySessions(withDiscovery(gateway), { now: () => now }), { now: () => now });
   const handle = await warm.open({ correlationId: 'hard-deadline' });
   for (let i = 0; i < 8; i++) { now += 100000; await warm.renew(handle); }
   expect(handle.hardExpiresAt).toBe(900000); now = 900001;
@@ -88,6 +89,6 @@ test('hard deadline cannot be extended by heartbeat or server clock skew', async
 
 test('ambiguous create is uncertain, never retried and never exposes body/header secrets', async () => {
   const gateway = jest.fn().mockRejectedValue(Object.assign(new Error('PRIVATE-TOKEN'), { transport: { phase: 'timeout', dispatched: true, terminal: false } }));
-  const error = await createGatewaySessions(gateway).open({ correlationId: 'fresh' }).catch(e => e);
+  const error = await createGatewaySessions(withDiscovery(gateway)).open({ correlationId: 'fresh' }).catch(e => e);
   expect(error.code).toBe('INFERENCE_UNCERTAIN'); expect(JSON.stringify(error)).not.toContain('PRIVATE'); expect(gateway).toHaveBeenCalledTimes(1);
 });

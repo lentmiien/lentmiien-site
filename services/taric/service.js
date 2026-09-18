@@ -90,7 +90,11 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
       if (control.blocked) fail('INFERENCE_UNCERTAIN');
       transport.configured();
     }
-    if (test) return { settings: s, admission: testAdmission(s, version()) };
+    if (test) {
+      const selected = testAdmission(s, version());
+      await warmSessions.preflight?.();
+      return { settings: s, admission: selected };
+    }
     const benchmark = s?.currentBenchmark ? await query(Benchmark.findById(s.currentBenchmark)) : null;
     const runs = benchmark ? await releaseRuns(s, benchmark._id) : [];
     const winner = selectWinner(s, benchmark, runs, version(), now());
@@ -98,6 +102,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     if (!control) fail('CONFIG_NOT_READY');
     if (control.blocked) fail('INFERENCE_UNCERTAIN');
     transport.configured();
+    await warmSessions.preflight?.();
     await transport.verifyIdentity(winner.adapter, winner.configuration.runtime);
     const fresh = await settings();
     const freshRuns = await releaseRuns(fresh, benchmark._id);
@@ -206,6 +211,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     }
     return lock(async () => {
       await Settings.updateOne({ _id: 'tool' }, { $set: value, $inc: { revision: 1 } }).exec();
+      transport.sessionAdapter?.invalidate();
       logger.notice('TARIC configuration changed; prior scores invalidated', { category: 'taric' });
     });
   }
@@ -252,6 +258,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     validId(benchmarkId); string(adapter, 100, 'INVALID_REQUEST', /^[A-Za-z0-9][A-Za-z0-9_.-]*$/);
     const control = await query(Control.findById('inference'));
     if (!control || control.blocked) fail('RECOVERY_REQUIRED');
+    await warmSessions.preflight?.();
     const known = await transport.adapters(); if (!known.some(a => a.name === adapter)) fail('INVALID_REQUEST');
     const s = await settings(); if (!s?.enabled) fail('CONFIG_NOT_READY');
     const b = await query(Benchmark.findById(benchmarkId)); if (!b) fail('NOT_FOUND');
@@ -309,33 +316,37 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
   async function recoveryStatus() {
     const control = await query(Control.findById('inference').select('-holder -attempts'));
     let remote;
-    try { remote = await warmSessions.probe(); } catch (e) { remote = { idle: false, reason: e instanceof TaricError ? e.code : 'PROVIDER_FAILED' }; }
+    try { remote = await warmSessions.probe(); } catch (e) { remote = { idle: false, ...require('../../utils/taricDiagnostics').readinessError(e) }; }
     return { control, remote, pending: await query(Run.find({ active: true }).select('_id state actualCount requestedCount cancelRequested').limit(8)),
       queuedRequests: await Request.countDocuments({ active: true }).exec() };
   }
-  async function resumeInference(epoch) {
+  async function resumeInference(epoch, requestId) {
     if (!Number.isSafeInteger(epoch) || epoch < 0) fail('INVALID_REQUEST');
     const holder = id();
     const epochFilter = epoch === 0 ? { $or: [{ epoch: 0 }, { epoch: { $exists: false } }] } : { epoch };
     const lease = await query(Control.findOneAndUpdate({ _id: 'inference', blocked: true,
       until: { $lte: new Date(now()) }, ...epochFilter }, { $set: { holder, until: new Date(now() + 120000) } }, { returnDocument: 'after' }));
     if (!lease) fail('STALE');
-    let session; let handedOff = false; let cleaned = false;
+    let session; let handedOff = false; let cleaned = false; let stage = 'recovery.pending';
     try {
       if (await Run.exists({ active: true }).maxTimeMS(2000).exec() || await Request.exists({ active: true }).maxTimeMS(2000).exec()) fail('RECOVERY_REQUIRED');
       // Mutating exclusive admission, not a passive probe. Busy/ambiguous create
       // leaves the old hold untouched and never releases an operator reservation.
-      session = await warmSessions.open({ correlationId: id() });
+      stage = 'session.create';
+      session = await warmSessions.open({ correlationId: requestId || id() });
+      stage = 'session.heartbeat';
       const renewed = await warmSessions.renew(session);
       if (!renewed || ![renewed.expiresAt, renewed.hardExpiresAt].every(Number.isFinite)
         || Math.min(renewed.expiresAt, renewed.hardExpiresAt) < now() + 5000) fail('RECOVERY_REQUIRED');
+      stage = 'recovery.handoff';
       const changed = await Control.updateOne({ _id: 'inference', holder, blocked: true,
         until: { $gt: new Date(now()) }, ...epochFilter }, { $set: {
-        sessionId: session.id, recoveryPhase: 'owned_cleanup', reason: 'RECOVERY_REQUIRED' }, $inc: { epoch: 1 } }).exec();
+        sessionId: session.id, capabilityProof: session.capabilityProof, recoveryPhase: 'owned_cleanup', reason: 'RECOVERY_REQUIRED' }, $inc: { epoch: 1 } }).exec();
       if (!changed.matchedCount) fail('STALE');
       handedOff = true;
       // Keep admission AND the Mongo lease through the CAS above. Only our own
       // capability may release. Local admission stays blocked through cleanup.
+      stage = 'session.cleanup';
       cleaned = (await warmSessions.close(session)).idle;
       session = null;
       if (!cleaned) fail('RECOVERY_REQUIRED');
@@ -345,8 +356,10 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
       if (!released.matchedCount) fail('STALE');
       logger.warning('TARIC hold cleared through exclusive owned admission and verified cleanup; pending work remains stopped', { category: 'taric' });
     } catch (error) {
+      error.stage = error.stage || stage;
       logger.warning('TARIC recovery kept admission closed', { category: 'taric', metadata: {
-        code: error instanceof TaricError ? error.code : 'STORAGE_FAILED', handedOff, cleaned } });
+        code: error instanceof TaricError ? error.code : 'STORAGE_FAILED', action: 'inference.recover',
+        requestId, stage: error.stage, transport: require('../../utils/taricDiagnostics').errorStatus(error.transport), handedOff, cleaned } });
       throw error;
     } finally {
       if (session) {
@@ -399,6 +412,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
       if (!r || r.currentAttempt) fail('STALE');
       const s = await settings();
       if (r.dispatchContract !== 'owned-v1' || !warmSessions.ready() || r.fingerprint !== hash(configuration(s, r.adapter, version()))) fail('STALE');
+      await warmSessions.preflight?.();
       // Dispatch acquires fresh exclusive owned admission; GET snapshots cannot prove idle.
       const stillHeld = await query(Control.findOne({ _id: 'inference', holder, blocked: { $ne: true }, until: { $gt: new Date(now()) } }));
       if (!stillHeld) fail('STALE');
@@ -410,20 +424,31 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     } finally { await Control.updateOne({ _id: 'inference', holder }, { $set: { until: new Date(0) } }).exec(); }
   }
   async function readiness() {
-    const s = await settings(); let normal; let test;
-    try { const a = await admission(false); normal = { ready: true, ...a.admission }; } catch (e) { normal = { ready: false, reason: e instanceof TaricError ? e.code : 'STORAGE_FAILED' }; }
-    try { await admission(true); test = { ready: true, adapter: TEST_ADAPTER, status: 'untested baseline; manual confirmation required' }; }
-    catch (e) { test = { ready: false, reason: e instanceof TaricError ? e.code : 'STORAGE_FAILED' }; }
+    const s = await settings(); let normal; let test; let gateway;
+    try { gateway = { ready: true, capabilityProof: await warmSessions.preflight?.({ force: true }) }; }
+    catch (e) { gateway = { ready: false, ...require('../../utils/taricDiagnostics').readinessError(e) }; }
+    if (!warmSessions.ready()) gateway = { ready: false, reason: 'WARM_SESSION_NOT_READY' };
+    const inference = await query(Control.findById('inference').select('-holder -attempts'));
     const b = s?.currentBenchmark ? await query(Benchmark.findById(s.currentBenchmark)) : null;
     const candidates = b ? await releaseRuns(s, b._id) : [];
+    // Dashboard never calls model/adapters endpoints: old catchalls may start GPU.
+    try { selectWinner(s, b, candidates, version(), now()); normal = { ready: false, locallyQualified: true, reason: 'READINESS_UNVERIFIED', runtimeCheck: 'Runtime identity is checked at dispatch; dashboard does not call model endpoints' }; }
+    catch (e) { normal = { ready: false, reason: e instanceof TaricError ? e.code : 'STORAGE_FAILED' }; }
+    const executionReasons = [];
+    if (!s?.enabled || !inference) executionReasons.push('CONFIG_NOT_READY');
+    if (!gateway.ready) executionReasons.push(gateway.reason);
+    if (inference?.blocked) executionReasons.push('RECOVERY_REQUIRED');
+    try { testAdmission(s, version()); test = { ready: !executionReasons.length, reasons: [...executionReasons], adapter: TEST_ADAPTER, status: 'untested baseline; manual confirmation required' }; }
+    catch (e) { test = { ready: false, reasons: [...new Set([...executionReasons, e instanceof TaricError ? e.code : 'STORAGE_FAILED'])] }; }
+    test.reason = test.reasons[0] || null;
     const blockers = [];
     if (!s?.enabled) blockers.push('Tool disabled or bootstrap missing');
     if (!b || b.version < 1 || b.contaminated || !b.releaseEligible) blockers.push('No published independent release-eligible v1+ benchmark');
     if (!s?.catalog?.approved) blockers.push('No approved catalog');
     if (!s?.runtime?.adapters?.some(a => a.verified)) blockers.push('No verified runtime identity');
     if (!candidates.length) blockers.push('No authoritative runs for configured adapters');
-    if (!normal.ready) blockers.push('No current qualifying winner or observed runtime identity mismatch; inspect candidate status, fingerprint, policy and counts');
-    return { normal: { ...normal, blockers, candidates }, test, benchmark: { ready: warmSessions.ready(), reason: warmSessions.ready() ? null : 'WARM_SESSION_NOT_READY' }, inference: await query(Control.findById('inference').select('-holder -attempts')), settings: s, credential: await query(Credential.findById('integration')), template: TEMPLATE, codeFingerprint: version() };
+    if (!normal.locallyQualified) blockers.push('No current qualifying winner; inspect candidate status, fingerprint, policy and counts');
+    return { normal: { ...normal, blockers, candidates }, test, gateway, benchmark: { ready: !executionReasons.length, reasons: executionReasons, reason: executionReasons[0] || null }, inference, settings: s, credential: await query(Credential.findById('integration')), template: TEMPLATE, codeFingerprint: version() };
   }
   return { models, transport, evidence, warmSessions, settings, authenticate, authorize, adminPrincipal, rate, rotate, revoke, admission, checkAdmission,
     principalFrom, submit, retrieve, feedback, saveConfig, importBenchmark, publish, queueRun, cancelRun,

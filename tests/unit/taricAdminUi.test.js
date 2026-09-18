@@ -72,11 +72,34 @@ test('test diagnostics display literal rejected text without executing HTML and 
   const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric.pug'), { csrfToken: 'synthetic' }), { url: 'http://localhost/admin/taric', runScripts: 'outside-only' });
   const attack = '<img src=x onerror="window.compromised=true">';
   dom.window.fetch = jest.fn(async url => ({ ok: !url.endsWith('/benchmarks'), json: async () => url.endsWith('/test') ?
-    { id: 'a'.repeat(32), result: null, error: 'CATALOG_REJECTED', diagnostics: { label: 'REJECTED', visibleText: attack } } : url.endsWith('/benchmarks') ? { error: 'STORAGE_FAILED' } : { settings: {} } }));
+    { id: 'a'.repeat(32), result: null, error: 'CATALOG_REJECTED', diagnostics: { label: 'REJECTED', visibleText: attack } } : url.endsWith('/benchmarks') ? { error: 'STORAGE_FAILED' } : { settings: {}, gateway: { ready: true }, test: { ready: true } } }));
   dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-admin.js'), 'utf8')); await new Promise(setImmediate);
   expect(dom.window.document.querySelector('#benchmark-help').textContent).toContain('Refresh to retry');
   dom.window.document.querySelector('#test').click(); await new Promise(setImmediate);
   expect(dom.window.document.querySelector('#test-result').textContent).toContain('REJECTED');
   expect(dom.window.document.querySelectorAll('img')).toHaveLength(0); expect(dom.window.compromised).toBeUndefined();
+  dom.window.close();
+});
+
+test('action errors include safe HTTP, stage and permission context and stay inert', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric.pug'), { csrfToken: 'synthetic' }), { url: 'http://localhost/admin/taric', runScripts: 'outside-only' });
+  const attack = '<img src=x onerror="window.compromised=true">';
+  let denied = false;
+  dom.window.fetch = jest.fn(async url => {
+    if (url.endsWith('/credential/rotate')) return { ok: false, status: 403, json: async () => {
+      if (denied) throw new Error('private upstream body');
+      return { error: 'FORBIDDEN', action: 'credential.rotate', stage: 'request.operation', message: attack, requestId: 'a'.repeat(32) };
+    } };
+    return { ok: true, json: async () => url.endsWith('/benchmarks') ? [] : { settings: {}, gateway: { ready: false } } };
+  });
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-admin.js'), 'utf8')); await new Promise(setImmediate);
+  const doc = dom.window.document; doc.querySelector('#rotate').click(); await new Promise(setImmediate);
+  expect(doc.querySelector('#status').textContent).toContain('Create / rotate key: credential.rotate failed — HTTP 403, FORBIDDEN, stage request.operation');
+  expect(doc.querySelector('#status').textContent).toContain(attack); expect(doc.querySelectorAll('img')).toHaveLength(0);
+  expect(dom.window.compromised).toBeUndefined();
+  denied = true; doc.querySelector('#rotate').click(); await new Promise(setImmediate);
+  expect(doc.querySelector('#status').textContent).toContain('permission or CSRF');
+  expect(doc.querySelector('#status').textContent).not.toContain('private upstream body');
   dom.window.close();
 });

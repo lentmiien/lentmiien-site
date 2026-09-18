@@ -21,6 +21,20 @@ function createTaricAdminRouter(service, { roleModel = Role } = {}) {
   router.use((req, res, next) => req.isAuthenticated?.() ? next() : res.status(401).json({ error: 'UNAUTHORIZED' }));
   router.use(createRequireCapabilities({ capabilities: [MANAGE], roleModel, roleCapabilityBundles: ROLE_BUNDLES }));
   router.use(rateLimit({ windowMs: 60000, limit: 120, standardHeaders: 'draft-8', legacyHeaders: false }));
+  router.use((req, _res, next) => {
+    const actions = [
+      [/^\/state$/, 'readiness'], [/^\/inference\/status$/, 'inference.status'],
+      [/^\/inference\/resume$/, 'inference.recover'], [/^\/inference\/cancel-pending$/, 'inference.cancel_pending'],
+      [/^\/test$/, 'test.submit'], [/^\/test\/[^/]+$/, 'test.inspect'], [/^\/test\/[^/]+\/feedback$/, 'test.feedback'],
+      [/^\/benchmarks\/[^/]+\/runs$/, 'benchmark.queue'], [/^\/benchmarks\/[^/]+\/publish$/, 'benchmark.publish'],
+      [/^\/runs\/[^/]+\/resume$/, 'run.resume'], [/^\/runs\/[^/]+\/cancel$/, 'run.cancel'],
+      [/^\/inspect\//, 'records.inspect'], [/^\/config$/, 'config.save'], [/^\/imports$/, 'benchmark.import'],
+      [/^\/credential\/rotate$/, 'credential.rotate'], [/^\/credential\/revoke$/, 'credential.revoke'], [/^\/adapters$/, 'adapters.inspect'],
+    ];
+    req.taricAction = actions.find(([pattern]) => pattern.test(req.path))?.[1] || 'admin';
+    req.taricRequestId = require('crypto').randomBytes(16).toString('hex');
+    next();
+  });
   router.use(csrf.issueToken);
   // Header CSRF before upload/body allocation, with the same shared session defense.
   router.use((req, res, next) => ['GET', 'HEAD'].includes(req.method) ? next() : csrf.requireToken(req, res, next));
@@ -42,9 +56,9 @@ function createTaricAdminRouter(service, { roleModel = Role } = {}) {
     res.json({ id: f._id, decision: f.decision, selected_code: f.selected_code, verification: f.verification, training_approved: f.training_approved });
   });
   router.post('/inference/resume', jsonBody('1kb'), async (req, res) => {
-    object(req.body, ['confirmIdle', 'epoch'], 'INVALID_REQUEST');
-    if (req.body.confirmIdle !== true) fail('INVALID_REQUEST');
-    await service.resumeInference(req.body.epoch); res.json({ ok: true });
+    object(req.body, ['confirm', 'confirmIdle', 'epoch'], 'INVALID_REQUEST');
+    if ((req.body.confirm ?? req.body.confirmIdle) !== true || (req.body.confirmIdle !== undefined && req.body.confirmIdle !== true)) fail('INVALID_REQUEST');
+    await service.resumeInference(req.body.epoch, req.taricRequestId); res.json({ ok: true });
   });
   router.post('/inference/cancel-pending', jsonBody('1kb'), async (req, res) => {
     object(req.body, ['confirm', 'epoch'], 'INVALID_REQUEST');
@@ -58,7 +72,7 @@ function createTaricAdminRouter(service, { roleModel = Role } = {}) {
     await service.resumeRun(req.params.id); res.json({ ok: true });
   });
   router.get('/state', async (_req, res) => res.json(await service.readiness()));
-  router.get('/adapters', async (_req, res) => res.json(await service.transport.adapters()));
+  router.get('/adapters', async (_req, res) => { await service.warmSessions.preflight?.(); res.json(await service.transport.adapters()); });
   router.post('/credential/rotate', async (req, res) => {
     const secret = await service.rotate(String(req.user._id));
     // One response only. Never session flash, query parameter, log, or persistent UI state.

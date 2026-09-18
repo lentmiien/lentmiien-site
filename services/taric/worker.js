@@ -20,7 +20,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
   async function trackSession(holder, session) {
     await fence(holder);
     const saved = await Control.updateOne({ _id: 'inference', holder, until: { $gt: date() } },
-      { $set: { sessionId: session.id, recoveryPhase: 'owned' } }).exec();
+      { $set: { sessionId: session.id, capabilityProof: session.capabilityProof, recoveryPhase: 'owned' } }).exec();
     if (!saved.matchedCount) fail('INTERRUPTED');
   }
   async function closeSession(holder, session) {

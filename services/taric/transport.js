@@ -20,6 +20,7 @@ function boundedJson(url, { method = 'GET', body, headers = {}, deadlineMs = 150
       if (error) { response?.destroy(); decoder?.destroy(); req?.destroy(); reject(error); } else resolve(value);
     };
     const rejectSafe = (where, cause) => {
+      if (settled) return;
       const error = new TaricError('PROVIDER_FAILED');
       error.transport = require('../../utils/taricDiagnostics').errorStatus({ phase: where,
         dispatched, terminal, status: response?.statusCode, socketCode: cause?.code,
@@ -93,6 +94,8 @@ function boundedJson(url, { method = 'GET', body, headers = {}, deadlineMs = 150
   });
 }
 function createTransport({ json = boundedJson, env = process.env, impersonated = require('./amiamiBounded').fetchImpersonated } = {}) {
+  // Gateway configuration is immutable for this client, including owned cleanup.
+  env = { ...env };
   function gatewayOrigin() {
     let origin;
     try { origin = new URL(env.TARIC_GATEWAY_ORIGIN); } catch (_) { fail('CONFIG_NOT_READY'); }
@@ -108,6 +111,12 @@ function createTransport({ json = boundedJson, env = process.env, impersonated =
       ...(env.TARIC_GATEWAY_ADMIN_TOKEN ? { 'X-Admin-Token': env.TARIC_GATEWAY_ADMIN_TOKEN } : {}),
     } });
   };
+  const sessionAdapter = require('./gatewaySessions').createGatewaySessions(gateway, {
+    capabilities: require('./gatewayCapabilities').createGatewayCapabilities(gateway, { fingerprint: () => hash({
+      origin: env.TARIC_GATEWAY_ORIGIN, allowlist: env.TARIC_GATEWAY_ALLOWED_ORIGINS,
+      proxy: env.TARIC_GATEWAY_TOKEN, admin: env.TARIC_GATEWAY_ADMIN_TOKEN,
+    }) }),
+  });
   async function adapters() {
     const raw = await gateway('/qwen3-lora/adapters');
     const list = Array.isArray(raw) ? raw : raw?.adapters;
@@ -179,6 +188,6 @@ function createTransport({ json = boundedJson, env = process.env, impersonated =
       throw safe;
     }
   }
-  return { adapters, verifyIdentity, generate, fetchFactual, sessionAdapter: require('./gatewaySessions').createGatewaySessions(gateway), fingerprint: () => hash({ origin: env.TARIC_GATEWAY_ORIGIN || null, allowlist: env.TARIC_GATEWAY_ALLOWED_ORIGINS || null }), configured: () => { gatewayOrigin(); return true; } };
+  return { adapters, verifyIdentity, generate, fetchFactual, sessionAdapter, fingerprint: () => hash({ origin: env.TARIC_GATEWAY_ORIGIN || null, allowlist: env.TARIC_GATEWAY_ALLOWED_ORIGINS || null }), configured: () => { gatewayOrigin(); return true; } };
 }
 module.exports = { boundedJson, createTransport };

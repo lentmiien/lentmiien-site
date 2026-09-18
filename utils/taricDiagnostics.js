@@ -28,8 +28,24 @@ function help(code, status) {
     FETCH_DISABLED: 'The configured bounded AmiAmi transport is unavailable. At deployment, install the existing curl-cffi bundle (libcurl 8.15.0-IMPERSONATE) with npm run install:curl-cffi, or explicitly choose native mode, which may still return HTTP403. Classify manually until verified.',
     FETCH_FAILED: `The factual lookup failed${status?.phase ? ` (${status.phase})` : ''}. Use manual classification; no source facts were fabricated.`,
     WARM_SESSION_NOT_READY: 'Owned Gateway inference sessions are not configured. Benchmark execution remains unavailable until the reviewed contract is wired.',
+    GATEWAY_UPGRADE_REQUIRED: 'The running Gateway does not publish the required owned-session API. Rebuild and recreate its running image with the existing two Compose files and project, then Refresh status. No inference was dispatched by this precheck.',
+    READINESS_UNVERIFIED: 'Gateway capability discovery could not be verified. Check the configured origin, proxy/admin credentials and Gateway availability, then Refresh status. No inference was dispatched by this precheck.',
+    CONFIG_NOT_READY: 'Check bootstrap, Enable tool, and the imported v0 test catalog. An approved catalog and runtime attestations are required only for normal release.',
+    STALE: 'The recovery epoch or record changed, or another worker holds the lease. Read remote status again before retrying.',
+    INVALID_REQUEST: 'Check the supplied fields and numeric epoch; refresh the page if its controls are stale.',
+    PROVIDER_FAILED: [401, 403].includes(status?.status) ? 'Gateway authentication rejected this action. Check the private proxy credential and X-Admin-Token configuration; keep the existing hold and refresh status.'
+      : status?.status === 404 ? 'Gateway did not recognize this operation. Check the running image and routing, then Refresh status. Recovery retains the existing hold.'
+        : status?.status === 409 ? 'Gateway exclusive admission is busy. Keep the hold and retry only after the other owner finishes; do not release another reservation.'
+          : 'Gateway rejected or could not complete this operation. Check the action, stage and upstream HTTP status. Recovery retains the existing hold and requests no inference.',
+    RELEASE_CLOSED: 'Normal mode needs a published independent v1+ benchmark, approved catalog, verified runtime and a current passing run. Manual-confirmation tests do not open normal mode.',
+    INFERENCE_UNCERTAIN: 'An existing hold or ambiguous remote operation requires inspection. Read status, cancel all pending work, then recover through exclusive admission.',
     RECOVERY_REQUIRED: 'Remote idle has not been proved. Inspect and cancel pending work before explicit recovery.',
   };
   return messages[code] || null;
 }
-module.exports = { errorStatus, preview, help };
+function readinessError(error) {
+  const reason = error instanceof require('./taricContracts').TaricError ? error.code : 'READINESS_UNVERIFIED';
+  return { reason, stage: 'gateway.preflight', message: help(reason), transport: errorStatus(error.transport) };
+}
+const STAGES = new Set(['request.validation', 'request.operation', 'gateway.preflight', 'session.create', 'session.heartbeat', 'session.cleanup', 'recovery.pending', 'recovery.handoff']);
+module.exports = { errorStatus, preview, help, readinessError, STAGES };

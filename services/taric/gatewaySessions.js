@@ -1,7 +1,12 @@
 const { fail, TaricError } = require('../../utils/taricContracts');
 // Wire contract: Gateway 689c68a, documentation/contracts/qwen3-lora-inference-sessions.json.
 // This module alone sees the capability. Never persist or serialize raw responses.
-function createGatewaySessions(gateway, { now = Date.now, closePolls = 6, delayMs = 1000 } = {}) {
+function createGatewaySessions(gateway, { now = Date.now, closePolls = 6, delayMs = 1000, capabilities = require('./gatewayCapabilities').createGatewayCapabilities(gateway, { now }) } = {}) {
+  const proofs = new WeakMap();
+  async function known(session, signal, refresh = false) {
+    if (!refresh && proofs.has(session)) return proofs.get(session);
+    return capabilities.preflight({ signal });
+  }
   const base = '/qwen3-lora/inference-sessions';
   const path = session => `${base}/${encodeURIComponent(session.id)}`;
   const headers = session => ({ 'X-Inference-Session-Token': session.ownerToken });
@@ -20,34 +25,49 @@ function createGatewaySessions(gateway, { now = Date.now, closePolls = 6, delayM
     return { expiresAt: Math.min(hardExpiresAt, started + raw.idle_remaining_sec * 1000), hardExpiresAt };
   }
   async function status({ session, correlationId, signal }) {
+    await known(session, signal);
     const raw = validate(await gateway(path(session), { headers: headers(session), signal }), session.id);
     const operation = raw.operations.find(op => op?.operation_id === correlationId);
     return { idle: raw.idle_proven === true, terminal: operation?.state === 'terminal' && operation.resolution === 'completed',
       correlationId: operation?.operation_id, reclaimed: raw.reclaim_verified === true, missing: !operation };
   }
   return {
+    preflight: capabilities.preflight,
+    invalidate: capabilities.invalidate,
     async open({ correlationId, signal }) {
+      const proof = await capabilities.preflight({ signal });
       const started = now();
       let response;
       try { response = await gateway(base, { method: 'POST', successStatuses: [201], signal,
         body: { client_id: correlationId, idle_timeout_sec: 120, max_duration_sec: 900 } }); }
       catch (cause) {
-        if (cause.transport?.phase === 'http' && cause.transport.status >= 400) throw cause;
+        capabilities.invalidate();
+        if ((cause.transport?.phase === 'http' && cause.transport.status >= 400) || cause.transport?.dispatched === false) {
+          const error = new TaricError('PROVIDER_FAILED');
+          error.stage = 'session.create'; error.inferenceDispatched = false;
+          error.transport = require('../../utils/taricDiagnostics').errorStatus(cause.transport);
+          throw error;
+        }
         const error = new TaricError('INFERENCE_UNCERTAIN');
+        error.stage = 'session.create';
         error.transport = require('../../utils/taricDiagnostics').errorStatus(cause.transport); throw error;
       }
       const raw = validate(response);
       if (raw.state !== 'idle' || raw.idle_proven !== true || typeof raw.owner_token !== 'string'
         || !raw.owner_token.length || raw.owner_token.length > 1024) fail('INFERENCE_UNCERTAIN');
-      return { id: raw.session_id, ownerToken: raw.owner_token, ...deadlines(raw, started) };
+      const session = { id: raw.session_id, ownerToken: raw.owner_token, capabilityProof: proof, ...deadlines(raw, started) };
+      proofs.set(session, proof);
+      return session;
     },
     async renew({ session, signal }) {
+      await known(session, signal, true);
       const started = now();
       const raw = validate(await gateway(`${path(session)}/heartbeat`, { method: 'POST', headers: headers(session), signal }), session.id);
       if (!['idle', 'running'].includes(raw.state)) fail('RECOVERY_REQUIRED');
       return deadlines(raw, started, session.hardExpiresAt);
     },
     async generate({ session, body, correlationId, signal }) {
+      await known(session, signal, true);
       try {
         return await gateway('/qwen3-lora/generate', { method: 'POST', body, signal, correlationId,
           deadlineMs: 60000, maxBytes: 1048576, headers: { ...headers(session),
@@ -62,6 +82,7 @@ function createGatewaySessions(gateway, { now = Date.now, closePolls = 6, delayM
     },
     status,
     async close({ session, signal }) {
+      await known(session, signal);
       let raw = validate(await gateway(path(session), { method: 'DELETE', successStatuses: [200, 202],
         headers: headers(session), signal, deadlineMs: 6000 }), session.id);
       for (let i = 0; !raw.reclaim_verified && i < closePolls; i++) {
@@ -70,7 +91,7 @@ function createGatewaySessions(gateway, { now = Date.now, closePolls = 6, delayM
       }
       return { idle: raw.reclaim_verified === true };
     },
-    async probe() { return { idle: false, state: 'idle_unverified' }; },
+    async probe() { return { idle: false, state: 'idle_unverified', capabilityProof: await capabilities.preflight({ force: true }) }; },
   };
 }
 module.exports = { createGatewaySessions };

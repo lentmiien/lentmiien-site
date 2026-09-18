@@ -4,7 +4,7 @@ const { fail } = require('../../utils/taricContracts');
 const { hash, sha, TEST_ADAPTER, TEMPLATE } = require('../../utils/taricProtocol');
 const CODE_FILES = ['package-lock.json', 'utils/taricProtocol.js', 'utils/taricContracts.js', 'services/taricEvidenceService.js',
   'services/amiamiScraperService.js', 'models/amiami_item.js',
-  'utils/taricDiagnostics.js', 'services/taric/warmSession.js', 'services/taric/gatewaySessions.js', 'services/taric/amiamiBounded.js', 'services/taric/amiamiCurlChild.js', 'services/taric/gate.js', 'services/taric/transport.js', 'services/taric/importer.js',
+  'utils/taricDiagnostics.js', 'services/taric/warmSession.js', 'services/taric/gatewaySessions.js', 'services/taric/gatewayCapabilities.js', 'services/taric/amiamiBounded.js', 'services/taric/amiamiCurlChild.js', 'services/taric/gate.js', 'services/taric/transport.js', 'services/taric/importer.js',
   'services/taric/service.js', 'services/taric/worker.js', 'services/taric/index.js',
   'routes/taric.js', 'routes/taricAdmin.js', 'utils/taricAuthorizationPolicy.js', 'models/taric_tool.js'];
 function codeFingerprint() { return hash(CODE_FILES.map(f => [f, sha(fs.readFileSync(path.join(__dirname, '../..', f)))])); }

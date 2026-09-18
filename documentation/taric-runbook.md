@@ -383,7 +383,7 @@ scores; no old diagnostic run is silently made release eligible.
 Management routes (all capability-protected, private/no-store, mutations shared-CSRF):
 GET `/admin/taric/inference/status`; POST `/inference/cancel-pending` body
 `{confirm:true,epoch:<observed>}`; POST `/inference/resume` body
-`{confirmIdle:true,epoch:<observed>}` (the legacy body name is retained); POST
+`{confirm:true,epoch:<observed>}` (numeric epoch; legacy `confirmIdle:true` is also accepted); POST
 `/runs/:id/resume` body `{confirm:true}`. Benchmark selector/inspection pages sort by actual
 createdAt descending with stable ID ties and a matching bounded cursor. Case pages remain
 25 rows. Historical discarded output is unrecoverable.
@@ -434,3 +434,81 @@ Completed-integration validation: focused 14 suites / 216 tests; full 316 suites
 passed (one unrelated suite / four tests skipped), with coverage thresholds passing. The
 42 real isolated Mongo lifecycle tests include real loopback Gateway contract execution.
 OpenAPI and diff checks passed. See the [handoff](taric-owned-release.md) for limitations.
+
+
+## Gateway readiness and held admin actions
+
+A Gateway checkout update does **not** replace its running image. The supplied Sep 18
+incident evidence identified old runtime `5c2802a` despite source `689c68a`; `/health` and
+`/ready` 200 do not prove owned-session support. An old catchall can start GPU even for an
+unknown session GET. Never test compatibility by calling an unknown session path, model
+endpoint or generation endpoint.
+
+Site now probes only GET `/openapi.json`, through the fixed allowlisted Gateway origin and
+existing private proxy Bearer / `X-Admin-Token` headers. It does not follow redirects. The
+request has a four-second deadline and separate 2 MiB wire and decoded limits, including
+compressed responses. Exact create/status/heartbeat/delete paths/methods and their success
+responses are required, with POST generation's published literal or FastAPI proxy route.
+Missing roles yield `GATEWAY_UPGRADE_REQUIRED`; unavailable, malformed, non-JSON or oversized
+discovery yields `READINESS_UNVERIFIED`. Neither means inference was dispatched, and neither
+creates a new global inference hold.
+
+Successful proofs cache for 15 seconds per immutable origin/auth configuration (maximum
+supported TTL 30 seconds). Saving Site settings invalidates that cache; Refresh status and
+Read remote status force discovery. Failed discovery never remains a positive cache entry.
+The document digest, observed time and protocol are nonsecret and retained with owned-session
+control records. Existing session status/reclaim uses its previously verified in-memory
+proof and capability even if discovery later fails; it never substitutes operator release.
+Cache freshness is bounded, not an atomic guarantee against an image changing immediately
+after discovery. Deployments must continue to stop/drain workers and preserve the hold.
+
+1. The deployment coordinator supplies the confirmed **two Compose files and existing
+   project**. The human rebuilds and recreates the running Gateway image using all of them,
+   preserving the live override. See the [handoff](taric-owned-release.md#human-deployment-separate-runtime-authorization).
+   No default project or one-file rebuild command is safe to assume.
+2. Deploy the Site follow-up through the established procedure. Open `/admin/taric` and
+   click **Refresh status**. With old Gateway, the page shows upgrade instructions and
+   disables manual tests and benchmark execution. Configuration, credentials, imports,
+   benchmark selection, inspection and remote status remain available. No model/adapters
+   endpoint is called by dashboard readiness. Normal runtime identity checking remains a
+   dispatch prerequisite; locally qualifying stored scores are not new runtime proof.
+3. Click **Read remote status** to load the current numeric epoch. If there is a hold,
+   confirm cancellation/recovery and click **Cancel all pending local work**. This remains
+   enabled while Gateway is old or unavailable and preserves finished history and the hold.
+   It refreshes the epoch after cancellation. Inspect existing runs and terminal test
+   diagnostics while held; cancellation is not proof of remote idle.
+4. When discovery verifies the new API and pending work is zero, **Recover hold using
+   exclusive admission** becomes available. It POSTs `{confirm:true,epoch:<number>}` with
+   shared CSRF. It acquires exclusive owned admission without inference, preserves admission
+   during the Mongo handoff, and clears the hold only after verified owned cleanup. Busy,
+   stale, auth, HTTP400/404, pre-dispatch network or discovery failures retain the original
+   hold reason/history before handoff. Ambiguous dispatched session creation remains
+   uncertain; no retry or unsafe fallback is introduced. Read status again after a stale
+   epoch/lease rejection.
+5. After successful recovery, enable the tool and ensure the v0 catalog is imported if
+   setup still blocks tests. `enabled:true`, `catalog:null`, `runtime:{adapters:[]}` supports
+   explicitly requested manual-confirmation tests and diagnostic v0 benchmarks. It does
+   **not** enable normal release. Load adapter metadata, select the pinned test adapter,
+   and queue a **fresh v0** run during the separately authorized GPU window. Cancelled or
+   stale old runs remain historical. v0 can never pass normal release; no verification or
+   passing result is synthesized by recovery.
+
+Admin failures show the clicked action, Site HTTP status, typed code, allowlisted stage,
+optional upstream HTTP status and a logical request reference. Production warnings use the
+same reference/action/stage and sanitized transport facts, never raw upstream errors,
+credentials or product queries. Repeated identical discovery failures are logged once per
+failure transition in the client instance. An HTTP error during create is distinct from
+an uncertain generation outcome. Permission/CSRF errors instruct a page reload/access check.
+
+Security contract: existing logged-in `taric.tool.manage` capability and explicitly
+admin-managed scope (see `utils/taricAuthorizationPolicy.js`), private/no-store responses,
+shared session CSRF for browser mutations, fixed outbound origin, bounded discovery, and
+text-only rendering. No new public route, user-supplied destination, credential persistence,
+normal-gate bypass or unsafe operator API fallback. Owner tokens remain memory-only; the
+capability proof digest is not an owner token and cannot authorize cleanup after restart.
+
+Local tests include old/new loopback Gateway discovery, each missing API role, bounded and
+compressed discovery failures, cache invalidation, cleanup after failed rediscovery,
+pre-dispatch errors, actual Pug/browser/controller CSRF and numeric recovery bodies,
+revision-3 held/disabled settings, cancellation and recovery with disposable Mongo, and
+unchanged normal release rejection. They establish plumbing, not production readiness.

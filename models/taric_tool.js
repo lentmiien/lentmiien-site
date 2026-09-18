@@ -43,7 +43,7 @@ const Feedback = model('taric_outcomes', { _id: String, owner: String, principal
   [{ principal: 1, key: 1 }, { unique: true, name: 'feedback_idempotency' }],
   [{ request: 1 }, { unique: true, name: 'one_final_feedback' }],
 ]);
-const Control = model('taric_controls', { _id: String, holder: String, until: Date, attempts: [mixed], blocked: Boolean, reason: String, epoch: { type: Number, default: 0 }, sessionId: String, recoveryPhase: String });
+const Control = model('taric_controls', { _id: String, holder: String, until: Date, attempts: [mixed], blocked: Boolean, reason: String, epoch: { type: Number, default: 0 }, sessionId: String, capabilityProof: { digest: String, observedAt: String, protocol: String }, recoveryPhase: String });
 const Attempt = model('taric_attempts', { _id: String, run: String, index: Number, fence: String,
   correlationId: String, sessionId: String, state: String, claimedAt: Date, startedAt: Date,
   finishedAt: Date, result: mixed, diagnostics: mixed, error: String, errorStatus: mixed,

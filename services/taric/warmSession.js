@@ -39,13 +39,15 @@ function createWarmSessions(adapter = null, { now = Date.now, timeoutMs = 7000 }
   }
   return {
     ready,
+    preflight: options => adapter?.preflight ? adapter.preflight(options) : Promise.resolve(null),
     async open({ correlationId, signal, adapter: adapterName = TEST_ADAPTER }) {
+      if (adapter?.preflight) await adapter.preflight({ signal });
       const raw = await call('open', { adapter: adapterName, correlationId, ttlMs: 120000, hardBudgetMs: 900000, signal });
       if (!raw || typeof raw.id !== 'string' || !raw.id.length || raw.id.length > 200 || !Number.isFinite(raw.expiresAt)
         || !Number.isFinite(raw.hardExpiresAt) || raw.expiresAt <= now() || raw.expiresAt > now() + 120000
         || raw.hardExpiresAt > now() + 900000 || raw.expiresAt > raw.hardExpiresAt) fail('INFERENCE_UNCERTAIN');
       raw.adapterName = adapterName;
-      const handle = Object.freeze({ id: raw.id, hardExpiresAt: raw.hardExpiresAt });
+      const handle = Object.freeze({ id: raw.id, hardExpiresAt: raw.hardExpiresAt, ...(raw.capabilityProof ? { capabilityProof: raw.capabilityProof } : {}) });
       owned.set(handle, raw);
       return handle;
     },
@@ -76,9 +78,9 @@ function createWarmSessions(adapter = null, { now = Date.now, timeoutMs = 7000 }
       finally { owned.delete(handle); }
     },
     async probe() {
-      await call('probe', {});
+      const result = adapter?.preflight ? await adapter.probe() : await call('probe', {});
       // Read-only remote status: never opens a session or modifies another owner.
-      return { idle: false, state: 'idle_unverified', observedAt: new Date(now()).toISOString() };
+      return { idle: false, state: 'idle_unverified', ...(result?.capabilityProof ? { capabilityProof: result.capabilityProof } : {}), observedAt: new Date(now()).toISOString() };
     },
   };
 }

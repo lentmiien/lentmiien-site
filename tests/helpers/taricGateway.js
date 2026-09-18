@@ -12,14 +12,31 @@ const status = (id = 'session-1') => ({ session_id: id, client_id: 'synthetic', 
 const content = '{"taric_code":"0000000001","description":"Synthetic description"}';
 const envelope = () => ({ model: BASE_MODEL, adapter_name: TEST_ADAPTER, content, raw_content: content,
   tool_calls: [], usage: { prompt_tokens: 200, completion_tokens: 30, total_tokens: 230 } });
+// Minimal projection of the published FastAPI operations in Gateway app.py.
+// Dict/Request handler signatures do not publish owner-token or status schemas.
+function openapi() {
+  const paths = {};
+  for (const [path, method, code] of [
+    ['/qwen3-lora/inference-sessions', 'post', '201'],
+    ['/qwen3-lora/inference-sessions/{session_id}', 'get', '200'],
+    ['/qwen3-lora/inference-sessions/{session_id}', 'delete', '200'],
+    ['/qwen3-lora/inference-sessions/{session_id}/heartbeat', 'post', '200'],
+    ['/qwen3-lora/{path}', 'post', '200'],
+  ]) {
+    paths[path] ||= {};
+    paths[path][method] = { operationId: `${method}_${path}`, responses: { [code]: { description: 'Successful Response', content: { 'application/json': { schema: {} } } } } };
+  }
+  return { openapi: '3.1.0', info: { title: 'Synthetic Gateway', version: '1' }, paths };
+}
 async function gatewayFixture() {
-  const fixture = { requests: [], sessions: [], generateCount: 0, dropAt: null, busy: false, cleanup: true, closePending: false, statusPatch: null };
+  const fixture = { document: openapi(), discoveryStatus: 200, requests: [], sessions: [], generateCount: 0, dropAt: null, busy: false, cleanup: true, closePending: false, statusPatch: null };
   const server = http.createServer(async (req, res) => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks)) : null;
     fixture.requests.push({ path: req.url, method: req.method, headers: req.headers, body });
     const send = (code, data) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
     if (req.headers['x-admin-token'] !== 'synthetic-admin' || req.headers.authorization !== 'Bearer synthetic-proxy') return send(401, { detail: 'private-error-must-not-leak' });
+    if (req.url === '/openapi.json') return send(fixture.discoveryStatus, fixture.document);
     if (req.url === '/qwen3-lora/adapters') return send(200, { adapters: [{ adapter_name: TEST_ADAPTER }] });
     const base = contract.endpoints.create.path;
     if (req.url === base && req.method === 'POST') {
@@ -56,4 +73,4 @@ async function gatewayFixture() {
   fixture.close = async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); };
   return fixture;
 }
-module.exports = { contract, operation, status, envelope, gatewayFixture };
+module.exports = { openapi, contract, operation, status, envelope, gatewayFixture };

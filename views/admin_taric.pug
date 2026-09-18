@@ -17,16 +17,18 @@ html(lang='en')
       p#status(role='status' aria-live='polite') Loading readiness…
       section
         h2 Readiness and release reasons
-        button#refresh(type='button') Refresh
+        button#refresh(type='button') Refresh status
+        p#execution-help
         pre#readiness
         p Read status, explicitly cancel pending work, then request recovery. Recovery acquires exclusive Gateway admission without starting GPU, holds it during the database handoff, and releases only that session with verified cleanup. Busy or uncertain recovery keeps the hold. Passive status is idle_unverified. Clearing does not resume paused runs.
         button#remote-status(type='button') Read remote status (no GPU work)
         pre#recovery-status
+        p#recovery-help
         label
           input#confirm-idle(type='checkbox')
           |  I authorize pending-work cancellation / exclusive admission recovery (no inference)
-        button#cancel-pending(type='button') Cancel all pending local work (keep remote hold)
-        button#resume(type='button') Recover hold using exclusive admission
+        button#cancel-pending(type='button' disabled) Cancel all pending local work (keep remote hold)
+        button#resume(type='button' disabled) Recover hold using exclusive admission
       section
         h2 Dedicated integration credential
         p One active key, expiring after 90 days. Rotation immediately revokes the previous generation and queued authority. Store the new key in the caller’s secret store.
@@ -59,7 +61,7 @@ html(lang='en')
         input#test-name(type='text' maxlength='500')
         label(for='test-hs') HS code (six digits, optionally dotted)
         input#test-hs(type='text' maxlength='7')
-        button#test(type='button') Submit manual-confirmation test
+        button#test(type='button' disabled) Submit manual-confirmation test
         button#test-poll(type='button') Poll test
         p Generated diagnostic text is UNVALIDATED / REJECTED and cannot be applied as an approved suggestion. A test allowlist rejection is not a legal TARIC validity judgment. Historical discarded output is not captured and cannot be recovered.
         pre#test-result
@@ -102,7 +104,7 @@ html(lang='en')
         label
           input#confirm-run(type='checkbox')
           |  I authorize the next cases during the current GPU window
-        button#resume-run(type='button') Resume paused run after idle recovery
+        button#resume-run(type='button' disabled) Resume paused run after idle recovery
       section
         h2 Private inspection
         select#kind

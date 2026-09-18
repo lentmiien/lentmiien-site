@@ -11,11 +11,22 @@ function uniqueHeader(req, name, required = true) {
   if (values.length > 1 || (required && values.length !== 1)) fail(name === 'authorization' ? 'UNAUTHORIZED' : 'INVALID_REQUEST');
   return req.get(name);
 }
-function errorHandler(error, _req, res, _next) {
+function errorHandler(error, req, res, _next) {
   const known = error instanceof TaricError;
   const status = known ? error.status : error.type === 'entity.too.large' ? 413 : error.status === 400 ? 400 : 503;
   if (!known && status === 503) logger.error('TARIC request failed; inspect database and configuration', { category: 'taric', metadata: { code: 'STORAGE_FAILED' } });
-  res.status(status).json({ error: known ? error.code : status === 413 ? 'BODY_TOO_LARGE' : status === 400 ? 'INVALID_REQUEST' : 'STORAGE_FAILED', manual_fallback: true });
+  let context = {};
+  if (req.taricAction) {
+    const { errorStatus, help, STAGES } = require('../utils/taricDiagnostics');
+    const transport = errorStatus(error.transport);
+    context = { action: req.taricAction, requestId: req.taricRequestId,
+      stage: STAGES.has(error.stage) ? error.stage : status === 400 ? 'request.validation' : 'request.operation',
+      message: help(known ? error.code : 'STORAGE_FAILED', transport), transport };
+    logger.warning('TARIC admin action rejected', { category: 'taric', metadata: {
+      ...context, code: known ? error.code : 'STORAGE_FAILED', status,
+    } });
+  }
+  res.status(status).json({ ...context, error: known ? error.code : status === 413 ? 'BODY_TOO_LARGE' : status === 400 ? 'INVALID_REQUEST' : 'STORAGE_FAILED', manual_fallback: true });
 }
 function rejectCompression(req, _res, next) {
   if (req.get('content-encoding') && req.get('content-encoding') !== 'identity') return next(new TaricError('INVALID_REQUEST'));

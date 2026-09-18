@@ -174,6 +174,101 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       expect(result.results[0].sessionId).not.toBe(result.results[1].sessionId); expect(fixture.generateCount).toBe(2);
     } finally { worker.stop(); await fixture.close(); }
   });
+  test('old Gateway discovery rejects queued requests without creating a new global hold or resolving evidence', async () => {
+    const { gatewayFixture } = require('../helpers/taricGateway'); const fixture = await gatewayFixture(); worker.stop();
+    try {
+      const queued = await service.submit(principal, 'preflight-no-hold-01', requestInput);
+      fixture.document = { openapi: '3.1.0', paths: {} };
+      const actualTransport = require('../../services/taric/transport').createTransport({ env: fixture.env });
+      service = createService({ models, transport: actualTransport, evidence,
+        warmSessions: require('../../services/taric/warmSession').createWarmSessions(actualTransport.sessionAdapter), codeVersion: 'synthetic', authorizeAdmin: async () => true });
+      worker = createWorker(service, { authorizeAdmin: async () => true }); worker.start(); await worker.tick();
+      expect((await models.Request.findById(queued.id)).toObject()).toMatchObject({ state: 'failed', error: 'GATEWAY_UPGRADE_REQUIRED' });
+      expect((await models.Control.findById('inference')).blocked).not.toBe(true);
+      expect(evidence.resolve).not.toHaveBeenCalled(); expect(fixture.sessions).toHaveLength(0);
+      expect(fixture.requests.every(r => r.path === '/openapi.json')).toBe(true);
+    } finally { await fixture.close(); }
+  });
+  test('production-like held revision 3: actual browser/controller old Gateway rejection, cancellation and new Gateway recovery', async () => {
+    const { JSDOM } = await import('jsdom');
+    const fs = require('fs'); const path = require('path');
+    const { gatewayFixture, openapi } = require('../helpers/taricGateway');
+    const fixture = await gatewayFixture(); worker.stop();
+    const b = await benchmark();
+    const oldRun = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
+    await models.Settings.updateOne({ _id: 'tool' }, { $set: { revision: 3, enabled: true, catalog: null, runtime: { adapters: [] } } });
+    await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, reason: 'INFERENCE_UNCERTAIN', epoch: 7 } });
+    const actualTransport = require('../../services/taric/transport').createTransport({ env: fixture.env });
+    service = createService({ models, transport: actualTransport, evidence,
+      warmSessions: require('../../services/taric/warmSession').createWarmSessions(actualTransport.sessionAdapter),
+      codeVersion: 'synthetic', authorizeAdmin: async () => true });
+    const recoverSpy = jest.spyOn(service, 'resumeInference');
+    fixture.document = { openapi: '3.1.0', paths: { '/health': { get: {} } } };
+    const app = express(); const csrf = 'x'.repeat(43);
+    app.set('views', path.join(__dirname, '../../views')); app.set('view engine', 'pug');
+    app.use((req, _res, next) => { req.user = { _id: 'a'.repeat(24), name: 'synthetic', type_user: 'admin' }; req.isAuthenticated = () => true; req.session = { csrfToken: csrf }; next(); });
+    app.use('/admin/taric', createTaricAdminRouter(service, { roleModel: { findOne: async () => null } }));
+    const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${server.address().port}`; let dom;
+    const post = async (route, body) => {
+      const response = await fetch(base + '/admin/taric' + route, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify(body) });
+      return { status: response.status, body: await response.json() };
+    };
+    const until = async predicate => {
+      const end = Date.now() + 5000;
+      while (!predicate() && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 10));
+      expect(predicate()).toBeTruthy();
+    };
+    try {
+      const response = await fetch(base + '/admin/taric'); expect(response.status).toBe(200);
+      dom = new JSDOM(await response.text(), { url: base + '/admin/taric', runScripts: 'outside-only' });
+      dom.window.fetch = (url, options) => fetch(base + url, options);
+      dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-admin.js'), 'utf8'));
+      const element = id => dom.window.document.getElementById(id);
+      const click = async id => {
+        expect(element(id).disabled).toBe(false); element(id).click();
+        await until(() => element('status').textContent !== 'Working…');
+      };
+      await until(() => element('status').textContent === 'Readiness loaded.');
+      expect(element('readiness').textContent).toContain('GATEWAY_UPGRADE_REQUIRED');
+      expect(element('readiness').textContent).toContain('RELEASE_CLOSED');
+      expect(element('run').disabled).toBe(true); expect(element('test').disabled).toBe(true);
+      expect(element('save-config').disabled).toBe(false); expect(element('rotate').disabled).toBe(false);
+      expect((await service.settings())).toMatchObject({ revision: 3, catalog: null, runtime: { adapters: [] } });
+      await click('remote-status');
+      expect(element('cancel-pending').disabled).toBe(false); expect(element('resume').disabled).toBe(true);
+      const pending = await post('/inference/resume', { confirm: true, epoch: 7 });
+      expect(pending).toMatchObject({ status: 409, body: { error: 'RECOVERY_REQUIRED', action: 'inference.recover', stage: 'recovery.pending' } });
+      expect(pending.body.requestId).toMatch(/^[a-f0-9]{32}$/);
+      element('confirm-idle').checked = true; await click('cancel-pending');
+      expect((await models.Run.findById(oldRun.id)).state).toBe('cancelled');
+      const old = await post('/inference/resume', { confirm: true, epoch: 8 });
+      expect(old).toMatchObject({ status: 503, body: { error: 'GATEWAY_UPGRADE_REQUIRED', action: 'inference.recover', stage: 'gateway.preflight' } });
+      expect(old.body.message).toContain('Rebuild');
+      expect((await models.Control.findById('inference')).toObject()).toMatchObject({ blocked: true, reason: 'INFERENCE_UNCERTAIN', epoch: 8 });
+      element('kind').value = 'runs'; await click('inspect'); expect(element('records').textContent).toContain(oldRun.id);
+      expect(fixture.requests.every(r => r.path === '/openapi.json')).toBe(true); expect(fixture.generateCount).toBe(0);
+      // Config POST remains usable while held/old, and invalidates discovery.
+      await click('save-config'); expect((await service.settings()).revision).toBe(4);
+      const stringEpoch = await post('/inference/resume', { confirm: true, epoch: '8' }); expect(stringEpoch.status).toBe(400);
+      fixture.document = openapi(); await click('refresh'); await click('remote-status');
+      expect(element('resume').disabled).toBe(false); await click('resume');
+      expect(recoverSpy).toHaveBeenLastCalledWith(8, expect.stringMatching(/^[a-f0-9]{32}$/));
+      expect(element('status').textContent).toContain('done.');
+      expect((await models.Control.findById('inference')).toObject()).toMatchObject({ blocked: false, reason: null,
+        capabilityProof: { digest: expect.stringMatching(/^[a-f0-9]{64}$/), protocol: 'owned-v1' } });
+      expect(element('run').disabled).toBe(true); expect(element('test').disabled).toBe(false);
+      await click('adapters'); expect(element('run').disabled).toBe(false);
+      expect(fixture.generateCount).toBe(0); expect(fixture.sessions.every(session => session.reclaim_verified)).toBe(true);
+      await expect(service.admission(false)).rejects.toThrow('RELEASE_CLOSED');
+      // New diagnostic v0 run is admitted; no execution or passing result invented.
+      const queued = await post(`/benchmarks/${b._id}/runs`, { adapter: TEST_ADAPTER }); expect(queued.status).toBe(202);
+      expect((await models.Run.findById(queued.body.id)).toObject()).toMatchObject({ state: 'pending', passed: false, actualCount: 0 });
+      await models.Settings.updateOne({ _id: 'tool' }, { $set: { enabled: false } });
+      await click('refresh'); expect(element('test').disabled).toBe(true); expect(element('run').disabled).toBe(true);
+      expect(element('save-config').disabled).toBe(false); await click('inspect');
+    } finally { dom?.window.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await fixture.close(); }
+  });
   test('exclusive recovery is held during Mongo CAS and cleanup; busy admission preserves old hold', async () => {
     const { gatewayFixture } = require('../helpers/taricGateway'); const fixture = await gatewayFixture(); worker.stop();
     try {

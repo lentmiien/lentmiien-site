@@ -40,19 +40,29 @@ as a smoke test; use the established service procedure with its known prestart e
 
 Update Gateway source in its existing parent checkout, preserving local changes and using
 only fast-forward integration from its already configured origin. Verify HEAD includes
-`689c68a907b5afdda3bd6916df791cafbc61a67c` before rebuilding. Human commands after that review:
+`689c68a907b5afdda3bd6916df791cafbc61a67c` before rebuilding.
+A source pull alone does not update the running image. The reported Sep 18 failure had
+source `689c68a` while the Sep 16 container still ran `5c2802a`, without the session module
+or OpenAPI routes. Health/ready 200 did not establish compatibility. This is supplied
+runtime evidence, not a new production probe by this change.
+
+The deployment coordinator must supply the **existing project name and both Compose
+files**, including the live override, before the human rebuild. Do not use bare
+`docker compose up`: it can choose the wrong project or omit live configuration. The
+following is a parameterized command shape, **not confirmed deployment commands**:
 
 ```sh
-cd /home/lennart/ai-services
-git fetch origin main
-git switch main
-git merge --ff-only origin/main
-git merge-base --is-ancestor 689c68a907b5afdda3bd6916df791cafbc61a67c HEAD
-cd ai-gateway
-docker compose up -d --build ai_gateway
-docker compose ps
-docker compose logs --tail=200 ai_gateway
+docker compose --project-name "${GATEWAY_PROJECT:?confirmed existing project}" \
+  -f "${GATEWAY_BASE_COMPOSE:?confirmed base file}" \
+  -f "${GATEWAY_LIVE_OVERRIDE:?confirmed live override}" \
+  up -d --build --force-recreate "${GATEWAY_SERVICE:?confirmed Gateway service}"
 ```
+
+Preserve the established override, environment and project. Verify the running image and
+container include the session module and publish the four explicit owned-session operations
+plus generation POST. Site's **Refresh status** checks only bounded `/openapi.json`; it
+never probes an unknown session route or starts inference. A human rebuild is still needed
+when the source checkout is current but the running image is old.
 
 If source update/ancestry checks fail, stop; do not run the build. Keep Gateway's required
 scheduler, Docker/startup fencing and verified reclaim prerequisites enabled, with one
@@ -155,3 +165,30 @@ explicitly authorize **one TARIC v0 benchmark canary** using `taric-v1-20260917-
 start window and stop condition, to test cold/warm behavior and cleanup. The old six-hour
 grant expired and is not reused. This document does not authorize any GPU work. Live AmiAmi
 verification is a separate human decision; no success is inferred from CA repair or mocks.
+
+## Site readiness/usability follow-up
+
+The follow-up starts from Site `9c1bca846cd80ead471dfa152f9e3d5d9202ddca`. It adds a
+read-only Gateway capability preflight and contextual admin failures. It does not establish
+the cause of every earlier `INFERENCE_UNCERTAIN` attempt; the original production transport
+trace remains unproved here. No production DB, deploy, GPU, reservation, scrape or live HTTP
+was used for this follow-up. Gateway source was inspected locally and left unchanged.
+
+The new preflight requires published create/status/heartbeat/delete roles, plus generation
+POST (currently published through `/qwen3-lora/{path}`). Generic health, empty operations and
+missing roles cannot pass. Gateway's current handlers use untyped `Request`/`Dict` and do not
+publish owner/status response schemas; Site continues validating real session responses.
+Discovery proves API publication only, not authentication for later operations, runtime
+identity, exclusive admission, reclaim, or model quality.
+
+See [readiness recovery steps](taric-runbook.md#gateway-readiness-and-held-admin-actions)
+for enabled/rejected controls and the required human rebuild sequence. The completion
+report supplies the commit hash and final local test totals.
+
+
+Follow-up validation: **13 focused TARIC suites / 230 tests**, including **44 disposable
+Mongo lifecycle tests**, passed. The full suite passed **317 suites / 3,732 tests** with
+coverage thresholds met (one unrelated suite / four tests skipped). The final focused run
+also passed after the last cache/UI refinements. `git diff --check` passed. No curated
+OpenAPI YAML changed, no dependency changed, and no database migration is required; the
+control proof fields are optional and contain no owner capability.
