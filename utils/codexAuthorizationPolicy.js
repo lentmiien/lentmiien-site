@@ -2,6 +2,7 @@ const CODEX_CAPABILITIES = Object.freeze({
   runpodModelRun: 'codex.run.runpod_model',
   turnCancel: 'codex.turn.cancel',
   turnRead: 'codex.turn.read',
+  sessionRead: 'codex.session.read',
   turnRetry: 'codex.turn.retry',
   turnSteer: 'codex.turn.steer',
 });
@@ -16,18 +17,21 @@ const CODEX_ROLE_CAPABILITY_BUNDLES = Object.freeze({
   family: Object.freeze([
     CODEX_CAPABILITIES.turnCancel,
     CODEX_CAPABILITIES.turnRead,
+    CODEX_CAPABILITIES.sessionRead,
     CODEX_CAPABILITIES.turnRetry,
     CODEX_CAPABILITIES.turnSteer,
   ]),
   user: Object.freeze([
     CODEX_CAPABILITIES.turnCancel,
     CODEX_CAPABILITIES.turnRead,
+    CODEX_CAPABILITIES.sessionRead,
     CODEX_CAPABILITIES.turnRetry,
     CODEX_CAPABILITIES.turnSteer,
   ]),
   codex_system: Object.freeze([
     CODEX_CAPABILITIES.turnCancel,
     CODEX_CAPABILITIES.turnRead,
+    CODEX_CAPABILITIES.sessionRead,
     CODEX_CAPABILITIES.turnRetry,
     CODEX_CAPABILITIES.turnSteer,
   ]),

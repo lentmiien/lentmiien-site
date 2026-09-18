@@ -1,5 +1,6 @@
 const codexToolService = require('../services/codexToolService');
 const codexQueueWorker = require('../services/codexQueueWorker');
+const codexSessionHistoryService = require('../services/codexSessionHistoryService');
 const {
   latestCodexRemainingUsage,
   presentCodexEvents,
@@ -216,6 +217,21 @@ exports.createFollowupTurn = async (req, res) => {
     return res.status(202).json({ ok: true, ...result });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to create Codex follow-up.');
+  }
+};
+
+exports.listSessionHistory = async (req, res) => {
+  try {
+    const result = await codexSessionHistoryService.listSessionHistory(req.query, req.user);
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    const status = error?.statusCode || 500;
+    if (status >= 500) {
+      logger.error('Unable to query Codex session history', {
+        category: 'codex_tool', metadata: { errorName: error?.name || 'Error' },
+      });
+    }
+    return res.status(status).json({ ok: false, error: status >= 500 ? 'Unable to load session history.' : error.message });
   }
 };
 

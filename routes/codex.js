@@ -4,6 +4,10 @@ const rateLimit = require('express-rate-limit');
 const controller = require('../controllers/codexController');
 const { PRIVATE_NO_STORE, createSessionCsrf } = require('../middleware/sessionCsrf');
 
+const { createRequireCapabilities } = require('../middleware/requireCapabilities');
+const { CODEX_CAPABILITIES, CODEX_ROLE_CAPABILITY_BUNDLES } = require('../utils/codexAuthorizationPolicy');
+const Role = require('../models/role');
+
 const router = express.Router();
 const csrf = createSessionCsrf();
 const additionalMessageLimiter = rateLimit({
@@ -58,6 +62,12 @@ router.get('/api/templates', controller.listPromptTemplates);
 router.post('/api/templates', csrf.requireToken, controller.createPromptTemplate);
 router.patch('/api/templates/:templateId', csrf.requireToken, controller.updatePromptTemplate);
 router.delete('/api/templates/:templateId', csrf.requireToken, controller.deletePromptTemplate);
+
+router.get('/api/session-history', createRequireCapabilities({
+  capabilities: [CODEX_CAPABILITIES.sessionRead],
+  roleModel: Role,
+  roleCapabilityBundles: CODEX_ROLE_CAPABILITY_BUNDLES,
+}), controller.listSessionHistory);
 
 router.get('/api/sessions', controller.listSessions);
 router.post('/api/sessions', csrf.requireToken, controller.createSession);

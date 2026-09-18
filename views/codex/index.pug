@@ -36,12 +36,24 @@ block content
         div
           h1.codex-title Codex Workspace Assistant
           p.codex-subtitle Submit workspace-scoped Codex turns and review the stored session history.
-        .codex-topbar__actions
-          a.codex-button.codex-button--secondary(href='/codex/templates') Prompt Library
+        nav.codex-topbar__actions.codex-dashboard-nav(aria-label='Codex tools')
+          a.codex-button.codex-button--secondary(href='/codex/templates', aria-label='Prompt Library', title='Prompt Library')
+            svg(viewBox='0 0 24 24', width='22', height='22', fill='none', stroke='currentColor', stroke-width='1.8', aria-hidden='true')
+              path(d='M4 3h6a3 3 0 0 1 3 3v15a4 4 0 0 0-4-2H4z M13 6a3 3 0 0 1 3-3h5v16h-4a4 4 0 0 0-4 2')
+            span Prompt Library
           if admin
-            a.codex-button.codex-button--secondary(href='/codex/profiles') Profiles
-            a.codex-button.codex-button--secondary(href='/codex/workspaces') Workspaces
-          button#codex-health-button.codex-button.codex-button--secondary(type='button', aria-haspopup='dialog', aria-controls='codex-health-modal') Health
+            a.codex-button.codex-button--secondary(href='/codex/profiles', aria-label='Profiles', title='Profiles')
+              svg(viewBox='0 0 24 24', width='22', height='22', fill='none', stroke='currentColor', stroke-width='1.8', aria-hidden='true')
+                path(d='M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6')
+              span Profiles
+            a.codex-button.codex-button--secondary(href='/codex/workspaces', aria-label='Workspaces', title='Workspaces')
+              svg(viewBox='0 0 24 24', width='22', height='22', fill='none', stroke='currentColor', stroke-width='1.8', aria-hidden='true')
+                path(d='M3 5h7l2 3h9v12H3z')
+              span Workspaces
+          button#codex-health-button.codex-button.codex-button--secondary(type='button', aria-label='Health', title='Health', aria-haspopup='dialog', aria-controls='codex-health-modal')
+            svg(viewBox='0 0 24 24', width='22', height='22', fill='none', stroke='currentColor', stroke-width='1.8', aria-hidden='true')
+              path(d='M2 12h5l3-8 4 16 3-8h5')
+            span Health
 
       dialog#codex-health-modal.codex-health-modal(aria-labelledby='codex-health-title', aria-describedby='codex-health-summary')
         .codex-health-modal__header
@@ -61,9 +73,11 @@ block content
           button.codex-button.codex-button--secondary(type='button', data-codex-health-close) Close
 
       .codex-dashboard
-        section#codex-new-request-panel.codex-panel.codex-panel--form
-          .codex-panel__header
+        details#codex-new-request-panel.codex-panel.codex-panel--form.codex-disclosure
+          summary
             h2 New Request
+            span.codex-disclosure-hint Expand
+          .codex-panel__header
             .codex-panel__header-actions
               span.codex-chip= workspaces.length + ' workspace' + (workspaces.length === 1 ? '' : 's')
               button#codex-new-request-maximize.codex-small-button(
@@ -154,46 +168,107 @@ block content
               button.codex-button(type='submit', data-codex-prompt-submit, disabled=!workspaces.length) Submit
               span#codex-new-session-status.codex-form-status(aria-live='polite')
 
-        section.codex-panel
+        section.codex-panel.codex-active-work
           .codex-panel__header
-            h2 Running
-            span.codex-chip(data-codex-running-count)= runningTurns.length
-          .codex-list(data-codex-running-list)
-            if runningTurns.length
-              each turn in runningTurns
-                article.codex-job-row(data-turn-id=turn.id)
-                  .codex-job-row__main
-                    span(class=statusClass(turn.status))= turn.status
-                    a(href=`/codex/turns/${turn.id}`)= turn.workspace ? turn.workspace.name : 'Workspace'
-                    small= 'Started ' + fmt(turn.startedAt)
-                    .codex-live-activity(data-turn-activity=turn.id, data-activity-state='live', aria-label='Live Codex process activity')
-                      span.codex-live-activity__signal(aria-hidden='true')
-                        span
-                        span
-                        span
-                      span.codex-live-activity__copy
-                        strong(data-activity-heading) Codex is working
-                        span(data-activity-summary) Waiting for the first process detail…
-                      span.codex-visually-hidden(data-activity-announcement, aria-live='polite', aria-atomic='true')
-                  button.codex-icon-button(type='button', data-action='cancel-turn', data-turn-id=turn.id, title='Cancel') Cancel
-            else
-              p.codex-empty No running requests.
+            h2 Active Work
+          .codex-active-columns
+            section
+              .codex-panel__header
+                h3 Running
+                span.codex-chip(data-codex-running-count)= runningTurns.length
+              .codex-list(data-codex-running-list)
+                if runningTurns.length
+                  each turn in runningTurns
+                    article.codex-job-row(data-turn-id=turn.id)
+                      .codex-job-row__main
+                        span(class=statusClass(turn.status))= turn.status
+                        a(href=`/codex/turns/${turn.id}`)= turn.workspace ? turn.workspace.name : 'Workspace'
+                        small= 'Started ' + fmt(turn.startedAt)
+                        .codex-live-activity(data-turn-activity=turn.id, data-activity-state='live', aria-label='Live Codex process activity')
+                          span.codex-live-activity__signal(aria-hidden='true')
+                            span
+                            span
+                            span
+                          span.codex-live-activity__copy
+                            strong(data-activity-heading) Codex is working
+                            span(data-activity-summary) Waiting for the first process detail…
+                          span.codex-visually-hidden(data-activity-announcement, aria-live='polite', aria-atomic='true')
+                      button.codex-icon-button(type='button', data-action='cancel-turn', data-turn-id=turn.id, title='Cancel') Cancel
+                else
+                  p.codex-empty No running requests.
 
-        section.codex-panel
+            section
+              .codex-panel__header
+                h3 Queued
+                span.codex-chip(data-codex-queued-count)= queuedTurns.length
+              .codex-list(data-codex-queued-list)
+                if queuedTurns.length
+                  each turn in queuedTurns
+                    article.codex-job-row
+                      .codex-job-row__main
+                        span(class=statusClass(turn.status))= turn.status
+                        a(href=`/codex/turns/${turn.id}`)= turn.workspace ? turn.workspace.name : 'Workspace'
+                        small= 'Queued ' + fmt(turn.queuedAt)
+                      button.codex-icon-button(type='button', data-action='cancel-turn', data-turn-id=turn.id, title='Cancel') Cancel
+                else
+                  p.codex-empty No queued requests.
+
+        section.codex-panel.codex-panel--full.codex-history
           .codex-panel__header
-            h2 Queued
-            span.codex-chip(data-codex-queued-count)= queuedTurns.length
-          .codex-list(data-codex-queued-list)
-            if queuedTurns.length
-              each turn in queuedTurns
-                article.codex-job-row
-                  .codex-job-row__main
-                    span(class=statusClass(turn.status))= turn.status
-                    a(href=`/codex/turns/${turn.id}`)= turn.workspace ? turn.workspace.name : 'Workspace'
-                    small= 'Queued ' + fmt(turn.queuedAt)
-                  button.codex-icon-button(type='button', data-action='cancel-turn', data-turn-id=turn.id, title='Cancel') Cancel
-            else
-              p.codex-empty No queued requests.
+            h2 Recent Sessions
+            span.codex-chip(data-codex-session-count)= recentSessions.length
+          form.codex-history-filters(method='get', action='/codex/api/session-history', data-codex-history-filters)
+            label
+              span Session status
+              select(name='status')
+                option(value='recent') Not archived
+                option(value='all') All statuses
+                option(value='pending') Pending
+                option(value='active') Active
+                option(value='failed') Failed
+                option(value='archived') Archived
+            label
+              span Workspace
+              select(name='workspaceId')
+                option(value='') All workspaces
+                each workspace in workspaces
+                  option(value=workspace.id)= workspace.name
+            label.codex-history-search
+              span Search titles
+              input(type='search', name='search', maxlength='100', placeholder='Find a session…')
+            button.codex-button(type='submit') Filter
+          .codex-history-toolbar
+            p.codex-form-status(data-codex-history-status, role='status', aria-live='polite') Loading session history…
+            button.codex-small-button(type='button', data-codex-history-refresh) Refresh
+          p.codex-field-help(data-codex-history-live, hidden) Live activity continues above. Refresh to update this historical page.
+          .codex-table-wrap(data-codex-history-results, aria-busy='true')
+            table.codex-table(data-codex-session-table)
+              thead
+                tr
+                  th Title
+                  th Workspace
+                  th Status
+                  th Updated
+              tbody
+                if recentSessions.length
+                  each session in recentSessions
+                    tr
+                      td(data-label='Title')
+                        a(href=`/codex/sessions/${session.id}`)= session.title
+                        if session.lastResponsePreview
+                          small= session.lastResponsePreview
+                      td(data-label='Workspace')= session.workspace ? session.workspace.name : '-'
+                      td(data-label='Status')
+                        span(class=statusClass(session.status))= session.status
+                      td(data-label='Updated')= fmt(session.updatedAt)
+                else
+                  tr
+                    td(colspan='4') No Codex sessions yet.
+          nav.codex-history-pagination(aria-label='Session history pages')
+            button.codex-small-button(type='button', data-codex-history-latest, disabled) Latest
+            button.codex-small-button(type='button', data-codex-history-previous, disabled) Previous
+            span(data-codex-history-page) Page 1
+            button.codex-small-button(type='button', data-codex-history-next, disabled) Next
 
         section.codex-panel.codex-panel--wide(data-codex-stats-summary)
           .codex-panel__header
@@ -277,10 +352,11 @@ block content
                   p.codex-empty No statuses yet.
 
         if admin
-          section.codex-panel.codex-panel--full
-            .codex-panel__header
+          details.codex-panel.codex-panel--full.codex-disclosure
+            summary
               h2 Token Prices
-              span.codex-chip Separate estimates · USD / 1M tokens
+              span.codex-disclosure-hint Expand
+            p.codex-field-help Separate estimates · USD / 1M tokens
             .codex-pricing-grid
               each provider in pricingProviders
                 - const providerPricing = pricingByProvider[provider.value] || {};
@@ -295,6 +371,13 @@ block content
                   .codex-actions
                     button.codex-button(type='submit')= `Save ${provider.label} Prices`
                     span.codex-form-status(data-codex-pricing-status, aria-live='polite')
+
+        section.codex-panel.codex-panel--full
+          .codex-panel__header
+            h2 Trends
+            span.codex-chip= stats.period ? stats.period.label : 'Last 3 months'
+          .codex-chart-grid(data-codex-charts)
+            p.codex-empty Charts load with JavaScript. Full values are available below.
 
         section.codex-panel.codex-panel--full
           .codex-panel__header
@@ -367,34 +450,7 @@ block content
                   tr
                     td(colspan='11') No workspace activity recorded for the last 3 months.
 
-        section.codex-panel.codex-panel--full
-          .codex-panel__header
-            h2 Recent Sessions
-            span.codex-chip(data-codex-session-count)= recentSessions.length
-          .codex-table-wrap
-            table.codex-table(data-codex-session-table)
-              thead
-                tr
-                  th Title
-                  th Workspace
-                  th Status
-                  th Updated
-              tbody
-                if recentSessions.length
-                  each session in recentSessions
-                    tr
-                      td(data-label='Title')
-                        a(href=`/codex/sessions/${session.id}`)= session.title
-                        if session.lastResponsePreview
-                          small= session.lastResponsePreview
-                      td(data-label='Workspace')= session.workspace ? session.workspace.name : '-'
-                      td(data-label='Status')
-                        span(class=statusClass(session.status))= session.status
-                      td(data-label='Updated')= fmt(session.updatedAt)
-                else
-                  tr
-                    td(colspan='4') No Codex sessions yet.
-
 block script
   script#codex-page-data(type='application/json')!= codexStateJson
+  script(src='/js/codex-dashboard.js', defer)
   script(src=formAssetUrl('codex.js'), defer)

@@ -997,6 +997,7 @@
 
     button.addEventListener('click', () => {
       const maximized = !panel.classList.contains('codex-panel--maximized');
+      panel.open = true;
       panel.classList.toggle('codex-panel--maximized', maximized);
       button.setAttribute('aria-pressed', maximized ? 'true' : 'false');
       button.textContent = maximized ? 'Restore' : 'Maximize';
@@ -1493,6 +1494,7 @@
   }
 
   function renderDashboardStats(stats, pricing) {
+    window.CodexDashboard?.renderCharts(root.querySelector('[data-codex-charts]'), stats);
     const summary = stats && stats.summary ? stats.summary : {};
     const summarySection = root.querySelector('[data-codex-stats-summary]');
     if (summarySection) {
@@ -1619,7 +1621,7 @@
     tbody.innerHTML = '';
     if (!sessions || sessions.length === 0) {
       const row = createEl('tr');
-      row.appendChild(createEl('td', { colspan: '4', text: 'No Codex sessions yet.' }));
+      row.appendChild(createEl('td', { colspan: '4', text: 'No sessions match this page or these filters.' }));
       tbody.appendChild(row);
       return;
     }
@@ -1643,23 +1645,22 @@
     });
   }
 
+  let dashboardHistory = null;
+
   async function refreshDashboard() {
-    const [queue, sessions, statsPayload] = await Promise.all([
+    const [queue, statsPayload] = await Promise.all([
       requestJson('/codex/api/queue'),
-      requestJson('/codex/api/sessions?limit=12'),
       requestJson('/codex/api/stats'),
     ]);
     syncLiveActivityTurns([...(queue.runningTurns || []), ...(queue.queuedTurns || [])]);
     renderTurnList(root.querySelector('[data-codex-running-list]'), queue.runningTurns || [], 'No running requests.');
     renderTurnList(root.querySelector('[data-codex-queued-list]'), queue.queuedTurns || [], 'No queued requests.');
-    renderSessionsTable(root.querySelector('[data-codex-session-table]'), sessions.sessions || []);
+    if (dashboardHistory) dashboardHistory.refresh();
     renderDashboardStats(statsPayload.stats, statsPayload.pricingByProvider || statsPayload.pricing);
     const runningCount = root.querySelector('[data-codex-running-count]');
     const queuedCount = root.querySelector('[data-codex-queued-count]');
-    const sessionCount = root.querySelector('[data-codex-session-count]');
     if (runningCount) runningCount.textContent = String((queue.runningTurns || []).length);
     if (queuedCount) queuedCount.textContent = String((queue.queuedTurns || []).length);
-    if (sessionCount) sessionCount.textContent = String((sessions.sessions || []).length);
   }
 
   function renderTranscriptBlock(title, text, fallback, headingTag) {
@@ -3028,6 +3029,8 @@
   }
 
   function initDashboard() {
+    dashboardHistory = window.CodexDashboard?.initHistory(root, requestJson, renderSessionsTable);
+    window.CodexDashboard?.renderCharts(root.querySelector('[data-codex-charts]'), bootstrap.stats);
     initHealthModal();
     initNewRequestMaximize();
     bindDashboardPromptTemplateFilter();

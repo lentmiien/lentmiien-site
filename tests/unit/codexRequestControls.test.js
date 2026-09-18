@@ -31,7 +31,9 @@ function renderCodexView(view, codexState, locals = {}) {
     codexState,
     codexStateJson: JSON.stringify(codexState),
   });
-  for (const form of html.match(/<form\b[^>]*>/g) || []) expect(form).toContain('method="post"');
+  for (const form of html.match(/<form\b[^>]*>/g) || []) {
+    expect(form).toContain(form.includes('data-codex-history-filters') ? 'method="get"' : 'method="post"');
+  }
   expect(html).toContain(`src="${formAssetUrl('codex.js')}"`);
   return html;
 }
