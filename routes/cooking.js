@@ -25,6 +25,7 @@ router.get('/cookbook', cookbookController.index);
 router.get('/cookbook/new', cookbookController.newForm);
 router.post('/cookbook/new', cookbookController.create);
 router.post('/cookbook/ai-draft', cookbookController.aiDraft);
+router.use('/cookbook/legacy', require('./cookbookLegacy').createLegacyCookbookRouter());
 router.get('/cookbook/:id/edit', cookbookController.editForm);
 router.post('/cookbook/:id/edit', cookbookController.update);
 router.post('/cookbook/:id/rating', cookbookController.updateRating);

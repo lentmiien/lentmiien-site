@@ -1,5 +1,7 @@
 // Dashboard adapters never import database.js, controllers, workers or provider SDKs.
 const { allows, SECTIONS, canCloseAccounts } = require('./accountSurfacePolicy');
+const { roleBundleCapabilities } = require('../utils/authorization');
+const { RECIPE_READ, ROLE_BUNDLES: COOKBOOK_READ_BUNDLES } = require('../utils/cookbookReadPolicy');
 const accountBalances = require('../utils/accountBalances');
 const { jobTypesFor } = require('./accountPreferencesService');
 const logger = require('../utils/logger');
@@ -96,11 +98,30 @@ function createDashboardData({ model = name => require(`../models/${name}`), now
       ] }, 'title type start end', { start: 1, _id: 1 }, 20);
       return { rows: entries.map(e => row(e.title, e.type === 'presence' ? 'Scheduled' : 'Due today', '/scheduleTask/calendar', e.type === 'presence' ? e.start : e.end)), note: 'Today in Asia/Tokyo, including events crossing midnight.' };
     },
-    async cooking() {
+    async cooking(policy) {
       const entries = await read('CookingCalendarV2', { date: tokyoDay(now()).key }, { entries: { $slice: 12 } }, { date: -1 }, 1);
       const meals = entries[0]?.entries || [];
-      const recipes = meals.length ? await read('chat4_knowledge', { _id: { $in: meals.map(m => m.recipeId) } }, 'title', { _id: 1 }, 12) : [];
-      return { rows: meals.map(m => row(recipes.find(r => String(r._id) === String(m.recipeId))?.title || 'Scheduled recipe', m.category, '/cooking/v2')), note: 'Shared household cooking plan · Asia/Tokyo.' };
+      const ids = [...new Set(meals.map(m => String(m.recipeId)))];
+      const scope = { user_id: policy.user.name };
+      // Separate bounded queries prevent duplicate aliases from crowding out canonical IDs.
+      const [canonical, aliases, legacy] = ids.length ? await Promise.all([
+        read('cookbook_recipe', { ...scope, _id: { $in: ids } }, 'title', { _id: 1 }, 12),
+        read('cookbook_recipe', { ...scope, originKnowledgeId: { $in: ids } }, 'title originKnowledgeId', { _id: 1 }, 12),
+        read('chat4_knowledge', { ...scope, _id: { $in: ids }, category: /^Recipe$/i }, 'title', { _id: 1 }, 12),
+      ]) : [[], [], []];
+      const canReadLegacy = policy.capabilities.includes(RECIPE_READ)
+        || roleBundleCapabilities(policy.user, COOKBOOK_READ_BUNDLES).includes(RECIPE_READ);
+      return { rows: meals.map(m => {
+        const id = String(m.recipeId);
+        const cookbook = canonical.find(r => String(r._id) === id)
+          || aliases.find(r => r.originKnowledgeId === id);
+        const knowledge = legacy.find(r => String(r._id) === id);
+        const recipe = cookbook || knowledge;
+        const href = cookbook ? `/cooking/cookbook/${encodeURIComponent(String(cookbook._id))}`
+          : knowledge && canReadLegacy ? `/cooking/cookbook/legacy/${encodeURIComponent(id)}` : null;
+        return row(recipe?.title || (recipe ? 'Untitled recipe' : 'Recipe unavailable'),
+          `${m.category}${href ? '' : ' · Unavailable for cookbook viewing'}`, href);
+      }), note: 'Shared household cooking plan · Asia/Tokyo. Recipe details require ownership.' };
     },
     async chats(policy) {
       const chats = await read('conversation5', { members: policy.user.name }, 'title category updatedAt', { updatedAt: -1, _id: -1 }, 5);
@@ -115,7 +136,7 @@ function createDashboardData({ model = name => require(`../models/${name}`), now
     async codex() {
       const turns = await read('codex_turn', { status: { $in: ['queued', 'running'] } }, 'sessionId status startedAt queuedAt', { queuedAt: 1, _id: 1 }, 8);
       const sessions = turns.length ? await read('codex_session', { _id: { $in: turns.map(t => t.sessionId) } }, 'title', { _id: 1 }, 8) : [];
-      return { rows: turns.map(t => row(sessions.find(s => s._id === t.sessionId)?.title || 'Codex session', t.status, '/codex', t.startedAt || t.queuedAt)), note: 'Admin operations · up to 8 queued/running turns.' };
+      return { rows: turns.map(t => row(sessions.find(s => s._id === t.sessionId)?.title || 'Codex session', t.status, `/codex/turns/${encodeURIComponent(String(t._id))}`, t.startedAt || t.queuedAt)), note: 'Admin operations · up to 8 queued/running turns.' };
     },
     async accounting(policy) {
       const href = policy.capabilities.includes('accounting') ? '/accounting' : '/budget';
@@ -203,9 +224,9 @@ function createDashboardData({ model = name => require(`../models/${name}`), now
       return { state: freshness(e?.receivedAt, now(), 10 * 60000), rows: e ? [row('Configured device', `${e.battery == null ? 'Battery unknown' : `${e.battery}% battery`} · ${e.active ? 'Active at last report' : 'Inactive at last report'}`, '/admin/minute-logger', e.receivedAt)] : [], note: 'Last-known report; no location or endpoint details.' };
     },
     async runpod() {
-      const pods = await read('runpod_pod', {}, 'name providerStatus lastProviderSyncAt', { lastProviderSyncAt: -1, _id: -1 }, 30);
+      const pods = await read('runpod_pod', { providerStatus: { $ne: 'TERMINATED' } }, 'name providerStatus lastProviderSyncAt', { lastProviderSyncAt: -1, _id: -1 }, 30);
       return { state: pods.length ? pods.some(p => freshness(p.lastProviderSyncAt, now()) !== 'ready') ? 'stale' : 'ready' : 'unavailable',
-        rows: pods.map(p => row(p.name, `Tracked ${p.providerStatus === 'RUNNING' ? 'running' : p.providerStatus === 'EXITED' ? 'stopped' : 'other'} · ${p.providerStatus}`, '/admin/runpod', p.lastProviderSyncAt)), note: 'Up to 30 locally tracked pods. Actual provider status at last sync; no provider refresh.' };
+        rows: pods.map(p => row(p.name, `Tracked ${p.providerStatus === 'RUNNING' ? 'running' : p.providerStatus === 'EXITED' ? 'stopped' : 'other'} · ${p.providerStatus}`, '/admin/runpod', p.lastProviderSyncAt)), note: 'Up to 30 locally tracked nonterminated pods. Actual provider status at last sync; no provider refresh.' };
     },
     async tapo() {
       const day = tokyoDay(now());

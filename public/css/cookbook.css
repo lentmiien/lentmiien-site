@@ -4,6 +4,25 @@
   border-radius: 0.85rem;
 }
 
+.cookbook-legacy-page {
+  max-width: 60rem;
+  margin: 0 auto;
+  overflow-wrap: anywhere;
+}
+
+.cookbook-legacy-page .card {
+  background: var(--surface-1);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.cookbook-legacy-page pre,
+.cookbook-legacy-page table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .cookbook-page .recipe-card {
   height: 100%;
 }

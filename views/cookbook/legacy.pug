@@ -1,0 +1,15 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/cookbook.css')
+
+block content
+  main.cookbook-view-page.cookbook-legacy-page
+    .d-flex.flex-wrap.align-items-center.justify-content-between.gap-2.mb-3
+      h1= title
+      a.btn.btn-outline-secondary(href='/cooking/cookbook') Back to cookbook
+    p.text-secondary Legacy recipe · Read-only
+    p.text-muted This recipe is stored as a legacy note and has not been converted to a cookbook entry.
+    article.card
+      //- contentHTML uses the shared Markdown sanitizer plus a media-free allowlist.
+      .card-body!= contentHTML
