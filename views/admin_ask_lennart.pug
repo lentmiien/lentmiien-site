@@ -37,7 +37,7 @@ block content
                   span.ask-lennart-kind= request.variant === 'codex' ? 'Codex workflow' : 'General'
                   h3= request.toolName
                 time(datetime=request.createdAt)= fmt(request.createdAt)
-              pre.ask-lennart-prompt= request.prompt
+              .ask-lennart-prompt.ask-lennart-prompt--pending(data-pending-prompt)= request.prompt
               .ask-lennart-meta
                 span= `Request ${request._id}`
                 if request.conversationId
@@ -91,4 +91,6 @@ block content
           p No completed requests yet.
 
 block script
+  script(src='/vendor/dompurify/purify.min.js', defer)
+  script(src='https://cdn.jsdelivr.net/npm/marked@18.0.6/lib/marked.umd.js', defer)
   script(src='/js/ask_lennart.js', defer)
