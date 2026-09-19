@@ -2879,3 +2879,123 @@
   .codex-history th:nth-child(4) { width: 20%; }
 }
 .codex-history .codex-status { white-space: nowrap; }
+
+/* Session and turn reading layouts. Process Details keeps its existing styles. */
+[data-codex-page='session'],
+[data-codex-page='turn'] {
+  padding-top: 12px;
+  overflow-wrap: anywhere;
+}
+
+:is([data-codex-page='session'], [data-codex-page='turn']) .codex-topbar > div {
+  min-width: 0;
+}
+
+.codex-session-nav {
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+.codex-session-nav > .codex-button {
+  width: auto;
+  min-width: 44px;
+  min-height: 44px;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.codex-session-nav svg { flex-shrink: 0; }
+
+[data-codex-page='session'] :is(button, summary, .codex-small-link, .codex-back-link),
+[data-codex-page='turn'] .codex-back-link {
+  min-height: 44px;
+}
+
+[data-codex-page='session'] :is(.codex-small-link, .codex-back-link),
+[data-codex-page='turn'] .codex-back-link {
+  display: inline-flex;
+  align-items: center;
+}
+
+:is(.codex-session-nav, .codex-turn-card, .codex-followup-panel) :is(a, button, summary):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+[data-codex-page='session'] :is(.codex-session-stats, .codex-turn-card, .codex-followup-panel),
+.codex-turn-status {
+  min-width: 0;
+  padding: 12px;
+  background: var(--surface-1);
+}
+
+.codex-session-stats .codex-panel__header,
+.codex-turn-status .codex-panel__header {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.codex-session-stats .codex-stat-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.codex-session-stats .codex-stat-card { padding: 8px; }
+.codex-session-stats .codex-stat-card strong { font-size: 1.05rem; }
+.codex-session-stats .codex-chip { white-space: normal; }
+[data-codex-page='session'] .codex-timeline { gap: 10px; }
+[data-codex-page='session'] .codex-turn-card__header { gap: 6px; margin-bottom: 8px; }
+[data-codex-page='session'] .codex-turn-meta { gap: 4px 10px; margin-bottom: 8px; }
+[data-codex-page='session'] .codex-turn-meta > span { font-size: 0.8rem; }
+[data-codex-page='session'] .codex-token-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+[data-codex-page='session'] .codex-transcript__block { padding: 10px; }
+
+.codex-turn-disclosure { margin-top: 6px; }
+.codex-turn-disclosure > summary { padding: 10px 0; color: var(--accent); font-size: 0.85rem; cursor: pointer; }
+.codex-turn-extra { padding-top: 6px; }
+
+.codex-turn-status .codex-detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.codex-turn-status .codex-detail-grid > div { min-width: 0; padding: 8px; }
+.codex-turn-status .codex-detail-grid small { font-size: 0.75rem; }
+.codex-turn-status .codex-detail-grid strong { font-size: 0.85rem; }
+
+.codex-transcript-markdown { min-width: 0; line-height: 1.55; overflow-wrap: anywhere; }
+.codex-transcript-markdown > :first-child { margin-top: 0; }
+.codex-transcript-markdown > :last-child { margin-bottom: 0; }
+.codex-transcript-markdown :is(p, ul, ol, pre, blockquote, table) { margin: 0 0 0.65rem; }
+.codex-transcript-markdown :is(ul, ol) { padding-left: 1.5rem; }
+.codex-transcript-markdown :is(h1, h2, h3, h4, h5, h6) { margin: 1rem 0 0.5rem; font-size: 1em; line-height: 1.4; }
+.codex-transcript-markdown h1 { font-size: 1.25em; }
+.codex-transcript-markdown h2 { font-size: 1.12em; }
+.codex-transcript-markdown a { color: var(--accent); text-decoration: underline; }
+.codex-transcript-markdown a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.codex-transcript-markdown blockquote { border-left: 3px solid var(--accent); padding-left: 12px; color: var(--text-secondary); }
+.codex-transcript-markdown code { color: var(--text); background: var(--bg); font-size: 0.85em; }
+.codex-transcript-markdown pre { padding: 10px; white-space: pre; overflow: auto; max-width: 100%; }
+.codex-transcript-markdown pre code { white-space: inherit; }
+.codex-transcript-markdown table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.codex-transcript-markdown :is(th, td) { border: 1px solid var(--divider); padding: 6px 8px; }
+
+@media (max-width: 1024px) {
+  [data-codex-page='session'] .codex-topbar { display: grid; gap: 8px; }
+  .codex-session-nav > .codex-button { width: 48px; height: 44px; padding: 8px; justify-content: center; }
+  .codex-session-nav > .codex-button span { display: none; }
+}
+
+@media (max-width: 760px) {
+  :is([data-codex-page='session'], [data-codex-page='turn']) .codex-title { font-size: 1.35rem; }
+  :is([data-codex-page='session'], [data-codex-page='turn']) .codex-subtitle { font-size: 0.85rem; }
+  [data-codex-page='session'] .codex-turn-card__header { display: flex; flex-wrap: wrap; align-items: center; }
+  [data-codex-page='session'] .codex-turn-card__actions { gap: 10px; }
+  :is([data-codex-page='session'], [data-codex-page='turn']) .codex-transcript-markdown { font-size: 0.9rem; }
+}
+
+@media (min-width: 761px) {
+  .codex-session-stats .codex-stat-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  [data-codex-page='session'] .codex-token-strip,
+  .codex-turn-status .codex-detail-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

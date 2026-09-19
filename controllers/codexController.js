@@ -7,6 +7,8 @@ const {
   sanitizeRawEvent,
 } = require('../utils/codexEventPresentation');
 const logger = require('../utils/logger');
+const { presentCodexTranscripts } = require('../utils/codexTranscriptPresentation');
+const { serializeForInlineScript } = require('../utils/safeJson');
 
 function stringifyForScript(data) {
   return JSON.stringify(data || {}).replace(/</g, '\\u003c');
@@ -104,11 +106,11 @@ exports.renderSession = async (req, res) => {
     state.promptTemplates = await codexToolService.listPromptTemplates(req.user, {
       workspaceId: state.session.workspaceId,
     });
-    const pageState = addCsrfToken(state, res);
+    const pageState = addCsrfToken(presentCodexTranscripts(state), res);
     return res.render('codex/session', {
       pageTitle: state.session ? state.session.title : 'Codex session',
       codexState: pageState,
-      codexStateJson: stringifyForScript(pageState),
+      codexStateJson: serializeForInlineScript(pageState),
     });
   } catch (error) {
     return renderPageError(req, res, error, 'Unable to load Codex session.');
@@ -141,11 +143,11 @@ exports.renderPromptTemplates = async (req, res) => {
 exports.renderTurn = async (req, res) => {
   try {
     const state = await codexToolService.getTurnDetail(req.params.turnId, { user: req.user });
-    const pageState = addCsrfToken(state, res);
+    const pageState = addCsrfToken(presentCodexTranscripts(state), res);
     return res.render('codex/turn', {
       pageTitle: `Codex turn ${state.turn ? state.turn.sequence : ''}`,
       codexState: pageState,
-      codexStateJson: stringifyForScript(pageState),
+      codexStateJson: serializeForInlineScript(pageState),
     });
   } catch (error) {
     return renderPageError(
@@ -251,7 +253,7 @@ exports.listSessions = async (req, res) => {
 exports.getSession = async (req, res) => {
   try {
     const state = await codexToolService.getSessionDetail(req.params.sessionId, { user: req.user });
-    return res.json({ ok: true, ...state });
+    return res.json({ ok: true, ...presentCodexTranscripts(state) });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to load Codex session.');
   }
@@ -269,7 +271,7 @@ exports.archiveSession = async (req, res) => {
 exports.getTurn = async (req, res) => {
   try {
     const state = await codexToolService.getTurnDetail(req.params.turnId, { user: req.user });
-    return res.json({ ok: true, ...state });
+    return res.json({ ok: true, ...presentCodexTranscripts(state) });
   } catch (error) {
     return renderJsonError(
       req,
