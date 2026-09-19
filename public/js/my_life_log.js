@@ -752,9 +752,12 @@
     };
 
     hitbox.addEventListener('click', onHitbox);
-    hitbox.addEventListener('touchstart', (evt) => {
-      if (evt.touches.length === 1) onHitbox(evt);
-    }, { passive: false });
+    // On My account, native taps produce clicks while swipes scroll the page.
+    if (!accountMode) {
+      hitbox.addEventListener('touchstart', (evt) => {
+        if (evt.touches.length === 1) onHitbox(evt);
+      }, { passive: false });
+    }
 
     radiusSlider.addEventListener('input', () => {
       if (visualLogState.selected < 0) return;

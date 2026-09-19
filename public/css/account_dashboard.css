@@ -5,7 +5,7 @@
 .account-date, .account-intro { color: var(--text-secondary); font-size: .92rem; }
 .account-intro { margin: 1rem 0 1.5rem; }
 .account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: start; }
-.account-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 1rem; min-width: 0; overflow: hidden; }
+.account-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 1rem; min-width: 0; overflow-wrap: anywhere; }
 .account-card-wide { grid-column: 1 / -1; }
 .account-card-heading { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: 1.2rem 1.2rem .9rem; }
 .account-card-heading h2 { margin: 0; font-size: 1.18rem; }
@@ -21,7 +21,8 @@
 .account-card[data-state='stale'] .account-card-state,
 .account-card[data-state='partial'] .account-card-state { color: var(--warning); }
 .account-card[data-state='error'] .account-card-state, .is-error { color: var(--danger); }
-.account-rows { list-style: none; padding: 0; margin: .4rem 0; max-height: 350px; overflow-y: auto; overscroll-behavior: contain; }
+/* Dashboard content grows with its rows; the document owns vertical scrolling. */
+.account-rows { list-style: none; padding: 0; margin: .4rem 0; }
 .account-row { display: flex; flex-direction: column; padding: .65rem 0; border-bottom: 1px solid var(--divider); gap: .18rem; overflow-wrap: anywhere; }
 .account-row:last-child { border-bottom: 0; }
 .account-row > a { color: var(--text); font-weight: 550; text-decoration: none; }
@@ -29,9 +30,8 @@
 .account-row small, .account-row time, .account-note { color: var(--text-muted); font-size: .8rem; line-height: 1.5; }
 .account-note { margin: .7rem 0; }
 .account-card-link { display: inline-block; font-size: .85rem; margin-top: .4rem; color: var(--accent); }
-.account-task-list { max-height: 350px; overflow-y: auto; }
 .account-task-row { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; }
-.account-task-row .schedule-task-pill { flex: 1; padding: .8rem; border-radius: .6rem; text-align: left; white-space: normal; text-decoration: none; background: var(--surface-2); color: var(--text); }
+.account-task-row .schedule-task-pill { flex: 1; min-width: 0; padding: .8rem; border-radius: .6rem; text-align: left; white-space: normal; text-decoration: none; background: var(--surface-2); color: var(--text); }
 .account-task-row .schedule-task-pill small { display: block; color: var(--text-muted); font-weight: 400; margin-top: .3rem; }
 .account-task-group-title { font-size: .9rem; color: var(--text-secondary); margin: 1rem 0 .3rem; }
 .account-dashboard input:not([type='checkbox']), .account-dashboard select { width: 100%; padding: .6rem; margin: .3rem 0 .7rem; border-radius: .5rem; border: 1px solid var(--border); color: var(--text); background: var(--surface-2); }
@@ -52,5 +52,6 @@
 #customize-shortcuts { margin-top: 1.5rem; }
 #customize-shortcuts summary { cursor: pointer; padding: .5rem 0; }
 .account-dashboard .life-log-shell { padding: .5rem 0; border: 0; background: none; box-shadow: none; }
+.account-dashboard .life-log-point-list { max-height: none; overflow: visible; }
 @media (max-width: 720px) { .account-dashboard { padding: 0 .25rem; margin-top: 1rem; } .account-grid { grid-template-columns: 1fr; } .account-heading { align-items: start; flex-direction: column; } .account-heading > button { align-self: stretch; } .account-card-heading { padding: 1rem; } .account-card-content { padding: 0 1rem 1rem; } #account-customizer { padding: 1rem; } }
 @media (prefers-reduced-motion: reduce) { .account-dashboard * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
