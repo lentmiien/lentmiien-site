@@ -2345,11 +2345,31 @@
   function turnFeedIsInspectingHistory(turnId) {
     const state = getLiveActivityState(turnId);
     const container = root.querySelector(`[data-events-for="${CSS.escape(turnId)}"]`);
+    if (root.dataset.codexPage === 'turn') {
+      if (!container || container.getClientRects().length === 0) return false;
+      const bounds = container.getBoundingClientRect();
+      const clearance = parseFloat(window.getComputedStyle(container).scrollMarginTop) || 0;
+      if (state.order === 'chronological') {
+        return bounds.top < window.innerHeight && bounds.bottom > window.innerHeight + 80;
+      }
+      return bounds.top < clearance - 80;
+    }
     if (!container || container.clientHeight === 0 || container.scrollHeight <= container.clientHeight + 20) return false;
     if (state.order === 'chronological') {
       return container.scrollHeight - container.scrollTop - container.clientHeight > 80;
     }
     return container.scrollTop > 80;
+  }
+
+  function scrollToLatestActivity(turnId) {
+    const state = getLiveActivityState(turnId);
+    const feed = root.querySelector(`[data-events-for="${CSS.escape(turnId)}"]`);
+    if (!feed) return;
+    if (root.dataset.codexPage === 'turn') {
+      feed.scrollIntoView({ block: state.order === 'newest' ? 'start' : 'end' });
+    } else {
+      feed.scrollTop = state.order === 'newest' ? 0 : feed.scrollHeight;
+    }
   }
 
   function updateNewUpdatesButton(turnId) {
@@ -3008,8 +3028,7 @@
           storeEventOrder(state.order);
           renderOperationalPanels(button.dataset.turnId, { force: true });
           if (state.rawLoaded) renderRawEvents(button.dataset.turnId);
-          const feed = root.querySelector(`[data-events-for="${CSS.escape(button.dataset.turnId)}"]`);
-          if (feed) feed.scrollTop = state.order === 'newest' ? 0 : feed.scrollHeight;
+          scrollToLatestActivity(button.dataset.turnId);
         } else if (action === 'toggle-live-pause') {
           const state = getLiveActivityState(button.dataset.turnId);
           state.paused = !state.paused;
@@ -3019,8 +3038,7 @@
           const state = getLiveActivityState(button.dataset.turnId);
           state.pendingNewCount = 0;
           renderOperationalPanels(button.dataset.turnId, { force: true });
-          const feed = root.querySelector(`[data-events-for="${CSS.escape(button.dataset.turnId)}"]`);
-          if (feed) feed.scrollTop = state.order === 'newest' ? 0 : feed.scrollHeight;
+          scrollToLatestActivity(button.dataset.turnId);
         } else if (action === 'load-more-raw-events') {
           await loadRawTurnEvents(button.dataset.turnId);
         } else if (action === 'archive-session') {

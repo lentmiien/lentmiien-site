@@ -2980,6 +2980,35 @@
 .codex-transcript-markdown table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
 .codex-transcript-markdown :is(th, td) { border: 1px solid var(--divider); padding: 6px 8px; }
 
+/* Turn content belongs to the document scroll, including on narrow screens.
+ * Keep these overrides scoped: other Codex pages and genuine form controls
+ * retain their existing viewport behavior. */
+[data-codex-page='turn'] .codex-process-panel .codex-events,
+[data-codex-page='turn'] .codex-raw-events,
+[data-codex-page='turn'] .codex-process-sidebar {
+  max-height: none;
+  overflow: visible;
+  overscroll-behavior: auto;
+  scrollbar-gutter: auto;
+}
+
+[data-codex-page='turn'] .codex-process-sidebar {
+  position: static;
+}
+
+[data-codex-page='turn'] .codex-events {
+  scroll-margin-top: calc(var(--nav-clearance, 0px) + 12px);
+}
+
+[data-codex-page='turn'] .codex-transcript__block pre,
+[data-codex-page='turn'] .codex-events pre,
+[data-codex-page='turn'] .codex-raw-event__body pre {
+  max-height: none;
+  overflow: visible;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1024px) {
   [data-codex-page='session'] .codex-topbar { display: grid; gap: 8px; }
   .codex-session-nav > .codex-button { width: 48px; height: 44px; padding: 8px; justify-content: center; }
