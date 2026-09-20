@@ -189,6 +189,7 @@ class Qwen3LoraGatewayService {
     requestBodyForLog,
     responseBodyForLog,
     debugLog = true,
+    logFailure = true,
   }) {
     const requestUrl = this.url(path);
     const startedAt = Date.now();
@@ -257,7 +258,7 @@ class Qwen3LoraGatewayService {
         });
       }
 
-      logger.warning(`${this.serviceLabel} gateway request failed`, {
+      if (logFailure) logger.warning(`${this.serviceLabel} gateway request failed`, {
         category: this.logCategory,
         metadata: requestLogMetadata({
           method,
@@ -305,20 +306,14 @@ class Qwen3LoraGatewayService {
           path: endpoint.path,
           timeout: this.infoTimeoutMs,
           functionName: endpoint.functionName,
+          logFailure: false,
         });
         return [key, data, null];
       } catch (error) {
-        logger.warning(`${this.serviceLabel} dashboard endpoint unavailable`, {
-          category: this.logCategory,
-          metadata: {
-            endpoint: key,
-            path: endpoint.path,
-            message: this.gatewayErrorMessage(error),
-            status: error?.response?.status || null,
-            code: error?.code || null,
-          },
-        });
-        return [key, null, this.gatewayErrorMessage(error)];
+        return [key, null, this.gatewayErrorMessage(error), {
+          endpoint: key, path: endpoint.path,
+          status: error?.response?.status || null, code: error?.code || null,
+        }];
       }
     }));
 
@@ -344,6 +339,7 @@ class Qwen3LoraGatewayService {
           baseUrl: this.gatewayBaseUrl,
           failedEndpoints: errorKeys,
           errors: state.errors,
+          failures: results.filter(result => result[3]).map(result => result[3]),
         },
       });
     } else {

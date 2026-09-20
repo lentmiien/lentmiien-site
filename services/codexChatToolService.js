@@ -264,7 +264,8 @@ class CodexChatToolService {
       if (TERMINAL_STATUSES.has(turn.status)) {
         return serializeCompletedTurn(turn);
       }
-      await this.heartbeatPendingResponse(String(context.responseId || ''));
+      if (typeof context.assertProcessingOwnership === 'function') await context.assertProcessingOwnership();
+      else await this.heartbeatPendingResponse(String(context.responseId || ''));
       await this.sleep(Math.min(this.config.pollIntervalMs, Math.max(1, deadline - this.now().getTime())));
     }
 

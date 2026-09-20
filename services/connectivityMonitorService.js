@@ -10,6 +10,18 @@ const { sendPushoverNotification } = require('../utils/pushover');
 const { probe, probeTargets } = require('./connectivityProbe');
 
 const DB_OPTIONS = { timeoutMS: 3000, maxTimeMS: 2000 };
+function probeSummary(items = []) {
+  const label = (value) => typeof value === 'string' && /^[a-zA-Z0-9_]{1,64}$/.test(value) ? value : null;
+  const duration = (value) => Number.isFinite(value) && value >= 0 ? Math.min(value, 86400000) : null;
+  return items.slice(0, 5).map(item => ({
+    name: ['internet', 'cloudflare', 'publicApp', 'localHealth', 'database'].includes(item.name) ? item.name : 'unknown',
+    outcome: label(item.outcome), errorCode: label(item.errorCode), failurePhase: label(item.failurePhase),
+    statusCode: Number.isInteger(item.statusCode) && item.statusCode >= 100 && item.statusCode <= 599 ? item.statusCode : null,
+    latencyMs: duration(item.latencyMs),
+    timings: Object.fromEntries(['dnsMs', 'tcpMs', 'tlsMs', 'ttfbMs', 'totalMs']
+      .map(key => [key, duration(item.timings?.[key])])),
+  }));
+}
 const repository = {
   ready: () => mongoose.connection.readyState === 1,
   latest: () => Sample.findOne().sort({ sampledAt: -1 }).setOptions(DB_OPTIONS).lean(),
@@ -47,11 +59,11 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
   let observedDatabaseReady = false;
   const initialReadinessUntil = +clock() + config.intervalMs;
   const warnings = new Map();
-  function warn(key, message) {
+  function warn(key, message, metadata) {
     const now = +clock();
     if (warnings.has(key) && now - warnings.get(key) < config.cooldownMs) return;
     warnings.set(key, now);
-    Promise.resolve(log.warning(message, { category: 'connectivity_monitor' })).catch(() => {});
+    Promise.resolve(log.warning(message, { category: 'connectivity_monitor', ...(metadata ? { metadata } : {}) })).catch(() => {});
   }
   function waitingForInitialReadiness() {
     return !observedDatabaseReady && +clock() < initialReadinessUntil;
@@ -98,13 +110,17 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
         item.errorCode === 'DB_NOT_READY' || item.errorCode === 'NO_LISTENER'
         || (item.name === 'localHealth' && item.statusCode === 503)
       )))) {
-        warn('diagnostics', 'Connectivity local diagnostics degraded; compare local health and DB ping in analytics');
+        warn('diagnostics', 'Connectivity local diagnostics degraded; compare local health and DB ping in analytics', {
+          runId: sample.runId, diagnostics: probeSummary(diagnostics),
+        });
       }
       const sustained = sample.probes.filter((item) => item.degradedSince
         && sampledAt - new Date(item.degradedSince) >= config.sustainedMs);
       const due = sustained.length > 0 && (!sample.lastAttemptAt
         || sampledAt - new Date(sample.lastAttemptAt) >= config.cooldownMs);
-      if (sustained.length) warn('degraded', 'Connectivity monitor observed sustained degradation; inspect connectivity history');
+      if (sustained.length) warn('degraded', 'Connectivity monitor observed sustained degradation; inspect connectivity history', {
+        runId: sample.runId, probes: probeSummary(sample.probes), diagnostics: probeSummary(diagnostics),
+      });
       const oldAttempt = sample.lastAttemptAt;
       if (due && restored) {
         sample.lastAttemptAt = sampledAt;
@@ -121,7 +137,9 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
       } catch {
         restored = false;
         if (!waitingForInitialReadiness()) {
-          warn('db', 'Connectivity monitor cannot persist MongoDB samples; alerts deferred');
+          warn('db', 'Connectivity monitor cannot persist MongoDB samples; alerts deferred', {
+            runId: sample.runId, probes: probeSummary(sample.probes), diagnostics: probeSummary(diagnostics),
+          });
         }
       }
       if (due && (!persisted || !restored)) {

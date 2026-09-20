@@ -1,3 +1,6 @@
+# Optional full deployment commit SHA for application logs (packaged deployments without Git).
+APP_REVISION=
+
 PORT=
 SESSION_SECRET=
 CSRF_ALLOWED_ORIGINS=

@@ -93,9 +93,25 @@ test('DB unavailability continues bounded observations but defers alerts and thr
   expect(h.store.save).not.toHaveBeenCalled();
   expect(h.send).not.toHaveBeenCalled();
   expect(h.log.warning).toHaveBeenCalledTimes(2); // DB + sustained degradation
+  const warnings = h.log.warning.mock.calls;
+  expect(warnings[0][1].metadata.probes[0]).toMatchObject({ name: 'internet', outcome: 'timeout', latencyMs: 5000 });
+  expect(warnings[1][1].metadata.probes).toHaveLength(2);
   h.store.ready.mockReturnValue(true);
   await h.tickAt(14 * 60000);
   expect(h.send).toHaveBeenCalledTimes(1);
+});
+
+test('degradation logs retain safe timings and codes while excluding arbitrary probe data', async () => {
+  const h = harness();
+  h.store.ready.mockReturnValue(false);
+  h.runProbe.mockImplementation(async target => ({ ...result(true, target.name),
+    errorCode: 'ECONNRESET', failurePhase: 'tls', timings: { dnsMs: 12, totalMs: 5000, address: 'private address' },
+    url: 'https://private.example/secret', body: 'private payload' }));
+  await h.tickAt(120000);
+  const metadata = h.log.warning.mock.calls[0][1].metadata;
+  expect(metadata.probes[0]).toMatchObject({ errorCode: 'ECONNRESET', failurePhase: 'tls', timings: { dnsMs: 12, totalMs: 5000 } });
+  expect(JSON.stringify(h.log.warning.mock.calls)).not.toContain('private');
+  expect(JSON.stringify(h.log.warning.mock.calls)).not.toContain('secret');
 });
 
 test('connection during startup probing restores cooldown and saves the first sample without a false warning', async () => {

@@ -10,6 +10,7 @@ const ai = require('../utils/OpenAI_API');
 const ollama = require('../utils/Ollama_API');
 const { z } = require('zod');
 const logger = require('../utils/logger');
+const { completionMessageId } = require('./chat5CompletionState');
 const { createSafeUploadName } = require('../utils/safeFilePath');
 const {
   APP_SETTING_KEYS,
@@ -263,7 +264,7 @@ class MessageService {
 
     try {
       const queue = this.getEmbeddingQueueService();
-      if (message.embeddingRequested === false) {
+      if (message.embeddingRequested === false || message.embeddingDetachedAt) {
         if (message.embeddingStatus === 'delete_pending') {
           await queue.enqueueDelete(metadata, { mode: 'default' });
           await queue.enqueueDelete(metadata, { mode: 'high_quality' });
@@ -1422,7 +1423,13 @@ class MessageService {
     const outputs = retrievedResponse
       ? await ai.convertResponseBody(retrievedResponse)
       : await ai.fetchCompleted(response_id);
-    return this._persistConvertedOutputs(conversation, outputs);
+    const indexedOutputs = Array.isArray(outputs) ? outputs.map((output, outputIndex) => (
+      output && !output.error && output.content
+        ? { ...output, content: { ...output.content, responseId: response_id,
+          outputIndex: Number.isInteger(output.content.outputIndex) ? output.content.outputIndex : outputIndex } }
+        : output
+    )) : outputs;
+    return this._persistConvertedOutputs(conversation, indexedOutputs, { responseId: response_id });
   }
 
   async processConvertedOutputs(conversation, outputs) {
@@ -1451,6 +1458,8 @@ class MessageService {
           }
         }
         const message = {
+          ...(responseId && outputIndex !== null
+            ? { _id: completionMessageId(responseId, `output:${outputIndex}`) } : {}),
           user_id: "bot",
           category: conversation.category,
           tags: conversation.tags,
@@ -1460,7 +1469,15 @@ class MessageService {
           hideFromBot: m.hideFromBot,
         };
         const msg = new Chat5Model(message);
-        await msg.save();
+        try {
+          await msg.save();
+        } catch (error) {
+          if (error?.code !== 11000 || !message._id) throw error;
+          const existing = await Chat5Model.findById(message._id);
+          if (!existing) throw error;
+          newAiMessages.push(existing);
+          continue;
+        }
         await this.syncTextEmbedding({ message: msg, conversationId: conversation });
         newAiMessages.push(msg);
       }

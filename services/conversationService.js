@@ -1,5 +1,6 @@
 ﻿const fs = require('fs');
 const path = require('path');
+const { randomUUID, randomBytes } = require('crypto');
 const sharp = require('sharp');
 const logger = require('../utils/logger');
 const { createSafeUploadName, resolveFileWithinDirectory } = require('../utils/safeFilePath');
@@ -12,6 +13,9 @@ const {
 } = require('./openaiResponseRecoveryPolicy');
 
 const { Conversation5Model, PendingRequests, Chat5Model } = require('../database');
+const HumanToolRequest = require('../models/human_tool_request');
+const { completionMessageId, pendingClaimFilter, completionError, assertMatched,
+  startPendingLease, updateConversationMessages } = require('./chat5CompletionState');
 
 const PENDING_CLAIM_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINAL_FAILURE_STATUSES = new Set(['cancelled', 'failed', 'incomplete']);
@@ -162,7 +166,7 @@ class ConversationService {
           claimableRecoveryCondition(staleThreshold),
         ],
       },
-      { $set: { processingStartedAt: now } },
+      { $set: { processingStartedAt: now, processingToken: randomUUID() } },
       { new: true },
     );
   }
@@ -197,7 +201,7 @@ class ConversationService {
           claimableRecoveryCondition(staleThreshold),
         ],
       },
-      { $set: { processingStartedAt: now } },
+      { $set: { processingStartedAt: now, processingToken: randomUUID() } },
       {
         new: true,
         sort: {
@@ -209,9 +213,43 @@ class ConversationService {
     );
   }
 
-  async releasePendingRequest(pendingId) {
-    if (!pendingId) return;
-    await PendingRequests.updateOne({ _id: pendingId }, { $set: { processingStartedAt: null } });
+  async releasePendingRequest(pending) {
+    if (!pending?._id) return;
+    await PendingRequests.updateOne(pendingClaimFilter(pending), { $set: { processingStartedAt: null } });
+  }
+
+  async updateClaimedPending(pending, update) {
+    const result = await PendingRequests.updateOne(pendingClaimFilter(pending), update);
+    assertMatched(result);
+    return result;
+  }
+
+  async attachCompletionMessages(pending, messages = [], remove = []) {
+    const conversation = await updateConversationMessages(Conversation5Model, pending.conversation_id, {
+      add: messages.filter(message => message?._id && !message.error).map(message => String(message._id)),
+      remove,
+      requiredMessageId: pending.placeholder_id,
+    });
+    if (!conversation) {
+      throw completionError('CHAT5_PLACEHOLDER_REMOVED', 'The conversation or response placeholder was removed during completion');
+    }
+    for (const message of messages) {
+      if (message?.contentType === 'text' && typeof this.messageService.syncTextEmbedding === 'function') {
+        await this.messageService.syncTextEmbedding({ message, conversationId: conversation });
+      }
+    }
+    return conversation;
+  }
+
+  async blockUncertainCompletion(pending, error) {
+    await this.updateClaimedPending(pending, { $set: {
+      recoveryState: 'blocked', processingStartedAt: null, lastRetrievalError: error.message,
+    } });
+    pending.recoveryState = 'blocked';
+    logger.error('AI response completion requires inspection before replaying an uncertain action', {
+      category: 'chat5_completion',
+      metadata: { responseId: pending.response_id, conversationId: pending.conversation_id, code: error.code },
+    });
   }
 
   async generateCategoryList() {
@@ -1665,12 +1703,23 @@ class ConversationService {
       return { conversation, removedIds: [] };
     }
 
-    conversation.messages = messageIds.slice(0, keepLength).map((id) => (id ? id.toString() : id));
-    conversation.updatedAt = new Date();
-    await conversation.save();
+    const updatedConversation = await updateConversationMessages(Conversation5Model, conversationId, { remove: removedIds });
+    for (const messageId of removedIds) {
+      // Other conversations can share an existing message; detach its embedding
+      // only when the final reference has intentionally been removed.
+      if (!await Conversation5Model.exists({ messages: messageId })) {
+        const embeddingIntent = { embeddingDetachedAt: new Date(), embeddingStatus: 'delete_pending', embeddingContentHash: null };
+        const detached = await Chat5Model.updateOne({ _id: messageId, contentType: 'text' }, { $set: embeddingIntent });
+        if (detached.modifiedCount && typeof this.messageService.syncTextEmbedding === 'function') {
+          await this.messageService.syncTextEmbedding({
+            message: { _id: messageId, contentType: 'text', ...embeddingIntent }, conversationId,
+          });
+        }
+      }
+    }
 
     return {
-      conversation,
+      conversation: updatedConversation,
       removedIds,
       removedVisibleId: messageIds[lastVisibleIndex] ? messageIds[lastVisibleIndex].toString() : null,
       anchorMessageId: anchorIndex >= 0 && messageIds[anchorIndex] ? messageIds[anchorIndex].toString() : null,
@@ -1758,22 +1807,11 @@ class ConversationService {
       return false;
     }
 
-    const conversation = await Conversation5Model.findById(pending.conversation_id);
-    if (!conversation || !Array.isArray(conversation.messages)) {
-      return false;
-    }
-
-    const placeholderId = pending.placeholder_id.toString();
-    const remainingMessages = conversation.messages.filter(
-      messageId => messageId?.toString() !== placeholderId,
+    const result = await Conversation5Model.updateOne(
+      { _id: pending.conversation_id, messages: String(pending.placeholder_id) },
+      { $pull: { messages: String(pending.placeholder_id) }, $inc: { __v: 1 } },
     );
-    if (remainingMessages.length === conversation.messages.length) {
-      return false;
-    }
-
-    conversation.messages = remainingMessages;
-    await conversation.save();
-    return true;
+    return result.modifiedCount > 0;
   }
 
   async deletePendingPlaceholderDocument(pending) {
@@ -1851,8 +1889,8 @@ class ConversationService {
       && Number.isFinite(pending.cleanupPendingAt.getTime())
       ? pending.cleanupPendingAt
       : checkedAt;
-    await PendingRequests.updateOne(
-      { _id: pending._id },
+    await this.updateClaimedPending(
+      pending,
       {
         $set: {
           recoveryState: 'cleanup_pending',
@@ -1882,8 +1920,8 @@ class ConversationService {
       && Number.isFinite(pending.cleanupPendingAt.getTime())
       ? pending.cleanupPendingAt
       : checkedAt;
-    await PendingRequests.updateOne(
-      { _id: pending._id },
+    await this.updateClaimedPending(
+      pending,
       {
         $set: {
           recoveryState: 'cleanup_pending',
@@ -1917,8 +1955,8 @@ class ConversationService {
     preserveAbandoned = false,
   } = {}) {
     if (preserveAbandoned) {
-      await PendingRequests.updateOne(
-        { _id: pending._id },
+      await this.updateClaimedPending(
+        pending,
         {
           $set: {
             recoveryState: 'abandoned',
@@ -1934,7 +1972,7 @@ class ConversationService {
         },
       );
     } else {
-      await PendingRequests.deleteOne({ _id: pending._id });
+      await PendingRequests.deleteOne(pendingClaimFilter(pending));
     }
     return cleanupResult;
   }
@@ -1989,8 +2027,8 @@ class ConversationService {
     lastRetrievalError = pending?.lastRetrievalError || null,
   }) {
     const responseProvider = getPendingResponseProvider(pending);
-    await PendingRequests.updateOne(
-      { _id: pending._id },
+    await this.updateClaimedPending(
+      pending,
       {
         $set: {
           recoveryState: 'abandoned',
@@ -2115,7 +2153,7 @@ class ConversationService {
       },
     };
 
-    await PendingRequests.updateOne({ _id: pending._id }, update);
+    await this.updateClaimedPending(pending, update);
     return null;
   }
 
@@ -2283,6 +2321,8 @@ class ConversationService {
           },
         });
 
+        if (pending.recoveryState === 'blocked' || error?.code === 'CHAT5_CLAIM_LOST') continue;
+
         if (pending.recoveryState === 'cleanup_pending') {
           try {
             const placeholderCleanup = await this.deferPendingPlaceholderCleanup(pending, {
@@ -2305,7 +2345,7 @@ class ConversationService {
               placeholderCleanup,
             });
           } catch (scheduleError) {
-            await this.releasePendingRequest(pending._id).catch(() => {});
+            await this.releasePendingRequest(pending).catch(() => {});
             logger.error('Failed to defer AI response placeholder cleanup', {
               category: 'openai_webhook_recovery',
               metadata: {
@@ -2333,7 +2373,7 @@ class ConversationService {
             updates.push(abandonment);
           }
         } catch (scheduleError) {
-          await this.releasePendingRequest(pending._id).catch(() => {});
+          await this.releasePendingRequest(pending).catch(() => {});
           logger.error('Failed to defer pending AI response after recovery error', {
             category: 'openai_webhook_recovery',
             metadata: {
@@ -2382,6 +2422,9 @@ class ConversationService {
     const content = functionCallMessage?.content || {};
     const output = Object.prototype.hasOwnProperty.call(outputItem, 'output') ? outputItem.output : '';
     const message = new Chat5Model({
+      ...(content.responseId && (content.callId || toolCall.call_id || toolCall.id) ? {
+        _id: completionMessageId(content.responseId, `tool:${content.callId || toolCall.call_id || toolCall.id}`),
+      } : {}),
       user_id: 'bot',
       category: conversation.category,
       tags: conversation.tags,
@@ -2411,14 +2454,21 @@ class ConversationService {
       timestamp: new Date(),
       hideFromBot: true,
     });
-    await message.save();
+    try {
+      await message.save();
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+      const existing = await Chat5Model.findById(message._id);
+      if (!existing) throw error;
+      return existing;
+    }
     return message;
   }
 
   async executeFunctionCallsForConversation(
     conversation,
     functionCallMessages = [],
-    { initiatingPrincipal = null } = {}
+    { initiatingPrincipal = null, lease = null, pending = null } = {}
   ) {
     const outputMessages = [];
     const principal = normalizeInitiatingPrincipal(initiatingPrincipal);
@@ -2432,9 +2482,30 @@ class ConversationService {
     );
 
     for (const functionCallMessage of functionCallMessages) {
+      if (lease) await lease.assertOwned();
       const toolCall = this.buildToolCallFromMessage(functionCallMessage);
       const responseId = functionCallMessage?.content?.responseId || null;
       const callId = toolCall?.call_id || toolCall?.id || null;
+      const humanTool = ['ask_lennart', 'ask_lennart_for_codex'].includes(toolCall?.name);
+      const durableTool = humanTool || ['codex_ai_gateway_linux', 'codex_lentmiien_site_linux',
+        'codex_lentmiien_site_production', 'run_codex_in_workspace'].includes(toolCall?.name);
+      const expireCall = async () => {
+        await Chat5Model.updateOne({ _id: functionCallMessage._id }, {
+          $set: { 'content.executionState': 'expired', hideFromBot: true },
+        });
+        functionCallMessage.content.executionState = 'expired';
+        if (pending) await this.attachCompletionMessages(pending, [], [functionCallMessage._id]);
+      };
+      // Expiration is a deliberate end to the wait, including when tool selection
+      // changed in the meantime. Keep the detached record as a replay tombstone.
+      if (functionCallMessage.content?.executionState === 'expired' || (humanTool && responseId && callId
+        && await HumanToolRequest.exists({
+          conversationId: String(conversation._id), responseId, toolCallId: callId,
+          toolName: toolCall.name, status: 'timed_out',
+        }))) {
+        await expireCall();
+        continue;
+      }
       if (responseId && callId && typeof Chat5Model.findOne === 'function') {
         const existingOutput = await Chat5Model.findOne({
           contentType: 'function_call_output',
@@ -2443,6 +2514,7 @@ class ConversationService {
         });
         if (existingOutput) {
           outputMessages.push(existingOutput);
+          if (pending) conversation = await this.attachCompletionMessages(pending, [existingOutput]);
           logger.notice('Reused persisted function output while retrying AI response completion', {
             category: 'chat5_tool_safety',
             metadata: {
@@ -2477,6 +2549,18 @@ class ConversationService {
           },
         });
       } else {
+        // Human/Codex tools already have durable invocation keys and can resume
+        // their saved work. Other actions cannot replay after an uncertain stop.
+        if (lease) await lease.assertOwned();
+        if (!durableTool) {
+          const claimed = await Chat5Model.updateOne({
+            _id: functionCallMessage._id, 'content.executionState': { $exists: false },
+          }, { $set: { 'content.executionState': 'started' } });
+          if (!claimed.modifiedCount) {
+            throw completionError('CHAT5_ACTION_UNCERTAIN', 'A tool invocation started without a persisted result; inspect it before retrying');
+          }
+        }
+        if (lease) await lease.assertOwned();
         try {
           execution = await this.toolManagerService.executeToolCall(toolCall, {
             conversationId: conversation._id?.toString?.() || conversation.id?.toString?.(),
@@ -2487,6 +2571,7 @@ class ConversationService {
             userId: userName,
             openaiUser: userName,
             createdBy: 'Chat5',
+            assertProcessingOwnership: lease?.assertOwned,
           });
           outputPayload = execution.result;
         } catch (error) {
@@ -2507,6 +2592,12 @@ class ConversationService {
         }
       }
 
+      if (lease) await lease.assertOwned();
+      if (humanTool && execution?.result?.status === 'timed_out') {
+        await expireCall();
+        continue;
+      }
+
       const outputItem = this.toolManagerService.formatToolResultForOpenAI(toolCall, outputPayload, { format: 'responses' });
       const outputMessage = await this.saveFunctionCallOutputMessage({
         conversation,
@@ -2516,58 +2607,82 @@ class ConversationService {
         execution,
       });
       outputMessages.push(outputMessage);
+      if (pending) conversation = await this.attachCompletionMessages(pending, [outputMessage]);
     }
 
     return outputMessages;
   }
 
-  async queueFollowUpAfterFunctionCalls(conversation, pendingContext = {}) {
-    const conversationForAI = this.normalizeMembersForAI(conversation);
-    const { response_id, response_provider, msg } = await this.messageService.generateAIMessage({
-      conversation: conversationForAI,
-      includeLastToolBatch: true,
-    });
-
-    if (!response_id) {
-      if (msg?._id) {
-        await this.messageService.deleteMessages([msg._id], {
-          conversationId: conversation._id,
+  async queueFollowUpAfterFunctionCalls(conversation, pending, lease) {
+    await lease.assertOwned();
+    let followUp = pending.followUp;
+    let msg = null;
+    if (followUp?.state === 'submitting') {
+      throw completionError('CHAT5_ACTION_UNCERTAIN', 'Follow-up submission started without a saved receipt; inspect provider history before retrying');
+    }
+    if (!followUp?.state) {
+      followUp = { state: 'submitting', pendingId: randomBytes(12).toString('hex') };
+      const started = await PendingRequests.updateOne({
+        ...pendingClaimFilter(pending), 'followUp.state': { $exists: false },
+      }, { $set: { followUp } });
+      assertMatched(started);
+      pending.followUp = followUp;
+      try {
+        const generated = await this.messageService.generateAIMessage({
+          conversation: this.normalizeMembersForAI({
+            ...(conversation.toObject ? conversation.toObject() : conversation),
+            messages: conversation.messages.filter(id => String(id) !== String(pending.placeholder_id)),
+          }),
+          includeLastToolBatch: true,
         });
+        if (!generated.response_id || !generated.msg?._id) {
+          throw completionError('CHAT5_ACTION_UNCERTAIN', 'Follow-up submission returned no durable response receipt');
+        }
+        msg = generated.msg;
+        followUp = {
+          ...followUp, state: 'ready', responseId: generated.response_id,
+          placeholderId: String(msg._id),
+          provider: String(generated.response_provider || pending.provider).toLowerCase() === 'ollama'
+            ? OLLAMA_RESPONSE_PROVIDER : OPENAI_RESPONSE_PROVIDER,
+        };
+        await lease.assertOwned();
+        const saved = await PendingRequests.updateOne(pendingClaimFilter(pending), { $set: { followUp } });
+        assertMatched(saved);
+        pending.followUp = followUp;
+      } catch (error) {
+        if (error.code === 'CHAT5_CLAIM_LOST') throw error;
+        throw completionError('CHAT5_ACTION_UNCERTAIN', 'Follow-up dispatch has no confirmed durable receipt; inspect provider history before retrying');
       }
-      return { messages: [], responseId: null };
     }
 
-    if (msg) {
-      conversation.messages.push(msg._id.toString());
-      const pendingRequest = {
-        response_id,
-        conversation_id: conversation._id.toString(),
-        placeholder_id: msg._id.toString(),
+    if (followUp.state === 'ready') {
+      msg = msg || await Chat5Model.findById(followUp.placeholderId);
+      if (!msg) throw completionError('CHAT5_ACTION_UNCERTAIN', 'Saved follow-up placeholder is missing; inspect response history');
+      conversation = await this.attachCompletionMessages(pending, [msg]);
+      const child = {
+        response_id: followUp.responseId, conversation_id: String(conversation._id),
+        placeholder_id: followUp.placeholderId, provider: followUp.provider,
+        recoveryState: 'followup_wait',
+        ...(pending.sourceType ? { sourceType: pending.sourceType } : {}),
+        ...(pending.sourceId ? { sourceId: pending.sourceId } : {}),
+        ...(normalizeInitiatingPrincipal(pending.initiatedBy)
+          ? { initiatedBy: normalizeInitiatingPrincipal(pending.initiatedBy) } : {}),
+        ...(followUp.provider === OLLAMA_RESPONSE_PROVIDER ? { toolRound: (pending.toolRound || 1) + 1 } : {}),
       };
-      const provider = String(response_provider || pendingContext?.provider).toLowerCase() === 'ollama'
-        ? OLLAMA_RESPONSE_PROVIDER
-        : OPENAI_RESPONSE_PROVIDER;
-      if (provider === OLLAMA_RESPONSE_PROVIDER) {
-        pendingRequest.provider = OLLAMA_RESPONSE_PROVIDER;
-        const previousRound = Number.isInteger(pendingContext?.toolRound) && pendingContext.toolRound > 0
-          ? pendingContext.toolRound
-          : 1;
-        pendingRequest.toolRound = previousRound + 1;
-      }
-      if (pendingContext?.sourceType) {
-        pendingRequest.sourceType = pendingContext.sourceType;
-      }
-      if (pendingContext?.sourceId) {
-        pendingRequest.sourceId = pendingContext.sourceId;
-      }
-      const initiatedBy = normalizeInitiatingPrincipal(pendingContext?.initiatedBy);
-      if (initiatedBy) pendingRequest.initiatedBy = initiatedBy;
-      const pr = new PendingRequests(pendingRequest);
-      await pr.save();
-      return { messages: [msg], responseId: response_id };
+      // The child cannot run until its attachment and the parent's receipt are
+      // durable. A retry never recreates an already completed child.
+      await PendingRequests.updateOne({ _id: followUp.pendingId }, { $setOnInsert: child }, { upsert: true });
+      const queued = await PendingRequests.updateOne(pendingClaimFilter(pending), {
+        $set: { 'followUp.state': 'queued' },
+      });
+      assertMatched(queued);
+      pending.followUp.state = 'queued';
     }
-
-    return { messages: [], responseId: null };
+    await lease.assertOwned();
+    await PendingRequests.updateOne({ _id: followUp.pendingId, recoveryState: 'followup_wait' }, {
+      $set: { recoveryState: 'pending', nextCheckAt: new Date() },
+    });
+    return { messages: msg ? [msg] : [], responseId: followUp.responseId, conversation };
   }
 
   // {conversation, messages, placeholder_id} = processCompletedResponse(response_id);
@@ -2583,8 +2698,10 @@ class ConversationService {
       return null;
     }
 
+    const lease = startPendingLease(PendingRequests, pending);
     try {
-      const conversation = await Conversation5Model.findById(pending.conversation_id);
+      await lease.assertOwned();
+      let conversation = await Conversation5Model.findById(pending.conversation_id);
 
       if (!conversation) {
         logger.warning('Conversation not found for completed response', { response_id, conversation_id: pending.conversation_id });
@@ -2617,18 +2734,10 @@ class ConversationService {
       const returnedMessages = [...messages];
       const followUpResponseIds = [];
 
-      conversation.messages = conversation.messages.filter(
-        messageId => messageId?.toString() !== pending.placeholder_id?.toString(),
-      );
+      await lease.assertOwned();
       const savedMessages = messages.filter(m => m && !m.error);
-      const conversationMessageIds = new Set(conversation.messages.map(id => id.toString()));
-      for (const m of savedMessages) {
-        const messageId = m._id.toString();
-        if (!conversationMessageIds.has(messageId)) {
-          conversation.messages.push(messageId);
-          conversationMessageIds.add(messageId);
-        }
-      }
+      conversation = await this.attachCompletionMessages(pending,
+        savedMessages.filter(m => m.content?.executionState !== 'expired'));
 
       const functionCallMessages = savedMessages.filter(m => m.contentType === 'function_call');
       let toolLoopLimited = false;
@@ -2638,7 +2747,9 @@ class ConversationService {
         toolLoopLimited = pendingProvider === OLLAMA_RESPONSE_PROVIDER && toolRound >= maxToolRounds;
 
         if (toolLoopLimited) {
-          const limitMessage = new Chat5Model({
+          const limitId = completionMessageId(response_id, 'tool-round-limit');
+          const limitMessage = await Chat5Model.findById(limitId) || new Chat5Model({
+            _id: limitId,
             user_id: 'bot',
             category: conversation.category,
             tags: conversation.tags,
@@ -2657,7 +2768,7 @@ class ConversationService {
             hideFromBot: false,
           });
           await limitMessage.save();
-          conversation.messages.push(limitMessage._id.toString());
+          conversation = await this.attachCompletionMessages(pending, [limitMessage]);
           returnedMessages.push(limitMessage);
           logger.error('Stopped Ollama background tool loop at configured round limit', {
             category: 'ollama_background_job',
@@ -2673,36 +2784,37 @@ class ConversationService {
           const functionOutputMessages = await this.executeFunctionCallsForConversation(
             conversation,
             functionCallMessages,
-            { initiatingPrincipal: pending.initiatedBy }
+            { initiatingPrincipal: pending.initiatedBy, lease, pending }
           );
-          for (const m of functionOutputMessages) {
-            const messageId = m._id.toString();
-            if (!conversationMessageIds.has(messageId)) {
-              conversation.messages.push(messageId);
-              conversationMessageIds.add(messageId);
-            }
-            returnedMessages.push(m);
-          }
+          returnedMessages.push(...functionOutputMessages);
+          await lease.assertOwned();
+          conversation = await this.attachCompletionMessages(pending, functionOutputMessages,
+            functionCallMessages.filter(m => m.content?.executionState === 'expired').map(m => m._id));
 
-          const followUp = await this.queueFollowUpAfterFunctionCalls(conversation, pending);
-          returnedMessages.push(...followUp.messages);
-          if (followUp.responseId) {
-            followUpResponseIds.push(followUp.responseId);
+          if (functionOutputMessages.length > 0 || pending.followUp?.state) {
+            const followUp = await this.queueFollowUpAfterFunctionCalls(conversation, pending, lease);
+            conversation = followUp.conversation;
+            returnedMessages.push(...followUp.messages);
+            if (followUp.responseId) followUpResponseIds.push(followUp.responseId);
           }
         }
       }
 
-      await conversation.save();
+      await lease.assertOwned();
+      await lease.stop();
       const placeholderCleanup = await this.finalizeTerminalPendingPlaceholder(pending, {
-        outcome: 'completed',
+        outcome: 'completed', removeReference: true,
       });
+      conversation = await Conversation5Model.findById(pending.conversation_id);
 
       const result = {
         conversation,
-        messages: returnedMessages,
+        messages: returnedMessages.filter(m => m.content?.executionState !== 'expired'),
         placeholder_id: pending.placeholder_id,
         placeholderCleanup,
       };
+      const removedIds = functionCallMessages.filter(m => m.content?.executionState === 'expired').map(m => String(m._id));
+      if (removedIds.length) result.removedIds = removedIds;
       if (functionCallMessages.length > 0) {
         result.hasFunctionCalls = true;
       }
@@ -2714,8 +2826,12 @@ class ConversationService {
       }
       return result;
     } catch (error) {
-      await this.releasePendingRequest(pending._id);
+      await lease.stop();
+      if (error.code === 'CHAT5_ACTION_UNCERTAIN') await this.blockUncertainCompletion(pending, error);
+      else if (error.code !== 'CHAT5_CLAIM_LOST') await this.releasePendingRequest(pending);
       throw error;
+    } finally {
+      await lease.stop();
     }
   }
 
@@ -2732,8 +2848,10 @@ class ConversationService {
       return 'No pending request found for failed response';
     }
 
+    const lease = startPendingLease(PendingRequests, pending);
     try {
-      const conversation = await Conversation5Model.findById(pending.conversation_id);
+      await lease.assertOwned();
+      let conversation = await Conversation5Model.findById(pending.conversation_id);
 
       if (!conversation) {
         logger.warning('Conversation not found for failed response', { response_id, conversation_id: pending.conversation_id });
@@ -2768,14 +2886,12 @@ class ConversationService {
           : await this.messageService.processFailedResponse(conversation, response_id);
       }
 
-      conversation.messages = conversation.messages.filter(
-        messageId => messageId?.toString() !== pending.placeholder_id?.toString(),
-      );
-
-      await conversation.save();
+      await lease.assertOwned();
+      await lease.stop();
       const placeholderCleanup = await this.finalizeTerminalPendingPlaceholder(pending, {
-        outcome: 'failed',
+        outcome: 'failed', removeReference: true,
       });
+      conversation = await Conversation5Model.findById(pending.conversation_id);
 
       if (returnResult) {
         return {
@@ -2787,8 +2903,12 @@ class ConversationService {
       }
       return error_msg;
     } catch (error) {
-      await this.releasePendingRequest(pending._id);
+      await lease.stop();
+      if (error.code === 'CHAT5_ACTION_UNCERTAIN') await this.blockUncertainCompletion(pending, error);
+      else if (error.code !== 'CHAT5_CLAIM_LOST') await this.releasePendingRequest(pending);
       throw error;
+    } finally {
+      await lease.stop();
     }
   }
 

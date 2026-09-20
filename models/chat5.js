@@ -28,6 +28,7 @@ const Chat5 = new mongoose.Schema({
     result: mongoose.Schema.Types.Mixed,
     raw: mongoose.Schema.Types.Mixed,
     status: String,
+    executionState: { type: String, enum: ['started', 'expired'] },
     error: String,
   },
 
@@ -40,6 +41,7 @@ const Chat5 = new mongoose.Schema({
     default: undefined,
   },
   embeddingContentHash: { type: String, default: null },
+  embeddingDetachedAt: { type: Date, default: undefined },
 }, { timestamps: false });
 
 Chat5.pre('validate', function markTextEmbeddingPending() {

@@ -5,6 +5,8 @@ jest.mock('../../utils/logger', () => ({
   debug: jest.fn(),
 }));
 
+jest.mock('../../models/human_tool_request', () => ({ exists: jest.fn().mockResolvedValue(null) }));
+
 jest.mock('../../utils/OpenAI_API', () => ({
   retrieveResponse: jest.fn(),
 }));
@@ -34,11 +36,15 @@ jest.mock('../../database', () => {
   Chat5Model.deleteOne = jest.fn().mockResolvedValue({ deletedCount: 1 });
   Chat5Model.exists = jest.fn();
   Chat5Model.findOne = jest.fn();
+  Chat5Model.findById = jest.fn();
+  Chat5Model.updateOne = jest.fn();
 
   return {
     Conversation5Model: {
       findById: jest.fn(),
       exists: jest.fn(),
+      findOneAndUpdate: jest.fn(),
+      updateOne: jest.fn(),
     },
     PendingRequests,
     Chat5Model,
@@ -56,7 +62,27 @@ describe('ConversationService response recovery', () => {
     Conversation5Model.exists.mockResolvedValue({ _id: 'conversation-reference' });
     Chat5Model.exists.mockResolvedValue({ _id: 'placeholder' });
     Chat5Model.findOne.mockResolvedValue(null);
-    PendingRequests.updateOne.mockResolvedValue({ modifiedCount: 1 });
+    PendingRequests.updateOne.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
+    Chat5Model.updateOne.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
+    Chat5Model.findById.mockResolvedValue(null);
+    Conversation5Model.findById.mockReset();
+    Conversation5Model.findOneAndUpdate.mockImplementation(async (filter, pipeline) => {
+      const conversation = await Conversation5Model.findById(filter._id);
+      if (!conversation || (filter.messages && !conversation.messages.includes(filter.messages))) return null;
+      const [kept, added] = pipeline[0].$set.messages.$concatArrays;
+      const removals = kept.$filter.cond.$not[0].$in[1].$literal;
+      const additions = added.$filter.input.$literal;
+      const existing = conversation.messages;
+      conversation.messages = [...existing.filter(id => !removals.includes(String(id))),
+        ...additions.filter(id => !existing.includes(id))];
+      return conversation;
+    });
+    Conversation5Model.updateOne.mockImplementation(async (filter, update) => {
+      const conversation = await Conversation5Model.findById(filter._id);
+      if (!conversation || !conversation.messages.includes(filter.messages)) return { modifiedCount: 0 };
+      conversation.messages = conversation.messages.filter(id => id !== update.$pull.messages);
+      return { modifiedCount: 1 };
+    });
     PendingRequests.deleteOne.mockResolvedValue({ deletedCount: 1 });
   });
 
@@ -111,7 +137,7 @@ describe('ConversationService response recovery', () => {
           }),
         ]),
       }),
-      { $set: { processingStartedAt: expect.any(Date) } },
+      { $set: { processingStartedAt: expect.any(Date), processingToken: expect.any(String) } },
       expect.objectContaining({
         new: true,
         sort: {
@@ -331,7 +357,7 @@ describe('ConversationService response recovery', () => {
 
     expect(ai.retrieveResponse).not.toHaveBeenCalled();
     expect(conversation.messages).toEqual(['user-message']);
-    expect(conversation.save).toHaveBeenCalledTimes(1);
+    expect(conversation.save).not.toHaveBeenCalled();
     expect(messageService.deleteMessages).toHaveBeenCalledWith(['ph-expired'], {
       conversationId: 'conv-expired',
     });
@@ -623,7 +649,7 @@ describe('ConversationService response recovery', () => {
     expect(messageService.deleteMessages).toHaveBeenCalledWith(['ph-1'], {
       conversationId: 'conv-1',
     });
-    expect(conversation.save.mock.invocationCallOrder[0])
+    expect(Conversation5Model.findOneAndUpdate.mock.invocationCallOrder[0])
       .toBeLessThan(messageService.deleteMessages.mock.invocationCallOrder[0]);
     expect(conversation.messages).toEqual(['user-1', 'msg-1']);
     expect(result).toEqual({
@@ -634,7 +660,7 @@ describe('ConversationService response recovery', () => {
         ok: true,
         status: 'cleaned',
         placeholderId: 'ph-1',
-        referenceRemoved: false,
+        referenceRemoved: true,
         deletedCount: 1,
         error: null,
       },
@@ -941,12 +967,13 @@ describe('ConversationService response recovery', () => {
       conversation: expect.objectContaining({ messages: ['user-1', 'fc-msg', 'chat5-generated'] }),
       includeLastToolBatch: true,
     });
-    expect(PendingRequests).toHaveBeenCalledWith({
+    expect(PendingRequests.updateOne).toHaveBeenCalledWith({ _id: expect.any(String) }, { $setOnInsert: {
+      recoveryState: 'followup_wait', provider: 'OpenAI',
       response_id: 'resp-follow',
       conversation_id: 'conv-tools',
       placeholder_id: 'ph-next',
       initiatedBy: { id: 'admin-1', name: 'Lennart', type_user: 'admin' },
-    });
+    } }, { upsert: true });
     expect(conversation.messages).toEqual(['user-1', 'fc-msg', 'chat5-generated', 'ph-next']);
     expect(result.messages.map(m => m.contentType)).toEqual(['function_call', 'function_call_output', 'text']);
     expect(PendingRequests.deleteOne).toHaveBeenCalledWith({ _id: 'pending-tools' });
@@ -1006,13 +1033,14 @@ describe('ConversationService response recovery', () => {
       }),
       includeLastToolBatch: true,
     });
-    expect(PendingRequests).toHaveBeenCalledWith({
+    expect(PendingRequests.updateOne).toHaveBeenCalledWith({ _id: expect.any(String) }, { $setOnInsert: {
+      recoveryState: 'followup_wait',
       response_id: '32d58123-b2da-4412-8df5-1fbb47bb07cd',
       conversation_id: 'conv-local-tools',
       placeholder_id: 'ph-local-next',
       provider: 'Ollama',
       toolRound: 2,
-    });
+    } }, { upsert: true });
   });
 
   test('function calls cannot execute tools that were not selected for the conversation', async () => {
@@ -1161,5 +1189,178 @@ describe('ConversationService response recovery', () => {
       { _id: 'pending-2' },
       { $set: { processingStartedAt: null } },
     );
+  });
+
+  function completionFixture(toolName = 'demo_tool') {
+    const pending = { _id: 'pending-durable', response_id: 'resp-durable', conversation_id: 'conv-durable',
+      placeholder_id: 'ph-durable', processingToken: 'owner-1' };
+    const conversation = { _id: 'conv-durable', messages: ['user-1', 'ph-durable'],
+      category: 'Chat5', tags: [], members: ['Lennart'], metadata: { tools: [toolName] },
+      save: jest.fn().mockRejectedValue(new Error('No matching document found version 15')) };
+    const call = { _id: 'call-message', contentType: 'function_call', content: {
+      responseId: 'resp-durable', callId: 'call-durable', toolName, arguments: '{}',
+    } };
+    const placeholder = { _id: 'ph-followup', contentType: 'text', content: { text: 'Pending response' } };
+    const messageService = { processCompletedResponse: jest.fn().mockResolvedValue([call]),
+      generateAIMessage: jest.fn().mockResolvedValue({ response_id: 'resp-child', msg: placeholder }),
+      deleteMessages: jest.fn().mockResolvedValue(1) };
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    PendingRequests.findOneAndUpdate.mockResolvedValueOnce(pending).mockResolvedValue(null);
+    const service = new ConversationService({}, messageService, {});
+    service.toolManagerService = {
+      executeToolCall: jest.fn().mockResolvedValue({ ok: true, result: { ok: true } }),
+      formatToolResultForOpenAI: jest.fn((toolCall, output) => ({ call_id: toolCall.call_id, output })),
+    };
+    return { service, conversation, pending, call, messageService, placeholder };
+  }
+
+  test('attaches output before a 16-minute tool, renews ownership and preserves concurrent messages', async () => {
+    jest.useFakeTimers();
+    try {
+      const f = completionFixture();
+      let finish;
+      let notifyStarted;
+      const started = new Promise(resolve => { notifyStarted = resolve; });
+      f.service.toolManagerService.executeToolCall.mockImplementation(() => {
+        notifyStarted();
+        return new Promise(resolve => { finish = resolve; });
+      });
+      const running = f.service.processCompletedResponse('resp-durable');
+      await started;
+      expect(f.conversation.messages).toContain('call-message');
+      expect(f.conversation.messages).toContain('ph-durable');
+      // A competing writer changes both the array and other conversation settings.
+      f.conversation.messages.push('concurrent-user-message');
+      f.conversation.summary = 'concurrently updated summary';
+      await jest.advanceTimersByTimeAsync(16 * 60 * 1000);
+      expect(PendingRequests.updateOne.mock.calls.filter(([, update]) => update.$set?.processingStartedAt instanceof Date).length)
+        .toBeGreaterThanOrEqual(16);
+      await expect(f.service.processCompletedResponse('resp-durable')).resolves.toBeNull();
+      finish({ ok: true, result: { done: true } });
+      const result = await running;
+      expect(result.conversation.messages).toEqual(['user-1', 'call-message', 'concurrent-user-message', 'chat5-generated', 'ph-followup']);
+      expect(result.conversation.summary).toBe('concurrently updated summary');
+      expect(f.conversation.save).not.toHaveBeenCalled();
+      expect(f.service.toolManagerService.executeToolCall).toHaveBeenCalledTimes(1);
+      expect(f.messageService.generateAIMessage).toHaveBeenCalledTimes(1);
+      expect(jest.getTimerCount()).toBe(0);
+    } finally { jest.useRealTimers(); }
+  });
+
+  test('a follow-up attachment failure reuses the saved receipt and tool output on recovery', async () => {
+    const f = completionFixture();
+    const attach = Conversation5Model.findOneAndUpdate.getMockImplementation();
+    let rejectAttachment = true;
+    Conversation5Model.findOneAndUpdate.mockImplementation((filter, pipeline, options) => {
+      const added = pipeline[0].$set.messages.$concatArrays[1].$filter.input.$literal;
+      if (rejectAttachment && added.includes('ph-followup')) {
+        rejectAttachment = false;
+        return Promise.reject(new Error('Injected version conflict'));
+      }
+      return attach(filter, pipeline, options);
+    });
+    await expect(f.service.processCompletedResponse('resp-durable')).rejects.toThrow('Injected version conflict');
+    expect(f.pending.followUp.state).toBe('ready');
+    expect(f.conversation.messages).toContain('ph-durable');
+    const output = Chat5Model.mock.results.at(-1).value;
+    Chat5Model.findOne.mockResolvedValue(output);
+    Chat5Model.findById.mockResolvedValue(f.placeholder);
+    const result = await f.service.processCompletedResponse('resp-durable', { claimedPending: f.pending });
+    expect(result.followUpResponseIds).toEqual(['resp-child']);
+    expect(f.messageService.generateAIMessage).toHaveBeenCalledTimes(1);
+    expect(f.service.toolManagerService.executeToolCall).toHaveBeenCalledTimes(1);
+    expect(f.conversation.messages.filter(id => id === 'call-message')).toHaveLength(1);
+    expect(f.conversation.messages.filter(id => id === 'ph-followup')).toHaveLength(1);
+    const childWrites = PendingRequests.updateOne.mock.calls.filter(([, update]) => update.$setOnInsert);
+    expect(childWrites).toHaveLength(1);
+    expect(childWrites[0][1].$setOnInsert.recoveryState).toBe('followup_wait');
+  });
+
+  test('a queued child is never recreated if the parent retries after the child completed', async () => {
+    const f = completionFixture();
+    f.pending.followUp = { state: 'queued', pendingId: 'child-pending', responseId: 'resp-child', placeholderId: 'old-child' };
+    Chat5Model.findOne.mockResolvedValue({ _id: 'saved-output', contentType: 'function_call_output' });
+    await f.service.processCompletedResponse('resp-durable');
+    expect(PendingRequests.updateOne.mock.calls.filter(([, update]) => update.$setOnInsert)).toHaveLength(0);
+    expect(f.messageService.generateAIMessage).not.toHaveBeenCalled();
+    expect(f.service.toolManagerService.executeToolCall).not.toHaveBeenCalled();
+  });
+
+  test('an uncertain tool dispatch blocks automatic replay without deleting the valid placeholder', async () => {
+    const f = completionFixture();
+    Chat5Model.updateOne.mockResolvedValue({ matchedCount: 0, modifiedCount: 0 });
+    await expect(f.service.processCompletedResponse('resp-durable')).rejects.toMatchObject({ code: 'CHAT5_ACTION_UNCERTAIN' });
+    expect(f.pending.recoveryState).toBe('blocked');
+    expect(f.service.toolManagerService.executeToolCall).not.toHaveBeenCalled();
+    expect(f.messageService.deleteMessages).not.toHaveBeenCalled();
+    expect(f.conversation.messages).toContain('ph-durable');
+    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('requires inspection'), expect.any(Object));
+  });
+
+  test('an uncertain follow-up dispatch cannot submit again on recovery', async () => {
+    const f = completionFixture();
+    f.pending.followUp = { state: 'submitting', pendingId: 'child-pending' };
+    Chat5Model.findOne.mockResolvedValue({ _id: 'saved-output', contentType: 'function_call_output' });
+    await expect(f.service.processCompletedResponse('resp-durable')).rejects.toMatchObject({ code: 'CHAT5_ACTION_UNCERTAIN' });
+    expect(f.pending.recoveryState).toBe('blocked');
+    expect(f.messageService.generateAIMessage).not.toHaveBeenCalled();
+    expect(f.messageService.deleteMessages).not.toHaveBeenCalled();
+  });
+
+  test('lost ownership prevents conversion, follow-up work, and releasing another worker claim', async () => {
+    const f = completionFixture();
+    PendingRequests.updateOne.mockResolvedValueOnce({ matchedCount: 0, modifiedCount: 0 });
+    await expect(f.service.processCompletedResponse('resp-durable')).rejects.toMatchObject({ code: 'CHAT5_CLAIM_LOST' });
+    expect(f.messageService.processCompletedResponse).not.toHaveBeenCalled();
+    expect(PendingRequests.updateOne).toHaveBeenCalledTimes(1);
+    expect(PendingRequests.updateOne.mock.calls[0][0]).toEqual({ _id: f.pending._id, processingToken: 'owner-1' });
+  });
+
+  test.each([true, false])('expired human calls are detached without a timeout follow-up (already expired: %s)', async (alreadyExpired) => {
+    const f = completionFixture('ask_lennart_for_codex');
+    require('../../models/human_tool_request').exists.mockResolvedValue(alreadyExpired ? { _id: 'human-request' } : null);
+    if (alreadyExpired) f.conversation.metadata.tools = [];
+    f.service.toolManagerService.executeToolCall.mockResolvedValue({ ok: true, result: { status: 'timed_out' } });
+    const result = await f.service.processCompletedResponse('resp-durable');
+    expect(f.conversation.messages).toEqual(['user-1']);
+    expect(result.messages).toEqual([]);
+    expect(result.removedIds).toEqual(['call-message']);
+    expect(f.messageService.generateAIMessage).not.toHaveBeenCalled();
+    expect(f.service.toolManagerService.formatToolResultForOpenAI).not.toHaveBeenCalled();
+    expect(f.call.content.executionState).toBe('expired');
+    expect(f.service.toolManagerService.executeToolCall).toHaveBeenCalledTimes(alreadyExpired ? 0 : 1);
+  });
+
+  test.each([false, true])('intentional removal disables embeddings only after the last reference (shared: %s)', async (shared) => {
+    const conversation = { _id: 'conv-remove', messages: ['user-message', 'answer-message'], save: jest.fn() };
+    const service = new ConversationService({}, {}, {});
+    service.ensureConversation5 = jest.fn().mockResolvedValue({ conversation });
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    Conversation5Model.exists.mockResolvedValue(shared ? { _id: 'other-conversation' } : null);
+    Chat5Model.findById.mockImplementation(async id => ({ _id: id, hideFromBot: false }));
+    const result = await service.removeLastVisibleMessage('conv-remove');
+    expect(result.removedIds).toEqual(['answer-message']);
+    expect(conversation.messages).toEqual(['user-message']);
+    expect(conversation.save).not.toHaveBeenCalled();
+    expect(Chat5Model.updateOne).toHaveBeenCalledTimes(shared ? 0 : 1);
+    if (!shared) expect(Chat5Model.updateOne).toHaveBeenCalledWith({ _id: 'answer-message', contentType: 'text' }, {
+      $set: { embeddingDetachedAt: expect.any(Date), embeddingStatus: 'delete_pending', embeddingContentHash: null },
+    });
+  });
+
+  test('a mixed batch continues completed tools while excluding the expired human call from model input', async () => {
+    const f = completionFixture('ask_lennart');
+    const otherCall = { _id: 'other-call', contentType: 'function_call', content: {
+      responseId: f.pending.response_id, callId: 'other-tool-call', toolName: 'demo_tool',
+    } };
+    f.conversation.metadata.tools.push('demo_tool');
+    f.messageService.processCompletedResponse.mockResolvedValue([f.call, otherCall]);
+    require('../../models/human_tool_request').exists.mockResolvedValue({ _id: 'expired' });
+    const result = await f.service.processCompletedResponse('resp-durable');
+    expect(f.service.toolManagerService.executeToolCall).toHaveBeenCalledTimes(1);
+    expect(f.service.toolManagerService.executeToolCall.mock.calls[0][0].name).toBe('demo_tool');
+    expect(f.messageService.generateAIMessage).toHaveBeenCalledTimes(1);
+    expect(f.messageService.generateAIMessage.mock.calls[0][0].conversation.messages).toEqual(['user-1', 'other-call', 'chat5-generated']);
+    expect(result.removedIds).toEqual(['call-message']);
   });
 });

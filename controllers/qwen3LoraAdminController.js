@@ -454,15 +454,7 @@ exports.state = routeGuard('state', async (req, res) => {
   try {
     const state = await qwen3LoraGateway.getDashboardState();
     const errorKeys = Object.keys(state.errors || {});
-    if (errorKeys.length) {
-      logger.warning('Qwen3 LoRA admin state returned endpoint errors', {
-        category: 'qwen3_lora_admin',
-        metadata: requestMetadata(req, {
-          failedEndpoints: errorKeys,
-          errors: state.errors,
-        }),
-      });
-    } else {
+    if (!errorKeys.length) {
       logger.debug('Qwen3 LoRA admin state returned successfully', {
         category: 'qwen3_lora_admin',
         metadata: requestMetadata(req),

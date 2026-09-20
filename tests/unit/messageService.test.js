@@ -823,3 +823,34 @@ test('Miien local token cap is runtime-only and does not change saved metadata',
   expect(ollama.submitChatJob).toHaveBeenLastCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ max_tokens: 4096 }) }),
     [], expect.any(Object), { includeLastToolBatch: false, privateRequest: true });
 });
+
+describe('OpenAI completion persistence retries', () => {
+  test('reuses existing outputs with their original provider indexes, including skipped items', async () => {
+    const service = new MessageService({}, {});
+    const existing = { _id: 'already-saved-function', contentType: 'function_call', content: {
+      responseId: 'resp-retry', outputIndex: 3, toolName: 'demo', callId: 'call-1',
+    } };
+    ai.convertResponseBody.mockResolvedValue([{ contentType: 'function_call', content: existing.content }]);
+    Chat5Model.findOne.mockResolvedValue(existing);
+    const before = Chat5Model.mock.calls.length;
+    await expect(service.processCompletedResponse({}, 'resp-retry', { id: 'resp-retry' })).resolves.toEqual([existing]);
+    expect(Chat5Model.findOne).toHaveBeenCalledWith({ 'content.responseId': 'resp-retry', 'content.outputIndex': 3 });
+    expect(Chat5Model.mock.calls.length).toBe(before);
+  });
+
+  test('concurrent insertion of an output resolves to the same message ID', async () => {
+    const service = new MessageService({}, {});
+    const { completionMessageId } = require('../../services/chat5CompletionState');
+    const id = completionMessageId('resp-concurrent', 'output:0');
+    const persisted = { _id: id, contentType: 'text', content: { text: 'saved once' } };
+    ai.convertResponseBody.mockResolvedValue([{ contentType: 'text', content: { text: 'saved once' } }]);
+    Chat5Model.findOne.mockResolvedValue(null);
+    Chat5Model.findById.mockResolvedValue(persisted);
+    Chat5Model.mockImplementationOnce(function (doc) {
+      Object.assign(this, doc);
+      this.save = jest.fn().mockRejectedValue(Object.assign(new Error('duplicate'), { code: 11000 }));
+    });
+    await expect(service.processCompletedResponse({}, 'resp-concurrent', { id: 'resp-concurrent' })).resolves.toEqual([persisted]);
+    expect(Chat5Model.findById).toHaveBeenCalledWith(id);
+  });
+});

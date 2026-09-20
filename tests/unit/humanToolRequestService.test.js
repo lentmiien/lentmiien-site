@@ -370,7 +370,6 @@ describe('HumanToolRequestService', () => {
       { response_id: 'response-1', recoveryState: 'tool_wait' },
       { $set: {
         recoveryState: 'pending',
-        processingStartedAt: null,
         nextCheckAt: new Date('2026-09-05T01:01:00.000Z'),
       } }
     );
@@ -455,7 +454,6 @@ describe('HumanToolRequestService', () => {
       },
       { $set: expect.objectContaining({
         recoveryState: 'pending',
-        processingStartedAt: null,
       }) }
     );
   });

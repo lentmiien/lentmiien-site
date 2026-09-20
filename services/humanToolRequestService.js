@@ -412,7 +412,8 @@ class HumanToolRequestService {
           {
             $set: {
               recoveryState: 'pending',
-              processingStartedAt: null,
+              // A live completion owns a renewable claim. Recovery may take
+              // over only after that claim expires, never because of an answer.
               nextCheckAt: new Date(respondedAt.getTime() + RECOVERY_WAKE_DELAY_MS),
             },
           }
@@ -481,7 +482,6 @@ class HumanToolRequestService {
       {
         $set: {
           recoveryState: 'pending',
-          processingStartedAt: null,
           nextCheckAt: this.now(),
         },
       }

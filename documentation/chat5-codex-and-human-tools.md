@@ -80,6 +80,8 @@ Each newly queued Chat5 response stores the authenticated socket principal that 
 
 When Lennart responds, the pending response is moved back to `pending` with a short delay. If the original process is still alive, it observes the database response and finishes first. If the process stopped, the existing Chat5 recovery scheduler replays the completed model response, and the stable conversation/response/tool-call key resolves to the already-answered human request. A one-minute reconciliation loop requeues answered calls interrupted before their tool output was saved and expires overdue requests, so timeout behavior also survives restarts.
 
+Waking a request preserves any active processing claim. Chat5 renews that claim while tools run, including human waits. An expired human request ends silently: completion detaches its tool call, keeps an expiry marker for safe replay, and does not generate a timeout response or follow-up for an expired-only batch. The human-request record remains available under its existing retention policy.
+
 Codex tool calls also receive deterministic internal session and turn IDs derived from the originating tool call. Replaying a call therefore resumes the existing stored Codex turn rather than starting duplicate work. While a live handler waits, it refreshes the pending-response processing heartbeat.
 
 ## Configuration and deployment

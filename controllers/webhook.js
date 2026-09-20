@@ -226,6 +226,7 @@ exports.openai = async (req, res) => {
         conversation,
         messages,
         placeholderId: placeholder_id,
+        removedIds: result.removedIds,
       });
     }
 
@@ -360,6 +361,7 @@ exports.ollama = async (req, res) => {
         conversation,
         messages,
         placeholderId: placeholder_id,
+        removedIds: result.removedIds,
       });
       logger.notice('Completed Ollama job persisted and broadcast', {
         category: 'ollama_webhook',

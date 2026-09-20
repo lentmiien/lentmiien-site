@@ -43,6 +43,27 @@ describe('Qwen3QloraGatewayService', () => {
     expect(axios.mock.calls.every(([options]) => options.timeout === 4321)).toBe(true);
   });
 
+  test.each([
+    ['LoRA', '../../services/qwen3LoraGatewayService', '/qwen3-lora/model'],
+    ['QLoRA', '../../services/qwen3QloraGatewayService', '/qwen3-qlora/model'],
+  ])('%s dashboard reports one structured warning for a model timeout while retaining other data', async (_name, modulePath, modelPath) => {
+    axios.mockImplementation(async options => {
+      const requestPath = new URL(options.url).pathname;
+      if (requestPath === modelPath) throw Object.assign(new Error('timeout'), { code: 'ECONNABORTED' });
+      return { data: { path: requestPath }, headers: {}, status: 200 };
+    });
+    const Service = require(modulePath);
+    const service = new Service({ gatewayBaseUrl: 'http://gateway.test:8080' });
+    const state = await service.getDashboardState();
+    const logger = require('../../utils/logger');
+    expect(Object.keys(state.errors)).toEqual(['model']);
+    expect(state.health).toBeTruthy();
+    expect(logger.warning).toHaveBeenCalledTimes(1);
+    expect(logger.warning).toHaveBeenCalledWith(expect.stringContaining('dashboard state'), expect.objectContaining({
+      metadata: expect.objectContaining({ failures: [{ endpoint: 'model', path: modelPath, status: null, code: 'ECONNABORTED' }] }),
+    }));
+  });
+
   test('uses the QLoRA-specific long timeouts for model preparation and generation', async () => {
     const service = new Qwen3QloraGatewayService({
       gatewayBaseUrl: 'http://gateway.test:8080',

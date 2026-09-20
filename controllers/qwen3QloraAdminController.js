@@ -208,13 +208,6 @@ exports.state = routeGuard('state', async (req, res) => {
 
   try {
     const state = await qwen3QloraGateway.getDashboardState();
-    const errorKeys = Object.keys(state.errors || {});
-    if (errorKeys.length) {
-      log('warning', `${TOOL_NAME} admin state returned endpoint errors`, req, {
-        failedEndpoints: errorKeys,
-        errors: state.errors,
-      });
-    }
     return res.json(state);
   } catch (error) {
     log('error', `Failed to build ${TOOL_NAME} admin state`, req, {

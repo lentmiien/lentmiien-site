@@ -22,9 +22,17 @@ const PendingRequests = new mongoose.Schema({
   initiatedBy: { type: PendingPrincipal, default: undefined },
   toolRound: { type: Number, default: 1, min: 1, max: 20 },
   processingStartedAt: { type: Date, default: null },
+  processingToken: { type: String, default: null },
+  followUp: {
+    state: { type: String, enum: ['submitting', 'ready', 'queued'] },
+    pendingId: String,
+    responseId: String,
+    placeholderId: String,
+    provider: String,
+  },
   recoveryState: {
     type: String,
-    enum: ['pending', 'tool_wait', 'cleanup_pending', 'abandoned'],
+    enum: ['pending', 'tool_wait', 'followup_wait', 'blocked', 'cleanup_pending', 'abandoned'],
     default: 'pending',
   },
   recoveryAttemptCount: { type: Number, default: 0, min: 0 },

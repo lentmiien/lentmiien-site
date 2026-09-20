@@ -5,11 +5,13 @@ const {
   Conversation5Model,
   EmbeddingQueueJob,
   MessageInboxEntry,
+  PendingRequests,
   VectorEmbedding,
   VectorEmbeddingHighQuality,
 } = require('../database');
 const { normalizeAiGatewayReservation } = require('../utils/aiGatewayReservation');
 const logger = require('../utils/logger');
+const { errorDiagnostics } = require('../utils/errorDiagnostics');
 const EmbeddingApiService = require('./embeddingApiService');
 
 const DEFAULT_GATEWAY_BASE_URL = 'http://192.168.0.20:8080';
@@ -120,6 +122,7 @@ class EmbeddingQueueService {
     chatModel = Chat5Model,
     conversationModel = Conversation5Model,
     messageInboxModel = MessageInboxEntry,
+    pendingModel = PendingRequests,
     vectorModel = VectorEmbedding,
     highQualityVectorModel = VectorEmbeddingHighQuality,
     embeddingService = null,
@@ -161,6 +164,7 @@ class EmbeddingQueueService {
     this.chatModel = chatModel;
     this.conversationModel = conversationModel;
     this.messageInboxModel = messageInboxModel;
+    this.pendingModel = pendingModel;
     this.vectorModel = vectorModel;
     this.highQualityVectorModel = highQualityVectorModel;
     this.embeddingService = embeddingService || new EmbeddingApiService({ timeoutMs: requestTimeoutMs });
@@ -435,7 +439,7 @@ class EmbeddingQueueService {
       .catch((error) => {
         this.logger.error('Embedding queue reconciliation failed', {
           category: 'embedding_queue',
-          metadata: { message: safeErrorMessage(error) },
+          metadata: { message: safeErrorMessage(error), ...errorDiagnostics(error) },
         });
         throw error;
       })
@@ -552,11 +556,27 @@ class EmbeddingQueueService {
     }
     await this.reconcilePendingSourcesIfDue();
     let processed = 0;
+    const summary = { completedCount: 0, retriedCount: 0, recoveredCount: 0, failedCount: 0 };
+    const processJob = async (job) => {
+      const outcome = await this.processClaimedJob(job);
+      const retried = Number(job.attempts || 0) > 0;
+      if (retried) summary.retriedCount += 1;
+      if (outcome === 'completed') {
+        summary.completedCount += 1;
+        if (retried) summary.recoveredCount += 1;
+      }
+      if (outcome === 'failed') summary.failedCount += 1;
+    };
+    const logSummary = () => {
+      if (summary.recoveredCount) this.logger.notice('Embedding queue retry batch processed', {
+        category: 'embedding_queue', metadata: { processed, ...summary },
+      });
+    };
     let deleteProcessed = 0;
     while (deleteProcessed < this.batchSize) {
       const deleteJob = await this.claimNext('delete');
       if (!deleteJob) break;
-      await this.processClaimedJob(deleteJob);
+      await processJob(deleteJob);
       processed += 1;
       deleteProcessed += 1;
     }
@@ -567,12 +587,14 @@ class EmbeddingQueueService {
       if (!job) break;
       if (await this.isGpuBusy()) {
         await this.releaseSupersededClaim(job);
+        logSummary();
         return { processed, skipped: 'gpu_busy' };
       }
-      await this.processClaimedJob(job);
+      await processJob(job);
       processed += 1;
       upsertProcessed += 1;
     }
+    logSummary();
     return { processed };
   }
 
@@ -661,7 +683,7 @@ class EmbeddingQueueService {
     for (const message of legacyChats || []) {
       const messageId = String(message._id || '');
       if (!messageId) continue;
-      if (message.embeddingRequested === false) {
+      if (message.embeddingRequested === false || message.embeddingDetachedAt) {
         await this.chatModel.updateOne(
           { _id: messageId, embeddingStatus: { $exists: false } },
           { $set: { embeddingStatus: 'delete_pending', embeddingContentHash: null } },
@@ -718,7 +740,7 @@ class EmbeddingQueueService {
     for (const message of pendingChats || []) {
       const messageId = String(message._id || '');
       if (!messageId) continue;
-      if (message.embeddingRequested === false) {
+      if (message.embeddingRequested === false || message.embeddingDetachedAt) {
         await this.chatModel.updateOne(
           { _id: messageId, embeddingStatus: 'pending' },
           { $set: { embeddingStatus: 'delete_pending', embeddingContentHash: null } },
@@ -739,6 +761,10 @@ class EmbeddingQueueService {
         // Allow that short window to settle before treating it as an orphan.
         const sourceAgeMs = now.getTime() - new Date(message.timestamp).getTime();
         if (sourceAgeMs < DEFAULT_SOURCE_RECONCILE_INTERVAL_MS) continue;
+        if (message.content?.responseId && await resolveQuery(this.pendingModel.exists({
+          response_id: message.content.responseId,
+          recoveryState: { $in: ['pending', 'tool_wait', 'blocked'] },
+        }))) continue;
         const result = await this.chatModel.updateOne(
           {
             _id: messageId, embeddingStatus: 'pending', embeddingRequested: { $ne: false },
@@ -766,7 +792,6 @@ class EmbeddingQueueService {
 
     const chatDeletes = await this.findLimited(this.chatModel, {
       embeddingStatus: 'delete_pending',
-      timestamp: { $gte: cutoff },
     }, { timestamp: 1 });
     for (const message of chatDeletes || []) {
       const messageId = String(message._id || '');
@@ -932,7 +957,7 @@ class EmbeddingQueueService {
       const text = this.normalizeSourceText(rawText);
       return {
         exists: true,
-        enabled: message.embeddingRequested !== false && Boolean(text),
+        enabled: message.embeddingRequested !== false && !message.embeddingDetachedAt && Boolean(text),
         text,
         rawText,
       };
@@ -971,12 +996,14 @@ class EmbeddingQueueService {
         filter.contentType = 'text';
         filter['content.text'] = state.rawText ?? state.text;
         filter.embeddingRequested = { $ne: false };
+        filter.embeddingDetachedAt = null;
         fields.embeddingContentHash = job.desiredHash;
       }
       if (state.status === 'pending' && state.embeddingRemoved) {
         filter.contentType = 'text';
         filter['content.text'] = state.rawText ?? state.text;
         filter.embeddingRequested = { $ne: false };
+        filter.embeddingDetachedAt = null;
         fields.embeddingContentHash = null;
       }
       if (state.status === 'disabled') {
@@ -1190,6 +1217,10 @@ class EmbeddingQueueService {
       });
       return false;
     }
+    if (Number(job.attempts) > 1) this.logger.notice('Embedding queue job recovered after retries', {
+      category: 'embedding_queue',
+      metadata: { jobId: String(job._id), mode: job.mode, attempts: job.attempts },
+    });
     return true;
   }
 
@@ -1253,6 +1284,7 @@ class EmbeddingQueueService {
         retryable,
         nextAttemptAt,
         message,
+        ...errorDiagnostics(error),
       },
     });
   }

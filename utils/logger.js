@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const util = require('util');
 const { execFileSync } = require('child_process');
+const { validRevision, readGitRevision } = require('./runtimeRevision');
 
 // Jest can be invoked with NODE_ENV=production. Neither form may write app logs.
 const isTestRuntime = () => process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined;
@@ -10,15 +11,18 @@ let runtimeIdentity;
 
 function getRuntimeIdentity() {
   if (!runtimeIdentity) {
-    let revision = null;
+    let revision = isTestRuntime() ? null : validRevision(process.env.APP_REVISION);
     if (!isTestRuntime()) {
       try {
-        const head = execFileSync('git', ['rev-parse', '--verify', 'HEAD'], {
-          cwd: path.resolve(__dirname, '..'), encoding: 'utf8', timeout: 1000,
-          stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true,
-        }).trim();
-        if (/^[a-f0-9]{40,64}$/.test(head)) revision = head;
+        if (!revision) {
+          const head = execFileSync('git', ['rev-parse', '--verify', 'HEAD'], {
+            cwd: path.resolve(__dirname, '..'), encoding: 'utf8', timeout: 1000,
+            stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true,
+          }).trim();
+          revision = validRevision(head);
+        }
       } catch (_) { /* Packaged deployments may not contain Git metadata. */ }
+      if (!revision) revision = readGitRevision(path.resolve(__dirname, '..'));
     }
     runtimeIdentity = Object.freeze({
       pid: process.pid,

@@ -46,6 +46,7 @@ async function runRecovery(app) {
           conversation: update.conversation,
           messages: update.messages,
           placeholderId: update.placeholder_id,
+          removedIds: update.removedIds,
         });
       }
       if (update.response_provider !== 'Ollama') {

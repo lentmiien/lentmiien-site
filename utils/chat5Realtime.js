@@ -23,7 +23,7 @@ function toClientMessage(message) {
   return renderMessageHtml(plain);
 }
 
-function emitConversationMessages(io, { conversation, messages = [], placeholderId = null }) {
+function emitConversationMessages(io, { conversation, messages = [], placeholderId = null, removedIds = [] }) {
   if (!io || typeof io.conversationRoom !== 'function' || typeof io.userRoom !== 'function') {
     return false;
   }
@@ -34,6 +34,9 @@ function emitConversationMessages(io, { conversation, messages = [], placeholder
   }
 
   const convRoom = io.conversationRoom(conversationId);
+  if (removedIds.length) {
+    io.to(convRoom).emit('chat5-messages-removed', { conversationId, removedIds: removedIds.map(String) });
+  }
   const clientMessages = messages.map(toClientMessage).filter(Boolean);
   const payload = { id: conversationId, messages: clientMessages };
   if (placeholderId) {

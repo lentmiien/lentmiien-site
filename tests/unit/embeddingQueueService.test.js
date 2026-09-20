@@ -132,6 +132,76 @@ describe('EmbeddingQueueService', () => {
       $set: { embeddingStatus: 'delete_pending', embeddingContentHash: null },
     });
   });
+
+  test('a long-running completion keeps an unattached source pending beyond five minutes', async () => {
+    const f = pendingSourceFixture(20 * 60 * 1000);
+    f.message.content.responseId = 'response-with-long-tool';
+    f.service.pendingModel = { exists: jest.fn().mockResolvedValue({ _id: 'active-response' }) };
+    await f.service.reconcilePendingSources(f.now);
+    expect(f.chatModel.updateOne).not.toHaveBeenCalled();
+    expect(f.logger.warning).not.toHaveBeenCalled();
+    f.conversationModel.findOne.mockResolvedValue({ _id: 'conversation-1' });
+    await f.service.reconcilePendingSources(new Date(+f.now + 300_000));
+    expect(f.service.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  test('an intentionally detached source becomes a deletion intent without an orphan warning', async () => {
+    const f = pendingSourceFixture(600_000);
+    f.message.embeddingDetachedAt = f.now;
+    await f.service.reconcilePendingSources(f.now);
+    expect(f.logger.warning).not.toHaveBeenCalled();
+    expect(f.service.enqueue).not.toHaveBeenCalled();
+    expect(f.chatModel.updateOne).toHaveBeenCalledWith(expect.any(Object), {
+      $set: { embeddingStatus: 'delete_pending', embeddingContentHash: null },
+    });
+  });
+
+  test('network cause codes survive durable retry and recovery identifies the job without logging payloads', async () => {
+    const embeddingService = createEmbeddingService();
+    const logger = createLogger();
+    let currentJob = createJob({ attempts: 1 });
+    const jobModel = {
+      updateOne: jest.fn(async (_filter, update) => {
+        Object.assign(currentJob, update.$set);
+        return { matchedCount: 1, modifiedCount: 1 };
+      }),
+      findOne: jest.fn(async () => currentJob),
+    };
+    const sourceResolver = jest.fn().mockResolvedValue({ exists: true, enabled: true, text: 'same text' });
+    currentJob.desiredHash = buildDesiredHash({ operation: 'upsert', text: 'same text', options: currentJob.options, mode: currentJob.mode });
+    const service = new EmbeddingQueueService({ jobModel, embeddingService, loggerImpl: logger,
+      sourceResolver, sourceStateUpdater: jest.fn().mockResolvedValue({ matchedCount: 1 }) });
+    service.markRemoteAttempt = jest.fn(async job => ({ ...job, attempts: job.attempts + 1 }));
+    const cause = new AggregateError([Object.assign(new Error('private address and token'), { code: 'ECONNRESET' })]);
+    embeddingService.embed.mockRejectedValueOnce(new TypeError('fetch failed', { cause }));
+    expect(await service.processClaimedJob({ ...currentJob })).toBe('failed');
+    expect(currentJob.status).toBe('pending');
+    expect(currentJob.nextAttemptAt).toBeInstanceOf(Date);
+    expect(logger.warning).toHaveBeenCalledWith('Background embedding queue attempt failed', expect.objectContaining({
+      metadata: expect.objectContaining({ codes: ['ECONNRESET'], retryable: true }),
+    }));
+    expect(embeddingService.persistEmbeddings).not.toHaveBeenCalled();
+    expect(await service.processClaimedJob({ ...currentJob })).toBe('completed');
+    expect(embeddingService.persistEmbeddings).toHaveBeenCalledTimes(1);
+    expect(logger.notice).toHaveBeenCalledWith('Embedding queue job recovered after retries', expect.objectContaining({
+      metadata: expect.objectContaining({ jobId: currentJob._id, attempts: 2 }),
+    }));
+    expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('private address');
+  });
+
+  test('a recovery batch reports completed and retried counts without claiming the entire backlog is drained', async () => {
+    const logger = createLogger();
+    const service = new EmbeddingQueueService({ jobModel: {}, embeddingService: createEmbeddingService(), loggerImpl: logger });
+    service.reconcilePendingSourcesIfDue = jest.fn();
+    service.claimNext = jest.fn().mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(createJob({ attempts: 3 })).mockResolvedValueOnce(createJob({ attempts: 0 })).mockResolvedValueOnce(null);
+    service.isGpuBusy = jest.fn().mockResolvedValue(false);
+    service.processClaimedJob = jest.fn().mockResolvedValue('completed');
+    await service.drainQueue();
+    expect(logger.notice).toHaveBeenCalledWith('Embedding queue retry batch processed', {
+      category: 'embedding_queue', metadata: { processed: 2, completedCount: 2, retriedCount: 1, recoveredCount: 1, failedCount: 0 },
+    });
+  });
   test('silently skips a drain while the queue database connection is unavailable', async () => {
     const logger = createLogger();
     const service = new EmbeddingQueueService({
