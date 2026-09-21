@@ -9,16 +9,29 @@ const express = require('express');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { assets, renderDashboard, cardData, renderLifePanel } = require('../fixtures/accountDashboardLayout');
 const malicious = '<img src=x onerror="alert(1)">';
-const labels = [' Mood ', 'mood', 'Work', 'Walk', 'Water', 'Vitamin C', malicious, 'LongLabel'.repeat(20)];
+const labels = [' Mood ', 'mood', 'Work', 'Walk', 'Water', 'Vitamin C', malicious, 'LongLabel'.repeat(17)];
 async function main() {
   assert(process.env.BOOTSTRAP_CSS, 'Supply Bootstrap 5.3.3 CSS for responsive checks.');
   const app = express(); const writes = []; const reads = [];
   let rejectSave = false;
+  const searches = [];
   app.use(express.json());
   app.get('/mypage', (_req, res) => res.send(renderDashboard()));
   app.get('/mypage/api/cards/:id', (req, res) => res.json(cardData(req.params.id)));
-  app.get('/mypage/api/life-panel', (_req, res) => { reads.push('panel'); res.send(renderLifePanel({ labels })); });
+  app.get('/mypage/api/life-panel', (_req, res) => { reads.push('panel'); res.send(renderLifePanel({ labels: [] })); });
   app.get('/mypage/api/life/entries', (_req, res) => { reads.push('entries'); res.json({ entries: [] }); });
+  app.get('/mypage/api/life/labels', (req, res) => {
+    const q = String(req.query.q || '').toLowerCase(); searches.push(q);
+    if (q === 'failure') return res.status(503).json({ error: 'Synthetic unavailable' });
+    const seen = new Set();
+    const history = [...labels, 'Historical winter label'];
+    const matches = history.map(l => l.trim()).filter(l => {
+      const key = l.toLowerCase();
+      if (!l || !key.includes(q) || seen.has(key)) return false;
+      seen.add(key); return true;
+    }).slice(0, 5);
+    setTimeout(() => res.json({ labels: matches }), q === 'slow' ? 800 : 30);
+  });
   app.post('/mypage/api/life/entry', (req, res) => {
     writes.push(req.body);
     assert.equal(req.get('X-CSRF-Token'), 's'.repeat(43));
@@ -50,7 +63,12 @@ async function main() {
       const input = page.getByRole('combobox', { name: 'Label', exact: true });
       const list = page.getByRole('listbox', { name: 'Existing labels' });
       const options = list.getByRole('option');
+      const search = async text => {
+        await input.fill(text);
+        await page.waitForFunction(() => !document.getElementById('life-log-label').hasAttribute('aria-busy'));
+      };
       await input.tap();
+      await page.waitForFunction(() => !document.getElementById('life-log-label').hasAttribute('aria-busy'));
       assert.deepEqual(await options.allTextContents(), ['Mood', 'Work', 'Walk', 'Water', 'Vitamin C']);
       assert.equal(await input.getAttribute('aria-expanded'), 'true');
       const writeCount = writes.length;
@@ -58,9 +76,9 @@ async function main() {
       assert.equal(await input.inputValue(), 'Work'); assert.equal(await list.isVisible(), false);
       assert.equal(await input.evaluate(el => el === document.activeElement), true);
       assert.equal(writes.length, writeCount, 'Selecting must not submit');
-      await input.fill(' wa'); assert.deepEqual(await options.allTextContents(), ['Walk', 'Water']);
+      await search(' wa'); assert.deepEqual(await options.allTextContents(), ['Walk', 'Water']);
       await options.getByText('Water', { exact: true }).tap(); assert.equal(await input.inputValue(), 'Water');
-      await input.fill('New Mixed CASE'); assert.equal(await list.isVisible(), false);
+      await search('New Mixed CASE'); assert.equal(await list.isVisible(), false);
       assert.equal(await input.inputValue(), 'New Mixed CASE');
       await page.locator('#life-log-value').fill('1');
       await page.getByRole('button', { name: 'Save entry', exact: true }).tap();
@@ -68,7 +86,7 @@ async function main() {
       assert.equal(writes.length, writeCount + 1); assert.equal(writes.at(-1).label, 'New Mixed CASE');
       assert.equal(await input.inputValue(), '');
       await input.tap(); assert.equal((await options.allTextContents())[0], 'New Mixed CASE');
-      await input.fill('wo'); await input.press('ArrowDown');
+      await search('wo'); await input.press('ArrowDown');
       const activeId = await input.getAttribute('aria-activedescendant');
       assert.equal(await page.locator('#' + activeId).getAttribute('aria-selected'), 'true');
       await input.press('Enter'); assert.equal(await input.inputValue(), 'Work'); assert.equal(writes.length, writeCount + 1);
@@ -83,17 +101,17 @@ async function main() {
       await page.waitForFunction(() => document.getElementById('life-log-label').value === '');
       assert.equal(writes.length, writeCount + 2); assert.equal(writes.at(-1).label, 'Work');
       rejectSave = true;
-      await input.fill('Unsaved'); await page.getByRole('button', { name: 'Save entry', exact: true }).tap();
+      await search('Unsaved'); await page.getByRole('button', { name: 'Save entry', exact: true }).tap();
       await page.waitForFunction(() => document.getElementById('life-log-status').textContent === 'Synthetic save rejection');
       assert.equal(await input.inputValue(), 'Unsaved'); rejectSave = false;
-      await input.fill('<img'); assert.deepEqual(await options.allTextContents(), [malicious]);
+      await search('<img'); assert.deepEqual(await options.allTextContents(), [malicious]);
       assert.equal(await list.locator('img').count(), 0);
       await options.first().tap(); assert.equal(await input.inputValue(), malicious);
-      await input.fill('LongLabel');
+      await search('LongLabel');
       const bounds = await options.first().boundingBox(); assert(bounds.height >= 44);
       assert(bounds.x >= 0 && bounds.x + bounds.width <= width + 1);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-      await input.fill('');
+      await search('');
       await input.scrollIntoViewIfNeeded();
       await page.locator('.life-log-label-field').screenshot({ path: path.join(os.tmpdir(), `life-log-autocomplete-${width}.png`) });
       if (width < 720) {
@@ -112,14 +130,31 @@ async function main() {
         await cdp.detach();
       }
       // Repeated dashboard refresh preserves the mounted form and locally learned labels.
-      await input.fill('New Mixed');
+      await search('New Mixed');
       const readCount = reads.length;
       await card.locator('.account-refresh').click();
       await page.waitForFunction(() => !document.querySelector('[data-section="life"]').hasAttribute('aria-busy'));
       await input.tap(); assert.deepEqual(await options.allTextContents(), ['New Mixed CASE']);
-      assert.equal(reads.length, readCount, 'Autocomplete must not fetch history or remount the panel');
+      assert.equal(reads.length, readCount, 'Autocomplete must not fetch entry history or remount the panel');
+      await search('winter');
+      assert.deepEqual(await options.allTextContents(), ['Historical winter label']);
+      await options.first().tap(); assert.equal(await input.inputValue(), 'Historical winter label');
+      const searchCount = searches.length;
+      await input.fill('s'); await input.fill('sl'); await input.fill('slow');
+      await page.waitForFunction(() => document.getElementById('life-log-label').hasAttribute('aria-busy'));
+      await page.waitForTimeout(300); // Let the intentionally slow request start.
+      await search('winter'); await page.waitForTimeout(850);
+      assert.deepEqual(searches.slice(searchCount), ['slow', 'winter'], 'Rapid typing is debounced');
+      assert.deepEqual(await options.allTextContents(), ['Historical winter label']);
+      await search('failure');
+      assert.match(await page.locator('#life-log-label-announcement').textContent(), /unavailable/);
+      assert.equal(await input.inputValue(), 'failure');
+      await page.locator('#life-log-value').fill('1');
+      await page.getByRole('button', { name: 'Save entry', exact: true }).tap();
+      await page.waitForFunction(() => document.getElementById('life-log-label').value === '');
+      assert.equal(writes.at(-1).label, 'failure');
       assert.deepEqual(errors, []);
-      console.log(`PASS ${width}px: real taps, typing, free-text/Enter save, keyboard/Tab, safe labels, refresh, 44px targets, no horizontal overflow${width < 720 ? ', document swipe across popup' : ''}.`);
+      console.log(`PASS ${width}px: real taps, debounced history/stale/failure searches, free-text/Enter save, keyboard/Tab, safe labels, refresh, 44px targets, no horizontal overflow${width < 720 ? ', document swipe across popup' : ''}.`);
       await context.close();
     }
   } finally {

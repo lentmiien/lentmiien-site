@@ -38,7 +38,7 @@
   const transcribeBtn = document.getElementById('life-log-transcribe');
   const audioInput = document.getElementById('life-log-audio');
 
-  // Dashboard-only enhancement: reuse its authorized, bounded fragment data.
+  // Dashboard-only enhancement: search the authorized one-year label history.
   // The standalone timeline retains its own native datalist and data contract.
   const labelAutocomplete = (() => {
     const list = lifeLogForm.querySelector('#life-log-label-options');
@@ -54,7 +54,11 @@
         return true;
       }).slice(0, 50);
     };
-    let labels = unique(Array.from(source.options, option => option.value));
+    let labels = [];
+    let savedLabels = [];
+    let timer;
+    let request;
+    let generation = 0;
     let active = -1;
     let matches = [];
     let composing = false;
@@ -66,7 +70,14 @@
     labelInput.setAttribute('aria-expanded', 'false');
     labelInput.setAttribute('aria-describedby', 'life-log-label-help');
 
-    const close = () => {
+    const cancel = () => {
+      generation++;
+      clearTimeout(timer);
+      request?.abort();
+      request = null;
+      labelInput.removeAttribute('aria-busy');
+    };
+    const hide = () => {
       list.hidden = true;
       active = -1;
       labelInput.setAttribute('aria-expanded', 'false');
@@ -74,12 +85,13 @@
       Array.from(list.children).forEach(option => option.setAttribute('aria-selected', 'false'));
       announcement.textContent = '';
     };
-    const render = () => {
-      // Nothing asynchronous is fetched while typing: every render uses current text.
+    const close = () => { cancel(); hide(); };
+    const draw = (message, preserveActive = false) => {
+      const selected = preserveActive && active >= 0 ? key(matches[active]) : null;
       const query = key(labelInput.value);
-      const filtered = labels.filter(label => key(label).includes(query));
+      const filtered = unique([...savedLabels, ...labels]).filter(label => key(label).includes(query));
       matches = filtered.slice(0, 5);
-      close();
+      hide();
       list.replaceChildren();
       matches.forEach((label, index) => {
         const option = document.createElement('button');
@@ -94,10 +106,55 @@
         list.append(option);
       });
       list.hidden = matches.length === 0;
+      active = selected === null ? -1 : matches.findIndex(label => key(label) === selected);
+      if (active >= 0) {
+        list.children[active].setAttribute('aria-selected', 'true');
+        labelInput.setAttribute('aria-activedescendant', list.children[active].id);
+      }
       labelInput.setAttribute('aria-expanded', String(!list.hidden));
-      announcement.textContent = filtered.length
+      announcement.textContent = message || (filtered.length
         ? `${matches.length} suggestion${matches.length === 1 ? '' : 's'}${filtered.length > 5 ? ' shown; type more to narrow the list' : ' available'}.`
-        : 'No matching recent labels. You can enter a new label.';
+        : 'No matching labels from the past year. You can enter a new label.');
+    };
+    const render = () => {
+      cancel();
+      const query = labelInput.value.trim();
+      if (labelInput.value.length > 160) {
+        labels = [];
+        draw('Label search is limited to 160 characters.');
+        return;
+      }
+      draw('Searching labels from the past year…');
+      labelInput.setAttribute('aria-busy', 'true');
+      const current = generation;
+      timer = setTimeout(async () => {
+        const controller = new AbortController();
+        request = controller;
+        const timeout = setTimeout(() => controller.abort(), 4000);
+        const isCurrent = () => current === generation && lifeLogForm.isConnected
+          && (document.activeElement === labelInput || list.contains(document.activeElement))
+          && labelInput.value.trim() === query;
+        try {
+          const response = await fetch(`${lifeLogUrl('/labels')}?q=${encodeURIComponent(query)}`, {
+            credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' }, signal: controller.signal,
+          });
+          if (!response.ok || response.redirected) throw new Error('Label search unavailable');
+          const data = await response.json();
+          if (!Array.isArray(data.labels) || data.labels.length > 5
+            || data.labels.some(label => typeof label !== 'string' || label.length > 160)) throw new Error('Invalid labels');
+          if (!isCurrent()) return;
+          labels = unique(data.labels);
+          draw(undefined, true);
+        } catch (_) {
+          if (isCurrent()) draw('Label suggestions unavailable. You can still enter a label and save.', true);
+        } finally {
+          clearTimeout(timeout);
+          if (current === generation) {
+            request = null;
+            labelInput.removeAttribute('aria-busy');
+          }
+        }
+      }, 250);
     };
     const choose = (index) => {
       if (!matches[index]) return;
@@ -124,7 +181,7 @@
       } else if (event.key === 'Enter' && !list.hidden && active >= 0) {
         event.preventDefault();
         choose(active);
-      } else if (event.key === 'Escape' && !list.hidden) {
+      } else if (event.key === 'Escape' && (!list.hidden || request || labelInput.hasAttribute('aria-busy'))) {
         event.preventDefault();
         close();
       } else if (event.key === 'Tab') {
@@ -133,7 +190,12 @@
     });
     // Prevent focus transfer on press; commit only on click (a completed tap).
     // A cancelled pointer/swipe never selects. No touchmove or page swipe handler.
-    const retainFocus = (event) => { if (event.button === 0) event.preventDefault(); };
+    const retainFocus = (event) => {
+      if (event.button === 0) {
+        event.preventDefault();
+        cancel(); // Do not replace a pressed option before the completed tap/click.
+      }
+    };
     list.addEventListener('pointerdown', retainFocus);
     list.addEventListener('mousedown', retainFocus);
     list.addEventListener('click', (event) => {
@@ -149,7 +211,7 @@
       refresh: render,
       remember(label) {
         if (typeof label !== 'string' || !label.trim()) return;
-        labels = unique([label, ...labels]);
+        savedLabels = unique([label, ...savedLabels]);
         if (!list.hidden && document.activeElement === labelInput) render();
       },
     };

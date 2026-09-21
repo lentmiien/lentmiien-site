@@ -8,8 +8,9 @@ const { createDashboardData } = require('../services/accountDashboardData');
 const { createSessionCsrf, PRIVATE_NO_STORE } = require('../middleware/sessionCsrf');
 const { visualPayload } = require('../utils/accountLifeLogPayload');
 const logger = require('../utils/logger');
+const { createLifeLogLabels, parseLabelQuery } = require('../services/accountLifeLogLabels');
 const csrf = createSessionCsrf();
-function createAccountDashboard({ roleModel = Role, userModel = User, data = createDashboardData() } = {}) {
+function createAccountDashboard({ roleModel = Role, userModel = User, data = createDashboardData(), lifeLogLabels = createLifeLogLabels() } = {}) {
   const router = express.Router();
   router.use((req, res, next) => {
     res.set({ 'Cache-Control': PRIVATE_NO_STORE, 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow' });
@@ -89,10 +90,21 @@ function createAccountDashboard({ roleModel = Role, userModel = User, data = cre
   router.get('/api/life-panel', personal('life'), async (req, res) => {
     try {
       const summary = await data.load('life', req.dashboardPolicy);
-      res.render('partials/account_life_log', { lifeLogSuggestions: { all: summary.rows.map(r => r.title) }, lifeLogReminders: summary.reminders, lifeLogReminderCount: summary.reminders.length, lifeLogPath: '/admin/life_log' });
+      res.render('partials/account_life_log', { lifeLogSuggestions: { all: [] }, lifeLogReminders: summary.reminders, lifeLogReminderCount: summary.reminders.length, lifeLogPath: '/admin/life_log' });
     } catch (_) {
       logger.warning('Dashboard life log panel unavailable', { category: 'account_dashboard' });
       res.status(503).json({ ok: false, error: 'Life log unavailable.' });
+    }
+  });
+  const labelReadLimit = rateLimit({ windowMs: 60000, limit: 60, standardHeaders: 'draft-8', legacyHeaders: false,
+    keyGenerator: req => String(req.user._id), message: { error: 'Please wait before searching labels again.' } });
+  router.get('/api/life/labels', personal('life'), labelReadLimit, async (req, res) => {
+    try { parseLabelQuery(req.query); }
+    catch (_) { return res.status(400).json({ error: 'Invalid label search.' }); }
+    try { res.json({ labels: await lifeLogLabels(req.dashboardPolicy, req.query) }); }
+    catch (_) {
+      logger.warning('Dashboard life log label search failed', { category: 'account_dashboard' });
+      res.status(503).json({ error: 'Label suggestions unavailable. You can still enter a label.' });
     }
   });
   router.get('/api/life/entries', personal('life'), async (req, res) => {

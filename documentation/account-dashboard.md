@@ -271,63 +271,116 @@ the deployment checklist. No production startup, records, providers or secrets w
 
 ## Dashboard Label autocomplete
 
-The dashboard Label field previously delegated suggestions entirely to a native
-`datalist`, whose presentation and touch/keyboard interaction depend on the browser.
-The dashboard now progressively enhances that source with an accessible combobox
-and an inline list of at most five 44px-or-larger options. Focus/tap opens recent
-suggestions; typing uses case-insensitive substring matching. Arrow keys choose an
-active option, Enter accepts it, Escape dismisses, and Tab advances normally. No
-option is selected implicitly: arbitrary new labels and ordinary form submission
-remain available. IME composition does not select a suggestion.
+The dashboard progressively enhances its Label field into an accessible combobox
+with an inline list of at most five 44px-or-larger options. Focus/tap offers labels
+from the past year; typing searches literal case-insensitive substrings after a
+250ms debounce. Arrow keys choose an active option, Enter accepts it, Escape dismisses,
+and Tab advances normally. Arbitrary new labels and ordinary submission remain
+available. IME composition does not select or search until composition ends.
 
-Data scope and security contract are unchanged from the dashboard contract above:
-logged-in, sensitive personal data, no machine principals, configured personal owner
-plus admin constraints and `dashboard.account.read` / `dashboard.personal.read`;
-existing saves additionally require `dashboard.personal.write` and shared session
-CSRF. There is no admin override of the owner binding. No server routes, queries,
-persistence rules, or validation limits change. `/mypage/api/life-panel` supplies
-`summary.rows.map(r => r.title)` from the eight newest entries (timestamp and ID
-descending). An unlabelled entry's title is its type, an existing fallback preserved
-here. These are recent suggestions, not a complete label history. The broader
-standalone service's label cache and legacy health labels are not queried.
+### Historical-label security and data contract
 
-Suggestion-only normalization trims whitespace and deduplicates case-insensitively,
-keeping the first spelling and source order. It never lowercases the field or changes
-persistence; the existing client/model trim on save remains. Successful entry saves
-promote their submitted label in an in-memory list capped at 50; failed saves do not.
-No extra request, history scan, local storage, outbound service, private file, or log
-is added. The fragment and API retain private/no-store caching and their existing
-retention policy. Labels are escaped by Pug and rendered with `textContent`; option
-IDs never contain label text. Negative tests cover malicious label markup, failed
-saves, free text and unchanged authorization/CSRF boundaries.
+- Zone: logged-in; sensitive personal labels; no machine principals. Reuse the
+  existing `dashboard.account.read` and `dashboard.personal.read` capabilities,
+  admin constraint, and configured `DASHBOARD_PERSONAL_OWNER_USER_ID` binding through
+  `accountSurfacePolicy` (which uses shared authorization). The admin bundle supplies
+  these capabilities; family/user bundles do not supply personal access. There is
+  no admin override of the owner binding. Missing owner configuration fails closed.
+- Scope: the existing `my_life_log_entry` collection belongs exclusively to the
+  configured personal owner and has no per-record owner field. Both route and label
+  service check the resolved policy before model access. This is not a multi-owner
+  schema: do not insert another owner's records into it. No owner ID can be supplied
+  by the caller. Other admins/users cannot search this owner's collection.
+- Read-only API: `GET /mypage/api/life/labels?q=<literal substring>` returns only
+  `{ labels: [...] }`, at most five labels of at most 160 UTF-16 code units each.
+  Missing/empty/whitespace `q` requests the most recently used distinct labels.
+  Unknown fields, arrays/objects, NUL characters, and strings longer than 160 are rejected with 400.
+  Regex metacharacters are escaped. Persisted labels and save validation are unchanged;
+  legacy labels longer than the dashboard's existing 160-character save limit are
+  omitted from suggestions rather than truncated into different labels.
+- Date: canonical `timestamp`, never `createdAt` or `updatedAt`. The inclusive
+  rolling window ends at request time and starts at the same UTC instant one calendar
+  year earlier; February 29 clamps to February 28. Both exact endpoints are included;
+  older and future-dated entries are excluded, including newly imported old records.
+  This endpoint searches all entry types in the dashboard's existing Life Log
+  collection. The separate legacy HealthEntry maps (`dateOfEntry`) and standalone
+  all-time label cache remain outside this dashboard data source.
+- Query: Mongo filters the entire timestamp window and escaped substring before
+  ranking by `timestamp DESC, _id DESC`. A cursor projects only `label`, uses batches
+  of 100, trims/deduplicates in JavaScript with `toLowerCase()` (including non-ASCII
+  casing), and stops after five unique usable labels. The latest record supplies
+  original casing; ID breaks timestamp ties deterministically. There is **no record
+  limit before filtering or deduplication**, including when many newer records or
+  duplicates precede a rare label. No location, note, value, ID or date is returned.
+- Resources: reuse the declared `{ timestamp: -1 }` index for the date predicate;
+  the unanchored case-insensitive regex is a residual filter and cannot rely on the
+  label index for substring lookup. The timestamp/ID tie sort may need an in-memory
+  sort. Queries have `maxTimeMS: 2000`, disk spilling disabled, a two-second cursor
+  consumption deadline, and guaranteed cursor cleanup; failures return 503, never
+  silent partial results. This remains subject to driver/network timeout behavior.
+  The route allows 60 searches/minute/principal within the shared dashboard budget
+  of 100 requests/minute. Browser searches time out after four seconds.
+- Cache/privacy: private/no-store response and fetch; no persistent browser cache,
+  server label cache, files, outbound services, retention changes or migrations.
+  Existing saves retain capability checks and session CSRF. Operational search
+  failures use a stable warning through `utils/logger` without query/label/exception
+  content. Rejected requests do not log personal data.
 
-The enhancement is gated to dashboard mode in shared `my_life_log.js`; the standalone
-timeline's filter datalist and script are unchanged. Reinitialization is protected
-by the existing form guard, new fragments initialize independently, native/reset-after-
-save closes suggestions, and card refresh keeps the mounted form and new local labels.
-The short list follows document scrolling without a nested scrolling viewport or
-global touch handlers. Selection happens on completed click/tap, with press retaining
-input focus; swiping/cancelling a pointer does not select. Long labels are visually
-ellipsized to preserve the mobile width, with full option text available to assistive
-technology and the selected input.
+The eight displayed recent entries and section layout are unchanged. The form no
+longer uses their truncated display titles as its suggestion source. Only bounded
+labels are fetched while typing. The standalone native datalist is unchanged.
+
+Loading, empty-match and error states are visible and announced politely. Failures
+never change the input or block saves. Superseded requests are aborted and guarded
+by a generation counter, current input/focus and connected-form checks. Blur, Escape,
+Tab, reset, selection and IME start cancel pending work; reinitialization keeps the
+existing form guard. Pressing an option freezes pending updates until the completed
+tap/click. Keyboard selection survives a response when the chosen label remains.
+
+Suggestion normalization never lowercases the field or changes persisted values.
+Successful saves immediately promote their submitted label in a session-memory list
+capped at 50, ahead of server results; failed saves do not. This also permits immediate
+reuse of a just-saved backdated label. The last response contains at most five labels;
+these may remain available during loading/failure. Neither local list limits the
+server search. Card refresh keeps the mounted form and locally learned labels.
+Labels use `textContent`, and option IDs never contain label text. The short list
+follows document scrolling without a nested viewport or global touch handlers.
+Long labels are visually ellipsized with full option text available to assistive
+technology and in the selected input.
+
+Release: deploy the commit through the normal application release process and restart
+web workers. No new environment variables, dependencies or index migration are
+required. Do not run `npm start`/`setup.js` as a smoke test. The timestamp index is
+already declared; an authorized operator should confirm it exists and examine the
+query plan with synthetic or suitably protected data if production performance is
+poor. A compound `{ timestamp: -1, _id: -1 }` index could remove the tie-sort cost,
+but is not added/applied by this change; review an explain plan before considering it.
+The browser fails gracefully on query timeout. Final human validation should search
+for a known months-old label absent from the recent eight rows, then tap/select and
+save a new free-text label on the actual device, without copying personal content
+into issue reports or logs.
 
 Validation commands (synthetic data only):
 
 ```sh
-npm test -- tests/unit/myLifeLogAutocomplete.test.js tests/unit/accountFormsIntegration.test.js tests/unit/accountDashboardLayout.test.js tests/unit/accountDashboardRoute.test.js tests/unit/accountDashboardData.test.js tests/unit/accountSurfacePolicy.test.js --coverage=false --runInBand
+npm test -- tests/unit/accountLifeLogLabels.test.js tests/unit/myLifeLogAutocomplete.test.js tests/unit/accountFormsIntegration.test.js tests/unit/accountDashboardLayout.test.js tests/unit/accountDashboardRoute.test.js tests/unit/accountDashboardData.test.js tests/unit/accountSurfacePolicy.test.js --coverage=false --runInBand
 PLAYWRIGHT_MODULE=/path/to/playwright CHROMIUM_EXECUTABLE=/path/to/chrome BOOTSTRAP_CSS=/path/to/bootstrap-5.3.3.min.css node tests/browser/myLifeLogAutocomplete.cjs
 ```
 
 The browser check uses real touchscreen taps at 320px, 390px and 1440px, keyboard
-navigation, actual form submission, safe label rendering, refresh and phone document
-swipes across the popup. It writes synthetic screenshots to the system temp directory.
+navigation, delayed/stale/failed history searches, actual form submission, safe label
+rendering, refresh and phone document swipes across the popup. It writes synthetic screenshots to the system temp directory.
+The final focused run passed 175 tests across seven suites. The broader Jest run
+passed 328 suites / 3,897 tests with coverage thresholds satisfied (four suites /
+66 tests skipped). Both autocomplete and dashboard layout browser scripts passed
+at all three widths. Date/query tests use a synthetic cursor adapter; no live MongoDB
+execution plan or production performance was measured.
+
 Chromium emulation does not verify physical devices, Safari/VoiceOver, or an actual
 onscreen keyboard; these remain manual checks. The existing dashboard layout browser
 check also covers document scrolling and other Life Log controls.
 
-Release through the normal process; no migration, environment variable or dependency
-change is needed. Restart the web process to capture the new fingerprinted form script
-bytes. New `/mypage` navigation obtains that hash and a versioned Life Log stylesheet
-URL; existing tabs need reloading. Preserve private/no-store on `/mypage` and its APIs;
-if an edge cache ignores CSS query strings, invalidate `/css/account_life_log.css`.
-No deployment is performed by these tests. Rollback is the prior frontend commit.
+Restarting web workers captures the new fingerprinted form script bytes. Existing tabs
+need reloading after release; retain private/no-store on `/mypage` and its APIs.
+No deployment is performed by these tests. Rollback the whole change (server and
+browser together) if needed.

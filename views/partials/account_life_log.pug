@@ -40,8 +40,8 @@
                 each label in lifeLogLabels
                   option(value=label)
               #life-log-label-options.life-log-label-options(role='listbox', aria-label='Existing labels', hidden)
-              small#life-log-label-help.life-log-status Recent labels appear as you type. You can also enter a new label.
-              #life-log-label-announcement.visually-hidden(role='status', aria-live='polite', aria-atomic='true')
+              small#life-log-label-help.life-log-status Search labels from the past year, or enter a new label.
+              #life-log-label-announcement.life-log-status(role='status', aria-live='polite', aria-atomic='true')
             .d-flex.flex-column#life-log-value-row
               span.life-log-label Value
               input#life-log-value.life-log-input(type="text", name="value", placeholder="e.g. 1, yes, 20 min")
