@@ -22,6 +22,7 @@
     const data = await response.json();
     if (data.code === 'CSRF_REJECTED') throw new Error(csrfHelp);
     if (!response.ok) throw new Error(data.error || 'Unable to save entry.');
+    if (path === '/entry') labelAutocomplete?.remember(payload.label);
     return data;
   };
 
@@ -36,6 +37,123 @@
   const formatBtn = document.getElementById('life-log-format');
   const transcribeBtn = document.getElementById('life-log-transcribe');
   const audioInput = document.getElementById('life-log-audio');
+
+  // Dashboard-only enhancement: reuse its authorized, bounded fragment data.
+  // The standalone timeline retains its own native datalist and data contract.
+  const labelAutocomplete = (() => {
+    const list = lifeLogForm.querySelector('#life-log-label-options');
+    const source = lifeLogForm.querySelector('#life-log-labels');
+    if (!accountMode || !list || !source) return null;
+    const announcement = lifeLogForm.querySelector('#life-log-label-announcement');
+    const key = (label) => label.trim().toLowerCase();
+    const unique = (labels) => {
+      const seen = new Set();
+      return labels.map(label => label.trim()).filter(label => {
+        if (!label || seen.has(key(label))) return false;
+        seen.add(key(label));
+        return true;
+      }).slice(0, 50);
+    };
+    let labels = unique(Array.from(source.options, option => option.value));
+    let active = -1;
+    let matches = [];
+    let composing = false;
+    labelInput.removeAttribute('list');
+    labelInput.setAttribute('autocomplete', 'off');
+    labelInput.setAttribute('role', 'combobox');
+    labelInput.setAttribute('aria-autocomplete', 'list');
+    labelInput.setAttribute('aria-controls', list.id);
+    labelInput.setAttribute('aria-expanded', 'false');
+    labelInput.setAttribute('aria-describedby', 'life-log-label-help');
+
+    const close = () => {
+      list.hidden = true;
+      active = -1;
+      labelInput.setAttribute('aria-expanded', 'false');
+      labelInput.removeAttribute('aria-activedescendant');
+      Array.from(list.children).forEach(option => option.setAttribute('aria-selected', 'false'));
+      announcement.textContent = '';
+    };
+    const render = () => {
+      // Nothing asynchronous is fetched while typing: every render uses current text.
+      const query = key(labelInput.value);
+      const filtered = labels.filter(label => key(label).includes(query));
+      matches = filtered.slice(0, 5);
+      close();
+      list.replaceChildren();
+      matches.forEach((label, index) => {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.tabIndex = -1;
+        option.id = `${list.id}-${index}`;
+        option.className = 'life-log-label-option';
+        option.setAttribute('role', 'option');
+        option.setAttribute('aria-selected', 'false');
+        option.textContent = label;
+        option.title = label;
+        list.append(option);
+      });
+      list.hidden = matches.length === 0;
+      labelInput.setAttribute('aria-expanded', String(!list.hidden));
+      announcement.textContent = filtered.length
+        ? `${matches.length} suggestion${matches.length === 1 ? '' : 's'}${filtered.length > 5 ? ' shown; type more to narrow the list' : ' available'}.`
+        : 'No matching recent labels. You can enter a new label.';
+    };
+    const choose = (index) => {
+      if (!matches[index]) return;
+      labelInput.value = matches[index];
+      labelInput.focus({ preventScroll: true });
+      labelInput.dispatchEvent(new Event('input', { bubbles: true }));
+      close();
+    };
+    labelInput.addEventListener('focus', render);
+    labelInput.addEventListener('click', () => { if (list.hidden) render(); });
+    labelInput.addEventListener('input', () => { if (!composing) render(); });
+    labelInput.addEventListener('compositionstart', () => { composing = true; close(); });
+    labelInput.addEventListener('compositionend', () => { composing = false; render(); });
+    labelInput.addEventListener('keydown', (event) => {
+      if (composing || event.isComposing || event.keyCode === 229) return;
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        if (list.hidden) render();
+        if (!matches.length) return;
+        event.preventDefault();
+        active = event.key === 'ArrowDown' ? (active + 1) % matches.length
+          : (active <= 0 ? matches.length : active) - 1;
+        Array.from(list.children).forEach((option, index) => option.setAttribute('aria-selected', String(index === active)));
+        labelInput.setAttribute('aria-activedescendant', list.children[active].id);
+      } else if (event.key === 'Enter' && !list.hidden && active >= 0) {
+        event.preventDefault();
+        choose(active);
+      } else if (event.key === 'Escape' && !list.hidden) {
+        event.preventDefault();
+        close();
+      } else if (event.key === 'Tab') {
+        close();
+      }
+    });
+    // Prevent focus transfer on press; commit only on click (a completed tap).
+    // A cancelled pointer/swipe never selects. No touchmove or page swipe handler.
+    const retainFocus = (event) => { if (event.button === 0) event.preventDefault(); };
+    list.addEventListener('pointerdown', retainFocus);
+    list.addEventListener('mousedown', retainFocus);
+    list.addEventListener('click', (event) => {
+      const index = Array.from(list.children).indexOf(event.target.closest('[role="option"]'));
+      if (!list.hidden && index >= 0) choose(index);
+    });
+    labelInput.parentElement.addEventListener('focusout', (event) => {
+      if (!list.contains(event.relatedTarget)) close();
+    });
+    lifeLogForm.addEventListener('reset', close);
+    return {
+      close,
+      refresh: render,
+      remember(label) {
+        if (typeof label !== 'string' || !label.trim()) return;
+        labels = unique([label, ...labels]);
+        if (!list.hidden && document.activeElement === labelInput) render();
+      },
+    };
+  })();
 
   const pad2 = (value) => String(value).padStart(2, '0');
   const formatDateTimeInput = (date) => {
@@ -105,6 +223,7 @@
   };
 
   const resetForm = () => {
+    labelAutocomplete?.close();
     labelInput.value = '';
     valueInput.value = '';
     textInput.value = '';
@@ -138,6 +257,7 @@
       const label = chip.getAttribute('data-label') || chip.textContent || '';
       labelInput.value = label.trim();
       labelInput.focus();
+      labelAutocomplete?.refresh();
     });
   });
 

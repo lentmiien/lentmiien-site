@@ -3,7 +3,7 @@ extends layout
 block styles
   link(rel='stylesheet', href='/css/account_dashboard.css')
   link(rel='stylesheet', href='/css/mypage_tasks.css')
-  link(rel='stylesheet', href='/css/account_life_log.css')
+  link(rel='stylesheet', href='/css/account_life_log.css?v=label-autocomplete-1')
 
 block content
   - const settings = typeof dashboard !== 'undefined' ? dashboard : { sections: [], hiddenSections: [], collapsedSections: [], jobs: {} };

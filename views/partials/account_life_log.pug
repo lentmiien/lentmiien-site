@@ -33,12 +33,15 @@
                 option(value="basic") Basic
                 option(value="medical") Medical
                 option(value="diary") Diary
-            .d-flex.flex-column
-              span.life-log-label Label
+            .d-flex.flex-column.life-log-label-field
+              label.life-log-label(for='life-log-label') Label
               input#life-log-label.life-log-input(type="text", name="label", list="life-log-labels", placeholder="e.g. Vitamin C, Mood, Work")
               datalist#life-log-labels
                 each label in lifeLogLabels
                   option(value=label)
+              #life-log-label-options.life-log-label-options(role='listbox', aria-label='Existing labels', hidden)
+              small#life-log-label-help.life-log-status Recent labels appear as you type. You can also enter a new label.
+              #life-log-label-announcement.visually-hidden(role='status', aria-live='polite', aria-atomic='true')
             .d-flex.flex-column#life-log-value-row
               span.life-log-label Value
               input#life-log-value.life-log-input(type="text", name="value", placeholder="e.g. 1, yes, 20 min")

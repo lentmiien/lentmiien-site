@@ -57,7 +57,8 @@ async function main() {
         const grid = document.querySelector('.account-grid');
         // Graphics clip their coordinate surfaces deliberately. Native form controls
         // and the task hold indicator are controls, not dashboard content viewports.
-        const excluded = '.life-log-visual-canvas, .life-log-visual-canvas *, .life-log-followup-preview, .life-log-followup-preview *, .mypage-task-progress, .mypage-task-progress *, input, select, textarea, option, datalist';
+        // Screen-reader announcements deliberately clip an invisible 1px box.
+        const excluded = '.life-log-visual-canvas, .life-log-visual-canvas *, .life-log-followup-preview, .life-log-followup-preview *, .mypage-task-progress, .mypage-task-progress *, .visually-hidden, input, select, textarea, option, datalist';
         const visible = [...grid.querySelectorAll('*')].filter(el => el.getClientRects().length && !el.matches(excluded));
         const describe = el => `${el.tagName}#${el.id}.${el.className}`;
         const constrained = visible.filter(el => {

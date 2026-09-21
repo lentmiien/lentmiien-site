@@ -25,10 +25,10 @@ function cardData(id, count = 12) {
     })),
   };
 }
-function renderLifePanel() {
+function renderLifePanel({ labels = [longText] } = {}) {
   return pug.renderFile(path.join(root, 'views/partials/account_life_log.pug'), {
     lifeLogPath: '/admin/life_log', lifeLogReminderCount: 12,
-    lifeLogSuggestions: { all: [longText], top: [longText], recent: [longText], timeOfDay: [longText] },
+    lifeLogSuggestions: { all: labels, top: [longText], recent: [longText], timeOfDay: [longText] },
     lifeLogReminders: Array.from({ length: 12 }, (_, i) => ({
       reminderKey: `basic::synthetic-${i}`, type: 'basic', label: longText,
       typeLabel: 'Basic', statusLabel: 'Due', scheduleLabel: 'Daily', detailLabel: longText, dueDate: '2026-09-19',

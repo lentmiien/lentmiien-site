@@ -260,6 +260,47 @@
   gap: 0.4rem;
 }
 
+/* Small inline suggestions follow document scrolling, including with a keyboard open. */
+.account-dashboard .life-log-label-field {
+  min-width: 0;
+}
+
+.account-dashboard #life-log-label {
+  font-size: 1rem;
+}
+
+.account-dashboard .life-log-label-options {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-1);
+  margin-top: .25rem;
+}
+
+.account-dashboard .life-log-label-option {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: .6rem .7rem;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.account-dashboard .life-log-label-option:hover,
+.account-dashboard .life-log-label-option[aria-selected='true'] {
+  background: var(--accent-tint);
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
 .life-log-chip {
   border: 1px solid var(--life-log-border);
   background: var(--life-log-chip);

@@ -268,3 +268,66 @@ coverage inventory. Synthetic Pug rendering and DOM interaction tests cover the 
 modal hooks, lazy loads/concurrency, hidden cards and acknowledged completion. A browser
 connection was unavailable, so screenshots and live responsive browser checks remain on
 the deployment checklist. No production startup, records, providers or secrets were used.
+
+## Dashboard Label autocomplete
+
+The dashboard Label field previously delegated suggestions entirely to a native
+`datalist`, whose presentation and touch/keyboard interaction depend on the browser.
+The dashboard now progressively enhances that source with an accessible combobox
+and an inline list of at most five 44px-or-larger options. Focus/tap opens recent
+suggestions; typing uses case-insensitive substring matching. Arrow keys choose an
+active option, Enter accepts it, Escape dismisses, and Tab advances normally. No
+option is selected implicitly: arbitrary new labels and ordinary form submission
+remain available. IME composition does not select a suggestion.
+
+Data scope and security contract are unchanged from the dashboard contract above:
+logged-in, sensitive personal data, no machine principals, configured personal owner
+plus admin constraints and `dashboard.account.read` / `dashboard.personal.read`;
+existing saves additionally require `dashboard.personal.write` and shared session
+CSRF. There is no admin override of the owner binding. No server routes, queries,
+persistence rules, or validation limits change. `/mypage/api/life-panel` supplies
+`summary.rows.map(r => r.title)` from the eight newest entries (timestamp and ID
+descending). An unlabelled entry's title is its type, an existing fallback preserved
+here. These are recent suggestions, not a complete label history. The broader
+standalone service's label cache and legacy health labels are not queried.
+
+Suggestion-only normalization trims whitespace and deduplicates case-insensitively,
+keeping the first spelling and source order. It never lowercases the field or changes
+persistence; the existing client/model trim on save remains. Successful entry saves
+promote their submitted label in an in-memory list capped at 50; failed saves do not.
+No extra request, history scan, local storage, outbound service, private file, or log
+is added. The fragment and API retain private/no-store caching and their existing
+retention policy. Labels are escaped by Pug and rendered with `textContent`; option
+IDs never contain label text. Negative tests cover malicious label markup, failed
+saves, free text and unchanged authorization/CSRF boundaries.
+
+The enhancement is gated to dashboard mode in shared `my_life_log.js`; the standalone
+timeline's filter datalist and script are unchanged. Reinitialization is protected
+by the existing form guard, new fragments initialize independently, native/reset-after-
+save closes suggestions, and card refresh keeps the mounted form and new local labels.
+The short list follows document scrolling without a nested scrolling viewport or
+global touch handlers. Selection happens on completed click/tap, with press retaining
+input focus; swiping/cancelling a pointer does not select. Long labels are visually
+ellipsized to preserve the mobile width, with full option text available to assistive
+technology and the selected input.
+
+Validation commands (synthetic data only):
+
+```sh
+npm test -- tests/unit/myLifeLogAutocomplete.test.js tests/unit/accountFormsIntegration.test.js tests/unit/accountDashboardLayout.test.js tests/unit/accountDashboardRoute.test.js tests/unit/accountDashboardData.test.js tests/unit/accountSurfacePolicy.test.js --coverage=false --runInBand
+PLAYWRIGHT_MODULE=/path/to/playwright CHROMIUM_EXECUTABLE=/path/to/chrome BOOTSTRAP_CSS=/path/to/bootstrap-5.3.3.min.css node tests/browser/myLifeLogAutocomplete.cjs
+```
+
+The browser check uses real touchscreen taps at 320px, 390px and 1440px, keyboard
+navigation, actual form submission, safe label rendering, refresh and phone document
+swipes across the popup. It writes synthetic screenshots to the system temp directory.
+Chromium emulation does not verify physical devices, Safari/VoiceOver, or an actual
+onscreen keyboard; these remain manual checks. The existing dashboard layout browser
+check also covers document scrolling and other Life Log controls.
+
+Release through the normal process; no migration, environment variable or dependency
+change is needed. Restart the web process to capture the new fingerprinted form script
+bytes. New `/mypage` navigation obtains that hash and a versioned Life Log stylesheet
+URL; existing tabs need reloading. Preserve private/no-store on `/mypage` and its APIs;
+if an edge cache ignores CSS query strings, invalidate `/css/account_life_log.css`.
+No deployment is performed by these tests. Rollback is the prior frontend commit.
