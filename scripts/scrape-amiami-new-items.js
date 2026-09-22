@@ -3,6 +3,8 @@ const path = require('path');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
+const logger = require('../utils/logger');
+const { operationDiagnostic, safeItemCode } = require('../utils/amiamiDiagnostics');
 const AmiAmiItem = require('../models/amiami_item');
 const { ensureCurlCffiRuntime } = require('./install-curl-cffi');
 const {
@@ -118,39 +120,135 @@ function normalizeStorage(value) {
   return value;
 }
 
-async function main() {
-  const options = parseArgs(process.argv.slice(2));
-  if (options.help) {
-    printHelp();
-    return;
+const FAILURE_SAMPLE_LIMIT = 10;
+
+async function main(argv = process.argv.slice(2)) {
+  let options = parseArgs([]);
+  const run = {
+    phase: 'arguments',
+    itemCode: null,
+    needsDisconnect: false,
+    summary: {
+      runId: crypto.randomUUID(),
+      startedAt: new Date().toISOString(),
+      sourceUrl: NEW_ITEMS_URL,
+      sourceItemCount: null,
+      processedSourceItemCount: 0,
+      detailResults: { attempted: 0, fetched: 0, failed: 0, skipped: 0 },
+      failures: [],
+    },
+  };
+  let fatal;
+  try {
+    options = parseArgs(argv);
+    if (options.help) {
+      printHelp();
+      return;
+    }
+    run.phase = 'runtime';
+    await ensureCurlCffiRuntime();
+    if (options.storage === 'db') await runWithDatabase(options, run);
+    else await runWithTmpData(options, run);
+  } catch (error) {
+    fatal = operationDiagnostic(error, run);
+  } finally {
+    if (run.needsDisconnect) {
+      try {
+        await mongoose.disconnect();
+      } catch (error) {
+        const cleanupFailure = operationDiagnostic(error, { phase: 'cleanup' });
+        if (fatal) run.summary.cleanupFailure = cleanupFailure;
+        else fatal = cleanupFailure;
+      }
+    }
   }
 
-  await ensureCurlCffiRuntime();
-
-  if (options.storage === 'db') {
-    await runWithDatabase(options);
-    return;
+  const summary = run.summary;
+  for (const field of ['newlyDiscovered', 'listingChanged']) {
+    if (summary[field]) {
+      summary[`${field}Count`] = summary[field].length;
+      summary[field] = summary[field].map(safeItemCode);
+    }
+  }
+  summary.storage = options.storage;
+  summary.finishedAt = new Date().toISOString();
+  summary.elapsedMs = Date.parse(summary.finishedAt) - Date.parse(summary.startedAt);
+  summary.status = fatal ? 'failed' : summary.detailResults.failed ? 'partial' : 'success';
+  if (fatal) summary.error = fatal;
+  let summaryWritten = false;
+  try {
+    await ensureParentDirectory(options.summaryFile);
+    await writeJson(options.summaryFile, summary);
+    summaryWritten = true;
+  } catch (error) {
+    const failure = operationDiagnostic(error, { phase: 'summary' });
+    summary.summaryWriteFailure = failure;
+    summary.status = 'failed';
+    if (!fatal) {
+      fatal = failure;
+      summary.error = fatal;
+    }
   }
 
-  await runWithTmpData(options);
+  // Shared logger metadata deliberately excludes CLI options, paths, raw errors
+  // and entire stores. Await the append before allowing the process to exit.
+  if (summary.status !== 'success') {
+    const level = fatal ? 'error' : 'warning';
+    const message = fatal ? 'AmiAmi scraper run failed' : 'AmiAmi scraper run completed with detail failures';
+    const metadata = {
+      runId: summary.runId, startedAt: summary.startedAt, finishedAt: summary.finishedAt,
+      elapsedMs: summary.elapsedMs, storage: summary.storage, status: summary.status,
+      sourceItemCount: summary.sourceItemCount, detailResults: summary.detailResults,
+      failures: summary.failures, error: summary.error, cleanupFailure: summary.cleanupFailure,
+      summaryWritten, summaryWriteFailure: summary.summaryWriteFailure,
+    };
+    console.error(`${message} [${summary.runId}]${fatal ? `: ${fatal.message}` : ''}`);
+    try {
+      await logger[level](message, { category: 'amiami-scraper', metadata });
+    } catch (_) {
+      console.error(`AmiAmi scraper log write failed [${summary.runId}]; see the console summary.`);
+    }
+  }
+  if (fatal) process.exitCode = 1;
+  if (summaryWritten) console.log(`Saved run summary to ${options.summaryFile}`);
+  console.log(JSON.stringify(summary, null, 2));
+  return summary;
 }
 
-async function runWithTmpData(options) {
-  await ensureParentDirectory(options.dataFile);
-  await ensureParentDirectory(options.summaryFile);
+function recordDetailFailure(error, gcode, run) {
+  const failure = operationDiagnostic(error, { phase: 'detail', itemCode: gcode });
+  run.summary.detailResults.failed += 1;
+  if (run.summary.failures.length < FAILURE_SAMPLE_LIMIT) run.summary.failures.push(failure);
+  console.error(`Failed to fetch ${safeItemCode(gcode)}: ${failure.message}`);
+  return { message: failure.message, at: new Date().toISOString() };
+}
 
-  const startedAt = new Date();
+async function runWithTmpData(options, run) {
+  run.phase = 'storage-read';
+  await ensureParentDirectory(options.dataFile);
+  run.phase = 'summary';
+  await ensureParentDirectory(options.summaryFile);
+  run.phase = 'storage-read';
+
+  const startedAt = new Date(run.summary.startedAt);
   const store = await readStore(options.dataFile);
   const existingCount = Object.keys(store.items).length;
+  run.summary.existingBeforeRun = existingCount;
 
+  run.phase = 'list';
   console.log(`Fetching AmiAmi New Products list: ${NEW_ITEMS_URL}`);
   const html = await fetchNewItemsPage(options);
 
+  run.phase = 'list-parse';
   const listedItems = extractNewItems(html);
+  run.summary.sourceItemCount = listedItems.length;
   const limitedListedItems = listedItems.slice(0, options.maxNewItems);
+  run.summary.processedSourceItemCount = limitedListedItems.length;
+  run.phase = 'listing-persistence';
   const discoveredAt = startedAt.toISOString();
   const newlyDiscovered = [];
   const listingChanged = [];
+  Object.assign(run.summary, { newlyDiscovered, listingChanged });
 
   for (const listing of limitedListedItems) {
     const currentListingHash = getListingHash(listing);
@@ -189,12 +287,8 @@ async function runWithTmpData(options) {
   }
 
   const detailQueue = buildDetailQueue(store, newlyDiscovered, listingChanged, options);
-  const detailResults = {
-    attempted: 0,
-    fetched: 0,
-    failed: 0,
-    skipped: options.skipDetails ? detailQueue.length : 0,
-  };
+  const detailResults = run.summary.detailResults;
+  detailResults.skipped = options.skipDetails ? detailQueue.length : 0;
 
   if (!options.skipDetails) {
     const limitedQueue = detailQueue.slice(0, options.maxDetailItems);
@@ -206,35 +300,40 @@ async function runWithTmpData(options) {
       }
 
       detailResults.attempted += 1;
+      run.itemCode = gcode;
+      run.phase = 'detail';
+      const record = store.items[gcode];
+      let detail;
+      let detailError;
       try {
-        console.log(`Fetching detail ${i + 1}/${limitedQueue.length}: ${gcode}`);
-        const detail = await fetchItemDetail(gcode, options);
-        const record = store.items[gcode];
+        console.log(`Fetching detail ${i + 1}/${limitedQueue.length}: ${safeItemCode(gcode)}`);
+        detail = await fetchItemDetail(gcode, options);
+      } catch (error) {
+        detailError = recordDetailFailure(error, gcode, run);
+      }
+      if (detailError) {
+        record.detailStatus = 'error';
+        record.detailError = detailError;
+      } else {
+        run.phase = 'detail-normalize';
+        record.details = normalizeDetail(detail, options);
         record.detailStatus = 'fetched';
         record.detailFetchedAt = new Date().toISOString();
         record.detailError = null;
-        record.details = normalizeDetail(detail, options);
-        detailResults.fetched += 1;
-      } catch (error) {
-        const record = store.items[gcode];
-        record.detailStatus = 'error';
-        record.detailError = {
-          message: error.message,
-          at: new Date().toISOString(),
-        };
-        detailResults.failed += 1;
-        console.error(`Failed to fetch ${gcode}: ${error.message}`);
       }
-
+      run.phase = 'detail-persistence';
       await writeStore(options.dataFile, store);
+      if (!detailError) detailResults.fetched += 1;
     }
   }
 
+  run.itemCode = null;
+  run.phase = 'listing-persistence';
   store.lastRunAt = new Date().toISOString();
   store.lastSourceItemCount = listedItems.length;
   await writeStore(options.dataFile, store);
 
-  const summary = {
+  Object.assign(run.summary, {
     startedAt: startedAt.toISOString(),
     finishedAt: new Date().toISOString(),
     sourceUrl: NEW_ITEMS_URL,
@@ -250,110 +349,101 @@ async function runWithTmpData(options) {
     detailResults,
     dataFile: options.dataFile,
     storage: 'tmp',
-  };
-  await writeJson(options.summaryFile, summary);
+  });
 
   console.log(`Saved ${Object.keys(store.items).length} AmiAmi items to ${options.dataFile}`);
-  console.log(`Saved run summary to ${options.summaryFile}`);
-  console.log(JSON.stringify(summary, null, 2));
 }
 
-async function runWithDatabase(options) {
+async function runWithDatabase(options, run) {
+  run.phase = 'summary';
   await ensureParentDirectory(options.summaryFile);
 
-  const startedAt = new Date();
+  const startedAt = new Date(run.summary.startedAt);
+  run.phase = 'storage-connect';
+  run.needsDisconnect = true;
   await connectMongo(options);
 
-  try {
-    const existingCount = await AmiAmiItem.countDocuments();
+  run.phase = 'storage-read';
+  const existingCount = await AmiAmiItem.countDocuments();
+  run.summary.existingBeforeRun = existingCount;
 
-    console.log(`Fetching AmiAmi New Products list: ${NEW_ITEMS_URL}`);
-    const html = await fetchNewItemsPage(options);
+  run.phase = 'list';
+  console.log(`Fetching AmiAmi New Products list: ${NEW_ITEMS_URL}`);
+  const html = await fetchNewItemsPage(options);
 
-    const listedItems = extractNewItems(html);
-    const limitedListedItems = listedItems.slice(0, options.maxNewItems);
-    const seenAt = startedAt;
-    const { newlyDiscovered, listingChanged, unchangedSkipped } = await upsertMongoListings(limitedListedItems, seenAt);
-    const detailQueue = await buildMongoDetailQueue(newlyDiscovered, listingChanged, options);
-    const detailResults = {
-      attempted: 0,
-      fetched: 0,
-      failed: 0,
-      skipped: options.skipDetails ? detailQueue.length : 0,
-    };
+  run.phase = 'list-parse';
+  const listedItems = extractNewItems(html);
+  run.summary.sourceItemCount = listedItems.length;
+  const limitedListedItems = listedItems.slice(0, options.maxNewItems);
+  run.summary.processedSourceItemCount = limitedListedItems.length;
+  run.phase = 'listing-persistence';
+  const seenAt = startedAt;
+  const { newlyDiscovered, listingChanged, unchangedSkipped } = await upsertMongoListings(limitedListedItems, seenAt);
+  Object.assign(run.summary, { newlyDiscovered, listingChanged, unchangedSkippedCount: unchangedSkipped });
+  run.phase = 'storage-read';
+  const detailQueue = await buildMongoDetailQueue(newlyDiscovered, listingChanged, options);
+  const detailResults = run.summary.detailResults;
+  detailResults.skipped = options.skipDetails ? detailQueue.length : 0;
 
-    if (!options.skipDetails) {
-      const limitedQueue = detailQueue.slice(0, options.maxDetailItems);
-      for (let i = 0; i < limitedQueue.length; i += 1) {
-        const gcode = limitedQueue[i];
-        if (i > 0 && options.detailDelayMs > 0) {
-          console.log(`Waiting ${options.detailDelayMs}ms before next detail request...`);
-          await sleep(options.detailDelayMs);
-        }
-
-        detailResults.attempted += 1;
-        try {
-          console.log(`Fetching detail ${i + 1}/${limitedQueue.length}: ${gcode}`);
-          const detail = await fetchItemDetail(gcode, options);
-          await AmiAmiItem.updateOne(
-            { gcode },
-            {
-              $set: {
-                detailStatus: 'fetched',
-                detailFetchedAt: new Date(),
-                detailError: { message: null, at: null },
-                details: normalizeDetail(detail, options),
-              },
-            },
-          );
-          detailResults.fetched += 1;
-        } catch (error) {
-          await AmiAmiItem.updateOne(
-            { gcode },
-            {
-              $set: {
-                detailStatus: 'error',
-                detailError: {
-                  message: error.message,
-                  at: new Date(),
-                },
-              },
-            },
-          );
-          detailResults.failed += 1;
-          console.error(`Failed to fetch ${gcode}: ${error.message}`);
-        }
+  if (!options.skipDetails) {
+    const limitedQueue = detailQueue.slice(0, options.maxDetailItems);
+    for (let i = 0; i < limitedQueue.length; i += 1) {
+      const gcode = limitedQueue[i];
+      if (i > 0 && options.detailDelayMs > 0) {
+        console.log(`Waiting ${options.detailDelayMs}ms before next detail request...`);
+        await sleep(options.detailDelayMs);
       }
+
+      detailResults.attempted += 1;
+      run.itemCode = gcode;
+      run.phase = 'detail';
+      let detail;
+      let detailError;
+      try {
+        console.log(`Fetching detail ${i + 1}/${limitedQueue.length}: ${safeItemCode(gcode)}`);
+        detail = await fetchItemDetail(gcode, options);
+      } catch (error) {
+        detailError = recordDetailFailure(error, gcode, run);
+      }
+      run.phase = 'detail-normalize';
+      const update = detailError ? {
+        detailStatus: 'error', detailError,
+      } : {
+        detailStatus: 'fetched', detailFetchedAt: new Date(),
+        detailError: { message: null, at: null }, details: normalizeDetail(detail, options),
+      };
+      // A failed database write must not become a fetch failure or trigger
+      // another database write claiming the upstream item failed.
+      run.phase = 'detail-persistence';
+      await AmiAmiItem.updateOne({ gcode }, { $set: update });
+      if (!detailError) detailResults.fetched += 1;
     }
-
-    const pendingDetailCount = await countMongoPendingDetails();
-    const existingAfterRun = await AmiAmiItem.countDocuments();
-    const summary = {
-      startedAt: startedAt.toISOString(),
-      finishedAt: new Date().toISOString(),
-      sourceUrl: NEW_ITEMS_URL,
-      sourceItemCount: listedItems.length,
-      processedSourceItemCount: limitedListedItems.length,
-      existingBeforeRun: existingCount,
-      existingAfterRun,
-      newlyDiscoveredCount: newlyDiscovered.length,
-      newlyDiscovered,
-      listingChangedCount: listingChanged.length,
-      listingChanged,
-      unchangedSkippedCount: unchangedSkipped,
-      pendingDetailCount,
-      detailResults,
-      collection: AmiAmiItem.collection.name,
-      storage: 'db',
-    };
-    await writeJson(options.summaryFile, summary);
-
-    console.log(`Saved AmiAmi items to MongoDB collection: ${AmiAmiItem.collection.name}`);
-    console.log(`Saved run summary to ${options.summaryFile}`);
-    console.log(JSON.stringify(summary, null, 2));
-  } finally {
-    await mongoose.disconnect();
   }
+
+  run.itemCode = null;
+  run.phase = 'storage-read';
+  const pendingDetailCount = await countMongoPendingDetails();
+  const existingAfterRun = await AmiAmiItem.countDocuments();
+  Object.assign(run.summary, {
+    startedAt: startedAt.toISOString(),
+    finishedAt: new Date().toISOString(),
+    sourceUrl: NEW_ITEMS_URL,
+    sourceItemCount: listedItems.length,
+    processedSourceItemCount: limitedListedItems.length,
+    existingBeforeRun: existingCount,
+    existingAfterRun,
+    newlyDiscoveredCount: newlyDiscovered.length,
+    newlyDiscovered,
+    listingChangedCount: listingChanged.length,
+    listingChanged,
+    unchangedSkippedCount: unchangedSkipped,
+    pendingDetailCount,
+    detailResults,
+    collection: AmiAmiItem.collection.name,
+    storage: 'db',
+  });
+
+  console.log(`Saved AmiAmi items to MongoDB collection: ${AmiAmiItem.collection.name}`);
 }
 
 function buildDetailQueue(store, newlyDiscovered, listingChanged, options) {
@@ -669,11 +759,12 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-main()
-  .catch((error) => {
-    console.error(error.stack || error.message);
+// Importing the CLI for isolated tests must not install, connect or scrape.
+if (require.main === module) {
+  main().catch(() => {
+    console.error('AmiAmi scraper failed while reporting the run. Check storage and logging configuration.');
     process.exitCode = 1;
-  })
-  .finally(() => {
-    process.exit();
   });
+}
+
+module.exports = { main, extractNewItems, parseArgs };

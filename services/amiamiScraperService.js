@@ -1,3 +1,5 @@
+const { AmiAmiRequestError, safeHeaders } = require('../utils/amiamiDiagnostics');
+
 const AMIAMI_SITE_URL = 'https://www.amiami.com';
 const AMIAMI_IMAGE_URL = 'https://img.amiami.com';
 const AMIAMI_API_URL = 'https://api.amiami.com';
@@ -23,81 +25,93 @@ function buildItemUrl(gcode) {
 }
 
 async function fetchNewItemsPage(requestOptions = {}) {
-  const options = {
-    ...DEFAULT_DETAIL_OPTIONS,
-    ...requestOptions,
-  };
-  const response = await curlGet(AMIAMI_NEW_ITEMS_URL, {
-    impersonate: options.impersonate,
-    headers: buildHeaders({
-      referer: `${AMIAMI_SITE_URL}/eng/c/new/`,
-      accept: 'text/html,*/*',
-    }),
-    timeout: options.requestTimeoutMs,
+  const options = { ...DEFAULT_DETAIL_OPTIONS, ...requestOptions };
+  return requestWithDiagnostics({ phase: 'list', target: AMIAMI_NEW_ITEMS_URL }, options, async (context) => {
+    const response = await curlGet(context.target, {
+      impersonate: options.impersonate,
+      headers: buildHeaders({ referer: `${AMIAMI_SITE_URL}/eng/c/new/`, accept: 'text/html,*/*' }),
+      timeout: options.requestTimeoutMs,
+    }, context);
+    assertOkResponse(response, context);
+    const text = responseText(response);
+    // Accept recognizable empty listings, but never turn an error/challenge page
+    // or an unrelated document into a successful zero-item run.
+    const title = text.slice(0, 65536).match(/<(?:title|h1)\b[^>]*>([^<]*)/i)?.[1] || '';
+    if (/access denied|forbidden|not found|unavailable|\berror\b/i.test(title)
+      || !/newly-added-items|new products|new items|\/eng\/detail\?gcode=/i.test(text)) {
+      throw responseError('unexpected_html', response, context);
+    }
+    return text;
   });
-
-  assertOkResponse(response, AMIAMI_NEW_ITEMS_URL);
-  return response.text || String(response.data || '');
 }
 
 async function fetchItemDetail(gcode, requestOptions = {}) {
-  const options = {
-    ...DEFAULT_DETAIL_OPTIONS,
-    ...requestOptions,
-  };
-  const data = await withRetries(async () => fetchJson(`${AMIAMI_API_URL}/api/v1.0/item`, {
-    options,
-    params: { gcode, lang: 'eng' },
-    referer: buildItemUrl(gcode),
-  }), {
-    retries: options.detailRetries,
-    retryDelayMs: options.retryDelayMs,
-    label: gcode,
+  const options = { ...DEFAULT_DETAIL_OPTIONS, ...requestOptions };
+  return requestWithDiagnostics({
+    phase: 'detail', target: `${AMIAMI_API_URL}/api/v1.0/item`, itemCode: gcode,
+  }, options, async (context) => {
+    const response = await curlGet(context.target, {
+      impersonate: options.impersonate,
+      params: { gcode, lang: 'eng' },
+      headers: buildHeaders({
+        referer: buildItemUrl(gcode), accept: 'application/json,text/plain,*/*',
+        extra: { 'X-User-Key': API_USER_KEY },
+      }),
+      timeout: options.requestTimeoutMs,
+    }, context);
+    assertOkResponse(response, context);
+    let data = response.data;
+    if (!data || typeof data !== 'object') {
+      try {
+        data = JSON.parse(responseText(response));
+      } catch (cause) {
+        throw responseError('invalid_json', response, context, { retryable: true, cause });
+      }
+    }
+    if (!data || data.RSuccess !== true) {
+      throw responseError('api_failure', response, context);
+    }
+    if (!data.item || typeof data.item !== 'object' || Array.isArray(data.item)
+      || Object.keys(data.item).length === 0) {
+      throw responseError('missing_item', response, context);
+    }
+    return data;
   });
-
-  if (!data || data.RSuccess !== true || !data.item) {
-    throw new Error(`AmiAmi item API did not return a product for ${gcode}`);
-  }
-
-  return data;
 }
 
-async function fetchJson(url, { options, params, referer }) {
-  const response = await curlGet(url, {
-    impersonate: options.impersonate,
-    params,
-    headers: buildHeaders({
-      referer,
-      accept: 'application/json,text/plain,*/*',
-      extra: { 'X-User-Key': API_USER_KEY },
-    }),
-    timeout: options.requestTimeoutMs,
-  });
-
-  assertOkResponse(response, url);
-
-  if (response.data && typeof response.data === 'object') {
-    return response.data;
-  }
-
-  const text = response.text || String(response.data || '');
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Expected JSON from ${url}, got: ${text.slice(0, 120)}`);
+async function requestWithDiagnostics(request, options, operation) {
+  const context = { ...request, attempts: 0, startedAt: Date.now() };
+  const retries = request.phase === 'list' ? 0 : options.detailRetries;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await operation(context);
+    } catch (cause) {
+      let error = cause;
+      if (!(error instanceof AmiAmiRequestError)) {
+        const dependency = cause.code === 'AMIAMI_SCRAPER_UNAVAILABLE';
+        const timeout = cause.code === 28 || ['ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(cause.code)
+          || /timed?\s*out|timeout/i.test(String(cause.message));
+        error = new AmiAmiRequestError(dependency ? 'dependency' : timeout ? 'timeout' : 'transport', context, {
+          cause, retryable: !dependency,
+        });
+      }
+      error.setTiming(context);
+      if (!error.retryable || attempt >= retries) throw error;
+      // The CLI reports the final outcome once through the shared logger.
+      // Avoid repeated logs (and raw transport messages) on every attempt.
+      if (options.retryDelayMs > 0) await sleep(options.retryDelayMs);
+    }
   }
 }
 
-async function curlGet(url, requestOptions) {
+async function curlGet(url, requestOptions, context) {
   const CurlRequest = loadCurlRequest();
   const client = new CurlRequest({ keepAlive: false }, { maxSize: 1, idleTTL: 1 });
   try {
-    return await client.get(url, {
-      ...requestOptions,
-      keepAlive: false,
-    });
+    context.attempts += 1;
+    return await client.get(url, { ...requestOptions, keepAlive: false });
   } finally {
-    client.close();
+    await client.close();
   }
 }
 
@@ -125,11 +139,35 @@ function buildHeaders({ referer, accept, extra = {} }) {
   };
 }
 
-function assertOkResponse(response, url) {
-  const status = response.statusCode || response.status;
-  if (status < 200 || status >= 300) {
-    const text = response.text || String(response.data || '');
-    throw new Error(`HTTP ${status} from ${url}: ${text.slice(0, 120)}`);
+function responseText(response) {
+  return response.text || (typeof response.data === 'string' ? response.data : '');
+}
+
+function responseError(kind, response, context, options = {}) {
+  const status = Number(response.statusCode || response.status);
+  return new AmiAmiRequestError(kind, context, {
+    status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
+    headers: response.headers,
+    ...options,
+  });
+}
+
+function assertOkResponse(response, context) {
+  const status = Number(response.statusCode || response.status);
+  const headers = safeHeaders(response.headers);
+  const preview = responseText(response).slice(0, 65536);
+  if (headers['cf-mitigated'] === 'challenge') {
+    throw responseError('challenge', response, context);
+  }
+  if (/<title[^>]*>\s*(?:just a moment|attention required)|cf-chl-|\/cdn-cgi\/challenge-platform/i.test(preview)
+    || (status === 403 && /cloudflare/i.test(preview))) {
+    throw responseError('suspected_challenge', response, context);
+  }
+  if (!Number.isInteger(status) || status < 200 || status >= 300) {
+    const kind = status === 403 ? 'forbidden' : [404, 410].includes(status) ? 'unavailable' : 'http';
+    throw responseError(kind, response, context, {
+      retryable: [408, 429].includes(status) || (status >= 500 && status <= 599),
+    });
   }
 }
 
@@ -257,25 +295,6 @@ function unique(values) {
 
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-async function withRetries(operation, { retries, retryDelayMs, label }) {
-  let lastError = null;
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      if (attempt >= retries) {
-        break;
-      }
-      console.warn(`Retrying ${label} after error: ${error.message}`);
-      if (retryDelayMs > 0) {
-        await sleep(retryDelayMs);
-      }
-    }
-  }
-  throw lastError;
 }
 
 function sleep(ms) {
