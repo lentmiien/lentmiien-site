@@ -1,0 +1,28 @@
+const express = require('express');
+const { createHistory } = require('../services/taric/history');
+const { jsonBody } = require('./taric');
+const logger = require('../utils/logger');
+// Mounted only after taricAdmin's session, semantic capability, rate and CSRF guards.
+function createHistoryRouter(service, history = createHistory({ models: require('../models/taric_tool'), adminPrincipal: service.adminPrincipal })) {
+  const router = express.Router();
+  const actor = req => String(req.user._id);
+  router.get('/', (_req, res) => res.render('admin_taric_history'));
+  router.get('/data', async (req, res) => res.json(await history.list(actor(req), req.query)));
+  router.post('/preview', jsonBody('4kb'), async (req, res) => res.json(await history.preview(actor(req), req.body)));
+  router.post('/download', jsonBody('4kb'), async (req, res) => {
+    const result = await history.download(actor(req), req.body);
+    res.type('application/x-ndjson').set('Content-Disposition', `attachment; filename="taric-candidates-${result.id}.jsonl"`).send(result.jsonl);
+  });
+  router.get('/:id', async (req, res) => {
+    if (Object.keys(req.query).length) require('../utils/taricContracts').fail('INVALID_REQUEST');
+    res.json(await history.detail(actor(req), req.params.id));
+  });
+  router.post('/:id/review', jsonBody('8kb'), async (req, res) => res.json(await history.review(actor(req), req.params.id, req.body)));
+  router.use((error, _req, res, next) => {
+    if (!error.historyStatus) return next(error);
+    logger.warning('TARIC history bounded work limit reached; inspect retention or scale the review index', { category: 'taric', metadata: { status: error.historyStatus } });
+    res.status(error.historyStatus).json({ error: error.historyCode });
+  });
+  return router;
+}
+module.exports = { createHistoryRouter };

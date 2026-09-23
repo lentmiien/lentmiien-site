@@ -1,0 +1,94 @@
+doctype html
+html(lang='en')
+  head
+    meta(charset='utf-8')
+    meta(name='viewport' content='width=device-width, initial-scale=1')
+    meta(name='csrf-token' content=csrfToken)
+    title TARIC request history and review
+    link(rel='stylesheet' href='/css/color-theme.css')
+    link(rel='stylesheet' href='/css/taric-history.css')
+    script(src='/js/taric-history.js' defer)
+  body
+    main
+      nav
+        a(href='/admin/taric') TARIC manager / JSON inspection
+        button#theme(type='button') Toggle light / dark
+      h1 Request history & human review
+      p Request → predictor proposal → final human choice → independent label review. Benchmark attempts are excluded. Times and date boundaries are UTC.
+      p Verification is your attestation, not software validation of legal TARIC classification. It cannot enable production, publish a benchmark or approve training.
+      p#status(role='status' aria-live='polite') Loading request history…
+      form#filters
+        h2 Filters
+        .fields
+          each field in [{name:'from',label:'From date (UTC)',type:'date'},{name:'to',label:'Through date (UTC)',type:'date'},{name:'jan',label:'JAN (exact)'},{name:'code',label:'Final or reviewed TARIC (10 digits)'},{name:'adapter',label:'Adapter (exact)'},{name:'error',label:'Error code (exact)'},{name:'search',label:'Category / full name (literal text)'}]
+            label
+              span= field.label
+              input(name=field.name type=field.type || 'text' maxlength='100')
+          each field in [{name:'mode',label:'Mode',values:['test','normal']},{name:'state',label:'Request status',values:['queued','running','complete','failed','interrupted','cancelled']},{name:'feedback',label:'Final feedback',values:['present','absent','accepted','changed','manual']},{name:'review',label:'Review status',values:['unreviewed','verified','needs_review','excluded']},{name:'missing',label:'Missing full item name',values:['yes','no']},{name:'eligible',label:'Candidate eligible',values:['yes','no']}]
+            label
+              span= field.label
+              select(name=field.name)
+                option(value='') All
+                each value in field.values
+                  option(value=value)= value
+        button(type='submit') Apply filters
+        a(href='/admin/taric/history') Clear filters
+      section(aria-labelledby='stats-heading')
+        h2#stats-heading Usage in filtered population
+        p Feedback decision shares use final feedback as denominator; they are not model accuracy. Verified-but-ineligible includes stale verified revisions.
+        #stats.cards
+      section(aria-labelledby='requests-heading')
+        h2#requests-heading Requests
+        #requests
+        button#next(type='button' hidden) Next 50 requests
+      section#detail(hidden aria-labelledby='detail-heading' tabindex='-1')
+        h2#detail-heading Request detail & review
+        #detail-content
+        form#review-form
+          h3 Explicit human review
+          p The target defaults to the actual final feedback. Without feedback, only an accepted suggestion can be explicitly confirmed. Rejected diagnostics are never a default target.
+          .fields
+            label
+              span Review status
+              select#review-status
+                option(value='verified') Verified label
+                option(value='needs_review') Needs review / withdraw verification
+                option(value='excluded') Excluded
+                option(value='unreviewed') Unreviewed
+            label
+              span Review target TARIC (10 digits)
+              input#review-target(type='text' inputmode='numeric' pattern='[0-9]{10}' maxlength='10')
+          label.check
+            input#confirm-target(type='checkbox')
+            span I independently verified this exact target against the displayed source snapshot.
+          label.check
+            input#correction(type='checkbox')
+            span This is a training-label correction; the original final human choice stays unchanged. My note identifies the reason/source.
+          label
+            span Independently approved short description (optional; blank means not approved)
+            textarea#approved-description(maxlength='255' rows='2')
+          label
+            span Review note / verification source / withdrawal reason (required)
+            textarea#review-note(maxlength='2000' rows='3' required)
+          button#save-review(type='submit') Save explicit review revision
+      section(aria-labelledby='export-heading')
+        h2#export-heading Prepare reviewed source candidates
+        p Code-only candidate profile. Full item name, descriptive category and original HS6 are required; specifications may be missing. An approved description is optional here. Final Qwen formatting, grouped splits and training remain future work.
+        p Exact normalized input duplicates keep the latest review. Disagreeing current labels within a JAN or identical input group are blocked, including records hidden by filters. Independent published holdout identities are excluded where known. No semantic near-duplicate guarantee.
+        .fields
+          label
+            span Selection order
+            select#selection-mode
+              option(value='newest') Newest verified first
+              option(value='balanced') Balanced by TARIC
+          label
+            span Overall row limit (1–200)
+            input#selection-limit(type='number' min='1' max='200' value='100')
+          label
+            span Per-code cap (1–100)
+            input#selection-cap(type='number' min='1' max='100' value='20')
+        button#preview(type='button') Preview current filters
+        button#download(type='button' disabled) Freeze manifest & download JSONL
+        #preview-content(role='status' aria-live='polite')
+      footer
+        p Private, no analytics. Existing requests and feedback expire after 90 days. Review audits and frozen exports persist for operator-managed retention. Pilot limit: 2,000 owner requests; 50 per page. Export maximum: 200 rows / 8 MiB.

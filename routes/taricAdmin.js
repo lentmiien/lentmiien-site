@@ -38,6 +38,7 @@ function createTaricAdminRouter(service, { roleModel = Role } = {}) {
   router.use(csrf.issueToken);
   // Header CSRF before upload/body allocation, with the same shared session defense.
   router.use((req, res, next) => ['GET', 'HEAD'].includes(req.method) ? next() : csrf.requireToken(req, res, next));
+  router.use('/history', require('./taricHistory').createHistoryRouter(service));
   router.get('/', (req, res) => res.render('admin_taric', { user: req.user }));
   router.post('/test', jsonBody('4kb'), async (req, res) => {
     if (req.body.test !== true) fail('INVALID_REQUEST');

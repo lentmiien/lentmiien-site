@@ -505,7 +505,8 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
     const { execFileSync } = require('child_process');
     const script = require('path').join(__dirname, '../../scripts/taric-tool.js');
     const preview = JSON.parse(execFileSync(process.execPath, [script, '--bootstrap'], { env: { ...process.env, MONGOOSE_URL: '' } }));
-    expect(preview.dryRun).toBe(true); expect(preview.collections).toHaveLength(8);
+    expect(preview.dryRun).toBe(true); expect(preview.collections).toHaveLength(10);
+    expect(preview.collections.map(c => c.name)).toEqual(expect.arrayContaining(['taric_reviews', 'taric_exports']));
     const key = await models.Credential.findById('integration').select('+digest').lean();
     const config = await service.settings();
     for (let i = 0; i < 2; i++) {

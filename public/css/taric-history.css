@@ -1,0 +1,34 @@
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 system-ui, sans-serif; }
+main { max-width: 1200px; margin: auto; padding: 1.5rem; }
+a { color: var(--accent); }
+nav, .actions { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+section, form#filters, article { padding: 1rem; margin: 1rem 0; border: 1px solid var(--border); border-radius: .6rem; background: var(--surface-1); }
+h1, h2, h3 { line-height: 1.25; }
+p { color: var(--text-secondary); }
+.fields, .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .8rem; }
+label { display: block; margin: .5rem 0; }
+label span { display: block; }
+input, select, textarea, button { font: inherit; }
+input:not([type=checkbox]), select, textarea { width: 100%; box-sizing: border-box; padding: .55rem; border: 1px solid var(--border); border-radius: .3rem; color: var(--text); background: var(--surface-2); }
+textarea { resize: vertical; }
+button { overflow-wrap: anywhere; cursor: pointer; padding: .5rem .8rem; border: 1px solid var(--brand); border-radius: .3rem; background: var(--brand); color: var(--text-inverse); margin: .4rem .4rem .4rem 0; }
+button:disabled { opacity: .5; cursor: default; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.check { display: flex; gap: .6rem; align-items: flex-start; }
+.check input { margin-top: .45rem; }
+.card { background: var(--surface-2); padding: .8rem; border-radius: .3rem; }
+.card strong { display: block; font-size: 1.4rem; }
+pre, code { white-space: pre-wrap; overflow-wrap: anywhere; }
+pre { max-height: 24rem; overflow: auto; padding: .8rem; background: var(--surface-2); }
+dl { display: grid; grid-template-columns: minmax(130px, 1fr) 3fr; gap: .4rem 1rem; }
+dt { color: var(--text-muted); } dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.warning { color: var(--warning); }
+#status { border-left: 4px solid var(--accent); padding-left: .7rem; }
+[hidden] { display: none !important; }
+@media (max-width: 550px) { main { padding: .65rem; } dl { display: block; } dd { margin-bottom: .65rem; } .fields, .cards { grid-template-columns: 1fr; } }
+/* Local light variant keeps the same Graphite/Ember/Amber roles. */
+:root[data-theme='light'] {
+  --bg: #F3F4F6; --surface-1: #FFFFFF; --surface-2: #E8ECF2; --surface-3: #D9D9E0;
+  --border: #9AA3B2; --divider: #9AA3B2; --text: #111418; --text-secondary: #262B34; --text-muted: #454B56;
+  --accent: #805000; --warning: #805000;
+}
