@@ -88,6 +88,7 @@ block content
             th Scheduled deprecation
             th Batch
             th Context
+            th Thinking
             th Actions
         tbody#ai-model-table-body
           each m in models
@@ -114,6 +115,7 @@ block content
               td= `${inputModalities.join(', ')}/${outputModalities.join(', ')}`
               td.ai-model-token-cell
                 form.ai-model-token-form(method="post", action=`/chat5/ai_model_cards/${m._id}/tokens`)
+                  input(type="hidden", name="_csrf", value=csrfToken)
                   input.ai-model-return-target(type="hidden", name="return_to", value="/chat5/ai_model_cards")
                   label.visually-hidden(for=`max-tokens-${m._id}`)= `Max total tokens for ${m.model_name}`
                   input.form-control.form-control-sm.ai-model-token-input(
@@ -140,6 +142,7 @@ block content
               td= m.added_date.toDateString()
               td.ai-model-deprecation-cell
                 form.ai-model-deprecation-form(method="post", action=`/chat5/ai_model_cards/${m._id}/deprecation-date`)
+                  input(type="hidden", name="_csrf", value=csrfToken)
                   input.ai-model-return-target(type="hidden", name="return_to", value="/chat5/ai_model_cards")
                   label.visually-hidden(for=`deprecation-date-${m._id}`)= `Scheduled deprecation date for ${m.model_name}`
                   input.form-control.form-control-sm(
@@ -161,6 +164,7 @@ block content
                 else
                   span.text-muted(aria-label="Batch not supported", title="Batch not supported") ✘
               td= m.context_type
+              td= typeof m.is_thinking === 'boolean' ? (m.is_thinking ? 'Yes' : 'No') : 'Legacy detection'
               td
                 .ai-model-actions
                   a.btn.btn-outline-primary.btn-sm(
@@ -169,10 +173,11 @@ block content
                     data-model-edit-id=m._id
                   ) Edit
                   form(method="post", action=`/chat5/ai_model_cards/${m._id}/delete`, onsubmit="return confirm('Delete this AI model card?');")
+                    input(type="hidden", name="_csrf", value=csrfToken)
                     input.ai-model-return-target(type="hidden", name="return_to", value="/chat5/ai_model_cards", data-clear-edit="true")
                     button.btn.btn-outline-danger.btn-sm(type="submit") Delete
           tr#ai-model-no-results(hidden)
-            td(colspan="10")
+            td(colspan="11")
               .ai-model-empty-state
                 strong No models match these filters.
                 span Try clearing one or more filters.
@@ -191,6 +196,7 @@ block content
         action=editingModel ? `/chat5/ai_model_cards/${editingModel._id}` : '/chat5/add_model_card'
         method="post"
       )
+        input(type="hidden", name="_csrf", value=csrfToken)
         input.ai-model-return-target(type="hidden", name="return_to", value="/chat5/ai_model_cards")
         .row.g-3
           .col-12.col-md-6.col-xl-4
@@ -244,6 +250,13 @@ block content
             .form-check.mt-3
               input#batch_use.form-check-input(type="checkbox", name="batch_use", checked=!!formDefaults.batch_use)
               label.form-check-label(for="batch_use") Can be used for batch?
+          .col-12.col-md-6.col-xl-3
+            label.form-label(for="is_thinking") Thinking model
+            select#is_thinking.form-select(name="is_thinking", aria-describedby="is-thinking-help")
+              option(value="", selected=typeof formDefaults.is_thinking !== 'boolean') Use legacy detection
+              option(value="true", selected=formDefaults.is_thinking === true) Yes
+              option(value="false", selected=formDefaults.is_thinking === false) No
+            #is-thinking-help.form-text Overrides thinking detection for OpenAI. Other providers currently ignore this setting.
         .ai-model-editor__actions
           button.btn.btn-primary(type="submit")= editingModel ? 'Update model' : 'Save model'
           if editingModel

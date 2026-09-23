@@ -87,6 +87,45 @@ describe('AI model card controller editing', () => {
     jest.clearAllMocks();
   });
 
+  test.each(['add', 'edit', 'replace'])('saves thinking flags through the %s form', async (operation) => {
+    const model = { is_thinking: true, save: jest.fn().mockResolvedValue() };
+    AIModelCards.find.mockResolvedValue(operation === 'replace' ? [model] : []);
+    AIModelCards.findById.mockResolvedValue(model);
+    const req = { params: { id: 'model-1' }, body: validModelBody({ is_thinking: 'false' }) };
+    const res = responseDouble();
+
+    await controller[operation === 'edit' ? 'update_model_card' : 'add_model_card'](req, res);
+
+    if (operation === 'add') {
+      expect(AIModelCards).toHaveBeenCalledWith(expect.objectContaining({ is_thinking: false }));
+    } else {
+      expect(model.is_thinking).toBe(false);
+      expect(model.save).toHaveBeenCalledTimes(1);
+    }
+    expect(invalidateChatModelCache).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([['', undefined], [undefined, true], ['true', true]])(
+    'handles thinking edit %p without confusing unset and false', async (input, expected) => {
+      const model = { is_thinking: true, save: jest.fn().mockResolvedValue() };
+      AIModelCards.findById.mockResolvedValue(model);
+      await controller.update_model_card({
+        params: { id: 'model-1' }, body: validModelBody({ is_thinking: input }),
+      }, responseDouble());
+      expect(model.is_thinking).toBe(expected);
+      expect(model.save).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test('rejects malformed thinking metadata before accessing the database', async () => {
+    const res = responseDouble();
+    await controller.update_model_card({
+      params: { id: 'model-1' }, body: validModelBody({ is_thinking: ['true', 'false'] }),
+    }, res);
+    expect(AIModelCards.findById).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('error=invalid-model-card'));
+  });
+
   test('updates only token limits inline and returns to the active Local filter', async () => {
     const model = {
       max_tokens: 32768,
@@ -172,6 +211,7 @@ describe('AI model card controller editing', () => {
       added_date: new Date('2026-08-01T00:00:00.000Z'),
       deprecation_date: null,
       batch_use: true,
+      is_thinking: false,
       context_type: 'system',
     };
     AIModelCards.find.mockResolvedValue([storedModel]);
@@ -182,7 +222,7 @@ describe('AI model card controller editing', () => {
 
     expect(res.render).toHaveBeenCalledWith('ai_model_cards', expect.objectContaining({
       editingModel: expect.objectContaining({ _id: 'model-1', model_name: 'Local Qwen' }),
-      formDefaults: expect.objectContaining({ max_tokens: 32768, max_out_tokens: 8192 }),
+      formDefaults: expect.objectContaining({ max_tokens: 32768, max_out_tokens: 8192, is_thinking: false }),
       filterOptions: expect.objectContaining({
         providers: ['Local'],
         types: ['chat'],

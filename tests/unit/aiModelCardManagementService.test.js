@@ -25,6 +25,22 @@ function validModelBody(overrides = {}) {
 }
 
 describe('AI model card management input parsing', () => {
+  test.each([[true, true], ['true', true], [false, false], ['false', false], ['', undefined], [null, undefined]])(
+    'parses explicit thinking selection %p as %p', (input, expected) => {
+      const result = parseModelCardInput(validModelBody({ is_thinking: input }));
+      expect(result).toHaveProperty('is_thinking', expected);
+    },
+  );
+
+  test('omits the thinking update when an older form does not send it', () => {
+    expect(parseModelCardInput(validModelBody())).not.toHaveProperty('is_thinking');
+  });
+
+  test.each(['yes', 'on', 0, 1, [], ['true'], { $ne: false }])('rejects invalid thinking flag %p', (value) => {
+    expect(() => parseModelCardInput(validModelBody({ is_thinking: value })))
+      .toThrow(AIModelCardInputError);
+  });
+
   test('normalizes a complete model card form', () => {
     expect(parseModelCardInput(validModelBody())).toEqual({
       model_name: 'Local Qwen',

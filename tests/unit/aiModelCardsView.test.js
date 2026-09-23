@@ -60,6 +60,23 @@ function renderModelCards(overrides = {}) {
 }
 
 describe('AI model cards management page', () => {
+  test.each([[undefined, ''], [null, ''], [true, 'true'], [false, 'false']])(
+    'renders thinking selection %p without coercing an unset flag', (isThinking, selected) => {
+      const html = renderModelCards({ formDefaults: { is_thinking: isThinking } });
+      const select = html.match(/<select[^>]*id="is_thinking"[^>]*>(.*?)<\/select>/)[1];
+      expect(select).toContain(`<option value="${selected}" selected>`);
+      expect((select.match(/ selected/g) || [])).toHaveLength(1);
+    },
+  );
+
+  test('new cards default to legacy detection and all mutations include the CSRF token', () => {
+    const html = renderModelCards({ editingModel: null, csrfToken: 'test-csrf-token' });
+    expect(html).toContain('<option value="" selected>Use legacy detection</option>');
+    for (const form of html.match(/<form\b[^>]*method="post"[\s\S]*?<\/form>/g)) {
+      expect(form).toContain('name="_csrf" value="test-csrf-token"');
+    }
+  });
+
   test('renders immediate filters and row-level token editing', () => {
     const html = renderModelCards({ editingModel: null });
 

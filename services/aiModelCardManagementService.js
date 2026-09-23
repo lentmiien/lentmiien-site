@@ -62,6 +62,13 @@ function parseTokenLimits(body = {}) {
   };
 }
 
+function parseThinkingFlag(value) {
+  if (value === '' || value === null) return undefined;
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  throw new AIModelCardInputError('Select a valid thinking model setting.');
+}
+
 function parseModelCardInput(body = {}) {
   let deprecationDate;
   try {
@@ -82,6 +89,8 @@ function parseModelCardInput(body = {}) {
     ...parseTokenLimits(body),
     deprecation_date: deprecationDate,
     batch_use: body.batch_use === true || ['on', 'true', '1'].includes(body.batch_use),
+    // Omitted fields preserve existing overrides; an empty selection clears one.
+    ...(body.is_thinking === undefined ? {} : { is_thinking: parseThinkingFlag(body.is_thinking) }),
     context_type: parseEnum(body.context_type || 'none', CONTEXT_TYPES, 'context type'),
   };
 }

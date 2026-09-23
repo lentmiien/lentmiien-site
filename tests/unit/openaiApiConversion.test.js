@@ -185,6 +185,42 @@ describe('OpenAI_API response conversion', () => {
     expect(supportsReasoningModel('gpt-4.1-2025-04-14')).toBe(false);
   });
 
+  test.each([
+    ['gpt-6-sol', true, true],
+    ['gpt-6-luna', true, true],
+    ['gpt-5.6-sol', false, false],
+    ['gpt-5.6-sol', undefined, true],
+    ['o3-2025-04-16', null, true],
+    ['gpt-4.1-2025-04-14', undefined, false],
+    ['unknown-model', undefined, false],
+    ['unknown-model', 'true', false],
+  ])('chat uses thinking metadata for %s (%p)', async (apiModel, isThinking, expected) => {
+    const model = {
+      api_model: apiModel,
+      is_thinking: isThinking,
+      context_type: 'system',
+      in_modalities: ['text'],
+    };
+    expect(supportsReasoningModel(model)).toBe(expected);
+    mockResponsesCreate.mockResolvedValue({ id: 'resp-thinking' });
+    await chat({ metadata: { reasoning: 'high', outputFormat: 'text' } }, [], model);
+    const request = mockResponsesCreate.mock.calls[0][0];
+    if (expected) {
+      expect(request.reasoning).toMatchObject({ effort: 'high', summary: 'detailed' });
+    } else {
+      expect(request).not.toHaveProperty('reasoning');
+    }
+  });
+
+  test('a thinking flag does not invent a conversation reasoning setting or model-specific mode', async () => {
+    mockResponsesCreate.mockResolvedValue({ id: 'resp-thinking' });
+    const model = { api_model: 'gpt-6-sol', is_thinking: true, context_type: 'system', in_modalities: ['text'] };
+    await chat({ metadata: {} }, [], model);
+    expect(mockResponsesCreate.mock.calls[0][0]).not.toHaveProperty('reasoning');
+    await chat({ metadata: { reasoning: 'high', mode: 'pro' } }, [], model);
+    expect(mockResponsesCreate.mock.calls[1][0].reasoning).toEqual({ effort: 'high', summary: 'detailed' });
+  });
+
   test('only GPT-5.6 model families support reasoning mode', () => {
     expect(supportsReasoningMode('gpt-5.6')).toBe(true);
     expect(supportsReasoningMode('gpt-5.6-sol')).toBe(true);

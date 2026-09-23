@@ -14,6 +14,8 @@ const AiModelCardModel = new mongoose.Schema({
   added_date: { type: Date, required: true },
   deprecation_date: { type: Date, default: null },
   batch_use: { type: Boolean, required: true },
+  // No default: legacy cards must retain name-based reasoning detection.
+  is_thinking: { type: Boolean },
   context_type: { type: String, required: true, enum: ['none', 'system', 'developer'] },
 });
 

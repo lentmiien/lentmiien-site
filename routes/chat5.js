@@ -28,17 +28,37 @@ const controller = require('../controllers/chat5controller');
 const chat5DocumentController = require('../controllers/chat5DocumentController');
 const quickSettingsController = require('../controllers/chat5QuickSettingsController');
 const trainingDataController = require('../controllers/trainingDataController');
+const Role = require('../models/role');
+const { createRequireCapabilities, PRIVATE_NO_STORE } = require('../middleware/requireCapabilities');
+const { createSessionCsrf } = require('../middleware/sessionCsrf');
+
+// Model cards are a shared, admin-managed catalog. Explicit grants may delegate management.
+const modelCardAccess = [
+  (req, res, next) => {
+    res.set('Cache-Control', PRIVATE_NO_STORE);
+    res.locals.gtag = false;
+    if (!req.isAuthenticated?.()) return res.sendStatus(401);
+    return next();
+  },
+  createRequireCapabilities({
+    capabilities: ['ai.model_cards.manage'],
+    roleModel: Role,
+    roleCapabilityBundles: { admin: ['ai.model_cards.manage'], family: [], user: [] },
+  }),
+];
+const modelCardCsrf = createSessionCsrf();
+const modelCardWrite = [...modelCardAccess, modelCardCsrf.requireToken];
 
 // Chat5 top page
 router.get('/', controller.index);
 
 // Manage model cards
-router.get('/ai_model_cards', controller.ai_model_cards);
-router.post('/add_model_card', controller.add_model_card);
-router.post('/ai_model_cards/:id/tokens', controller.update_model_card_tokens);
-router.post('/ai_model_cards/:id/deprecation-date', controller.update_model_card_deprecation_date);
-router.post('/ai_model_cards/:id/delete', controller.delete_model_card);
-router.post('/ai_model_cards/:id', controller.update_model_card);
+router.get('/ai_model_cards', ...modelCardAccess, modelCardCsrf.issueToken, controller.ai_model_cards);
+router.post('/add_model_card', ...modelCardWrite, controller.add_model_card);
+router.post('/ai_model_cards/:id/tokens', ...modelCardWrite, controller.update_model_card_tokens);
+router.post('/ai_model_cards/:id/deprecation-date', ...modelCardWrite, controller.update_model_card_deprecation_date);
+router.post('/ai_model_cards/:id/delete', ...modelCardWrite, controller.delete_model_card);
+router.post('/ai_model_cards/:id', ...modelCardWrite, controller.update_model_card);
 router.get('/drafting-presets', controller.viewDraftingPresets);
 router.post('/drafting-presets/personality', controller.savePersonalityPreset);
 router.post('/drafting-presets/personality/:id/delete', controller.deletePersonalityPreset);

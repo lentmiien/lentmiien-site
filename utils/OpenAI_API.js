@@ -50,7 +50,9 @@ const reasoningModels = new Set([
   "gpt-5-nano-2025-08-07",
 ]);
 
-function supportsReasoningModel(modelName) {
+function supportsReasoningModel(model) {
+  if (typeof model?.is_thinking === 'boolean') return model.is_thinking;
+  const modelName = typeof model === 'string' ? model : model?.api_model;
   if (typeof modelName !== 'string') return false;
   if (reasoningModels.has(modelName)) return true;
 
@@ -854,7 +856,7 @@ const chat = async (conversation, messages, model, options = {}) => {
       inputParameters['text']['verbosity'] = conversation.metadata.verbosity;
     }
   }
-  if (conversation.metadata.reasoning && supportsReasoningModel(model.api_model)) {
+  if (conversation.metadata.reasoning && supportsReasoningModel(model)) {
     inputParameters["reasoning"] = { effort: conversation.metadata.reasoning, summary: "detailed" };
     if (supportsReasoningMode(model.api_model)) {
       inputParameters["reasoning"].mode = conversation.metadata.mode === 'pro' ? 'pro' : 'standard';
