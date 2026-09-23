@@ -2,6 +2,7 @@ extends ../layout
 
 block styles
   link(rel='stylesheet', href='/css/codex.css')
+  link(rel='stylesheet', href='/css/codex-workspaces.css')
 
 block content
   - const state = codexState || {};
@@ -44,12 +45,12 @@ block content
               option(value='workspace-write') Workspace write
               option(value='read-only') Read only
           .codex-field
-            label.codex-check
-              input(type='checkbox', name='enabled', value='1', checked)
+            label.codex-check(for='workspace-enabled')
+              input#workspace-enabled(type='checkbox', name='enabled', value='1', checked)
               span Enabled
           .codex-field
-            label.codex-check
-              input(type='checkbox', name='allowYolo', value='1')
+            label.codex-check(for='workspace-yolo')
+              input#workspace-yolo(type='checkbox', name='allowYolo', value='1')
               span Allow dangerous mode
           .codex-actions
             button.codex-button(type='submit') Add
@@ -61,37 +62,38 @@ block content
           span.codex-chip= workspaces.length
         .codex-workspace-list
           if workspaces.length
-            each workspace in workspaces
+            each workspace, workspaceIndex in workspaces
+              - const fieldId = `codex-workspace-${workspaceIndex}`;
               form.codex-workspace-row(method='post', data-workspace-form=workspace.id)
                 input(type='hidden', name='id', value=workspace.id)
                 .codex-workspace-row__main
                   .codex-field
-                    label Name
-                    input(type='text', name='name', value=workspace.name, maxlength='140', required)
+                    label(for=`${fieldId}-name`) Name
+                    input(id=`${fieldId}-name`, type='text', name='name', value=workspace.name, maxlength='140', required)
                   .codex-field.codex-field--wide
-                    label Root path
-                    input(type='text', name='rootPath', value=workspace.rootPath, required)
+                    label(for=`${fieldId}-rootPath`) Root path
+                    input(id=`${fieldId}-rootPath`, type='text', name='rootPath', value=workspace.rootPath, required)
                   .codex-field
-                    label Question
-                    select(name='defaultQuestionPermission')
+                    label(for=`${fieldId}-defaultQuestionPermission`) Question
+                    select(id=`${fieldId}-defaultQuestionPermission`, name='defaultQuestionPermission')
                       option(value='read-only', selected=workspace.defaultQuestionPermission === 'read-only') Read only
                       option(value='workspace-write', selected=workspace.defaultQuestionPermission === 'workspace-write') Workspace write
                   .codex-field
-                    label Action
-                    select(name='defaultActionPermission')
+                    label(for=`${fieldId}-defaultActionPermission`) Action
+                    select(id=`${fieldId}-defaultActionPermission`, name='defaultActionPermission')
                       option(value='workspace-write', selected=workspace.defaultActionPermission === 'workspace-write') Workspace write
                       option(value='read-only', selected=workspace.defaultActionPermission === 'read-only') Read only
                   .codex-field
-                    label Model
-                    input(type='text', name='defaultModel', value=workspace.defaultModel, maxlength='120')
+                    label(for=`${fieldId}-defaultModel`) Model
+                    input(id=`${fieldId}-defaultModel`, type='text', name='defaultModel', value=workspace.defaultModel, maxlength='120')
                   .codex-field
-                    label Profile
-                    input(type='text', name='defaultProfile', value=workspace.defaultProfile, maxlength='120')
-                  label.codex-check
-                    input(type='checkbox', name='enabled', value='1', checked=workspace.enabled)
+                    label(for=`${fieldId}-defaultProfile`) Profile
+                    input(id=`${fieldId}-defaultProfile`, type='text', name='defaultProfile', value=workspace.defaultProfile, maxlength='120')
+                  label.codex-check(for=`${fieldId}-enabled`)
+                    input(id=`${fieldId}-enabled`, type='checkbox', name='enabled', value='1', checked=workspace.enabled)
                     span Enabled
-                  label.codex-check
-                    input(type='checkbox', name='allowYolo', value='1', checked=workspace.allowYolo)
+                  label.codex-check(for=`${fieldId}-allowYolo`)
+                    input(id=`${fieldId}-allowYolo`, type='checkbox', name='allowYolo', value='1', checked=workspace.allowYolo)
                     span Dangerous
                 .codex-workspace-row__actions
                   span(class=workspace.enabled ? 'codex-status codex-status--active' : 'codex-status codex-status--blocked')= workspace.enabled ? 'enabled' : 'disabled'

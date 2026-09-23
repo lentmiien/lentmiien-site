@@ -1,0 +1,54 @@
+/* Keep workspace editor sizing independent of the dashboard and turn layouts. */
+[data-codex-page='workspaces'] .codex-workspace-row__main,
+[data-codex-page='workspaces'] .codex-workspace-row__actions,
+[data-codex-page='workspaces'] .codex-field {
+  min-width: 0;
+}
+
+[data-codex-page='workspaces'] .codex-field {
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
+}
+
+[data-codex-page='workspaces'] .codex-field :is(input, select, textarea) {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+[data-codex-page='workspaces'] .codex-check {
+  min-height: 44px;
+  justify-self: start;
+}
+
+[data-codex-page='workspaces'] .codex-check input {
+  flex: 0 0 18px;
+  padding: 0;
+}
+
+[data-codex-page='workspaces'] :is(.codex-button, .codex-small-button) {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+[data-codex-page='workspaces'] :is(input, select, textarea, button):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1180px) {
+  /* Reset the outer grid too: the shared breakpoint only collapses its fields. */
+  [data-codex-page='workspaces'] .codex-workspace-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  [data-codex-page='workspaces'] .codex-form--workspace,
+  [data-codex-page='workspaces'] .codex-workspace-row__main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-codex-page='workspaces'] .codex-field :is(input, select, textarea) {
+    font-size: 1rem;
+  }
+}
