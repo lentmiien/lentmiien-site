@@ -2,6 +2,7 @@ extends ../layout
 
 block styles
   link(rel='stylesheet', href='/css/codex.css')
+  link(rel='stylesheet', href='/css/codex-profiles.css')
 
 block content
   - const state = codexState || {};
@@ -47,8 +48,8 @@ block content
             label(for='profile-description') Description
             input#profile-description(type='text', name='description', maxlength='500')
           .codex-field
-            label.codex-check
-              input(type='checkbox', name='enabled', value='1', checked)
+            label.codex-check(for='profile-enabled')
+              input#profile-enabled(type='checkbox', name='enabled', value='1', checked)
               span Enabled
           .codex-actions
             button.codex-button(type='submit') Add
@@ -60,33 +61,34 @@ block content
           span.codex-chip= profiles.length
         .codex-profile-list
           if profiles.length
-            each profile in profiles
+            each profile, profileIndex in profiles
+              - const fieldId = `codex-profile-${profileIndex}`;
               form.codex-profile-row(method='post', data-profile-form=profile.id)
                 input(type='hidden', name='id', value=profile.id)
                 .codex-profile-row__main
                   .codex-field
-                    label Name
-                    input(type='text', name='name', value=profile.name, maxlength='80', required)
+                    label(for=`${fieldId}-name`) Name
+                    input(id=`${fieldId}-name`, type='text', name='name', value=profile.name, maxlength='80', required)
                   .codex-field
-                    label(title='Choose a Codex model slug. Leave empty to use the target machine default.') Model
-                    input(type='text', name='model', value=profile.model, maxlength='120', placeholder='Default', list='codex-model-options', title='Sol: hardest work. Terra: balanced everyday work. Luna: fast affordable work. Spark: ultra-fast iteration.')
+                    label(for=`${fieldId}-model`, title='Choose a Codex model slug. Leave empty to use the target machine default.') Model
+                    input(id=`${fieldId}-model`, type='text', name='model', value=profile.model, maxlength='120', placeholder='Default', list='codex-model-options', title='Sol: hardest work. Terra: balanced everyday work. Luna: fast affordable work. Spark: ultra-fast iteration.')
                   .codex-field
-                    label(title='Choose how much reasoning Codex should use. Ultra can trigger automatic task delegation on supported models.') Reasoning
-                    select(name='reasoningEffort', title='Low is fastest; Max is deepest single-model reasoning; Ultra adds automatic task delegation when supported.')
+                    label(for=`${fieldId}-reasoning`, title='Choose how much reasoning Codex should use. Ultra can trigger automatic task delegation on supported models.') Reasoning
+                    select(id=`${fieldId}-reasoning`, name='reasoningEffort', title='Low is fastest; Max is deepest single-model reasoning; Ultra adds automatic task delegation when supported.')
                       option(value='', selected=!profile.reasoningEffort) Default
                       each effort in reasoningEfforts
                         option(value=effort.value, selected=profile.reasoningEffort === effort.value, title=effort.description)= effort.description ? `${effort.label} - ${effort.description}` : effort.label
                   .codex-field
-                    label Codex CLI profile
-                    input(type='text', name='codexProfile', value=profile.codexProfile, maxlength='120', pattern='[A-Za-z0-9_-]*', placeholder='Optional')
+                    label(for=`${fieldId}-cli`) Codex CLI profile
+                    input(id=`${fieldId}-cli`, type='text', name='codexProfile', value=profile.codexProfile, maxlength='120', pattern='[A-Za-z0-9_-]*', placeholder='Optional')
                   .codex-field
-                    label Sort
-                    input(type='number', name='sortOrder', min='0', step='1', value=profile.sortOrder)
+                    label(for=`${fieldId}-sort`) Sort
+                    input(id=`${fieldId}-sort`, type='number', name='sortOrder', min='0', step='1', value=profile.sortOrder)
                   .codex-field.codex-field--wide
-                    label Description
-                    input(type='text', name='description', value=profile.description, maxlength='500')
-                  label.codex-check
-                    input(type='checkbox', name='enabled', value='1', checked=profile.enabled, disabled=profile.id === 'default')
+                    label(for=`${fieldId}-description`) Description
+                    input(id=`${fieldId}-description`, type='text', name='description', value=profile.description, maxlength='500')
+                  label.codex-check(for=`${fieldId}-enabled`)
+                    input(id=`${fieldId}-enabled`, type='checkbox', name='enabled', value='1', checked=profile.enabled, disabled=profile.id === 'default')
                     span Enabled
                 .codex-profile-row__actions
                   span(class=profile.enabled ? 'codex-status codex-status--active' : 'codex-status codex-status--blocked')= profile.enabled ? 'enabled' : 'disabled'

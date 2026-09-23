@@ -1,0 +1,58 @@
+/* Keep profile editor sizing independent of the dashboard and turn layouts. */
+[data-codex-page='profiles'] .codex-profile-row__main,
+[data-codex-page='profiles'] .codex-profile-row__actions,
+[data-codex-page='profiles'] .codex-field {
+  min-width: 0;
+}
+
+[data-codex-page='profiles'] .codex-field {
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
+}
+
+[data-codex-page='profiles'] .codex-field :is(input, select, textarea) {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+[data-codex-page='profiles'] .codex-check {
+  min-height: 44px;
+  justify-self: start;
+}
+
+[data-codex-page='profiles'] .codex-check input {
+  flex: 0 0 18px;
+  padding: 0;
+}
+
+[data-codex-page='profiles'] :is(.codex-button, .codex-small-button) {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+[data-codex-page='profiles'] :is(input, select, textarea, button):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1180px) {
+  /* Reset the outer grid too: the shared breakpoint only collapses its fields. */
+  [data-codex-page='profiles'] .codex-profile-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-codex-page='profiles'] .codex-profile-row__main > .codex-check {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  [data-codex-page='profiles'] .codex-form--profile,
+  [data-codex-page='profiles'] .codex-profile-row__main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-codex-page='profiles'] .codex-field :is(input, select, textarea) {
+    font-size: 1rem;
+  }
+}
