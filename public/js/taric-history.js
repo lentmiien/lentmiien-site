@@ -2,7 +2,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const base = '/admin/taric/history';
-  let current = null; let preview = null; let next = null; let previewEpoch = 0; let listEpoch = 0;
+  let current = null; let preview = null; let next = null; let listSnapshot = null; let previewEpoch = 0; let listEpoch = 0;
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
   const showStatus = text => { $('status').textContent = text; };
   const invalidate = () => { previewEpoch++; preview = null; $('download').disabled = true; $('preview-content').replaceChildren(); };
@@ -19,13 +19,13 @@
     const epoch = ++listEpoch; $('stats').replaceChildren(); $('requests').replaceChildren(); $('next').hidden = true;
     $('detail').hidden = true; current = null;
     invalidate(); showStatus('Loading scoped request history…');
-    const filters = activeFilters(); if (cursor) filters.cursor = cursor;
+    const filters = activeFilters(); if (cursor) { filters.cursor = cursor; if (listSnapshot) filters.snapshot = listSnapshot; }
     const query = new URLSearchParams(filters);
     history.replaceState(null, '', base + (query.size ? `?${query}` : ''));
-    const data = await (await api(`/data?${query}`)).json(); if (epoch !== listEpoch) return; next = data.next;
+    const data = await (await api(`/data?${query}`)).json(); if (epoch !== listEpoch) return; next = data.next; listSnapshot = data.snapshot;
     $('stats').replaceChildren();
     const s = data.stats;
-    const cards = { Requests: s.total, Pending: s.pending, Terminal: s.terminal, 'Final feedback': s.feedback, 'Verified current labels': s.verified, 'Verified but ineligible': s.verifiedIneligible, 'Candidate eligible': s.eligible, 'Eligible distinct codes': s.codeCoverage };
+    const cards = { 'Cases (live + archived)': s.total, 'Live requests': s.live, 'Archived reviewed sources': s.archived, Pending: s.pending, Terminal: s.terminal, 'Final feedback (live/captured)': s.feedback, 'Verified labels (live/archived)': s.verified, 'Verified but ineligible': s.verifiedIneligible, 'Candidate eligible': s.eligible, 'Eligible distinct codes': s.codeCoverage };
     for (const [key, value] of Object.entries(cards)) { const card = el('div', undefined, 'card'); card.append(el('strong', String(value)), el('span', key)); $('stats').append(card); }
     for (const [decision, v] of Object.entries(s.decisions)) $('stats').append(el('div', `${decision}: ${v.count} / ${v.denominator} final feedback`, 'card'));
     $('stats').append(el('div', `Errors: ${Object.entries(s.errors).map(([k, v]) => `${k}: ${v}`).join('; ') || 'none'}`, 'card'));
@@ -62,7 +62,9 @@
       'Review actor / time (UTC)': r.review ? `${r.review.actor} / ${r.review.at}` : 'Unreviewed',
       'Review note': r.review?.note,
       'Approved description': r.review?.approvedDescription,
-      'Review freshness': r.stale ? 'STALE — source or feedback changed; explicit review required' : 'Current source snapshot',
+      'Source storage': r.sourceStorage === 'archived_review' ? 'Archived canonical reviewed source (raw request expired/deleted)' : 'Live request',
+      'Review freshness': r.stale ? 'STALE — source changed or archived without final feedback binding; verification unavailable until resolved' : r.sourceStorage === 'archived_review' ? 'Bound immutable final feedback at verification; archived, not live revalidation' : 'Current source snapshot',
+      'Source warnings': r.warnings.join('; '),
       'Export candidate eligibility': r.eligible ? 'Eligible code-only source candidate; final formatter pending' : r.reasons.join(', '),
       'Review revision / source hash': `${r.revision} / ${r.sourceHash}` });
     const copy = el('button', 'Copy request ID'); copy.type = 'button'; copy.addEventListener('click', () => run(async () => { await navigator.clipboard.writeText(r.id); showStatus('Request ID copied.'); })); container.append(copy);
@@ -118,5 +120,6 @@
     invalidate(); showStatus('Private manifest frozen and candidate JSONL downloaded. This is not a final training dataset.');
   }));
   $('theme').addEventListener('click', () => { document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; });
+  listSnapshot = initial.get('snapshot');
   run(() => load(initial.get('cursor')));
 })();

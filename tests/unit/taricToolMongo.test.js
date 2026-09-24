@@ -509,6 +509,11 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
     expect(preview.collections.map(c => c.name)).toEqual(expect.arrayContaining(['taric_reviews', 'taric_exports']));
     const key = await models.Credential.findById('integration').select('+digest').lean();
     const config = await service.settings();
+    const v0 = await benchmark();
+    const currentRequest = await service.submit(principal, 'bootstrap-current-01', requestInput);
+    await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true, epoch: 7, reason: 'SYNTHETIC_HOLD' } });
+    const control = await models.Control.findById('inference').lean();
+    const savedRequest = await models.Request.findById(currentRequest.id).lean();
     for (let i = 0; i < 2; i++) {
       const result = JSON.parse(execFileSync(process.execPath, [script, '--bootstrap', '--execute', '--allow-database-write'],
         { env: { ...process.env, MONGOOSE_URL: uri } }));
@@ -516,6 +521,12 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
     }
     expect(await service.settings()).toMatchObject({ revision: config.revision, enabled: config.enabled, owner: config.owner, testCatalog: config.testCatalog });
     expect(await models.Credential.findById('integration').select('+digest').lean()).toEqual(key);
+    expect(await models.Benchmark.findById(v0._id).lean()).toEqual(v0);
+    expect(await models.Request.findById(currentRequest.id).lean()).toEqual(savedRequest);
+    const { updatedAt: controlUpdatedAt, ...controlState } = control;
+    expect(await models.Control.findById('inference').lean()).toMatchObject(controlState);
+    expect((await models.Request.collection.indexes()).map(i => i.name)).toEqual(expect.arrayContaining(['request_filter_input_jan', 'request_filter_input_test', 'request_filter_state']));
+    expect((await models.Review.collection.indexes()).map(i => i.name)).toEqual(expect.arrayContaining(['review_source_date', 'review_source_jan', 'review_source_mode', 'review_source_state', 'review_conflicts']));
     expect((await models.Attempt.collection.indexes()).map(i => i.name)).toContain('one_attempt_per_case');
     expect((await models.Benchmark.collection.indexes()).map(i => i.name)).toContain('benchmark_chronology');
   });

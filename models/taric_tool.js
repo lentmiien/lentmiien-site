@@ -35,6 +35,7 @@ const Request = model('taric_requests', { _id: String, owner: String, principal:
   [{ principal: 1, key: 1 }, { unique: true, name: 'request_idempotency' }],
   [{ slot: 1 }, { unique: true, partialFilterExpression: { active: true }, name: 'bounded_request_slots' }],
   [{ owner: 1, createdAt: -1, _id: -1 }, { name: 'request_inspection' }],
+  ...['input.jan', 'input.test', 'state'].map(field => [{ owner: 1, [field]: 1, createdAt: -1, _id: -1 }, { name: `request_filter_${field.replace('.', '_')}` }]),
 ]);
 const Feedback = model('taric_outcomes', { _id: String, owner: String, principal: String, request: String,
   key: String, digest: String, selected_code: String, decision: String, catalog_status: String,
