@@ -1,5 +1,7 @@
 # AmiAmi scraper diagnostics
 
+For browser-supplied lists in the web app, see [HTML import](amiami-upload.md).
+
 `npm run scrape:amiami` selects MongoDB storage. Direct invocation with
 `node scripts/scrape-amiami-new-items.js` defaults to JSON file storage. Both
 perform live requests and writes; **`--list-only` is not a dry run**. Startup can

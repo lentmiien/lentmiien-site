@@ -186,13 +186,15 @@ app.use(require('./middleware/accountSurfaceBody'));
 // Dedicated TARIC machine authentication must precede all legacy body parsing/auth.
 const taricTool = require('./services/taric');
 app.use('/api/taric/v1', require('./routes/taric').createTaricRouter(taricTool.service));
+const amiamiUpload = require('./services/amiamiUpload');
+const isAmiAmiUploadPath = req => /^\/admin\/amiami-items\/upload(?:\/|$)/i.test(req.path);
 const isTaricAdminPath = req => /^\/admin\/taric(?:\/|$)/i.test(req.path);
 const legacyFormParser = bodyParser.urlencoded({ extended: false, limit: DEFAULT_BODY_LIMIT });
 const legacyJsonParser = express.json({ limit: DEFAULT_BODY_LIMIT });
 const isMusicPath = req => /^\/(?:music|admin\/music-test)(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
-app.use((req, res, next) => (isMiienPath(req) || isMusicPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
-app.use((req, res, next) => (isMiienPath(req) || isMusicPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
+app.use((req, res, next) => (isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
+app.use((req, res, next) => (isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -554,6 +556,7 @@ app.use('/admin/database-viewer', (_req, res, next) => {
   next();
 });
 app.use('/admin/taric', require('./routes/taricAdmin').createTaricAdminRouter(taricTool.service));
+app.use('/admin/amiami-items/upload', require('./routes/amiamiUpload').createAmiAmiUploadRouter(amiamiUpload));
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
 app.post(
@@ -757,6 +760,7 @@ function startDatabaseServices() {
 
   const starters = [
     ['TARIC worker', () => taricTool.worker.start()],
+    ['AmiAmi HTML import worker', () => amiamiUpload.start()],
     ['daily batch trigger', scheduleDailyBatchTrigger],
     ['database usage monitor', scheduleDatabaseUsageMonitor],
     ['Agent5 scheduler', scheduleAgent5Runner],
@@ -826,16 +830,19 @@ databaseLifecycle.on('ready', startDatabaseServices);
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.once(signal, () => {
     taricTool.worker.stop();
+    amiamiUpload.stop();
     process.kill(process.pid, signal);
   });
 }
 databaseLifecycle.on('unavailable', () => {
   taricTool.worker.stop();
+  amiamiUpload.stop();
   databaseServicesNeedRecovery = databaseServicesStarted;
   io.disconnectSockets?.(true);
 });
 databaseLifecycle.on('recovered', () => {
   taricTool.worker.start();
+  amiamiUpload.start();
   if (!databaseServicesNeedRecovery) return;
   databaseServicesNeedRecovery = false;
   audioWorkflowService.resumeAfterDatabaseRecovery().catch((error) => {

@@ -1,0 +1,60 @@
+doctype html
+html(lang='en')
+  head
+    meta(charset='utf-8')
+    meta(name='viewport' content='width=device-width, initial-scale=1')
+    meta(name='csrf-token' content=csrfToken)
+    title Import AmiAmi items
+    link(rel='stylesheet' href='/css/color-theme.css')
+    link(rel='stylesheet' href='/css/amiami-upload.css')
+    script(src='/js/amiami-upload.js' defer)
+  body
+    main
+      nav(aria-label='Navigation')
+        a(href='/admin') Administration
+        a(href='/admin/amiami-items') AmiAmi items
+      header
+        p.eyebrow AmiAmi catalog
+        h1 Import items from HTML
+        p Copy the New Products page HTML in your browser, then paste it here or upload a saved HTML file. A whole page, a container or a single item link will work.
+      p#upload-status(role='status' aria-live='polite') Checking for a previous import…
+      noscript This form needs JavaScript to upload HTML and display progress.
+      section#job-panel(hidden aria-labelledby='job-heading')
+        .heading-row
+          h2#job-heading Import progress
+          span#job-state.badge
+        p#job-message
+        progress#job-progress(max='1' value='0')
+        p#job-summary
+        dl.stats
+          div
+            dt Found in HTML
+            dd#job-total 0
+          div
+            dt Already in catalog
+            dd#job-existing 0
+          div
+            dt Fetched
+            dd#job-fetched 0
+          div
+            dt Failed
+            dd#job-failed 0
+        p#job-timing
+        p#job-current
+        p#background-note You can close this page. The import continues in the background; reopen it to see progress. Only one import can run at a time.
+        details#failure-panel(hidden)
+          summary Items that could not be fetched
+          ul#job-failures
+        p.job-reference#job-reference
+      section#upload-panel(hidden aria-labelledby='upload-heading')
+        h2#upload-heading Add an HTML list
+        p Existing items are skipped, including items with a previous fetch error. Missing items are fetched one at a time, with a 60-second pause after each attempt.
+        form#upload-form
+          label(for='html-file') Upload a saved HTML file
+          input#html-file(type='file' accept='.html,.htm,text/html')
+          p.or Or paste the HTML
+          label(for='html-input') HTML fragment or document
+          textarea#html-input(rows='10' spellcheck='false' placeholder='<a href="/eng/detail?gcode=TOY-RBT-9417">…</a>')
+          p.help Up to 2 MiB of UTF-8 HTML and 1,000 distinct item codes. HTML is parsed as text and discarded; it is never displayed or executed.
+          button#upload-submit(type='submit') Start import
+      button#refresh-status.secondary(type='button') Refresh status
