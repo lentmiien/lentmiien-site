@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TARIC offline selection profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "name",
+    "version",
+    "mode",
+    "maxRows",
+    "perCode",
+    "perProduct",
+    "maxAgeDays",
+    "missingRequired"
+  ],
+  "properties": {
+    "schema": {
+      "const": "taric-dataset-profile/1"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "mode": {
+      "enum": [
+        "newest",
+        "balanced"
+      ]
+    },
+    "maxRows": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    },
+    "perCode": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    },
+    "perProduct": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    },
+    "maxAgeDays": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 36500
+    },
+    "missingRequired": {
+      "enum": [
+        "skip",
+        "error"
+      ]
+    }
+  }
+}

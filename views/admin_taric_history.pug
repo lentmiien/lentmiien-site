@@ -12,6 +12,7 @@ html(lang='en')
     main
       nav
         a(href='/admin/taric') TARIC manager / JSON inspection
+        a(href='/admin/taric/history/guide') Review & dataset guide
         button#theme(type='button') Toggle light / dark
       h1 Request history & human review
       p Request → predictor proposal → final human choice → independent label review. Benchmark attempts are excluded. Times and date boundaries are UTC.
@@ -73,7 +74,7 @@ html(lang='en')
           button#save-review(type='submit') Save explicit review revision
       section(aria-labelledby='export-heading')
         h2#export-heading Prepare reviewed source candidates
-        p Code-only candidate profile. Full item name, descriptive category and original HS6 are required; specifications may be missing. An approved description is optional here. Final Qwen formatting, grouped splits and training remain future work.
+        p Code-only candidate profile. Full item name, descriptive category and original HS6 are required; specifications may be missing. An approved description is optional here. Use the linked guide and offline converter to create Qwen CSVs from complete sources with explicitly approved descriptions. Grouped splits and training are separate manual steps.
         p Exact normalized input duplicates keep the latest review. Disagreeing current labels within a JAN or identical input group are blocked, including records hidden by filters. Independent published holdout identities are excluded where known. No semantic near-duplicate guarantee.
         .fields
           label

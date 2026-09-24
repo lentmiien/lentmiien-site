@@ -1,0 +1,11 @@
+{
+  "schema": "taric-dataset-profile/1",
+  "name": "newest-verified",
+  "version": 1,
+  "mode": "newest",
+  "maxRows": 200,
+  "perCode": 200,
+  "perProduct": 200,
+  "maxAgeDays": null,
+  "missingRequired": "skip"
+}

@@ -1,0 +1,15 @@
+doctype html
+html(lang='en')
+  head
+    meta(charset='utf-8')
+    meta(name='viewport' content='width=device-width, initial-scale=1')
+    title TARIC review and offline dataset guide
+    link(rel='stylesheet' href='/css/color-theme.css')
+    link(rel='stylesheet' href='/css/taric-history.css')
+  body
+    main
+      nav(aria-label='TARIC navigation')
+        a(href='/admin/taric/history') Request history & human review
+        a(href='/admin/taric') TARIC manager
+      //- Fixed repository Markdown, sanitized by taricHistoryGuideController.
+      article.guide!= guideHtml

@@ -7,6 +7,7 @@ function createHistoryRouter(service, history = createHistory({ models: require(
   const router = express.Router();
   const actor = req => String(req.user._id);
   router.get('/', (_req, res) => res.render('admin_taric_history'));
+  router.get('/guide', require('../controllers/taricHistoryGuideController').render);
   router.get('/data', async (req, res) => res.json(await history.list(actor(req), req.query)));
   router.post('/preview', jsonBody('4kb'), async (req, res) => res.json(await history.preview(actor(req), req.body)));
   router.post('/download', jsonBody('4kb'), async (req, res) => {

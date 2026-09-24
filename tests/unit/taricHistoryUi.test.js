@@ -39,7 +39,7 @@ test('history DOM safely labels outcomes, review form, filter URL and CSRF previ
   expect(JSON.parse(save[1].body)).toMatchObject({ target: '0000000002', expectedRevision: 1, approvedDescription: null });
   doc.querySelector('#preview').click(); await settle();
   expect(doc.querySelector('#download').disabled).toBe(false);
-  expect(doc.querySelector('#preview-content').textContent).toContain('formatter pending');
+  expect(doc.querySelector('#preview-content').textContent).toContain('approve in review before offline conversion');
   expect(responses.find(([url]) => url.endsWith('/preview'))[1].headers['X-CSRF-Token']).toBe('synthetic-csrf');
   doc.querySelector('#selection-limit').value = '2'; doc.querySelector('#selection-limit').dispatchEvent(new dom.window.Event('input'));
   expect(doc.querySelector('#download').disabled).toBe(true);

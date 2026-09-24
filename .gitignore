@@ -36,3 +36,7 @@ test.js
 
 # Durable private GPT Image media (back up separately from source)
 private_data/gpt-image/
+
+# Python offline-tool bytecode
+__pycache__/
+*.pyc

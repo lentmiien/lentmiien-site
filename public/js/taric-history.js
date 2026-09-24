@@ -65,7 +65,7 @@
       'Source storage': r.sourceStorage === 'archived_review' ? 'Archived canonical reviewed source (raw request expired/deleted)' : 'Live request',
       'Review freshness': r.stale ? 'STALE — source changed or archived without final feedback binding; verification unavailable until resolved' : r.sourceStorage === 'archived_review' ? 'Bound immutable final feedback at verification; archived, not live revalidation' : 'Current source snapshot',
       'Source warnings': r.warnings.join('; '),
-      'Export candidate eligibility': r.eligible ? 'Eligible code-only source candidate; final formatter pending' : r.reasons.join(', '),
+      'Export candidate eligibility': r.eligible ? 'Eligible code-only source candidate; use the offline converter after description approval' : r.reasons.join(', '),
       'Review revision / source hash': `${r.revision} / ${r.sourceHash}` });
     const copy = el('button', 'Copy request ID'); copy.type = 'button'; copy.addEventListener('click', () => run(async () => { await navigator.clipboard.writeText(r.id); showStatus('Request ID copied.'); })); container.append(copy);
     const inspect = el('a', 'Private case JSON'); inspect.href = `${base}/${r.id}`; container.append(inspect);
@@ -108,7 +108,7 @@
     const container = $('preview-content');
     pairs(container, { Profile: result.profile, Algorithm: result.algorithm, Available: result.summary.available, Eligible: result.summary.eligible, Selected: result.summary.selected, Excluded: result.summary.excluded, 'Selected groups': result.summary.groups, 'Excluded by primary reason': JSON.stringify(result.summary.excludedByReason), 'Selected per code': JSON.stringify(result.summary.perCode), 'Selected per group': JSON.stringify(result.summary.perGroup), 'Snapshot hash': result.snapshotHash });
     details(container, 'Selection decisions (request IDs and reasons)', result.skipped.map(r => `${r.id}: ${r.reasons.join(', ')}`).join('\n'));
-    details(container, 'Selected requests / targets / description readiness', result.candidates.map(r => `${r.requestId}: ${r.targetCode}; ${r.approvedDescription ? 'explicit description approved' : 'description missing; final formatter pending'}`).join('\n'));
+    details(container, 'Selected requests / targets / description readiness', result.candidates.map(r => `${r.requestId}: ${r.targetCode}; ${r.approvedDescription ? 'explicit description approved' : 'description missing; approve in review before offline conversion'}`).join('\n'));
     $('download').disabled = result.summary.selected === 0; showStatus('Preview complete. Download revalidates this exact snapshot before creating a private immutable manifest.');
   }));
   $('download').addEventListener('click', () => run(async () => {

@@ -1,0 +1,11 @@
+{
+  "schema": "taric-dataset-profile/1",
+  "name": "balanced-recent",
+  "version": 1,
+  "mode": "balanced",
+  "maxRows": 200,
+  "perCode": 20,
+  "perProduct": 1,
+  "maxAgeDays": null,
+  "missingRequired": "skip"
+}

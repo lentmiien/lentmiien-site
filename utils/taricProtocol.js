@@ -4,7 +4,8 @@ const TEST_ADAPTER = 'taric-v1-20260917-2';
 const BASE_MODEL = 'Qwen/Qwen3-4B-Instruct-2507';
 const TRAINING_SHA = '22ea56418479ecc6d962ad1328eef54c3897aa5b99095093e8231984e8d070be';
 const CLEANED_SHA = '799e95dcce447381ca49aeaae65fb7937896971e0d3f943d12c40996b9f51ef8';
-const SYSTEM = 'You are an EU customs classification assistant. Analyze one product request using its category, item name, specifications, and HS code. Return exactly one valid JSON object with two keys: taric_code, containing a single 10-digit EU TARIC code, and description, containing a concise plain-language classification description of fewer than 256 characters. Choose the most likely code and do not list alternatives. Include the product\'s form, material, function, and classification rationale when supported by the request. Output no Markdown, prose, comments, or extra keys.';
+const TRAINING_TEMPLATE = require('../config/taric-training-template.json');
+const SYSTEM = TRAINING_TEMPLATE.system;
 const VERSIONS = Object.freeze({ renderer: 'trained-csv/1', parser: 'strict-json/1', decoding: 'greedy/1', scoring: 'exact-all-cases/1', tokenBudget: 'utf8-upper-bound/1' });
 const sha = value => crypto.createHash('sha256').update(value).digest('hex');
 function hs(value) {
@@ -22,7 +23,8 @@ function render(row) {
   string(row.full_item_name, 1000, 'INVALID_REQUEST');
   if (typeof row.specs !== 'string' || row.specs.length > 12000) fail('INVALID_REQUEST');
   const code = hs(row.hs_code);
-  return `Please give me a description and suitable TARIC code for the following item:\n\nCategory: ${row.descriptive_name}\n\n### ${row.full_item_name}\n\n${row.specs}\n\nOur HS code: ${code.slice(0, 4)}.${code.slice(4)}`;
+  const fields = { ...row, hs_code: `${code.slice(0, 4)}.${code.slice(4)}` };
+  return TRAINING_TEMPLATE.prompt.replace(/\{(descriptive_name|full_item_name|specs|hs_code)\}/g, (_match, key) => fields[key]);
 }
 function messages(row) { return [{ role: 'system', content: SYSTEM }, { role: 'user', content: render(row) }]; }
 function payload(row, adapter, maxTokens = 256) {

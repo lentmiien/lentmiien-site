@@ -32,3 +32,8 @@ dt { color: var(--text-muted); } dd { margin: 0; overflow-wrap: anywhere; white-
   --border: #9AA3B2; --divider: #9AA3B2; --text: #111418; --text-secondary: #262B34; --text-muted: #454B56;
   --accent: #805000; --warning: #805000;
 }
+
+.guide { overflow-wrap: anywhere; }
+.guide table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.guide th, .guide td { padding: .6rem; border: 1px solid var(--border); text-align: left; }
+.guide th { background: var(--surface-3); }
