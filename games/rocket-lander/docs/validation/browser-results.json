@@ -1,0 +1,204 @@
+{
+  "checks": [
+    "WebGL draws actual scene",
+    "audio is gesture enabled",
+    "main thrust and correct opposing rotation plume",
+    "pause freezes physics and clears all held keys",
+    "blur pauses and clears rotation",
+    "help cannot resume through its overlay",
+    "retry restores fresh normal start",
+    "ordinary main-only flight fails visibly",
+    "retry reaches real finite goal result",
+    "finite grade and record shown",
+    "ochre finite browser flight lands",
+    "verdant finite browser flight lands",
+    "nacre finite browser flight lands",
+    "cinder finite browser flight lands",
+    "atlas finite browser flight lands",
+    "practice succeeds with infinity and no rank",
+    "practice preserves finite records",
+    "standard records survive reload",
+    "record deletion works",
+    "phone menu has no horizontal overflow",
+    "phone rocket is not covered by guidance or controls",
+    "phone flight has all instruments and touch buttons",
+    "two simultaneous touch engines work",
+    "touch cancellation releases both engines",
+    "hidden tab pauses and clears input",
+    "high-altitude portrait camera keeps rocket below instruments",
+    "landscape buttons remain in viewport",
+    "context loss shows visible reload guidance",
+    "context loss silences a running engine",
+    "missing required local module is visible",
+    "WebGL unavailable is visible",
+    "storage/audio unavailable still permits flight",
+    "no unexpected runtime errors",
+    "all runtime requests stay local",
+    "rendering bounded below 500 draw calls"
+  ],
+  "flights": [
+    {
+      "stage": "selene",
+      "mode": "standard",
+      "status": "landed",
+      "fuel": 147.1086666666838,
+      "touchdown": {
+        "vx": -0.008778864662271341,
+        "vy": -1.0183913572729633,
+        "tilt": 0.030646996773840772,
+        "spin": 0.11727697073457549,
+        "x": 26.990156005185653,
+        "fraction": 0.9194291666667738
+      }
+    },
+    {
+      "stage": "ochre",
+      "mode": "standard",
+      "status": "landed",
+      "fuel": 143.1623333333483,
+      "touchdown": {
+        "vx": 0.02754533984059827,
+        "vy": -1.1979148630807128,
+        "tilt": -0.02618246503943161,
+        "spin": 0.06324433646441245,
+        "x": 27.000003982934828,
+        "fraction": 0.8947645833334269
+      }
+    },
+    {
+      "stage": "verdant",
+      "mode": "standard",
+      "status": "landed",
+      "fuel": 141.89066666667918,
+      "touchdown": {
+        "vx": 0.024834368606915326,
+        "vy": -1.5194794612629254,
+        "tilt": -0.012373498105058226,
+        "spin": 0.04012785407175525,
+        "x": 27.008692281856018,
+        "fraction": 0.8868166666667449
+      }
+    },
+    {
+      "stage": "nacre",
+      "mode": "standard",
+      "status": "landed",
+      "fuel": 138.35200000001157,
+      "touchdown": {
+        "vx": -0.01705162259782646,
+        "vy": -0.7569222040081067,
+        "tilt": -0.003634786187463166,
+        "spin": 0.011787787776274919,
+        "x": 27.005237917483566,
+        "fraction": 0.8647000000000723
+      }
+    },
+    {
+      "stage": "cinder",
+      "mode": "standard",
+      "status": "landed",
+      "fuel": 134.51200000001165,
+      "touchdown": {
+        "vx": -0.018874082402190892,
+        "vy": -0.9297355438085981,
+        "tilt": -0.00023947714720014258,
+        "spin": 0.0007766359953208328,
+        "x": 27.004688328424823,
+        "fraction": 0.8407000000000728
+      }
+    },
+    {
+      "stage": "atlas",
+      "mode": "standard",
+      "status": "landed",
+      "fuel": 131.16800000001115,
+      "touchdown": {
+        "vx": 0.0015591092325536373,
+        "vy": -0.6110760052632915,
+        "tilt": -0.009783950026180951,
+        "spin": 0.03172982414208562,
+        "x": 27.0103760374997,
+        "fraction": 0.8198000000000697
+      }
+    },
+    {
+      "stage": "atlas",
+      "mode": "practice",
+      "status": "landed",
+      "fuel": 160,
+      "touchdown": {
+        "vx": 0.0015591092325536373,
+        "vy": -0.6110760052632915,
+        "tilt": -0.009783950026180951,
+        "spin": 0.03172982414208562,
+        "x": 27.0103760374997,
+        "fraction": 1
+      }
+    }
+  ],
+  "renders": [
+    {
+      "frame": 101,
+      "calls": 95,
+      "triangles": 2168,
+      "points": 240,
+      "lines": 97,
+      "geometries": 95,
+      "textures": 3,
+      "main": false,
+      "leftNozzle": false,
+      "rightNozzle": false
+    },
+    {
+      "frame": 109,
+      "calls": 135,
+      "triangles": 3028,
+      "points": 240,
+      "lines": 97,
+      "geometries": 130,
+      "textures": 3,
+      "main": false,
+      "leftNozzle": false,
+      "rightNozzle": false
+    },
+    {
+      "frame": 116,
+      "calls": 113,
+      "triangles": 2514,
+      "points": 240,
+      "lines": 102,
+      "geometries": 107,
+      "textures": 3,
+      "main": false,
+      "leftNozzle": false,
+      "rightNozzle": false
+    },
+    {
+      "frame": 123,
+      "calls": 123,
+      "triangles": 2504,
+      "points": 240,
+      "lines": 97,
+      "geometries": 123,
+      "textures": 3,
+      "main": false,
+      "leftNozzle": false,
+      "rightNozzle": false
+    },
+    {
+      "frame": 131,
+      "calls": 125,
+      "triangles": 2812,
+      "points": 240,
+      "lines": 99,
+      "geometries": 124,
+      "textures": 3,
+      "main": false,
+      "leftNozzle": false,
+      "rightNozzle": false
+    }
+  ],
+  "errors": [],
+  "browser": "153.0.8010.12",
+  "renderer": "Chromium headless SwiftShader; physical GPU/mobile unverified"
+}

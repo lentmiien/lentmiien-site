@@ -1,0 +1,10 @@
+
+> lentmiien-site@1.0.0 test
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage --runInBand --coverage=false --cacheDirectory=games/rocket-lander/.validation/jest-cache --runTestsByPath tests/unit/kardashevGame.test.js tests/unit/rexMazeGame.test.js tests/unit/divisionQuestGame.test.js tests/unit/swedenJourneyGame.test.js tests/unit/mazeGame.test.js tests/unit/snakeGame.test.js tests/unit/memoryMatchGame.test.js tests/unit/galaxyCenterJourneyGame.test.js tests/unit/gamesView.test.js tests/unit/lentmancGame.test.js tests/unit/dinosaurHistoryGame.test.js tests/unit/deepOceanJourneyGame.test.js tests/unit/smallLargeJourneyGame.test.js
+
+
+Test Suites: 13 passed, 13 total
+Tests:       87 passed, 87 total
+Snapshots:   0 total
+Time:        2.028 s
+Ran all test suites within paths "tests/unit/kardashevGame.test.js", "tests/unit/rexMazeGame.test.js", "tests/unit/divisionQuestGame.test.js", "tests/unit/swedenJourneyGame.test.js", "tests/unit/mazeGame.test.js", "tests/unit/snakeGame.test.js", "tests/unit/memoryMatchGame.test.js", "tests/unit/galaxyCenterJourneyGame.test.js", "tests/unit/gamesView.test.js", "tests/unit/lentmancGame.test.js", "tests/unit/dinosaurHistoryGame.test.js", "tests/unit/deepOceanJourneyGame.test.js", "tests/unit/smallLargeJourneyGame.test.js".

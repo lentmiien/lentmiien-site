@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="description" content="Six worlds. Three engines. One careful arrival. A fully local low-poly rocket landing game.">
+  <title>Ember Descent · Rocket Lander</title>
+  <link rel="icon" href="assets/emblem.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/color-theme.css">
+  <link rel="stylesheet" href="css/game.css">
+  <script src="js/world.js" defer></script>
+  <script src="js/simulation.js" defer></script>
+  <script src="js/input.js" defer></script>
+  <script src="js/records.js" defer></script>
+  <script src="js/boot.js" defer></script>
+</head>
+<body>
+<main id="game">
+  <canvas id="scene" aria-label="Rocket flight scene. Use the text flight instruments for speed, tilt and arrival guidance."></canvas>
+  <header class="masthead"><div class="wordmark"><img src="assets/emblem.svg" alt="" width="32" height="32"><span>EMBER DESCENT<small>INTERPLANETARY SURVEY / 06 WORLDS</small></span></div><div class="header-actions"><button id="mute" aria-pressed="false" title="Toggle synthesized engine sound">Sound off</button><button id="help">Flight notes</button><button id="pause" hidden>Pause</button></div></header>
+  <section id="menu" aria-label="Choose your expedition">
+    <div class="intro"><p class="eyebrow">A SMALL SHIP. A WIDE UNIVERSE.</p><h1>Make a<br>gentle arrival.</h1><p class="lede">Six unfamiliar worlds. Three little engines.<br>Find your balance, and bring the fuel home.</p></div>
+    <div class="mission-panel"><p class="eyebrow" id="planetNumber">EXPEDITION 01 / 06</p><h2 id="planetName">Selene</h2><p id="planetSubtitle"></p><p id="briefing"></p><div class="mission-stats"><span>GRAVITY<strong id="gravity"></strong></span><span>FUEL<strong>160 units</strong></span><span>PERSONAL BEST<strong id="best">Uncharted</strong></span></div>
+      <fieldset><legend>Flight mode</legend><label><input type="radio" name="mode" value="standard" checked> Standard <small>Fuel-ranked flight</small></label><label><input type="radio" name="mode" value="practice"> Practice ∞ <small>Unlimited fuel · no rank</small></label></fieldset>
+      <button class="primary" id="launch" disabled>Preparing the lander…</button><p class="quick-keys">W / ↑ / Space: burn &nbsp; A / D: tilt<br>Short burns lift you. Release early to coast upward.</p>
+    </div>
+    <nav id="planets" aria-label="Planet stages"></nav><div class="menu-footer"><span>LOCAL EXPEDITION LOG · NO ACCOUNT REQUIRED</span><button id="clearRecords">Clear local records</button></div>
+  </section>
+  <section id="hud" hidden aria-label="Flight instruments">
+    <div class="flight-heading"><span class="eyebrow" id="flightStage"></span><strong id="flightMode"></strong></div>
+    <div class="instruments"><div class="fuel-instrument"><span id="fuelLabel">FUEL RESERVE</span><strong id="fuelValue"></strong><div class="fuel-track"><div id="fuelBar"></div></div></div><div><span>HORIZONTAL</span><strong id="horizontal"></strong></div><div><span>VERTICAL</span><strong id="vertical"></strong></div><div><span>TILT</span><strong id="tilt"></strong><small id="spin"></small></div><div><span>HEIGHT</span><strong id="height"></strong></div></div>
+    <div class="guidance"><strong id="hint"></strong><span id="limits">Touchdown: ↓ ≤ 3.4 m/s · ↔ ≤ 2.5 m/s · tilt ≤ 12° · spin ≤ 20°/s</span><span id="goalDirection"></span></div>
+    <div id="touch" aria-label="Hold flight controls"><button data-control="left" aria-label="Tilt left; fires right rotation engine">↶<small>A / LEFT</small></button><button data-control="main" aria-label="Fire main engine">▲<small>MAIN ENGINE</small></button><button data-control="right" aria-label="Tilt right; fires left rotation engine">↷<small>D / RIGHT</small></button></div>
+    <p class="flight-footer">P / Esc pause &nbsp; R retry &nbsp; H flight notes <span>2D FLIGHT / 3D WORLDS</span></p>
+  </section>
+  <dialog id="pauseDialog"><p class="eyebrow">FLIGHT HELD</p><h2>A moment of quiet.</h2><p>Your rocket and fuel are paused.</p><div class="actions"><button class="primary" id="resume">Resume flight</button><button data-action="retry">Retry this planet</button><button data-action="menu">Expedition menu</button></div></dialog>
+  <dialog id="helpDialog"><p class="eyebrow">THE SURVEY PILOT’S FIELD NOTES</p><h2>Small burns. Soft feet.</h2><ol><li><strong>Rise before you turn.</strong> Use short burns of W, ↑ or Space to fire the main engine. Watch HEIGHT and release early to coast upward; a long burn can carry you beyond the sector ceiling. Clear the ridge heights before crossing. The dashed line marks the sector edge.</li><li><strong>Tilt with A / D or ← / →.</strong> A fires the right nozzle to tilt left. D fires the left nozzle to tilt right. Release a turn early: angular damping slows spin, but does not level the rocket. Opposing turn buttons cancel without spending fuel.</li><li><strong>Brake before the goal.</strong> Tilt against your horizontal motion and burn. Return upright, then use short main-engine pulses to slow your descent. There is gentle linear drag; releasing the engine never holds altitude.</li><li><strong>Land on the gold ARRIVAL pad.</strong> Both feet must be inside its lights. Touch down descending at ≤ 3.4 m/s, sideways at ≤ 2.5 m/s, tilt ≤ 12°, spin ≤ 20°/s. Safe contact settles the landing gear for 0.6 seconds. Blue DEPARTURE allows a safe return, but earns no result.</li></ol><p><strong>160 units per standard flight.</strong> Main burn: 1.60 units/s; each rotation engine: 0.28 units/s. Zero fuel in flight ends the attempt. A safe arrival on the same physics step counts before depletion. No time or distance bonus.</p><p class="grade-key">Rank = fuel left ÷ initial fuel.<br>S ≥ 70% · A ≥ 50% · B ≥ 30% · C ≥ 10% · D &lt; 10%</p><p><strong>Practice ∞</strong> uses the same physics and planets with unlimited fuel, no fuel failure and no grade or standard record. All six planets are always available. Aim to complete the expedition, then replay for better fuel reserves.</p><p>Touch: hold multiple engine buttons together. P / Escape pauses, R retries, H opens these notes. Switching tabs or losing focus pauses and releases every control. Sound is optional and starts only after your click.</p><button class="primary" id="closeHelp">Ready</button></dialog>
+  <dialog id="resultDialog"><p class="eyebrow" id="resultEyebrow"></p><div class="result-mark" id="resultMark"></div><h2 id="resultTitle"></h2><p id="resultText"></p><p id="resultDetail"></p><div class="actions"><button class="primary" id="next">Next planet</button><button data-action="retry">Fly again</button><button data-action="menu">Expedition menu</button></div></dialog>
+  <section id="failure" hidden role="alert"><h2>The view could not open.</h2><p id="failureText">This game needs a WebGL 2 browser and all local files served over HTTP. Reload to try again.</p><button id="reload">Reload game</button></section>
+  <p id="notice" role="status"></p>
+  <noscript>This game needs JavaScript. Enable it and reload to fly.</noscript>
+</main>
+</body>
+</html>
