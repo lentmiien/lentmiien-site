@@ -1,0 +1,88 @@
+{
+  "checks": [
+    "WebGL loads without error",
+    "Actual draw calls",
+    "Piper briefing plays after gesture",
+    "Briefing stops",
+    "Keyboard power accelerates without automatic rotation",
+    "Manual keyboard rotation flies",
+    "Arrow/Space inputs do not scroll document",
+    "Pause freezes time",
+    "No resume through help overlay",
+    "Blur pauses",
+    "Blur clears turn input",
+    "Restart resets throttle and flight log",
+    "Bounded render calls and geometry",
+    "Control-only browser flight completes",
+    "Debrief reports actual touchdown and stop",
+    "Second browser flight on another heading completes",
+    "No runtime page errors",
+    "Only same-folder localhost asset requests",
+    "Crash produces restartable debrief",
+    "Crash restart returns to staged runway",
+    "Mobile touch controls visible",
+    "Simultaneous touch controls change pitch and power",
+    "Touch cancellation clears highlight",
+    "Touch cancellation releases actual power and pitch inputs",
+    "Mobile no horizontal overflow",
+    "Missing required asset has explicit failure",
+    "No WebGL has readable fallback",
+    "Optional audio failure leaves game playable and transcript visible",
+    "Context loss has reload recovery",
+    "Desktop and mobile have no uncaught runtime errors"
+  ],
+  "errors": [],
+  "requestCount": 15,
+  "measurements": [
+    {
+      "view": "Meadow approach",
+      "frame": 204,
+      "calls": 111,
+      "triangles": 92342,
+      "points": 0,
+      "lines": 9
+    },
+    {
+      "route": "haven → meadow",
+      "elapsed": 156.7250000000218,
+      "touchdown": {
+        "airport": "meadow",
+        "descent": 3.3932356247598743,
+        "speed": 28.12704071735588,
+        "alignment": 0,
+        "cross": -1.7933863538155092e-14,
+        "along": -292.882217969154,
+        "bank": 0,
+        "correctDirection": true
+      }
+    },
+    {
+      "route": "pine → mesa",
+      "elapsed": 220.99166666663,
+      "touchdown": {
+        "airport": "mesa",
+        "descent": 3.3932356996512305,
+        "speed": 28.12704072395089,
+        "alignment": 0.7014065993594158,
+        "cross": 0.6393768459847607,
+        "along": -161.14719722049813,
+        "bank": 0.0004900240327432961,
+        "correctDirection": true
+      }
+    }
+  ],
+  "engine": "Chromium with SwiftShader software WebGL2",
+  "screenshots": [
+    "01-dispatch.png",
+    "02-runway.png",
+    "03-climb.png",
+    "04-chart.png",
+    "05-final.png",
+    "06-debrief.png",
+    "07-mountains.png",
+    "08-desert.png",
+    "09-mobile-dispatch.png",
+    "10-mobile-flight.png",
+    "11-mobile-landscape.png"
+  ]
+}

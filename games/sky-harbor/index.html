@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="Fly the open country. A local low-poly flight adventure with five airports and manual guided landings.">
+  <title>Sky Harbor · The open-country flying club</title>
+  <link rel="icon" href="assets/images/emblem.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/color-theme.css"><link rel="stylesheet" href="css/game.css">
+  <script defer src="js/world.js"></script><script defer src="js/simulation.js"></script><script defer src="js/input.js"></script><script defer src="js/boot.js"></script>
+</head>
+<body>
+  <canvas id="scene" aria-label="Third-person view of your aircraft and the landscape"></canvas>
+  <div id="loading" role="status">Preparing your aircraft…</div>
+  <section id="failure" hidden role="alert"><h1>Unable to open the flight deck</h1><p id="failureText">WebGL 2 is required. Enable graphics acceleration and reload.</p><button id="reload">Reload game</button></section>
+  <main id="menu" hidden>
+    <section class="hero"><div class="eyebrow">THE OPEN-COUNTRY FLYING CLUB</div><h1>Sky<br><em>Harbor.</em></h1><p>Five airfields. A wide-open world.<br>Every landing is yours.</p><img src="assets/images/flight-poster.svg" alt="An amber-winged trainer above a patchwork coast, with distant mountain peaks"><div class="hero-foot">28 KM OF HORIZON <span>ONE LITTLE AEROPLANE</span></div></section>
+    <section class="dispatch"><div class="eyebrow">FLIGHT DISPATCH / 01</div><h2>Where shall we fly?</h2><p class="muted">Take the Kestrel out. Fixed gear, calm skies, and a little guidance all the way home.</p>
+      <div class="route-select"><label>DEPARTURE<select id="departure"></select></label><span aria-hidden="true">→</span><label>DESTINATION<select id="destination"></select></label></div>
+      <canvas id="dispatchMap" width="700" height="340" aria-label="Map of five airfields, your route, and terrain"></canvas>
+      <p id="routeInfo" class="route-info"></p><p id="routeNote" class="muted"></p>
+      <button id="start" class="primary" disabled>Prepare for takeoff <span>↗</span></button>
+      <div class="menu-actions"><button id="helpMenu">How to fly</button><button id="listen" aria-pressed="false">▶ Listen to briefing</button></div>
+      <p id="audioCaption" class="muted" hidden>Welcome to Sky Harbor. Add power, rotate at forty metres per second, and climb into the open country. Follow the gold arrival gates. You fly the approach, flare, and braking. Take your time. Every landing is a little better than the last.</p>
+      <p class="fine">Local & offline-ready · No account · No timer · No autopilot</p>
+    </section>
+  </main>
+  <div id="flightUI" hidden>
+    <header class="topbar"><div class="brand"><img src="assets/images/emblem.svg" alt="">SKY HARBOR <small id="routeLabel"></small></div><nav aria-label="Flight controls"><button id="camera" title="C">View</button><button id="mapButton" title="M">Map</button><button id="help" title="H">Help</button><button id="pause" title="P or Escape">Pause</button></nav></header>
+    <div class="nav-strip"><span id="navHeading">HDG 090°</span><span id="navBearing">GATE 090°</span><span id="navDistance">7.0 km</span></div>
+    <aside id="mini"><canvas id="miniMap" width="260" height="240" aria-label="Live map; north is up"></canvas><span>N ↑ &nbsp; REGION / 28 × 28 KM</span></aside>
+    <div id="attitude" aria-label="Aircraft attitude"><div id="horizon"><span></span></div><b>─ ◇ ─</b><small id="pitchValue">PITCH +0°</small></div>
+    <section class="instruments" aria-label="Flight instruments"><div><small>AIRSPEED</small><strong id="speed">0 <i>m/s</i></strong><span>ROTATE 40 · FINAL 40–46</span></div><div><small>ALTITUDE / SEA LEVEL</small><strong id="altitude">26 <i>m ASL</i></strong><span id="agl">0 m AGL · above ground</span></div><div><small>VERTICAL SPEED</small><strong id="vertical">0.0 <i>m/s</i></strong><span id="bank">BANK 0° · LEVEL</span></div><div><small>THROTTLE</small><strong id="throttle">0<i>%</i></strong><progress id="power" max="100" value="0"></progress><span id="brake">BRAKE RELEASED</span></div></section>
+    <section id="guidance"><div><span class="eyebrow" id="stage">TAKEOFF</span><span id="targets"></span></div><h2 id="cueTitle"></h2><p id="cue"></p><small id="pathInfo"></small></section>
+    <div class="keybar"><span><kbd>W</kbd><kbd>S</kbd> power</span><span><kbd>↓</kbd> nose up <kbd>↑</kbd> nose down</span><span><kbd>A</kbd><kbd>D</kbd> bank</span><span><kbd>Space</kbd> brake</span></div>
+    <div id="touch" aria-label="Touch flight controls"><div><button data-key="KeyA" aria-label="Bank left">↶</button><button data-key="KeyD" aria-label="Bank right">↷</button></div><div><button data-key="ArrowDown">Nose +</button><button data-key="ArrowUp">Nose −</button></div><div><button data-key="KeyW">Power +</button><button data-key="KeyS">Power −</button><button data-key="Space">Brake</button></div></div>
+  </div>
+  <dialog id="helpDialog"><div class="eyebrow">YOUR FIRST FLIGHT</div><h2>A little power. A gentle touch.</h2><p><b>Start with Haven Coast → Meadow Field.</b> Both runways face east: take off, climb and continue straight toward the gold approach gates.</p><ol><li><b>Power:</b> hold W for 3.4 seconds to reach 100%. Release the key to keep the setting. Wait until 40 m/s.</li><li><b>Rotate & climb:</b> hold ↓ for about 0.9 seconds to set pitch +8°. Release: pitch stays where you put it. Climb to the displayed altitude, then hold ↑ until pitch reads 0°.</li><li><b>Cruise:</b> hold S to reduce power to 76%. A/D (or ←/→) bank and turn. Release to level the wings; pitch does not auto-level. Small taps help.</li><li><b>Arrival:</b> the map points to a gate 3.2 km before the runway. Line up with the runway heading. Reduce power to 40% and speed to 40–46 m/s. Trim pitch to the displayed whole-degree target. Gold gates show the descent path.</li><li><b>Flare:</b> at 7 m AGL, tap ↓ to +1° pitch and hold S to idle. Keep the wings level and let the aircraft settle. After touchdown, hold Space to stop on the runway.</li></ol><p><b>Too high, fast or sideways?</b> Full power, pitch +8°, climb 300 m above the airport, turn around and return to the gate. No timer or fuel limit.</p><p class="muted">Training assists: calm wind, coordinated turns, wing leveling on release, pitch trim that stays set, and generous lift above 40 m/s. Lift fades below 40; lower the nose and add power if slow. Fixed gear and fixed landing-lift configuration; no flap or rudder keys. No steering, rotation, flare or landing is automatic.</p><p class="muted">ASL = altitude above sea level. AGL = wheel clearance above local terrain/water. Hard landing limits: descent 4.5 m/s, speed 54 m/s, bank 13°, heading error 15°. Stop at the chosen airport in its selected runway direction to complete the route.</p><button id="closeHelp" class="primary">Got it</button></dialog>
+  <dialog id="mapDialog"><div class="eyebrow">FLIGHT CHART / NORTH UP</div><h2 id="mapTitle">The open country</h2><canvas id="largeMap" width="900" height="700" aria-label="Region chart with airport names, runways, arrival gate and aircraft"></canvas><p id="mapDetail"></p><button id="closeMap" class="primary">Back to flight</button></dialog>
+  <dialog id="pauseDialog"><div class="eyebrow">TAKE YOUR TIME</div><h2>Flight paused.</h2><p>Controls cleared. Your aircraft will wait here.</p><button id="resume" class="primary">Resume flight</button><button id="retryPause">Restart this route</button><button id="dispatchPause">Flight dispatch</button></dialog>
+  <dialog id="debrief"><div class="eyebrow" id="resultLabel">FLIGHT LOG</div><h2 id="resultTitle"></h2><p id="resultReason"></p><dl id="stats"></dl><button id="next" class="primary">Choose another flight</button><button id="retry">Retry this route</button></dialog>
+  <noscript>This game needs JavaScript and WebGL 2. All game resources are served locally.</noscript>
+</body></html>

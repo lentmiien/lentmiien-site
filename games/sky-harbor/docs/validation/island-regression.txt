@@ -1,0 +1,33 @@
+✔ substantial authored world with distinct districts and many town crossroads (1.372038ms)
+✔ deterministic world placement and asset reproduction seed (72.235019ms)
+✔ every solid visual footprint clears every road and intersection by at least four metres (106.190967ms)
+✔ solid decorations never intersect each other (35.155105ms)
+✔ spatial road lookup agrees with exhaustive geometry near all drivable surfaces (122.630899ms)
+✔ all roads connect, have no unconnected dead ends, and cross at matching terrain heights (35.737762ms)
+✔ road widths remain dry and grades are passable across dense samples (25.127479ms)
+✔ road texture shares exact terrain triangles: no independent elevated road mesh (6.724297ms)
+✔ checkpoint candidates are reachable clear road centres on dry terrain (4.920885ms)
+✔ random checkpoints relocate to distant distinct reachable sites (29.565132ms)
+✔ checkpoint collection gives no score, acceleration, grip, resource or speed benefit (1.263997ms)
+✔ quality is understandable, distance-based, bounded and unaffected by idling (12.059495ms)
+✔ road distance rewards accurate driving while off-road travel reduces the percentage (2.581253ms)
+✔ three cars have clearly different acceleration, speed and cornering limits (14.90506ms)
+✔ fixed steps produce equivalent handling at 30, 60 and 144 frames per second (3.704517ms)
+✔ brake stops before reverse, reverse backs out, and handbrake does not reverse (1.325061ms)
+✔ continuous swept collision detects thin obstacles even across a long high-speed segment (0.338361ms)
+✔ sustained collision does not create per-frame penalty explosions (8.02379ms)
+✔ recovering then hitting again counts a separate collision (3.037714ms)
+✔ only entering water ends play; poor score, collisions and elapsed time do not (3.370113ms)
+✔ pause freezes all session state and drops pending simulation time (0.543163ms)
+✔ restart resets every session metric, input-derived motion and event state (1.509094ms)
+✔ invalid car and non-finite or excessive timing/control input are bounded (0.688464ms)
+✔ runtime is local-only, has no account/storage access or unsafe content insertion (0.787227ms)
+✔ local art, speech, theme and licensed dependency are present (0.598626ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 701.797244
