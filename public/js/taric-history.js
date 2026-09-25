@@ -5,7 +5,8 @@
   let current = null; let preview = null; let next = null; let listSnapshot = null; let previewEpoch = 0; let listEpoch = 0;
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
   const showStatus = text => { $('status').textContent = text; };
-  const invalidate = () => { previewEpoch++; preview = null; $('download').disabled = true; $('preview-content').replaceChildren(); };
+  let janPreview = null; let redoPreview = null; let batch = null; let pollTimer; let detailEpoch = 0;
+  const invalidate = () => { janPreview = null; redoPreview = null; $('jan-download').disabled = true; $('redo-start').disabled = true; $('redo-confirm').checked = false; $('jan-content').replaceChildren(); $('redo-content').replaceChildren(); previewEpoch++; preview = null; $('download').disabled = true; $('preview-content').replaceChildren(); };
   async function api(path, body) {
     const response = await fetch(base + path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content }, body: JSON.stringify(body) });
     if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(response.status === 409 ? 'Snapshot changed. Reload the request or preview again before saving/downloading.' : `${response.status}: ${data.error || 'History unavailable; try again after database recovery.'}`); }
@@ -17,15 +18,16 @@
   function selection() { return { mode: $('selection-mode').value, limit: Number($('selection-limit').value), perCode: Number($('selection-cap').value) }; }
   async function load(cursor) {
     const epoch = ++listEpoch; $('stats').replaceChildren(); $('requests').replaceChildren(); $('next').hidden = true;
-    $('detail').hidden = true; current = null;
+    $('detail').hidden = true; current = null; detailEpoch++;
     invalidate(); showStatus('Loading scoped request history…');
     const filters = activeFilters(); if (cursor) { filters.cursor = cursor; if (listSnapshot) filters.snapshot = listSnapshot; }
     const query = new URLSearchParams(filters);
-    history.replaceState(null, '', base + (query.size ? `?${query}` : ''));
+    const address = new URLSearchParams(query); if (batch) address.set('job', batch.id);
+    history.replaceState(null, '', base + (address.size ? `?${address}` : ''));
     const data = await (await api(`/data?${query}`)).json(); if (epoch !== listEpoch) return; next = data.next; listSnapshot = data.snapshot;
     $('stats').replaceChildren();
     const s = data.stats;
-    const cards = { 'Cases (live + archived)': s.total, 'Live requests': s.live, 'Archived reviewed sources': s.archived, Pending: s.pending, Terminal: s.terminal, 'Final feedback (live/captured)': s.feedback, 'Verified labels (live/archived)': s.verified, 'Verified but ineligible': s.verifiedIneligible, 'Candidate eligible': s.eligible, 'Eligible distinct codes': s.codeCoverage };
+    const cards = { 'Cases (live + archived)': s.total, 'Live requests': s.live, 'Archived sources (review / local)': s.archived, 'Missing item data': s.missingItemData, 'Local enriched / valid prediction': s.localEnriched, 'Local enriched / model failed': s.localModelFailed, 'Local cases running': s.localPending, Pending: s.pending, Terminal: s.terminal, 'Final feedback (live/captured)': s.feedback, 'Verified labels (live/archived)': s.verified, 'Verified but ineligible': s.verifiedIneligible, 'Candidate eligible': s.eligible, 'Eligible distinct codes': s.codeCoverage };
     for (const [key, value] of Object.entries(cards)) { const card = el('div', undefined, 'card'); card.append(el('strong', String(value)), el('span', key)); $('stats').append(card); }
     for (const [decision, v] of Object.entries(s.decisions)) $('stats').append(el('div', `${decision}: ${v.count} / ${v.denominator} final feedback`, 'card'));
     $('stats').append(el('div', `Errors: ${Object.entries(s.errors).map(([k, v]) => `${k}: ${v}`).join('; ') || 'none'}`, 'card'));
@@ -33,7 +35,7 @@
     if (!data.rows.length) $('requests').append(el('p', 'No requests match these filters.'));
     for (const r of data.rows) {
       const card = el('article'); card.append(el('h3', r.inputs.descriptive_name || 'Category not captured'));
-      pairs(card, { 'Created (UTC)': r.createdAt, 'Mode / state': `${r.mode} / ${r.state}`, JAN: r.inputs.jan, 'Original HS': r.inputs.input_hs_code,
+      pairs(card, { 'Created (UTC)': r.createdAt, 'Original mode / state': `${r.mode} / ${r.state}`, 'Latest local re-do': r.localReprocess ? `${r.localReprocess.state} / revision ${r.localRevision}` : 'None', JAN: r.inputs.jan, 'Original HS': r.inputs.input_hs_code,
         'Full item name': r.facts.name || 'Missing evidence', 'Accepted predictor suggestion': r.suggestion ? `${r.suggestion.code} — ${r.suggestion.description || ''}` : 'None',
         'Final human choice': r.feedback ? `${r.feedback.code} (${r.feedback.decision})` : 'Awaiting feedback',
         'Reviewed label': r.review?.target || 'Not reviewed',
@@ -43,7 +45,8 @@
     $('next').hidden = !next; showStatus(`${data.rows.length} shown; ${s.total} requests in the filtered population.`);
   }
   async function openDetail(id) {
-    const r = await (await api(`/${id}`)).json(); current = r;
+    const epoch = ++detailEpoch;
+    const r = await (await api(`/${id}`)).json(); if (epoch !== detailEpoch) return; current = r;
     const container = $('detail-content'); container.replaceChildren();
     pairs(container, { 'Request ID': r.id, 'Created / finished (UTC)': `${r.createdAt} / ${r.finishedAt || 'pending'}`, 'Mode / status': `${r.mode} / ${r.state}`,
       'Request application source': 'Unknown (not persisted)', JAN: r.inputs.jan, 'Item code': r.inputs.item_code,
@@ -62,8 +65,8 @@
       'Review actor / time (UTC)': r.review ? `${r.review.actor} / ${r.review.at}` : 'Unreviewed',
       'Review note': r.review?.note,
       'Approved description': r.review?.approvedDescription,
-      'Source storage': r.sourceStorage === 'archived_review' ? 'Archived canonical reviewed source (raw request expired/deleted)' : 'Live request',
-      'Review freshness': r.stale ? 'STALE — source changed or archived without final feedback binding; verification unavailable until resolved' : r.sourceStorage === 'archived_review' ? 'Bound immutable final feedback at verification; archived, not live revalidation' : 'Current source snapshot',
+      'Source storage': r.sourceStorage === 'archived_review' ? 'Archived canonical source (review or user-started local revision; raw request expired/deleted)' : 'Live request',
+      'Review freshness': r.stale ? r.localRevision && r.retentionBound ? 'STALE — local source changed; inspect new facts and explicitly review again' : 'STALE — source changed or archived without final feedback binding; verification unavailable until resolved' : r.sourceStorage === 'archived_review' ? 'Bound immutable final feedback at verification; archived, not live revalidation' : 'Current source snapshot',
       'Source warnings': r.warnings.join('; '),
       'Export candidate eligibility': r.eligible ? 'Eligible code-only source candidate; use the offline converter after description approval' : r.reasons.join(', '),
       'Review revision / source hash': `${r.revision} / ${r.sourceHash}` });
@@ -76,11 +79,14 @@
     const audit = el('details'); audit.append(el('summary', `Review audit — ${r.audit.length} revisions`));
     for (const a of r.audit) { const entry = el('article'); pairs(entry, { Revision: a.revision, Status: a.status, Target: a.target, 'Approved description': a.approvedDescription, 'Reviewer ID': a.actor, 'Review time (UTC)': a.at, Note: a.note, 'Bound source hash': a.sourceHash, 'Feedback ID': a.feedbackId, Correction: String(a.correction) }); audit.append(entry); }
     container.append(audit);
+    if (r.original) details(container, 'Original request, evidence, proposal and final feedback (unchanged)', JSON.stringify(r.original, null, 2));
+    if (r.localHistory?.length) details(container, 'Local re-do revision history (not human verification)', JSON.stringify(r.localHistory, null, 2));
+    if (r.localReprocess) pairs(container, { 'Latest local re-do': r.localReprocess.state, 'Local model error': r.localReprocess.error || 'none', 'Local batch / time': `${r.localReprocess.batch} / ${r.localReprocess.at}`, 'Model disagreement': r.suggestion && r.suggestion.code !== r.feedback?.code ? 'New model code differs from unchanged human choice. Independently review the target and description.' : 'Compare facts and human target independently.' });
     $('review-target').value = r.feedback?.code || r.suggestion?.code || '';
     $('review-status').value = r.reviewStatus === 'unreviewed' ? 'verified' : r.reviewStatus;
     $('approved-description').value = ''; $('review-note').value = '';
     $('confirm-target').checked = false; $('correction').checked = false;
-    $('save-review').disabled = ['queued', 'running'].includes(r.state);
+    $('save-review').disabled = Boolean(r.localClaim) || ['queued', 'running'].includes(r.state);
     $('detail').hidden = false; $('detail').focus();
   }
   async function run(fn) { try { await fn(); } catch (error) { showStatus(error.message); } }
@@ -91,13 +97,15 @@
   $('next').addEventListener('click', () => run(() => load(next)));
   $('review-form').addEventListener('submit', event => {
     event.preventDefault(); if (!current) return;
+    const editing = current; const editingEpoch = detailEpoch;
     run(async () => {
       $('save-review').disabled = true;
       try {
-        await api(`/${current.id}/review`, { expectedRevision: current.revision, expectedSourceHash: current.sourceHash,
+        await api(`/${editing.id}/review`, { expectedRevision: editing.revision, expectedSourceHash: editing.sourceHash,
           status: $('review-status').value, target: $('review-target').value || null, confirmTarget: $('confirm-target').checked,
           correction: $('correction').checked, approvedDescription: $('approved-description').value || null, note: $('review-note').value });
-        const savedId = current.id; await load(); await openDetail(savedId); showStatus('Explicit review revision saved. Original feedback is unchanged.');
+        if (editingEpoch !== detailEpoch) { showStatus('Review saved. Your newly selected case remains open.'); return; }
+        const savedId = editing.id; await load(); await openDetail(savedId); showStatus('Explicit review revision saved. Original feedback is unchanged.');
       } finally { $('save-review').disabled = false; }
     });
   });
@@ -119,7 +127,56 @@
     document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     invalidate(); showStatus('Private manifest frozen and candidate JSONL downloaded. This is not a final training dataset.');
   }));
+  $('jan-preview').addEventListener('click', () => run(async () => {
+    invalidate(); const epoch = previewEpoch; const input = { filters: activeFilters() };
+    const result = await (await api('/jan/preview', input)).json(); if (epoch !== previewEpoch) return;
+    janPreview = { input, result };
+    pairs($('jan-content'), { Filters: JSON.stringify(result.filters), ...result.counts, 'Snapshot hash': result.snapshotHash });
+    details($('jan-content'), 'Sorted distinct JANs', result.jans.join('\n'));
+    $('jan-download').disabled = result.counts.distinctExported === 0;
+  }));
+  $('jan-download').addEventListener('click', () => run(async () => {
+    if (!janPreview) return; $('jan-download').disabled = true;
+    const response = await api('/jan/download', { ...janPreview.input, expectedSnapshotHash: janPreview.result.snapshotHash });
+    const url = URL.createObjectURL(await response.blob()); const link = el('a');
+    link.href = url; link.download = 'taric-filtered-jans.csv'; document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000); showStatus('All filtered distinct valid JANs downloaded. Import the CSV column as TEXT. Import items separately before local re-do.');
+  }));
+  $('redo-preview').addEventListener('click', () => run(async () => {
+    invalidate(); const epoch = previewEpoch; const input = { filters: activeFilters() };
+    const result = await (await api('/reprocess/preview', input)).json(); if (epoch !== previewEpoch) return;
+    redoPreview = { input, result, token: crypto.randomUUID().replaceAll('-', '') };
+    pairs($('redo-content'), { Filters: JSON.stringify(result.filters), 'Filtered cases': result.summary.filteredRows, Eligible: result.summary.eligible,
+      Skipped: result.summary.skipped, Reasons: JSON.stringify(result.summary.reasons), 'Test adapter': result.adapter, 'Snapshot hash': result.snapshotHash });
+    details($('redo-content'), 'Eligible local items / unchanged human codes', result.candidates.map(c => `${c.id}: ${c.jan} — ${c.name} — human ${c.feedbackCode}`).join('\n'));
+    details($('redo-content'), 'Skipped cases', result.skipped.map(c => `${c.id}: ${c.reason}`).join('\n'));
+    if (result.activeBatch) await pollBatch(result.activeBatch);
+    showStatus(result.summary.eligible ? 'Local preview ready. Confirm to start the frozen test batch.' : 'No eligible local items. Import missing items separately or resolve the reported exclusions, then preview again. No GPU started.');
+  }));
+  $('redo-confirm').addEventListener('change', () => { $('redo-start').disabled = !$('redo-confirm').checked || !redoPreview?.result.summary.eligible; });
+  async function pollBatch(id) {
+    clearTimeout(pollTimer);
+    batch = await (await api(`/reprocess/${id}`)).json();
+    $('batch-progress').hidden = false; $('batch-content').replaceChildren();
+    pairs($('batch-content'), { 'Batch ID': batch.id, State: batch.state, Error: batch.error || 'none', Cases: batch.requested,
+      'Inference attempts': batch.tried, 'Valid predictions': batch.validPredictions, 'Owned sessions': batch.sessionCount, Outcomes: JSON.stringify(batch.counts) });
+    details($('batch-content'), 'Per-case outcomes', batch.cases.map(c => `${c.id}: ${c.state}${c.error ? ` (${c.error})` : ''}`).join('\n'));
+    $('batch-history').href = batch.historyUrl; $('batch-cancel').disabled = !batch.active || batch.cancelRequested;
+    if (batch.active) pollTimer = setTimeout(() => run(() => pollBatch(id)), 5000);
+  }
+  $('redo-start').addEventListener('click', () => run(async () => {
+    if (!redoPreview || !$('redo-confirm').checked) return;
+    $('redo-start').disabled = true;
+    const job = await (await api('/reprocess/start', { ...redoPreview.input, token: redoPreview.token, expectedSnapshotHash: redoPreview.result.snapshotHash, confirm: true })).json();
+    const address = new URL(location.href); address.searchParams.set('job', job.id); history.replaceState(null, '', address.pathname + address.search);
+    await pollBatch(job.id); showStatus('Local batch queued. Final feedback codes remain unchanged. Review the refreshed facts and explicitly approve descriptions after completion.');
+  }));
+  $('batch-refresh').addEventListener('click', () => run(() => batch && pollBatch(batch.id)));
+  $('batch-cancel').addEventListener('click', () => run(async () => {
+    if (!batch) return; await api(`/reprocess/${batch.id}/cancel`, { confirm: true }); await pollBatch(batch.id);
+  }));
+  window.addEventListener('pagehide', () => clearTimeout(pollTimer));
   $('theme').addEventListener('click', () => { document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; });
   listSnapshot = initial.get('snapshot');
-  run(() => load(initial.get('cursor')));
+  run(async () => { await load(initial.get('cursor')); const job = initial.get('job') || initial.get('batch'); if (/^[a-f0-9]{32}$/.test(job || '')) await pollBatch(job); });
 })();

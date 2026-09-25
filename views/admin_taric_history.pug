@@ -21,11 +21,11 @@ html(lang='en')
       form#filters
         h2 Filters
         .fields
-          each field in [{name:'from',label:'From date (UTC)',type:'date'},{name:'to',label:'Through date (UTC)',type:'date'},{name:'jan',label:'JAN (exact)'},{name:'code',label:'Final or reviewed TARIC (10 digits)'},{name:'adapter',label:'Adapter (exact)'},{name:'error',label:'Error code (exact)'},{name:'search',label:'Category / full name (literal text)'}]
+          each field in [{name:'from',label:'From date (UTC)',type:'date'},{name:'to',label:'Through date (UTC)',type:'date'},{name:'jan',label:'JAN (exact)'},{name:'code',label:'Final or reviewed TARIC (10 digits)'},{name:'adapter',label:'Adapter (exact)'},{name:'error',label:'Error code (exact)'},{name:'batch',label:'Local batch ID (exact)'},{name:'search',label:'Category / full name (literal text)'}]
             label
               span= field.label
               input(name=field.name type=field.type || 'text' maxlength='100')
-          each field in [{name:'mode',label:'Mode',values:['test','normal']},{name:'state',label:'Request status',values:['queued','running','complete','failed','interrupted','cancelled']},{name:'feedback',label:'Final feedback',values:['present','absent','accepted','changed','manual']},{name:'review',label:'Review status',values:['unreviewed','verified','needs_review','excluded']},{name:'missing',label:'Missing full item name',values:['yes','no']},{name:'eligible',label:'Candidate eligible',values:['yes','no']}]
+          each field in [{name:'mode',label:'Mode',values:['test','normal']},{name:'state',label:'Request status',values:['queued','running','complete','failed','interrupted','cancelled']},{name:'feedback',label:'Final feedback',values:['present','absent','accepted','changed','manual']},{name:'review',label:'Review status',values:['unreviewed','verified','needs_review','excluded']},{name:'missing',label:'Has missing item data (no captured name)',values:['yes','no']},{name:'reprocess',label:'Latest local re-do',values:['enriched','model_failed']},{name:'eligible',label:'Candidate eligible',values:['yes','no']}]
             label
               span= field.label
               select(name=field.name)
@@ -38,6 +38,27 @@ html(lang='en')
         h2#stats-heading Usage in filtered population
         p Feedback decision shares use final feedback as denominator; they are not model accuracy. Verified-but-ineligible includes stale verified revisions.
         #stats.cards
+      section(aria-labelledby='local-heading')
+        h2#local-heading Filtered JAN export & local enrichment
+        p Both actions use all matching pages (up to 2,000 filtered cases), not the 50 shown. JAN export does not require verification or candidate eligibility.
+        button#jan-preview(type='button') Preview filtered JAN export
+        button#jan-download(type='button' disabled) Download JAN CSV
+        p Import the CSV column as TEXT to preserve leading zeros. The download contains literal JAN strings with header jan; no spreadsheet formulas.
+        #jan-content(role='status' aria-live='polite')
+        p First import items using your separate manual import workflow. There is no importer here. Preview checks the local AmiAmi database only. Verified and excluded records are protected; missing/ambiguous items are reported without starting a GPU.
+        button#redo-preview(type='button') Preview local re-do
+        #redo-content(role='status' aria-live='polite')
+        label.check
+          input#redo-confirm(type='checkbox')
+          span I want test predictions for these local cases. No feedback code changes; local database facts only; no external app call. Manual review and separate description approval remain required; test predictions may be wrong.
+        button#redo-start(type='button' disabled) Reprocess filtered entries
+        section#batch-progress(hidden aria-labelledby='batch-heading')
+          h3#batch-heading Local batch progress
+          #batch-content(role='status' aria-live='polite')
+          button#batch-refresh(type='button') Refresh progress
+          button#batch-cancel(type='button') Cancel future cases
+          a#batch-history(href='/admin/taric/history') Review enriched cases
+          p Cancel stops future cases. It does not force GPU cancellation or roll back saved facts. If admission is busy, release your own manual reservation in its existing control and preview a new batch; this tool never takes another reservation.
       section(aria-labelledby='requests-heading')
         h2#requests-heading Requests
         #requests
@@ -92,4 +113,4 @@ html(lang='en')
         button#download(type='button' disabled) Freeze manifest & download JSONL
         #preview-content(role='status' aria-live='polite')
       footer
-        p Private, no analytics. Existing requests and feedback expire after 90 days. Verified source snapshots, review audits and frozen exports persist until operator deletion. Archives without a final feedback binding are ineligible. Narrow dates/JAN/mode/status if the pilot limit is reached. Pilot limit: 2,000 filtered live + archived cases; 50 per page. Export maximum: 200 rows / 8 MiB.
+        p Private, no analytics. Existing requests and feedback expire after 90 days. User-started local revision facts (including unreviewed facts), original snapshots, batch records, verified source snapshots, review audits and frozen exports persist until operator deletion. Archives without a final feedback binding are ineligible. Narrow dates/JAN/mode/status if the pilot limit is reached. Pilot limit: 2,000 filtered live + archived cases; 50 per page. Export maximum: 200 rows / 8 MiB.

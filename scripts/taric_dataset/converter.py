@@ -23,7 +23,7 @@ SOURCE_SCHEMA = 'reviewed-code-candidates/1'
 SOURCE_REASONS = {'unreviewed', 'needs_review', 'excluded', 'stale_source', 'pending_request',
                   'missing_valid_target', 'missing_full_item_name', 'missing_descriptive_name',
                   'missing_valid_original_hs6', 'conflicting_verified_targets', 'independent_holdout_overlap',
-                  'duplicate_input', 'per_code_cap', 'overall_limit'}
+                  'duplicate_input', 'per_code_cap', 'overall_limit', 'local_reprocess_running'}
 HEX = re.compile(r'[a-f0-9]{64}\Z')
 ID = re.compile(r'[a-f0-9]{32}\Z')
 # ECMAScript whitespace, deliberately not Python's broader \s character class.
@@ -150,7 +150,7 @@ def validate_candidate(r):
             'Unsupported candidate schema.')
     s, v = r['source'], r['review']
     keys(s, ('id', 'createdAt', 'finishedAt', 'state', 'mode', 'inputs', 'facts', 'evidence', 'suggestion',
-             'diagnostic', 'error', 'errorStage', 'provenance', 'feedback'))
+             'diagnostic', 'error', 'errorStage', 'provenance', 'feedback'), ('localReprocess',))
     keys(v, ('revision', 'status', 'target', 'sourceHash', 'approvedDescription', 'actor', 'at', 'note', 'correction'),
          ('source', 'feedbackId', 'feedbackHash'))
     require(r['verification'] == v['status'] == 'verified', 'Source is not currently verified in this export.')
@@ -195,6 +195,26 @@ def validate_candidate(r):
         require(v.get('feedbackId') == r['feedbackId'] and v.get('feedbackHash') == (hash_json(f) if f else None), 'Review/final feedback binding mismatch.')
     if r['sourceStorage'] == 'archived_review':
         require(f is not None and v.get('source') == s, 'Proposal-only archive or missing retained source is ineligible.')
+    if 'localReprocess' in s:
+        local = s['localReprocess']
+        keys(local, ('version', 'source', 'batch', 'revision', 'parentRevision', 'parentSourceHash',
+                     'feedbackId', 'feedbackHash', 'actor', 'at', 'state', 'error', 'correlationId', 'test'))
+        require(local['version'] == 1 and local['source'] == 'local_reprocess' and local['test'] is True,
+                'Unsupported local revision provenance.')
+        require(type(local['revision']) is int and 1 <= local['revision'] <= 10
+                and type(local['parentRevision']) is int and local['parentRevision'] == local['revision'] - 1,
+                'Invalid local revision chain.')
+        require(isinstance(local['batch'], str) and ID.fullmatch(local['batch'])
+                and isinstance(local['parentSourceHash'], str) and HEX.fullmatch(local['parentSourceHash'])
+                and isinstance(local['actor'], str) and re.fullmatch('[a-f0-9]{24}', local['actor']),
+                'Invalid local revision provenance.')
+        require(f is not None and local['feedbackId'] == f['id'] and local['feedbackHash'] == hash_json(f),
+                'Local revision must retain its original final human feedback.')
+        require(local['state'] in ('enriched', 'model_failed')
+                and (local['error'] is None or is_text(local['error'], 100))
+                and (local['correlationId'] is None or (isinstance(local['correlationId'], str)
+                     and ID.fullmatch(local['correlationId']))), 'Invalid local outcome.')
+        require(timestamp(local['at']) <= reviewed, 'Review predates local revision.')
     suggestion = s['suggestion']
     if suggestion:
         keys(suggestion, ('code', 'description'))
@@ -236,7 +256,7 @@ def read_export(path, max_bytes=8 * 1024 * 1024, max_line=2 * 1024 * 1024, max_r
             and type(m['options']['limit']) is int and 1 <= m['options']['limit'] <= 200
             and type(m['options']['perCode']) is int and 1 <= m['options']['perCode'] <= 100, 'Invalid Site selection options.')
     keys(m['filters'], (), ('from', 'to', 'mode', 'state', 'feedback', 'review', 'error', 'jan', 'code',
-                           'adapter', 'missing', 'eligible', 'search'))
+                           'adapter', 'missing', 'eligible', 'search', 'batch', 'reprocess'))
     require(all(is_text(v, 100) for v in m['filters'].values()), 'Invalid Site filter metadata.')
     cutoff = timestamp(m['validatedAt'])
     require(type(m['rows']) is int and m['rows'] == len(lines) - 1 and m['rowsSha256'] == sha(b''.join(lines[1:])), 'Manifest row count/digest mismatch.')

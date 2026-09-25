@@ -95,6 +95,58 @@ run('real cross-stack generation', () => {
       sessions: state.session_ids.length, operations: state.operations, validOutputs: result.exact,
       creates: state.creates, deletes: state.deletes, starts: state.starts, stops: state.stops });
   }, 30000);
+  test.each(['warm-benchmark', 'local-mixed'])('local re-do %s: 43 immutable targets, real Node/Mongo/Python, owned warm lifecycle', async scenario => {
+    await setup(scenario);
+    const { request, actor, id } = require('../helpers/taricHistoryFixture');
+    const Item = require('../../models/amiami_item');
+    await Item.createCollection(); await Item.createIndexes(); await Item.deleteMany({});
+    const history = require('../../services/taric/history').createHistory({ models, adminPrincipal: service.adminPrincipal });
+    const localEvidence = require('../../services/taricEvidenceService').createTaricEvidenceService({ itemModel: Item });
+    service.reprocess = require('../../services/taric/reprocess').createReprocess({ service, history, evidence: localEvidence });
+    worker.stop(); worker = createWorker(service, { authorizeAdmin: async () => true });
+    for (let n = 1; n <= 43; n++) {
+      const raw = request(n, { evidence: null, result: null, state: 'failed', error: 'EVIDENCE_NOT_FOUND' });
+      const { feedback, ...parent } = raw; await models.Request.create(parent);
+      await models.Feedback.create({ _id: feedback[0]._id, owner: parent.owner, principal: 'integration', request: parent._id,
+        key: `feedback-${n}`, selected_code: feedback[0].selected_code, decision: 'manual', createdAt: feedback[0].createdAt });
+      const gcode = `SYNTHETIC-${n}`;
+      await Item.create({ gcode, sourceUrl: 'https://www.amiami.com/', url: 'https://www.amiami.com/', firstSeenAt: new Date(), lastSeenAt: new Date(), listingChangedAt: new Date(),
+        listing: { gcode, url: 'https://www.amiami.com/', itemName: `Synthetic local ${n}` }, details: { gcode, janCode: raw.input.jan, itemName: `Synthetic local ${n}` } });
+    }
+    const before = await models.Feedback.find({}).sort({ _id: 1 }).lean();
+    const preview = await service.reprocess.preview(actor, { filters: { missing: 'yes' } });
+    expect(preview.summary.eligible).toBe(43);
+    expect(await gateway.call('/__test__/state')).toMatchObject({ creates: 0, upstream_calls: 0 });
+    const queued = await service.reprocess.start(actor, { filters: { missing: 'yes' }, token: id(999), expectedSnapshotHash: preview.snapshotHash, confirm: true });
+    worker.start(); await worker.tick();
+    for (let i = 0; i < 8 && (await service.reprocess.status(actor, queued.id)).active; i++) await worker.tick();
+    const result = await service.reprocess.status(actor, queued.id);
+    expect(result).toMatchObject({ state: 'complete', tried: 43, validPredictions: scenario === 'local-mixed' ? 40 : 43, counts: scenario === 'local-mixed' ? { enriched: 40, model_failed: 3 } : { enriched: 43 } });
+    if (scenario === 'local-mixed') {
+      expect(result.cases[2].error).toBe('CATALOG_REJECTED');
+      expect(result.cases[6].error).toBe('INFERENCE_UNCERTAIN'); // existing owned client reconciles every HTTP failure
+      const persisted = await models.Reprocess.findById(queued.id).lean();
+      expect(persisted.cases[6].errorStatus.status).toBeGreaterThanOrEqual(500);
+      expect(persisted.cases[6].errorStatus.phase).toBe('http');
+      expect(result.cases[11].error).toBe('INFERENCE_UNCERTAIN');
+      expect(await history.detail(actor, result.cases[11].id)).toMatchObject({ facts: { name: expect.any(String) }, feedback: { code: '0000000002' }, reviewStatus: 'unreviewed' });
+    }
+    expect((await models.Control.findById('inference')).blocked).toBe(false);
+    const state = await gateway.call('/__test__/state');
+    expect(state).toMatchObject({ foreign_deletes: 0, operations: 43, upstream_calls: 43, reclaimed: true, reservation: false });
+    if (scenario === 'warm-benchmark') {
+      expect(result.sessionCount).toBe(1); expect(state).toMatchObject({ creates: 1, deletes: 1, starts: 1, stops: 1 });
+    } else {
+      // A definite upstream 503 makes the real Gateway reclaim its session.
+      // Site may rotate only after that verified reclaim, never retry that case.
+      expect(result.sessionEndReasons.remote_reclaimed).toBe(1);
+      expect(state.creates).toBe(result.sessionCount); expect(state.deletes).toBe(result.sessionCount);
+    }
+    expect(await models.Feedback.find({}).sort({ _id: 1 }).lean()).toEqual(before);
+    expect((await history.list(actor, {})).stats).toMatchObject({ total: 43, verified: 0 });
+    expect(await history.detail(actor, id(1))).toMatchObject({ feedback: { code: '0000000002' }, suggestion: { code: '0000000001' }, reviewStatus: 'unreviewed' });
+    expect(await models.Run.countDocuments()).toBe(0); expect(await models.Attempt.countDocuments()).toBe(0);
+  }, 40000);
   test('operator reservation rejects create with zero inference and no Site hold; fresh job succeeds after operator release', async () => {
     await setup('external-reservation');
     const principal = await service.authenticate(await service.rotate('synthetic-admin'));

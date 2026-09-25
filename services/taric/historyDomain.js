@@ -32,14 +32,23 @@ function sourceRow(r) {
 }
 function derive(r) {
   // Use the exact JSON representation persisted/exported; omit undefined keys.
-  return deriveSource(JSON.parse(JSON.stringify(sourceRow(r))), r.reviews?.[0]);
+  const original = JSON.parse(JSON.stringify(sourceRow(r)));
+  const doc = r.reviews?.[0];
+  const bound = doc?.originalSource && hash(original) === hash(doc.originalSource);
+  return deriveSource(bound && doc.localSource ? doc.localSource : original, doc);
+}
+function retained(doc) {
+  const source = doc.localSource || doc.originalSource || doc.latest?.source;
+  return source ? deriveSource(source, doc, true) : null;
 }
 function deriveSource(source, doc, archived = false) {
   const sourceHash = hash(source);
   const review = doc?.latest || null;
   // A final immutable feedback binding is the retention proof. A proposal-only
   // attestation can never regain freshness merely because raw sources expired.
-  const finalBinding = Boolean(source.feedback && review?.feedbackId === source.feedback.id
+  const localBinding = Boolean(doc?.originalSource?.feedback && hash(doc.originalSource.feedback) === hash(source.feedback)
+    && doc.originalSource.id === source.id);
+  const finalBinding = localBinding || Boolean(source.feedback && review?.feedbackId === source.feedback.id
     && review.feedbackHash === hash(source.feedback));
   const stale = Boolean(review && (review.sourceHash !== sourceHash || (archived && !finalBinding)));
   const canonical = { descriptive_name: source.inputs.descriptive_name, full_item_name: source.facts.name,
@@ -50,17 +59,18 @@ function deriveSource(source, doc, archived = false) {
   const reasons = [];
   if (!review || review.status !== 'verified') reasons.push(review?.status || 'unreviewed');
   if (stale) reasons.push('stale_source');
+  if (doc?.localClaim) reasons.push('local_reprocess_running');
   if (['queued', 'running'].includes(source.state)) reasons.push('pending_request');
   if (!codeValid(review?.target)) reasons.push('missing_valid_target');
   if (!source.facts.name?.trim()) reasons.push('missing_full_item_name');
   if (!source.inputs.descriptive_name?.trim()) reasons.push('missing_descriptive_name');
   if (!/^\d{6}$/.test(source.inputs.input_hs_code || '')) reasons.push('missing_valid_original_hs6');
-  return { ...source, source, sourceStorage: archived ? 'archived_review' : 'live_request', sourceHash, revision: doc?.revision || 0, review, stale,
+  return { ...source, source, retentionBound: finalBinding, localRevision: doc?.localRevision || 0, localClaim: doc?.localClaim || null, sourceStorage: archived ? 'archived_review' : 'live_request', sourceHash, revision: doc?.revision || 0, review, stale,
     reviewStatus: stale ? 'needs_review' : review?.status || 'unreviewed',
     canonical, factsHash, groupKey, dedupeKey: factsHash,
     overlapHash: factsHash, sourceIdentityHash: hash(normalize(source.facts.name)),
     reasons, eligible: reasons.length === 0,
-    warnings: [...(archived ? [finalBinding ? 'Archived canonical source; final feedback bound at review, not a live-source check.' : 'Archived source without final feedback binding; freshness unresolved, verification unavailable.'] : review && !review.source ? ['legacy_review_has_no_retained_source_reverify_before_expiry'] : []), ...(!review?.approvedDescription ? ['approved_description_missing_formatter_pending'] : []), 'Human attestation; syntax is not official TARIC verification.'],
+    warnings: [...(archived ? [finalBinding ? localBinding ? 'Retained local source; immutable final feedback bound at batch start, not human verification.' : 'Archived canonical source; final feedback bound at review, not a live-source check.' : 'Archived source without final feedback binding; freshness unresolved, verification unavailable.'] : review && !review.source ? ['legacy_review_has_no_retained_source_reverify_before_expiry'] : []), ...(!review?.approvedDescription ? ['approved_description_missing_formatter_pending'] : []), 'Human attestation; syntax is not official TARIC verification.'],
   };
 }
 function classify(rows, heldout = []) {
@@ -84,7 +94,7 @@ function classify(rows, heldout = []) {
   });
 }
 function filters(value = {}) {
-  const keys = ['from', 'to', 'mode', 'state', 'feedback', 'review', 'error', 'jan', 'code', 'adapter', 'missing', 'eligible', 'search', 'cursor', 'snapshot'];
+  const keys = ['from', 'to', 'mode', 'state', 'feedback', 'review', 'error', 'jan', 'code', 'adapter', 'missing', 'eligible', 'search', 'cursor', 'snapshot', 'batch', 'reprocess'];
   if (value && Object.getPrototypeOf(value) === null) value = { ...value };
   object(value, keys, 'INVALID_REQUEST');
   const out = {};
@@ -101,6 +111,8 @@ function filters(value = {}) {
   if (out.from && out.to && out.from > out.to) fail('INVALID_REQUEST');
   if (out.error && !Object.hasOwn(CODES, out.error)) fail('INVALID_REQUEST');
   if (out.jan && !/^(?:\d{8}|\d{13})$/.test(out.jan)) fail('INVALID_REQUEST');
+  if (out.batch && !/^[a-f0-9]{32}$/.test(out.batch)) fail('INVALID_REQUEST');
+  if (out.reprocess && !['enriched', 'model_failed'].includes(out.reprocess)) fail('INVALID_REQUEST');
   if (out.code && !codeValid(out.code)) fail('INVALID_REQUEST');
   if (out.cursor && !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\|[a-f0-9]{32}$/.test(out.cursor)) fail('INVALID_REQUEST');
   if (out.cursor && !out.snapshot) fail('INVALID_REQUEST');
@@ -110,6 +122,7 @@ function filters(value = {}) {
 }
 function matches(r, f) {
   return (!f.from || Date.parse(r.createdAt) >= Date.parse(f.from)) && (!f.to || Date.parse(r.createdAt) < Date.parse(f.to) + 86400000)
+    && (!f.batch || r.localReprocess?.batch === f.batch) && (!f.reprocess || r.localReprocess?.state === f.reprocess)
     && (!f.mode || r.mode === f.mode) && (!f.state || r.state === f.state)
     && (!f.feedback || (f.feedback === 'present' ? Boolean(r.feedback) : f.feedback === 'absent' ? !r.feedback : r.feedback?.decision === f.feedback))
     && (!f.review || r.reviewStatus === f.review) && (!f.error || r.error === f.error)
@@ -124,6 +137,8 @@ function stats(rows) {
   const feedback = count(r => r.feedback);
   const errors = Object.create(null); for (const r of rows) if (r.error) errors[r.error] = (errors[r.error] || 0) + 1;
   return { total: rows.length, live: count(r => r.sourceStorage === 'live_request'), archived: count(r => r.sourceStorage === 'archived_review'), pending: count(r => ['queued', 'running'].includes(r.state)), terminal: count(r => !['queued', 'running'].includes(r.state)),
+    missingItemData: count(r => !r.facts.name?.trim()), localEnriched: count(r => r.localReprocess?.state === 'enriched'),
+    localModelFailed: count(r => r.localReprocess?.state === 'model_failed'), localPending: count(r => r.localClaim),
     feedback, decisions: Object.fromEntries(['accepted', 'changed', 'manual'].map(k => [k, { count: count(r => r.feedback?.decision === k), denominator: feedback }])),
     verified: count(r => r.reviewStatus === 'verified'), verifiedIneligible: count(r => r.review?.status === 'verified' && !r.eligible),
     eligible: count(r => r.eligible), codeCoverage: new Set(rows.filter(r => r.eligible).map(r => r.review.target)).size, errors };
@@ -171,4 +186,4 @@ function candidate(r) {
     groupKey: r.groupKey, dedupeKey: r.dedupeKey, factsHash: r.factsHash, provenance: r.provenance,
     verifiedAt: r.review.at, verification: 'verified', profile: PROFILE, formatterPending: true };
 }
-module.exports = { PROFILE, ALGORITHM, REVIEW_STATES, STATES, codeValid, sourceRow, derive, deriveSource, classify, filters, matches, stats, options, select, candidate, cmp };
+module.exports = { PROFILE, ALGORITHM, REVIEW_STATES, STATES, codeValid, sourceRow, derive, deriveSource, retained, classify, filters, matches, stats, options, select, candidate, cmp };

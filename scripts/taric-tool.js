@@ -52,6 +52,7 @@ async function main(args = process.argv.slice(2)) {
       for (const model of Object.values(models)) { await model.createCollection(); await model.createIndexes(); }
       // Foundation evidence upserts rely on this source identity uniqueness.
       await mongoose.connection.collection('amiamiitems').createIndex({ gcode: 1 }, { unique: true, name: 'gcode_1' });
+      await mongoose.connection.collection('amiamiitems').createIndex({ 'details.janCode': 1 }, { name: 'details.janCode_1' });
       await models.Settings.updateOne({ _id: 'tool' }, { $setOnInsert: { revision: 1, owner,
         enabled: false, maxTokens: 256, currentBenchmark: null, catalog: null, testCatalog: null, runtime: { adapters: [] } } }, { upsert: true });
       for (const name of ['management', 'inference', 'fetch-budget']) await models.Control.updateOne({ _id: name }, { $setOnInsert: { holder: '', until: new Date(0) } }, { upsert: true });

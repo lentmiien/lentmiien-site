@@ -324,7 +324,8 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     const ownership = { available: owned, state: owned ? 'owned' : control?.sessionId ? 'OWNERSHIP_LOST' : 'none',
       active: wasActive || Boolean(recoveryTask), cleanup: owned ? warmSessions.describe?.(control.sessionId) || null : null, action: control?.blocked !== true ? 'recovery_not_needed' : owned ? 'continue_owned_cleanup' : 'acquire_recovery_admission' };
     return { control, remote, ownership, pending: await query(Run.find({ active: true }).select('_id state actualCount requestedCount cancelRequested').limit(8)),
-      queuedRequests: await Request.countDocuments({ active: true }).exec() };
+      queuedRequests: await Request.countDocuments({ active: true }).exec(),
+      localBatches: models.Reprocess ? await query(models.Reprocess.find({ active: true, owner: (await settings())?.owner }).select('_id state cancelRequested').limit(8)) : [] };
   }
   // Reuse the global control record and its lease as the recovery task lifecycle.
   // The HTTP response need not remain open for Gateway's 90-second cleanup.
@@ -381,7 +382,8 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     }, Math.max(1, Math.floor(recoveryLeaseMs / 4)));
     heartbeat.unref?.();
     try {
-      if (await Run.exists({ active: true }).maxTimeMS(2000).exec() || await Request.exists({ active: true }).maxTimeMS(2000).exec()) fail('RECOVERY_REQUIRED');
+      if (await Run.exists({ active: true }).maxTimeMS(2000).exec() || await Request.exists({ active: true }).maxTimeMS(2000).exec()
+        || (models.Reprocess && await models.Reprocess.exists({ active: true }).maxTimeMS(2000).exec())) fail('RECOVERY_REQUIRED');
       await check();
       session = lease.sessionId ? warmSessions.lookup?.(lease.sessionId) : null;
       if (!session && warmSessions.retainedId?.()) fail('OWNERSHIP_LOST');
@@ -459,6 +461,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
         await Run.updateOne({ _id: r._id, active: true }, { $set: { state: 'cancelled', active: false,
           passed: false, cancelRequested: true, fence: null, finishedAt: new Date(now()) } }).maxTimeMS(2000).exec();
       }
+      if (service.reprocess) await service.reprocess.cancelForRecovery(checkLease);
       logger.warning('TARIC pending work explicitly cancelled under recovery fence; remote hold retained', { category: 'taric' });
     } finally { await Control.updateOne({ _id: 'inference', holder }, { $set: { until: new Date(0) } }).maxTimeMS(2000).exec(); }
   }
@@ -511,8 +514,11 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     if (!normal.locallyQualified) blockers.push('No current qualifying winner; inspect candidate status, fingerprint, policy and counts');
     return { normal: { ...normal, blockers, candidates, identityCapability: 'UNAVAILABLE' }, test, gateway, benchmark: { ready: !executionReasons.length, reasons: executionReasons, reason: executionReasons[0] || null }, inference, settings: s, credential: await query(Credential.findById('integration')), template: TEMPLATE, codeFingerprint: version() };
   }
-  return { models, transport, evidence, warmSessions, settings, authenticate, authorize, adminPrincipal, rate, rotate, revoke, admission, checkAdmission,
+  const service = { models, transport, evidence, warmSessions, settings, authenticate, authorize, adminPrincipal, rate, rotate, revoke, admission, checkAdmission,
     principalFrom, submit, retrieve, feedback, saveConfig, importBenchmark, publish, queueRun, cancelRun,
     inspect, detail, readiness, recoveryStatus, resumeInference, startRecovery, cancelPending, resumeRun, version, now };
+  if (models.Reprocess) service.reprocess = require('./reprocess').createReprocess({ service,
+    history: require('./history').createHistory({ models, adminPrincipal }) });
+  return service;
 }
 module.exports = { createService, query, id, validId, SCOPES };

@@ -60,3 +60,64 @@ test('empty data is explicit and DB failure does not replace stats with fake zer
   expect(dom.window.document.querySelector('#status').textContent).toContain('503: STORAGE_FAILED');
   dom.window.close();
 });
+
+test('JAN/re-do controls use full filters, explicit confirmation, CSRF, immutable human target and no page-load dispatch', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric_history.pug'), { csrfToken: 'synthetic-csrf' }), { url: 'http://localhost/admin/taric/history?missing=yes&review=unreviewed', runScripts: 'outside-only' });
+  const row = verified(1); row.review = null; row.reviewStatus = 'unreviewed'; row.localRevision = 1; row.eligible = false; row.reasons = ['unreviewed'];
+  row.localReprocess = { batch: 'a'.repeat(32), state: 'model_failed', error: 'CATALOG_REJECTED', at: '2026-09-25T00:00:00Z' };
+  row.localHistory = [{ source: row.source, diagnostics: { visibleText: '<img src=x onerror=alert(1)>' } }];
+  const calls = [];
+  dom.window.fetch = jest.fn(async (url, opts) => {
+    calls.push([url, opts]); let data;
+    if (url.includes('/data')) data = { rows: [row], stats: domain.stats([row]), next: null };
+    else if (url.endsWith('/jan/preview')) data = { counts: { filteredRows: 67, distinctExported: 66, duplicates: 1, missingInvalid: 0 }, filters: { missing: 'yes', review: 'unreviewed' }, jans: ['00000001'], snapshotHash: 'a'.repeat(64) };
+    else if (url.endsWith('/reprocess/preview')) data = { summary: { filteredRows: 43, eligible: 43, skipped: 0, reasons: {} }, filters: { missing: 'yes' }, candidates: [{ id: row.id, jan: '00000001', name: '<img src=x>', feedbackCode: '0000000002' }], skipped: [], snapshotHash: 'b'.repeat(64), adapter: 'test' };
+    else if (url.includes('/reprocess/')) data = { id: 'a'.repeat(32), state: 'complete', active: false, cases: [{ id: row.id, state: 'enriched' }], counts: { enriched: 43 }, requested: 43, tried: 43, validPredictions: 43, sessionCount: 1, historyUrl: '/admin/taric/history?batch=' + 'a'.repeat(32) };
+    else data = { ...row, audit: [], targetInTestCatalog: true };
+    return { ok: true, json: async () => data };
+  });
+  const settle = () => new Promise(setImmediate);
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-history.js'), 'utf8')); await settle();
+  const doc = dom.window.document;
+  expect(calls).toHaveLength(1); expect(calls[0][0]).toContain('/data?');
+  expect(doc.querySelector('#redo-start').disabled).toBe(true);
+  doc.querySelector('#jan-preview').click(); await settle();
+  expect(doc.querySelector('#jan-content').textContent).toContain('67'); expect(doc.querySelector('#jan-download').disabled).toBe(false);
+  const janCall = calls.find(([url]) => url.endsWith('/jan/preview'));
+  expect(JSON.parse(janCall[1].body)).toEqual({ filters: { missing: 'yes', review: 'unreviewed' } });
+  expect(janCall[1].headers['X-CSRF-Token']).toBe('synthetic-csrf');
+  doc.querySelector('#redo-preview').click(); await settle();
+  expect(doc.querySelector('#redo-start').disabled).toBe(true); expect(doc.querySelector('#redo-content').textContent).toContain('0000000002');
+  expect(doc.querySelectorAll('img')).toHaveLength(0);
+  doc.querySelector('#redo-confirm').checked = true; doc.querySelector('#redo-confirm').dispatchEvent(new dom.window.Event('change'));
+  expect(doc.querySelector('#redo-start').disabled).toBe(false);
+  doc.querySelector('#redo-start').click(); await settle(); await settle();
+  const start = calls.find(([url]) => url.endsWith('/reprocess/start'));
+  expect(JSON.parse(start[1].body)).toMatchObject({ filters: { missing: 'yes', review: 'unreviewed' }, confirm: true, token: expect.stringMatching(/^[a-f0-9]{32}$/) });
+  expect(doc.querySelector('#batch-content').textContent).toContain('43'); expect(dom.window.location.search).toContain('job=');
+  doc.querySelector('#requests button').click(); await settle();
+  expect(doc.querySelector('#review-target').value).toBe('0000000002'); expect(doc.querySelector('#approved-description').value).toBe('');
+  expect(doc.querySelector('#detail-content').textContent).toContain('New model code differs'); expect(doc.querySelectorAll('img')).toHaveLength(0);
+  doc.querySelector('[name=missing]').value = 'no'; doc.querySelector('[name=missing]').dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  expect(doc.querySelector('#redo-start').disabled).toBe(true); expect(doc.querySelector('#redo-confirm').checked).toBe(false);
+  dom.window.close();
+});
+
+test('last selected case wins when detail responses arrive out of order', async () => {
+  const { JSDOM } = await import('jsdom');
+  const rows = [verified(1), verified(2)];
+  const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric_history.pug')), { url: 'http://localhost/admin/taric/history', runScripts: 'outside-only' });
+  const pending = [];
+  dom.window.fetch = async url => {
+    if (url.includes('/data')) return { ok: true, json: async () => ({ rows, stats: domain.stats(rows) }) };
+    return new Promise(resolve => pending.push(() => resolve({ ok: true, json: async () => ({ ...rows.find(r => url.endsWith(r.id)), audit: [] }) })));
+  };
+  const settle = () => new Promise(setImmediate);
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-history.js'), 'utf8')); await settle();
+  const buttons = dom.window.document.querySelectorAll('#requests button'); buttons[0].click(); buttons[1].click();
+  pending[1](); await settle(); pending[0](); await settle();
+  expect(dom.window.document.querySelector('#detail-content').textContent).toContain(rows[1].id);
+  expect(dom.window.document.querySelector('#detail-content').textContent).not.toContain(rows[0].id);
+  dom.window.close();
+});

@@ -138,14 +138,14 @@
     $('cancel-pending').disabled = mutationBusy || recovery?.ownership?.active || !held || recoveryEpoch === null;
     $('resume').textContent = recovery && !held ? 'Recovery not needed' : recovery?.ownership?.available ? 'Continue owned cleanup' : 'Acquire recovery admission';
     $('resume').disabled = mutationBusy || recovery?.ownership?.active || !held || recoveryEpoch === null || readiness?.gateway?.ready !== true
-      || recovery.pending?.length > 0 || recovery.queuedRequests > 0;
+      || recovery.pending?.length > 0 || recovery.queuedRequests > 0 || recovery.localBatches?.length > 0;
     $('recovery-help').textContent = !recovery ? 'Read remote status to load the current recovery epoch. Status and inspection are available while inference is held or disabled.'
       : !held ? 'No inference hold; recovery not needed. Site acquires its own Gateway session when an explicit job runs.'
       : recovery.ownership?.active ? 'Owned cleanup is running under the server lease. No inference is requested. Closing this page does not cancel it.'
         : recovery.ownership?.state === 'OWNERSHIP_LOST' ? 'OWNERSHIP_LOST: this process has no matching private capability. Use the owning Site instance or standard Gateway recovery/rebuild. Acquire recovery admission only after the old Gateway fence has safely cleared; never reset the Mongo hold.'
         : recovery.ownership?.available ? `Private owner capability is available on this instance. ${recovery.control?.reason || 'CLEANUP_PENDING'}: confirm to continue the same owned cleanup without inference.`
         : !held ? 'No inference hold to recover.' : readiness?.gateway?.ready !== true ? 'Rebuild the running Gateway image, then Refresh status and Read remote status. Pending local work can still be cancelled.'
-        : recovery.pending?.length || recovery.queuedRequests ? 'Cancel all pending local work before exclusive recovery. Existing results remain inspectable.'
+        : recovery.pending?.length || recovery.queuedRequests || recovery.localBatches?.length ? 'Cancel all pending local work before exclusive recovery. Existing results remain inspectable.'
           : 'Passive idle_unverified is expected and is not cleanup proof. Exclusive recovery is available. Confirm the action below; recovery requests no inference. After success, submit a fresh test or queue a fresh v0 benchmark.';
   }
   async function loadBenchmarks(more = false, preferred = null) {

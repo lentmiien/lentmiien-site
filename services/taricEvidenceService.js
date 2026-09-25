@@ -199,7 +199,24 @@ function createTaricEvidenceService({ itemModel, fetchFactual = null, serviceLog
       throw safe;
     }
   }
-  return { resolve };
+  async function resolveLocal(input, resolvedGcode = null) {
+    const request = validateRequest(input);
+    // A previously resolved identity may disambiguate a JAN, but must still
+    // agree with that JAN. Never call fetchAndPersist or any fallback transport.
+    if (!request.jan) fail('INVALID_REQUEST');
+    if (resolvedGcode) {
+      const exact = await findCode(gcode(resolvedGcode, 'EVIDENCE_INVALID'));
+      if (exact) return snapshot(exact, { ...request, item_code: resolvedGcode }, 'local_item_code');
+    }
+    const matches = await aggregate([{ $match: { 'details.janCode': request.jan } },
+      { $group: { _id: '$gcode' } }, { $limit: 2 }, { $project: { _id: 0, gcode: boundedField('_id', 64) } }]);
+    if (matches.length > 1) fail('JAN_AMBIGUOUS');
+    if (!matches.length) fail('EVIDENCE_NOT_FOUND');
+    const row = await findCode(gcode(matches[0].gcode, 'EVIDENCE_INVALID'));
+    if (!row) fail('EVIDENCE_NOT_FOUND');
+    return snapshot(row, request, 'local_jan');
+  }
+  return { resolve, resolveLocal };
 }
 
 module.exports = { createTaricEvidenceService, snapshot, projection };

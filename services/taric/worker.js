@@ -264,6 +264,9 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
     if (runs.length) await hold(holder, 'INTERRUPTED');
     return runs.length;
   }
+  const localWorker = service.reprocess ? require('./reprocessWorker').createReprocessWorker(service, {
+    fence, hold, trackSession, closeSession, correlatedIdle, report, signal: () => controller.signal, nextCaseReserveMs,
+  }) : null;
   async function tick() {
     if (busy || stopped || !ready()) return;
     busy = true; const holder = id(); let held = false; let heartbeat; let renewing = false; let renewal = Promise.resolve();
@@ -295,7 +298,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
       heartbeat.unref?.();
       const orphans = await Request.updateMany({ state: 'running', active: true }, { $set: { state: 'interrupted', active: false,
         result: null, error: 'INTERRUPTED', finishedAt: date() } }).exec();
-      const orphanCount = await orphanRuns(holder);
+      const orphanCount = await orphanRuns(holder) + (localWorker ? await localWorker.orphan(holder) : 0);
       if (lease.sessionId) { await hold(holder, 'RECOVERY_REQUIRED'); return; }
       if (orphans.modifiedCount || orphanCount) { if (orphans.modifiedCount) await hold(holder, 'INTERRUPTED'); return; }
       const request = await query(Request.findOneAndUpdate({ state: 'queued', active: true },
@@ -303,7 +306,12 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
       if (request) return await processRequest(request, holder);
       const run = await query(Run.findOneAndUpdate({ active: true, state: { $in: ['pending', 'running'] }, fence: null },
         { $set: { state: 'running', fence: holder } }, { returnDocument: 'after', sort: { lastYieldAt: 1, createdAt: 1, _id: 1 } }));
-      if (run) await processRun(run, holder);
+      if (run) return await processRun(run, holder);
+      if (localWorker) {
+        const localRun = await query(service.models.Reprocess.findOneAndUpdate({ active: true, state: { $in: ['queued', 'running'] }, fence: null },
+          { $set: { state: 'running', fence: holder } }, { returnDocument: 'after', sort: { lastYieldAt: 1, createdAt: 1, _id: 1 } }));
+        if (localRun) await localWorker.process(localRun, holder);
+      }
     } catch (e) { report(e, 'worker'); }
     finally {
       clearInterval(heartbeat); await renewal;

@@ -15,7 +15,14 @@ const revision = new Schema({
 const settings = { timestamps: true, strict: 'throw', minimize: false, autoCreate: false, autoIndex: false, bufferCommands: false };
 const reviewSchema = new Schema({ _id: { type: String, required: true, match: /^[a-f0-9]{32}$/ },
   owner: { type: String, required: true, maxlength: 100, immutable: true }, request: { type: String, required: true, match: /^[a-f0-9]{32}$/, immutable: true },
-  revision: { type: Number, required: true, min: 1, max: 100 }, latest: { type: revision, required: true },
+  revision: { type: Number, required: true, min: 0, max: 100 }, latest: { type: revision, default: undefined },
+  // Local revisions share the review document's CAS boundary. A claim cannot
+  // overwrite a concurrent human review, and never creates a human attestation.
+  localRevision: { type: Number, min: 0, max: 10 },
+  localClaim: { type: String, default: null, match: /^[a-f0-9]{32}$/ },
+  originalSource: { type: Schema.Types.Mixed, default: undefined, validate: v => v == null || Buffer.byteLength(JSON.stringify(v)) <= 128 * 1024 },
+  localSource: { type: Schema.Types.Mixed, default: undefined, validate: v => v == null || Buffer.byteLength(JSON.stringify(v)) <= 128 * 1024 },
+  localHistory: { type: [Schema.Types.Mixed], default: undefined, validate: v => !v || v.length <= 10 },
   identityKeys: { type: [String], default: undefined },
   history: { type: [revision], validate: v => v.length <= 100 },
 }, settings);
@@ -29,11 +36,33 @@ for (const operation of ['updateMany', 'findOneAndUpdate', 'replaceOne', 'findOn
 reviewSchema.pre('save', function () { if (!this.isNew) throw new Error('TARIC review audit requires append-only CAS'); });
 reviewSchema.pre('updateOne', function () {
   const update = this.getUpdate(); const filter = this.getFilter();
+  const localFields = ['localClaim', 'localRevision', 'localSource', 'originalSource', 'updatedAt'];
+  if (Object.keys(update.$set || {}).some(k => localFields.slice(0, 4).includes(k))) {
+    const sets = update.$set;
+    const append = Object.hasOwn(sets, 'localSource');
+    const original = Object.hasOwn(sets, 'originalSource');
+    if (typeof filter.owner !== 'string' || filter._id !== filter.request
+      || !Object.hasOwn(filter, 'revision') || !Object.hasOwn(filter, 'localRevision') || !Object.hasOwn(filter, 'localClaim')
+      || Object.keys(update).some(k => !['$set', '$push', '$setOnInsert'].includes(k))
+      || Object.keys(update.$set || {}).some(k => !localFields.includes(k))
+      || Object.keys(update.$push || {}).some(k => k !== 'localHistory')
+      || Object.keys(update.$setOnInsert || {}).some(k => !['owner', 'request', 'revision', 'createdAt', '__v'].includes(k))
+      || (Object.hasOwn(sets, 'localRevision') !== append) || (Boolean(update.$push) !== append)
+      || (append && (!sets.localSource || sets.localClaim !== null || typeof filter.localClaim !== 'string'))
+      || (original && (!sets.originalSource || typeof sets.localClaim !== 'string' || append))
+      || (update.$set.localSource && (update.$set.localRevision > 10 || update.$set.localRevision !== (Number.isInteger(filter.localRevision) ? filter.localRevision : 0) + 1
+        || JSON.stringify(update.$push?.localHistory?.source) !== JSON.stringify(update.$set.localSource)))
+      || (update.$set.originalSource && filter.originalSource?.$exists !== false)) {
+      throw new Error('TARIC local revisions require append-only CAS');
+    }
+    return;
+  }
   const next = update?.$set?.latest;
   const previous = filter.revision?.$exists === false ? 0 : filter.revision;
   if (!next || !Number.isInteger(previous) || previous < 0 || previous >= 100 || next.revision !== previous + 1
     || update.$set.revision !== next.revision || JSON.stringify(update.$push?.history) !== JSON.stringify(next)
     || typeof filter.owner !== 'string' || filter._id !== filter.request
+    || filter.localClaim !== null || !Object.hasOwn(filter, 'localRevision')
     || Object.keys(update).some(k => !['$set', '$push', '$setOnInsert'].includes(k))
     || Object.keys(update.$set).some(k => !['latest', 'revision', 'identityKeys', 'updatedAt'].includes(k))
     || Object.keys(update.$push).some(k => k !== 'history')
@@ -44,6 +73,7 @@ reviewSchema.pre('updateOne', function () {
 // Equality filters precede source chronology; all source dates are canonical UTC strings.
 for (const [suffix, field] of [['date', null], ['jan', 'inputs.jan'], ['mode', 'mode'], ['state', 'state']]) {
   reviewSchema.index({ owner: 1, ...(field ? { [`latest.source.${field}`]: 1 } : {}), 'latest.source.createdAt': -1, request: -1 }, { name: `review_source_${suffix}` });
+  reviewSchema.index({ owner: 1, ...(field ? { [`originalSource.${field}`]: 1 } : {}), 'originalSource.createdAt': -1, request: -1 }, { name: `review_local_${suffix}` });
 }
 reviewSchema.index({ owner: 1, 'latest.status': 1, identityKeys: 1 }, { name: 'review_conflicts' });
 const exportSchema = new Schema({ _id: { type: String, required: true, match: /^[a-f0-9]{32}$/ },

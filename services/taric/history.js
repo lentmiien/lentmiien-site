@@ -34,7 +34,7 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
       ], as: 'feedback' } },
       { $lookup: { from: Review.collection.name, let: { request: '$_id' }, pipeline: [
         { $match: { owner, $expr: { $eq: ['$request', '$$request'] } } },
-        { $project: { _id: 1, revision: 1, latest: 1, ...(audit ? { history: 1 } : {}) } }, { $limit: 1 },
+        { $project: { _id: 1, revision: 1, latest: 1, localSource: 1, originalSource: 1, localRevision: 1, localClaim: 1, ...(audit ? { history: 1, localHistory: 1 } : {}) } }, { $limit: 1 },
       ], as: 'reviews' } },
     ];
   }
@@ -54,7 +54,7 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
   }
   function retainedPipeline(owner, match, archivedOnly = false, audit = false) {
     return [{ $match: match },
-      { $project: { request: 1, revision: 1, latest: 1, ...(audit ? { history: 1 } : {}) } },
+      { $project: { request: 1, revision: 1, latest: 1, localSource: 1, originalSource: 1, localRevision: 1, localClaim: 1, ...(audit ? { history: 1, localHistory: 1 } : {}) } },
       { $lookup: { from: Request.collection.name, let: { request: '$request' }, pipeline: [
         { $match: { owner, $expr: { $eq: ['$_id', '$$request'] } } }, { $project: requestProjection }, ...joins(owner, audit),
       ], as: 'live' } },
@@ -62,7 +62,7 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
   }
   function retainedRow(doc) {
     if (doc.live?.length) return domain.derive(doc.live[0]);
-    return doc.latest?.source ? domain.deriveSource(doc.latest.source, doc, true) : null;
+    return domain.retained(doc);
   }
   async function collect(aggregate, budget, max = MAX_SCAN) {
     const cursor = aggregate.option({ maxTimeMS: 2000 }).cursor({ batchSize: 25 });
@@ -82,7 +82,8 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
     const raw = await collect(Request.aggregate([{ $match: { ...baseMatch(owner, filter), ...(requestId ? { _id: requestId } : {}) } },
       { $sort: { createdAt: -1, _id: -1 } }, { $limit: MAX_SCAN + 1 }, { $project: requestProjection }, ...joins(owner)]), budget);
     const archived = await collect(Review.aggregate(retainedPipeline(owner, {
-      ...baseMatch(owner, filter, true), 'latest.source': { $exists: true }, ...(requestId ? { request: requestId } : {}),
+      owner, $or: [baseMatch(owner, filter, true), Object.fromEntries(Object.entries(baseMatch(owner, filter, true)).map(([k, v]) => [k.replace('latest.source.', 'originalSource.'), v]))],
+      $and: [{ $or: [{ 'latest.source': { $exists: true } }, { originalSource: { $exists: true } }] }], ...(requestId ? { request: requestId } : {}),
     }, true)), budget, MAX_SCAN - raw.length);
     const base = [...raw.map(domain.derive), ...archived.map(retainedRow)];
     // Filters must never hide a contradictory verified case. Resolve only indexed
@@ -103,7 +104,7 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
     const classified = domain.classify(all, heldout);
     const ids = new Set(base.map(r => r.id));
     const rows = classified.filter(r => ids.has(r.id)).sort((a, b) => domain.cmp(b.createdAt, a.createdAt) || domain.cmp(b.id, a.id));
-    return { rows, populationHash: hash({ rows: classified.sort((a, b) => domain.cmp(a.id, b.id)).map(r => [r.id, r.sourceStorage, r.sourceHash, r.revision, hash(r.review), r.reasons]), benchmarks }) };
+    return { rows, populationHash: hash({ rows: classified.sort((a, b) => domain.cmp(a.id, b.id)).map(r => [r.id, r.sourceStorage, r.sourceHash, r.revision, hash(r.review), r.localRevision, r.localClaim, r.reasons]), benchmarks }) };
   }
   async function list(actor, value) {
     const filter = domain.filters(value); const owner = await scope(actor); const { rows, populationHash } = await population(owner, filter);
@@ -117,11 +118,18 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
     validId(id); const owner = await scope(actor);
     const { rows } = await population(owner, {}, id);
     const row = rows.find(r => r.id === id); if (!row) fail('NOT_FOUND');
-    const audit = await query(Review.findOne({ owner, request: id }).select('revision history'));
-    if ((audit?.revision || 0) !== row.revision) fail('STALE');
+    const audit = await query(Review.findOne({ owner, request: id }).select('revision history localRevision localHistory originalSource localClaim'));
+    if ((audit?.revision || 0) !== row.revision || (audit?.localRevision || 0) !== row.localRevision) fail('STALE');
     const settings = await query(Settings.findOne({ _id: 'tool', owner }).select('testCatalog.codes'));
-    return { ...row, audit: audit?.history || [],
+    return { ...row, audit: audit?.history || [], original: audit?.originalSource || null, localHistory: audit?.localHistory || [],
       targetInTestCatalog: settings?.testCatalog?.codes?.includes(row.review?.target || row.feedback?.code || row.suggestion?.code) || false };
+  }
+  // Internal worker-only owner-scoped resolver, never mounted as an HTTP action.
+  async function currentSource(owner, id) {
+    const raw = await Request.aggregate([{ $match: { _id: id, owner } }, { $project: requestProjection }, ...joins(owner)]).option({ maxTimeMS: 2000 });
+    if (raw.length) return domain.derive(raw[0]);
+    const retained = await query(Review.findOne({ owner, request: id }).select('latest revision localSource originalSource localRevision localClaim'));
+    return retained ? domain.retained(retained) : null;
   }
   async function review(actor, id, value) {
     validId(id);
@@ -135,27 +143,48 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
     if (value.approvedDescription !== null) string(value.approvedDescription, 255, 'INVALID_REQUEST');
     const owner = await scope(actor);
     const raw = await Request.aggregate([{ $match: { _id: id, owner } }, { $project: requestProjection }, ...joins(owner)]).option({ maxTimeMS: 2000 });
-    const retained = !raw.length ? await query(Review.findOne({ owner, request: id }).select('latest revision')) : null;
-    if (!raw.length && !retained?.latest?.source) fail('NOT_FOUND');
-    const row = raw.length ? domain.derive(raw[0]) : domain.deriveSource(retained.latest.source, retained, true);
-    if (row.revision !== value.expectedRevision || row.sourceHash !== value.expectedSourceHash || ['queued', 'running'].includes(row.state)) fail('STALE');
+    const retained = !raw.length ? await query(Review.findOne({ owner, request: id }).select('latest revision localSource originalSource localRevision localClaim')) : null;
+    if (!raw.length && !retained?.latest?.source && !retained?.originalSource) fail('NOT_FOUND');
+    const row = raw.length ? domain.derive(raw[0]) : domain.retained(retained);
+    if (row.localClaim || row.revision !== value.expectedRevision || row.sourceHash !== value.expectedSourceHash || ['queued', 'running'].includes(row.state)) fail('STALE');
     const base = row.feedback?.code || row.suggestion?.code || null;
     const target = value.target ?? null;
     if (target !== null && !domain.codeValid(target)) fail('INVALID_REQUEST');
     if (value.status === 'verified' && (!base || !target || !value.confirmTarget || (target !== base && !value.correction))) fail('INVALID_REQUEST');
-    if (value.status === 'verified' && row.sourceStorage === 'archived_review' && row.stale) fail('STALE');
-    const retain = value.status === 'verified' || Boolean(raw[0]?.reviews?.[0]?.latest?.source || retained?.latest?.source);
+    if (value.status === 'verified' && row.sourceStorage === 'archived_review' && row.stale && !(row.localRevision && row.retentionBound)) fail('STALE');
+    const retain = Boolean(row.localRevision) || value.status === 'verified' || Boolean(raw[0]?.reviews?.[0]?.latest?.source || retained?.latest?.source);
     if (retain && Buffer.byteLength(JSON.stringify(row.source)) > 128 * 1024) limitError('REVIEW_SOURCE_TOO_LARGE: canonical source exceeds 128 KiB');
     const next = { ...(retain ? { source: row.source } : {}), revision: row.revision + 1, status: value.status, sourceHash: row.sourceHash,
       feedbackId: row.feedback?.id || null, feedbackHash: row.feedback ? hash(row.feedback) : null,
       target, approvedDescription: value.approvedDescription, note: value.note, actor, at: now().toISOString(), correction: value.correction };
     try {
-      const result = await Review.updateOne({ _id: id, owner, request: id, revision: row.revision || { $exists: false } },
+      const result = await Review.updateOne({ _id: id, owner, request: id, revision: row.revision || (raw[0]?.reviews?.length || retained ? 0 : { $exists: false }), localRevision: row.localRevision || { $in: [0, null] }, localClaim: null },
         { $set: { revision: next.revision, latest: next, identityKeys: [row.groupKey, `facts:${row.factsHash}`] }, $push: { history: next }, $setOnInsert: { owner, request: id } },
-        { upsert: row.revision === 0, runValidators: true }).maxTimeMS(2000);
+        { upsert: row.revision === 0 && !raw[0]?.reviews?.length && !retained, runValidators: true }).maxTimeMS(2000);
       if (!result.modifiedCount && !result.upsertedCount) fail('STALE');
     } catch (e) { if (e.code === 11000) fail('STALE'); throw e; }
     return { revision: next.revision };
+  }
+  async function selection(actor, value = {}) {
+    const filters = domain.filters(value); delete filters.cursor; delete filters.snapshot;
+    const owner = await scope(actor);
+    const { rows, populationHash } = await population(owner, filters);
+    return { owner, filters, populationHash, rows: rows.filter(r => domain.matches(r, filters)) };
+  }
+  async function janPreview(actor, value) {
+    object(value, ['filters'], 'INVALID_REQUEST');
+    const { filters, rows, populationHash } = await selection(actor, value.filters || {});
+    const valid = rows.map(r => r.inputs.jan).filter(v => typeof v === 'string' && /^(?:\d{8}|\d{13})$/.test(v));
+    const jans = [...new Set(valid)].sort(domain.cmp);
+    const counts = { filteredRows: rows.length, distinctExported: jans.length, duplicates: valid.length - jans.length, missingInvalid: rows.length - valid.length };
+    return { version: 'filtered-jan/1', filters, counts, jans, snapshotHash: hash({ version: 'filtered-jan/1', filters, populationHash, jans }) };
+  }
+  async function janDownload(actor, value) {
+    object(value, ['filters', 'expectedSnapshotHash'], 'INVALID_REQUEST');
+    string(value.expectedSnapshotHash, 64, 'INVALID_REQUEST', /^[a-f0-9]{64}$/);
+    const preview = await janPreview(actor, { filters: value.filters || {} });
+    if (preview.snapshotHash !== value.expectedSnapshotHash) fail('STALE');
+    return { csv: 'jan\n' + preview.jans.map(jan => jan + '\n').join(''), ...preview };
   }
   async function previewFor(owner, value) {
     object(value, ['filters', 'options'], 'INVALID_REQUEST');
@@ -195,6 +224,6 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
     active++;
     try { return await fn(...args); } finally { active--; }
   };
-  return Object.fromEntries(Object.entries({ list, detail, review, preview, download }).map(([name, fn]) => [name, bounded(fn)]));
+  return Object.fromEntries(Object.entries({ list, detail, review, preview, download, selection, janPreview, janDownload, currentSource }).map(([name, fn]) => [name, bounded(fn)]));
 }
 module.exports = { createHistory, MAX_SCAN };

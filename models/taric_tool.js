@@ -52,4 +52,4 @@ const Attempt = model('taric_attempts', { _id: String, run: String, index: Numbe
   inputHash: String, exact: Boolean, proposalExact: Boolean, lexicalSimilarity: Number }, [
   [{ run: 1, index: 1 }, { unique: true, name: 'one_attempt_per_case' }],
 ]);
-module.exports = { Settings, Credential, Benchmark, Run, Request, Feedback, Control, Attempt, ...require('./taric_review') };
+module.exports = { Settings, Credential, Benchmark, Run, Request, Feedback, Control, Attempt, ...require('./taric_review'), ...require('./taric_reprocess') };

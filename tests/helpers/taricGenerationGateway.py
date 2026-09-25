@@ -17,7 +17,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--test-only', action='store_true', required=True)
 parser.add_argument('--helper', required=True)
 parser.add_argument('--port', type=int, required=True)
-parser.add_argument('--scenario', choices=['warm-benchmark', 'external-reservation', 'disconnect'], required=True)
+parser.add_argument('--scenario', choices=['warm-benchmark', 'external-reservation', 'disconnect', 'local-mixed'], required=True)
 args = parser.parse_args()
 if not 1024 <= args.port <= 65535:
     parser.error('Invalid loopback port')
@@ -50,7 +50,10 @@ async def lifespan(app):
             if args.scenario == 'disconnect':
                 delay = 1
             await asyncio.sleep(delay)
-            text = json.dumps({'taric_code': '0000000001', 'description': 'Synthetic description'})
+            if args.scenario == 'local-mixed' and stats['upstream_calls'] == 7:
+                return httpx.Response(503, json={'detail': 'Synthetic definite upstream failure'})
+            code = '9999999999' if args.scenario == 'local-mixed' and stats['upstream_calls'] == 3 else '0000000001'
+            text = json.dumps({'taric_code': code, 'description': 'Synthetic description'})
             return httpx.Response(200, json={'model': 'Qwen/Qwen3-4B-Instruct-2507', 'adapter_name': adapter,
                 'content': text, 'raw_content': text, 'tool_calls': [],
                 'usage': {'prompt_tokens': 200, 'completion_tokens': 30, 'total_tokens': 230}})
@@ -104,6 +107,11 @@ async def test_app(scope, receive, send):
             or path.startswith('/qwen3-lora/inference-sessions/')):
         return await JSONResponse({'detail': 'test-only route unavailable'}, status_code=404)(scope, receive, send)
     async def observe(message):
+        if (args.scenario == 'local-mixed' and stats['upstream_calls'] == 12
+                and path == '/qwen3-lora/generate' and message['type'] == 'http.response.body'):
+            # Keep the actual Gateway operation terminal but truncate the HTTP
+            # acknowledgement. Uvicorn closes the mismatched Content-Length.
+            return await send({**message, 'body': b'{', 'more_body': False})
         if message['type'] == 'http.response.start':
             if path == '/qwen3-lora/inference-sessions' and method == 'POST' and message['status'] == 201:
                 stats['creates'] += 1
