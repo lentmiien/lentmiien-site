@@ -15,10 +15,10 @@ html(lang='en')
         a(href='/admin/amiami-items') AmiAmi items
       header
         p.eyebrow AmiAmi catalog
-        h1 Import items from HTML
-        p Copy the New Products page HTML in your browser, then paste it here or upload a saved HTML file. A whole page, a container or a single item link will work.
+        h1 Import item list
+        p Upload or paste HTML copied from your browser, or a prepared list with one item code per line. For HTML, a whole page, a container or a single item link will work.
       p#upload-status(role='status' aria-live='polite') Checking for a previous import…
-      noscript This form needs JavaScript to upload HTML and display progress.
+      noscript This form needs JavaScript to upload a list and display progress.
       section#job-panel(hidden aria-labelledby='job-heading')
         .heading-row
           h2#job-heading Import progress
@@ -28,7 +28,7 @@ html(lang='en')
         p#job-summary
         dl.stats
           div
-            dt Found in HTML
+            dt Distinct item codes
             dd#job-total 0
           div
             dt Already in catalog
@@ -47,14 +47,19 @@ html(lang='en')
           ul#job-failures
         p.job-reference#job-reference
       section#upload-panel(hidden aria-labelledby='upload-heading')
-        h2#upload-heading Add an HTML list
+        h2#upload-heading Add an item list
         p Existing items are skipped, including items with a previous fetch error. Missing items are fetched one at a time, with a 60-second pause after each attempt.
         form#upload-form
-          label(for='html-file') Upload a saved HTML file
+          label(for='input-format') Input format
+          select#input-format
+            option(value='html') HTML
+            option(value='codes') Item codes (one per line)
+          label#file-label(for='html-file') Upload a saved HTML file
           input#html-file(type='file' accept='.html,.htm,text/html')
-          p.or Or paste the HTML
-          label(for='html-input') HTML fragment or document
+          p.or Or paste below
+          label#input-label(for='html-input') HTML fragment or document
           textarea#html-input(rows='10' spellcheck='false' placeholder='<a href="/eng/detail?gcode=TOY-RBT-9417">…</a>')
-          p.help Up to 2 MiB of UTF-8 HTML and 1,000 distinct item codes. HTML is parsed as text and discarded; it is never displayed or executed.
+          p.help#format-help HTML is parsed as text and discarded; it is never displayed or executed.
+          p.help Up to 2 MiB of UTF-8 text and 1,000 distinct item codes. Duplicates are skipped.
           button#upload-submit(type='submit') Start import
       button#refresh-status.secondary(type='button') Refresh status

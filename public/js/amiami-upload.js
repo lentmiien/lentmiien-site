@@ -10,6 +10,15 @@
   const text = (id, value) => { byId(id).textContent = value; };
   const formatDate = value => value ? new Date(value).toLocaleString() : '';
 
+  function showFormat() {
+    const codes = byId('input-format').value === 'codes';
+    text('file-label', codes ? 'Upload a text file (.txt)' : 'Upload a saved HTML file');
+    byId('html-file').accept = codes ? '.txt,text/plain' : '.html,.htm,text/html';
+    text('input-label', codes ? 'Item codes, one per line (no header)' : 'HTML fragment or document');
+    byId('html-input').placeholder = codes ? 'TOY-RBT-9417\nFIGURE-123' : '<a href="/eng/detail?gcode=TOY-RBT-9417">…</a>';
+    text('format-help', codes ? 'Use one item code per line, with no header or links. Blank lines and surrounding spaces are ignored. Invalid rows must be corrected before importing.' : 'HTML is parsed as text and discarded; it is never displayed or executed.');
+  }
+
   function showJob(job) {
     byId('job-panel').hidden = !job;
     byId('upload-panel').hidden = Boolean(job?.active);
@@ -60,7 +69,7 @@
       if (currentGeneration !== generation) return;
       showJob(data.job);
       status.classList.remove('error');
-      status.textContent = data.job?.active ? 'Import is running in the background.' : 'Ready for an HTML upload.';
+      status.textContent = data.job?.active ? 'Import is running in the background.' : 'Ready for a list upload.';
     } catch (error) {
       if (currentGeneration !== generation) return;
       status.classList.add('error');
@@ -80,15 +89,16 @@
     const html = byId('html-input').value;
     if ((file && html.trim()) || (!file && !html.trim())) {
       status.classList.add('error');
-      status.textContent = 'Choose one HTML file or paste HTML, not both.';
+      status.textContent = 'Choose one file or paste text, not both.';
       return;
     }
     if ((file?.size || new Blob([html]).size) > 2 * 1024 * 1024) {
       status.classList.add('error');
-      status.textContent = 'HTML must be no larger than 2 MiB.';
+      status.textContent = 'The upload must be no larger than 2 MiB.';
       return;
     }
     const body = new FormData();
+    body.append('format', byId('input-format').value);
     if (file) body.append('file', file);
     else body.append('html', html);
     submitting = true;
@@ -102,6 +112,7 @@
         Accept: 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
       }, body }));
       byId('upload-form').reset();
+      showFormat();
       showJob(data.job);
       status.textContent = data.job.active ? 'Upload accepted. You can leave this page.' : 'All item codes are already in the catalog.';
     } catch (error) {
@@ -114,6 +125,8 @@
     }
   });
   byId('refresh-status').addEventListener('click', refresh);
+  byId('input-format').addEventListener('change', showFormat);
   window.addEventListener('pagehide', () => clearTimeout(timer));
+  showFormat();
   refresh();
 })();

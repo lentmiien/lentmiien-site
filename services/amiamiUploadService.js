@@ -26,7 +26,7 @@ function createAmiAmiUploadService({ jobModel, itemModel, attemptMissingItemScra
   }).lean().exec();
   const log = (level, message, metadata) => logger[level](message, { category: 'amiami-upload', metadata });
 
-  async function submit(html, creator) {
+  async function submit(input, creator, format = 'html') {
     if (!/^[a-f\d]{24}$/i.test(String(creator || '')) || !await authorizeCreator(String(creator))) {
       throw new AmiAmiUploadError('FORBIDDEN', 'Import permission is required.', 403);
     }
@@ -34,7 +34,7 @@ function createAmiAmiUploadService({ jobModel, itemModel, attemptMissingItemScra
     if (previous && ACTIVE_STATES.includes(previous.state)) {
       throw new AmiAmiUploadError('JOB_ACTIVE', 'An import is already running. Wait for it to finish.', 409);
     }
-    const codes = parseItemCodes(html);
+    const codes = parseItemCodes(input, format);
     const existing = await itemModel.find({ gcode: { $in: codes } }).select('gcode').maxTimeMS(MAX_TIME_MS).lean().exec();
     const known = new Set(existing.map(item => item.gcode));
     const pending = codes.filter(code => !known.has(code));
@@ -66,7 +66,7 @@ function createAmiAmiUploadService({ jobModel, itemModel, attemptMissingItemScra
       state: 'failed', message, finishedAt: new Date(now()), currentCode: null,
       leaseToken: null, leaseUntil: null, nextFetchAt: new Date(now() + DELAY_MS), codes: [],
     });
-    if (changed) await log('error', 'AmiAmi HTML import stopped', { jobId: job.jobId, reason: message });
+    if (changed) await log('error', 'AmiAmi list import stopped', { jobId: job.jobId, reason: message });
   }
 
   async function tick() {
@@ -80,7 +80,7 @@ function createAmiAmiUploadService({ jobModel, itemModel, attemptMissingItemScra
         finishedAt: new Date(now()), currentCode: null, leaseToken: null, leaseUntil: null,
         nextFetchAt: new Date(now() + DELAY_MS), codes: [],
       });
-      if (interrupted) await log('error', 'AmiAmi HTML import worker claim expired', { jobId: interrupted.jobId });
+      if (interrupted) await log('error', 'AmiAmi list import worker claim expired', { jobId: interrupted.jobId });
       if (stopped || !ready()) return;
       job = await update({ _id: SLOT, state: 'queued', nextFetchAt: { $lte: new Date(now()) } }, {
         state: 'running', leaseToken: randomUUID(), leaseUntil: new Date(now() + LEASE_MS),
@@ -127,7 +127,7 @@ function createAmiAmiUploadService({ jobModel, itemModel, attemptMissingItemScra
         nextFetchAt: new Date(now() + DELAY_MS), finishedAt: complete ? new Date(now()) : null,
         currentCode: null, leaseToken: null, leaseUntil: null, ...(complete ? { codes: [] } : {}),
       });
-      if (result.status === 'failed') await log('warning', 'AmiAmi HTML import item fetch failed', { jobId: job.jobId, itemCode: code });
+      if (result.status === 'failed') await log('warning', 'AmiAmi list import item fetch failed', { jobId: job.jobId, itemCode: code });
       reportedStorageFailure = false;
     } catch (_) {
       if (job) {
@@ -136,7 +136,7 @@ function createAmiAmiUploadService({ jobModel, itemModel, attemptMissingItemScra
         } catch (_) { /* Leave the claim to expire if storage remains unavailable. */ }
       }
       if (!reportedStorageFailure) {
-        await log('error', 'AmiAmi HTML import storage or worker operation failed', { jobId: job?.jobId || null });
+        await log('error', 'AmiAmi list import storage or worker operation failed', { jobId: job?.jobId || null });
         reportedStorageFailure = true;
       }
     } finally {

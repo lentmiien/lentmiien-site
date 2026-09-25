@@ -47,6 +47,30 @@ let f;
 beforeEach(() => { jest.useFakeTimers(); f = fixture(); });
 afterEach(() => { f.service.stop(); jest.useRealTimers(); });
 
+test('code lists filter existing records and use the same single-job queue and delay as HTML', async () => {
+  f.service.stop(); f = fixture(['FIGURE-1']);
+  const result = await f.service.submit('FIGURE-1\r\nTOY-RBT-9417\r\nTOY-RBT-9417\r\nFIGURE-2', creator, 'codes');
+  expect(result).toMatchObject({ totalCodes: 3, queuedCount: 2, skippedExisting: 1 });
+  expect(f.row().codes).toEqual(['TOY-RBT-9417', 'FIGURE-2']);
+  await expect(f.service.submit(html('FIGURE-3'), creator)).rejects.toMatchObject({ status: 409 });
+  await f.service.tick();
+  f.advance(DELAY_MS - 1);
+  await f.service.tick();
+  expect(f.fetch.mock.calls).toEqual([['TOY-RBT-9417']]);
+  f.advance(1);
+  await f.service.tick();
+  expect(f.fetch.mock.calls).toEqual([['TOY-RBT-9417'], ['FIGURE-2']]);
+  expect(await f.service.status()).toMatchObject({ state: 'completed', fetched: 2 });
+});
+
+test('invalid code-list row rejects the whole submission before catalog lookup or queue writes', async () => {
+  await expect(f.service.submit('FIGURE-1\nprivate invalid input', creator, 'codes')).rejects.toMatchObject({ code: 'INVALID_CODE' });
+  expect(f.deps.itemModel.find).not.toHaveBeenCalled();
+  expect(f.jobModel.findOneAndUpdate).not.toHaveBeenCalled();
+  expect(f.fetch).not.toHaveBeenCalled();
+  expect(f.row()).toBeNull();
+});
+
 test('filters all existing items, deduplicates codes, and persists only the missing queue', async () => {
   f.service.stop(); f = fixture(['FIGURE-1']);
   const result = await f.service.submit(html('FIGURE-1', 'TOY-RBT-9417', 'TOY-RBT-9417'), creator);

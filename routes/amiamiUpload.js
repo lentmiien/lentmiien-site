@@ -11,7 +11,7 @@ function createAmiAmiUploadRouter(service, { roleModel = Role, appLogger = logge
   const router = express.Router();
   const csrf = createSessionCsrf({ appLogger });
   const upload = multer({ storage: multer.memoryStorage(), limits: {
-    fileSize: MAX_HTML_BYTES, fieldSize: MAX_HTML_BYTES, files: 1, fields: 1, parts: 3,
+    fileSize: MAX_HTML_BYTES, fieldSize: MAX_HTML_BYTES, files: 1, fields: 2, parts: 4,
   } }).single('file');
   router.use((req, res, next) => {
     res.set({
@@ -34,26 +34,31 @@ function createAmiAmiUploadRouter(service, { roleModel = Role, appLogger = logge
       message: { error: 'Too many uploads. Wait a minute before trying again.' } }),
     (req, _res, next) => {
       if ((req.get('content-encoding') || 'identity') !== 'identity' || !req.is('multipart/form-data')) {
-        return next(new AmiAmiUploadError('INVALID_UPLOAD', 'Submit an uncompressed HTML file or pasted HTML using the form.'));
+        return next(new AmiAmiUploadError('INVALID_UPLOAD', 'Submit an uncompressed file or pasted text using the form.'));
       }
       upload(req, _res, error => next(error && !(error instanceof multer.MulterError)
-        ? new AmiAmiUploadError('INVALID_UPLOAD', 'The HTML upload could not be read. Try uploading it again.') : error));
+        ? new AmiAmiUploadError('INVALID_UPLOAD', 'The upload could not be read. Try uploading it again.') : error));
     }, async (req, res) => {
       try {
-        if (Object.keys(req.body || {}).some(key => key !== 'html')
+        if (Object.keys(req.body || {}).some(key => !['html', 'format'].includes(key))
           || (req.body?.html !== undefined && typeof req.body.html !== 'string')) {
-          throw new AmiAmiUploadError('INVALID_UPLOAD', 'Choose one HTML file or paste HTML.');
+          throw new AmiAmiUploadError('INVALID_UPLOAD', 'Choose one file or paste text.');
+        }
+        const format = req.body?.format ?? 'html';
+        if (!['html', 'codes'].includes(format)) {
+          throw new AmiAmiUploadError('INVALID_FORMAT', 'Choose HTML or item codes as the input format.');
         }
         const pasted = req.body?.html || '';
-        if (req.file && (pasted.trim() || !/\.html?$/i.test(req.file.originalname))) {
-          throw new AmiAmiUploadError('INVALID_UPLOAD', 'Choose one .html/.htm file or paste HTML, not both.');
+        const extension = format === 'codes' ? /\.txt$/i : /\.html?$/i;
+        if (req.file && (pasted.trim() || !extension.test(req.file.originalname))) {
+          throw new AmiAmiUploadError('INVALID_UPLOAD', `Choose one ${format === 'codes' ? '.txt' : '.html/.htm'} file or paste text, not both.`);
         }
-        const html = req.file ? new TextDecoder('utf-8', { fatal: true }).decode(req.file.buffer) : pasted;
-        const job = await service.submit(html, String(req.user._id));
+        const input = req.file ? new TextDecoder('utf-8', { fatal: true }).decode(req.file.buffer) : pasted;
+        const job = await service.submit(input, String(req.user._id), format);
         res.status(202).json({ job });
       } catch (error) {
         if (error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA') {
-          throw new AmiAmiUploadError('INVALID_ENCODING', 'Save the HTML file as UTF-8 text.');
+          throw new AmiAmiUploadError('INVALID_ENCODING', 'Save the file as UTF-8 text.');
         }
         throw error;
       } finally {
@@ -70,10 +75,10 @@ function createAmiAmiUploadRouter(service, { roleModel = Role, appLogger = logge
       message = error.message;
     } else if (error instanceof multer.MulterError) {
       status = ['LIMIT_FILE_SIZE', 'LIMIT_FIELD_VALUE'].includes(error.code) ? 413 : 400;
-      message = status === 413 ? 'HTML must be no larger than 2 MiB.' : 'Upload one HTML file or paste HTML.';
+      message = status === 413 ? 'The upload must be no larger than 2 MiB.' : 'Upload one file or paste text.';
     }
     if (status === 503) {
-      await appLogger.error('AmiAmi HTML import request failed', { category: 'amiami-upload' });
+      await appLogger.error('AmiAmi list import request failed', { category: 'amiami-upload' });
     }
     res.status(status).json({ error: message });
   });

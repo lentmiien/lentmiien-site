@@ -76,13 +76,53 @@ test.each([
 test('accepts pasted fragments and forwards only the authenticated creator', async () => {
   const html = '<div><a href="/eng/detail?gcode=TOY-RBT-9417">x</a></div>';
   expect((await post(body(html))).status).toBe(202);
-  expect(service.submit).toHaveBeenCalledWith(html, user._id);
+  expect(service.submit).toHaveBeenCalledWith(html, user._id, 'html');
 });
 
 test('accepts a saved UTF-8 HTML file', async () => {
   const form = new FormData(); form.append('file', new Blob(['<body>sample HTML</body>'], { type: 'text/html' }), 'items.html');
   expect((await post(form)).status).toBe(202);
-  expect(service.submit).toHaveBeenCalledWith('<body>sample HTML</body>', user._id);
+  expect(service.submit).toHaveBeenCalledWith('<body>sample HTML</body>', user._id, 'html');
+});
+
+test.each(['paste', 'file'])('accepts an explicit code-list %s and forwards the selected format', async mode => {
+  const input = 'TOY-RBT-9417\r\nFIGURE-123\r\n';
+  const form = new FormData(); form.append('format', 'codes');
+  if (mode === 'paste') form.append('html', input);
+  else form.append('file', new Blob([input], { type: 'text/plain' }), 'items.txt');
+  expect((await post(form)).status).toBe(202);
+  expect(service.submit).toHaveBeenCalledWith(input, user._id, 'codes');
+});
+
+test.each(['unknown-format', 'duplicate-format', 'duplicate-input', 'wrong-extension', 'both', 'invalid-encoding'])('rejects invalid code-list uploads: %s', async mode => {
+  const form = new FormData(); form.append('format', mode === 'unknown-format' ? 'csv' : 'codes');
+  if (mode === 'duplicate-format') form.append('format', 'html');
+  if (mode === 'duplicate-input') { form.append('html', 'FIGURE-1'); form.append('html', 'FIGURE-2'); }
+  if (mode === 'wrong-extension') form.append('file', new Blob(['FIGURE-1']), 'items.html');
+  if (mode === 'both') { form.append('html', 'FIGURE-1'); form.append('file', new Blob(['FIGURE-2']), 'items.txt'); }
+  if (mode === 'invalid-encoding') form.append('file', new Blob([Uint8Array.from([255])]), 'items.txt');
+  expect((await post(form)).status).toBe(400);
+  expect(service.submit).not.toHaveBeenCalled();
+});
+
+test.each(['paste', 'file'])('bounds code-list %s uploads', async mode => {
+  const form = new FormData(); form.append('format', 'codes');
+  const input = 'x'.repeat(MAX_HTML_BYTES + 1);
+  if (mode === 'paste') form.append('html', input);
+  else form.append('file', new Blob([input]), 'items.txt');
+  expect((await post(form)).status).toBe(413);
+  expect(service.submit).not.toHaveBeenCalled();
+});
+
+test('code-list upload requires CSRF and safely reports parser validation errors', async () => {
+  const form = body('gcode\nFIGURE-1'); form.append('format', 'codes');
+  expect((await post(form, { 'X-CSRF-Token': '' })).status).toBe(403);
+  expect(service.submit).not.toHaveBeenCalled();
+  service.submit.mockRejectedValueOnce(new AmiAmiUploadError('INVALID_CODE', 'Invalid item code on line 1.'));
+  const response = await post(form);
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ error: 'Invalid item code on line 1.' });
+  expect(logger.error).not.toHaveBeenCalled();
 });
 
 test.each(['both', 'extra', 'wrong-extension', 'invalid-encoding', 'multiple-files'])('rejects malformed uploads: %s', async mode => {
@@ -122,7 +162,7 @@ test('unexpected service failures are logged without raw input or secrets', asyn
   const response = await fetch(base + '/status');
   expect(response.status).toBe(503);
   expect(await response.text()).not.toContain('secret');
-  expect(logger.error).toHaveBeenCalledWith('AmiAmi HTML import request failed', { category: 'amiami-upload' });
+  expect(logger.error).toHaveBeenCalledWith('AmiAmi list import request failed', { category: 'amiami-upload' });
 });
 
 test('rejects malformed multipart and compressed input', async () => {
