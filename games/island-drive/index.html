@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0e0f13" />
+    <meta
+      name="description"
+      content="Take the long way home. Explore Amber Isle in three distinct cars: a quiet harbour, pine forests, highland roads and an open coastline."
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Amber Isle · Island Drive</title>
+    <link rel="icon" href="assets/images/rover.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="css/color-theme.css" />
+    <link rel="stylesheet" href="css/game.css" />
+    <script src="js/world.js" defer></script>
+    <script src="js/simulation.js" defer></script>
+    <script src="js/boot.js" defer></script>
+  </head>
+  <body>
+    <canvas
+      id="scene"
+      tabindex="0"
+      aria-label="3D island driving view. Use arrow keys or W A S D to drive; P to pause. The adjacent HUD and map show your progress."
+    ></canvas>
+    <div id="loading" class="loading" role="status">
+      <img
+        src="assets/images/coast-poster.svg"
+        alt="An illustrated winding road beside sea cliffs"
+      />
+      <div>
+        <p class="eyebrow">ISLAND DRIVE</p>
+        <h1>Amber Isle</h1>
+        <p id="loadStatus">Preparing the island…</p>
+        <p class="muted">
+          If loading does not finish, reload this page. A browser with WebGL 2 and JavaScript is
+          required.
+        </p>
+      </div>
+    </div>
+    <noscript
+      ><div class="fatal">
+        JavaScript is required to drive. Enable it and reload the page.
+      </div></noscript
+    >
+    <section id="menu" class="menu" hidden aria-label="Choose your car">
+      <div class="menu-content">
+        <p class="eyebrow"><span class="brand-dot"></span> LENTMIIEN / ISLAND DRIVE</p>
+        <h1>Take the<br /><em>long way.</em></h1>
+        <p class="intro">
+          Welcome to Amber Isle. A quiet harbour, pine-scented hills, and a coast road with nowhere
+          you need to be.
+        </p>
+        <div class="section-label">
+          <span>01 / Choose your drive</span><span>Three ways to wander</span>
+        </div>
+        <div class="cars" role="group" aria-label="Car selection">
+          <button class="car-card selected" data-car="rover" aria-pressed="true">
+            <img src="assets/images/rover.svg" alt="Golden yellow Pebble hatchback" /><span
+              class="car-name"
+              >Pebble</span
+            ><span class="car-type">Easygoing</span
+            ><span class="car-detail">79 km/h · forgiving grip</span
+            ><span class="bars" aria-hidden="true">▰ ▱ ▱</span>
+          </button>
+          <button class="car-card" data-car="tourer" aria-pressed="false">
+            <img src="assets/images/tourer.svg" alt="Sea green Meridian tourer" /><span
+              class="car-name"
+              >Meridian</span
+            ><span class="car-type">Balanced</span
+            ><span class="car-detail">133 km/h · natural feel</span
+            ><span class="bars" aria-hidden="true">▰ ▰ ▱</span>
+          </button>
+          <button class="car-card" data-car="sport" aria-pressed="false">
+            <img src="assets/images/sport.svg" alt="Ember red Comet sports coupe" /><span
+              class="car-name"
+              >Comet</span
+            ><span class="car-type">Demanding</span
+            ><span class="car-detail">205 km/h · brake early</span
+            ><span class="bars" aria-hidden="true">▰ ▰ ▰</span>
+          </button>
+        </div>
+        <p id="carDescription" class="car-description">
+          Light, calm and planted. The easiest way to get to know the island.
+        </p>
+        <button id="start" class="primary start" disabled>Preparing island…</button>
+        <div class="menu-actions">
+          <button id="welcome" class="text-button">♪ Listen to the welcome</button
+          ><button id="menuHelp" class="text-button">Controls &amp; guide ↗</button>
+        </div>
+        <p class="menu-foot">No races. No damage. No fuel. Only the sea ends your journey.</p>
+        <p id="audioCaption" class="caption" hidden>
+          Welcome to Amber Isle. Choose your car, follow the coast, or head for the hills. Drive
+          smoothly and stay on the road. The gold markers are places to explore, not a race. Only
+          the sea ends your journey.
+        </p>
+      </div>
+      <aside class="island-card">
+        <span class="eyebrow">YOUR NEXT DETOUR</span
+        ><img
+          src="assets/images/island-map.svg"
+          alt="Island map with a coastal circuit, a southwest town grid, and connected highland roads"
+        /><strong>A small island. A long afternoon.</strong>
+        <p>Coast Road → Pine Valley → Skywatch</p>
+        <span>~2 km across / open to explore</span>
+      </aside>
+    </section>
+    <main id="hud" hidden>
+      <header class="topbar">
+        <div class="quality panel">
+          <span class="label">DRIVING QUALITY</span
+          ><strong><span id="quality">100</span><small>/100</small></strong
+          ><span id="surface">On the road</span>
+        </div>
+        <div class="location">
+          <span class="eyebrow">AMBER ISLE</span><strong id="roadName">Harbour streets</strong>
+        </div>
+        <div class="actions">
+          <button id="sound" aria-pressed="false" title="Toggle synthesized engine sound">
+            Sound off</button
+          ><button id="mapButton" title="Map (M)">Map <kbd>M</kbd></button
+          ><button id="pause" title="Pause (P)">Pause <kbd>P</kbd></button>
+        </div>
+      </header>
+      <div id="wayfinding" class="wayfinding">
+        <span id="direction">↑</span
+        ><span
+          ><strong id="waypoint">Exploration marker</strong
+          ><small id="wayDistance">Follow the gold diamonds</small></span
+        >
+      </div>
+      <div class="drive-bottom">
+        <div class="speed-panel panel">
+          <div><strong id="speed">0</strong><span>km/h</span><small id="gear">N</small></div>
+          <div class="session-line">
+            <span id="distance">0.00 km</span><span id="time">0:00</span>
+          </div>
+          <div class="meter"><span id="speedBar"></span></div>
+          <p>
+            <span id="collected">0</span> discoveries <span class="dot">·</span>
+            <span id="collisions">0</span> collisions
+          </p>
+        </div>
+        <div class="driving-hint" id="drivingHint">
+          WASD / arrows to drive · Space to brake · C camera
+        </div>
+        <button class="minimap panel" id="minimapButton" aria-label="Open island map">
+          <canvas id="minimap" width="240" height="240" aria-hidden="true"></canvas
+          ><span>N ↑ <span>ISLAND MAP ↗</span></span>
+        </button>
+      </div>
+      <div id="touchControls" class="touch-controls" aria-label="Touch driving controls">
+        <div>
+          <button data-input="left" aria-label="Steer left">◀</button
+          ><button data-input="right" aria-label="Steer right">▶</button>
+        </div>
+        <div>
+          <button data-input="brake" aria-label="Brake">STOP</button
+          ><button data-input="reverse" aria-label="Brake and reverse">↓</button
+          ><button data-input="forward" aria-label="Accelerate">↑</button>
+        </div>
+      </div>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <dialog id="pauseDialog">
+      <p class="eyebrow">TAKE A BREATHER</p>
+      <h2 id="pauseTitle">Parked for a moment.</h2>
+      <p>Your drive is paused. Take your time.</p>
+      <div id="pauseStats" class="stats"></div>
+      <div class="button-row">
+        <button id="resume" class="primary">Continue driving</button
+        ><button id="help">Controls &amp; guide</button><button id="pauseMap">Island map</button
+        ><button id="restart">Restart session</button
+        ><button id="changeCar">Choose another car</button>
+      </div>
+    </dialog>
+    <dialog id="helpDialog">
+      <p class="eyebrow">FIELD GUIDE / AMBER ISLE</p>
+      <h2>A little road sense.</h2>
+      <dl class="controls">
+        <dt>W / ↑</dt>
+        <dd>Accelerate</dd>
+        <dt>S / ↓</dt>
+        <dd>Brake, then reverse</dd>
+        <dt>A D / ← →</dt>
+        <dd>Steer</dd>
+        <dt>Space</dt>
+        <dd>Brake hard</dd>
+        <dt>P / Escape</dt>
+        <dd>Pause / resume</dd>
+        <dt>M / C</dt>
+        <dd>Island map / camera distance</dd>
+      </dl>
+      <p>
+        Slow before corners. Comet carries much more speed and runs wide if you turn too late.
+        Off-road grass reduces speed and grip. Reverse to get away from an obstacle.
+      </p>
+      <p>
+        <strong>Quality = on-road distance percentage − 5 per collision.</strong> Clamped to 0–100.
+        Standing still earns nothing; one continuous contact counts once. Your car cannot break.
+      </p>
+      <p>
+        Four gold markers sit on reachable roads. Drive through one to move it to another location.
+        Discoveries are exploration only: no points, speed boosts or resources.
+      </p>
+      <p>
+        <strong>Only water ends the session.</strong> There is no finish line, timer, fuel or
+        damage. Your statistics last until you restart or leave.
+      </p>
+      <p class="muted">
+        On touch devices, hold the on-screen steering and pedal buttons. Landscape orientation gives
+        the clearest view. Sound is optional; all messages are also visual.
+      </p>
+      <button id="closeHelp" class="primary">Got it</button>
+    </dialog>
+    <dialog id="mapDialog" class="map-dialog">
+      <div class="map-title">
+        <div>
+          <p class="eyebrow">EXPLORE AT YOUR OWN PACE</p>
+          <h2>Amber Isle</h2>
+        </div>
+        <button id="closeMap">Back to drive</button>
+      </div>
+      <canvas
+        id="bigMap"
+        width="900"
+        height="900"
+        aria-label="Map: your car is white; exploration markers are gold; named landmarks are cream"
+      ></canvas>
+      <p>
+        White arrow: you · Gold diamonds: exploration · North is up. All roads connect. Markers do
+        not award score.
+      </p>
+    </dialog>
+    <dialog id="endDialog">
+      <p class="eyebrow">JOURNEY COMPLETE</p>
+      <h2>A little too close<br />to the sea.</h2>
+      <p>The water ended this drive. The island will be here for the next one.</p>
+      <div id="endStats" class="stats"></div>
+      <div class="button-row">
+        <button id="again" class="primary">Drive again</button
+        ><button id="endCars">Choose another car</button>
+      </div>
+    </dialog>
+    <section id="failure" class="fatal" hidden role="alert">
+      <p class="eyebrow">THE ISLAND COULDN’T LOAD</p>
+      <h2>Let’s get you back on the road.</h2>
+      <p id="failureMessage">
+        The graphics engine or a required local asset is unavailable. Enable WebGL 2, check that the
+        game folder is complete, then reload.
+      </p>
+      <button id="reload" class="primary">Reload</button>
+    </section>
+  </body>
+</html>

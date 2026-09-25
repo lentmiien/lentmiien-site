@@ -1,0 +1,30 @@
+{
+  "checks": 22,
+  "passed": [
+    "WebGL island loads",
+    "Car selection updates",
+    "Local narration decodes",
+    "Terrain renders with visible colour instead of a black texture",
+    "Keyboard accelerates car",
+    "Pause freezes simulation",
+    "Pause shortcut cannot resume behind the help modal",
+    "Help displays scoring rule",
+    "Water shows session summary",
+    "Restart clears distance and collisions",
+    "Focus loss pauses",
+    "Optional synthesized engine can be enabled",
+    "No page script errors",
+    "All requests stay local",
+    "Missing texture fails visibly",
+    "Missing WebGL fails visibly",
+    "Touch controls are visible",
+    "Mobile has no horizontal overflow",
+    "Holding the touch accelerator moves the car",
+    "Touch release clears the pressed state",
+    "Mobile game has no failure overlay",
+    "Touch pause is usable"
+  ],
+  "errors": [],
+  "renderer": "Chromium / SwiftShader WebGL2",
+  "viewport": "1440 × 1000 and 390 × 844"
+}
