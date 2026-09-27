@@ -470,8 +470,15 @@
     });
   }
 
-  function buildFieldValue(field) {
+  function buildFieldValue(field, { randomize = false } = {}) {
     if (!field) return null;
+    if (field.controlType === 'random-integer') {
+      if (randomize) {
+        // Unsigned 32-bit seeds remain exact in JavaScript and in JSON.
+        field.randomValue = crypto.getRandomValues(new Uint32Array(1))[0];
+      }
+      return field.randomValue ?? 0;
+    }
     if (field.controlType === 'number') {
       if (field.value === '' || field.value === undefined || field.value === null) {
         return Number(field.defaultValue) || 0;
@@ -502,12 +509,12 @@
     return ref ? ref.node : null;
   }
 
-  function applyFieldOverrides(workflow) {
+  function applyFieldOverrides(workflow, options) {
     if (!workflow || typeof workflow !== 'object') return workflow;
     editableFields.forEach((field) => {
       const node = findNodeForField(workflow, field.loc);
       if (!node || !node.inputs || typeof node.inputs !== 'object') return;
-      node.inputs[field.field] = buildFieldValue(field);
+      node.inputs[field.field] = buildFieldValue(field, options);
     });
     return workflow;
   }
@@ -557,6 +564,7 @@
       [
         { value: 'text', label: 'Text input' },
         { value: 'number', label: 'Number input' },
+        { value: 'random-integer', label: 'Random integer' },
         { value: 'prompt', label: 'Prompt (textarea)' }
       ].forEach((opt) => {
         const option = document.createElement('option');
@@ -573,6 +581,16 @@
 
       const inputWrap = document.createElement('div');
       inputWrap.className = 'mt-2';
+      if (field.controlType === 'random-integer') {
+        const hint = document.createElement('div');
+        hint.className = 'text-muted small';
+        hint.textContent = 'A new random integer is generated for each request (0–4,294,967,295).';
+        if (field.randomValue !== undefined) hint.textContent += ` Last submitted: ${field.randomValue}.`;
+        inputWrap.appendChild(hint);
+        wrapper.appendChild(inputWrap);
+        editableFieldsContainer.appendChild(wrapper);
+        return;
+      }
       const valueInput =
         field.controlType === 'prompt'
           ? document.createElement('textarea')
@@ -643,6 +661,8 @@
         const controlType =
           saved.controlType === 'prompt'
             ? 'prompt'
+            : saved.controlType === 'random-integer'
+            ? 'random-integer'
             : saved.controlType === 'number'
             ? 'number'
             : descriptor.controlType;
@@ -1212,11 +1232,11 @@
     }
   }
 
-  function buildWorkflowPayload() {
+  function buildWorkflowPayload(options) {
     const base = parseWorkflowJson();
     if (!base) return null;
     const payload = cloneWorkflow(base);
-    return applyFieldOverrides(payload);
+    return applyFieldOverrides(payload, options);
   }
 
   function updateJsonViewer() {
@@ -1228,8 +1248,9 @@
   function setFieldControlType(key, type) {
     const field = editableFields.get(key);
     if (!field) return;
-    const nextType = type === 'number' ? 'number' : type === 'prompt' ? 'prompt' : 'text';
+    const nextType = ['text', 'number', 'prompt', 'random-integer'].includes(type) ? type : 'text';
     field.controlType = nextType;
+    delete field.randomValue;
     if (nextType === 'prompt') {
       editableFields.forEach((entry, entryKey) => {
         if (entryKey !== key && entry.controlType === 'prompt') entry.controlType = 'text';
@@ -1417,8 +1438,10 @@
       log('Select a workflow first.', 'text-warning');
       return;
     }
-    const promptJson = buildWorkflowPayload();
+    const promptJson = buildWorkflowPayload({ randomize: true });
     if (!promptJson) return;
+    renderEditableFields();
+    updateJsonViewer();
     const promptText = getPromptFieldValue();
     const negativeText = negativeTextInput ? negativeTextInput.value.trim() : '';
     hideRatingBar();
