@@ -1,0 +1,6 @@
+{
+  "checks": [
+    "Missing local dependency shows module fallback, never an endless loading screen",
+    "WebGL context loss pauses play, releases pointer and displays recovery UI"
+  ]
+}

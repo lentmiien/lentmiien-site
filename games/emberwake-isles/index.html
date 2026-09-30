@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0e0f13"><meta name="description" content="Build a home worth sailing back to. An original peaceful voxel archipelago, played and saved entirely in your browser."><title>Emberwake Isles · A home beyond the tide</title><link rel="icon" href="assets/icons/raft.svg"><link rel="stylesheet" href="css/color-theme.css"><link rel="stylesheet" href="css/game.css"></head>
+<body>
+<canvas id="world" aria-label="First-person voxel archipelago. Keyboard and mouse required."></canvas>
+<div id="loading" role="status"><span class="eyebrow">CHARTING THE ARCHIPELAGO</span><h2>Finding a shore to call home…</h2><p id="loadText">Preparing local textures and terrain</p><progress></progress></div>
+<div id="fatal" hidden role="alert"><h1>The horizon could not be drawn</h1><p id="fatalText">This game requires WebGL 2. Try an updated desktop browser with hardware acceleration.</p><button id="reload">Reload</button></div>
+<section id="welcome" hidden>
+  <div class="cover-copy"><p class="eyebrow">AN ARCHIPELAGO OF YOUR OWN</p><h1>EMBERWAKE<br><em>ISLES</em></h1><p class="lede">Arrive with nothing.<br>Build a home worth sailing back to.</p><p class="intro">Five wild islands. Quiet caves. A thousand small comforts.<br>Gather, craft, voyage, and turn a forgotten shore into your sanctuary.</p><div class="actions"><button class="primary" id="newGame">Begin your island life <span>↗</span></button><button id="continueGame">Your saved voyages</button></div><p class="caption">Desktop · keyboard + mouse · WebGL 2<br>Private browser saves. No account. All assets served locally.</p></div>
+  <div class="cover-art"><img src="assets/chart.svg" alt="An original chart of five islands linked by a wandering sea route"><div class="art-caption"><span>THE TIDEKEEPER’S CHART</span><span>05 ISLANDS / ONE HOME</span></div></div>
+</section>
+<div id="hud" hidden>
+  <div class="topbar"><div><span class="eyebrow">EMBERWAKE ISLES</span><strong id="location">Sunwake Cay</strong><small id="coordinates"></small></div><div class="vitals"><span id="health"></span><span id="food"></span><span id="warmth"></span></div><button id="menuButton">Journal <kbd>Tab</kbd></button></div>
+  <div id="objective"><span class="eyebrow">A SMALL BEGINNING</span><p id="objectiveText"></p></div>
+  <div id="boundary" hidden role="alert"></div>
+  <div id="crosshair" aria-hidden="true">+</div><div id="targetLabel"></div><progress id="mining" max="1" value="0" hidden></progress>
+  <div id="notice" role="status" aria-live="polite"></div><div id="hotbar"></div><div class="bottomline"><span id="keyLegend">WASD move · mouse look · hold click mine · right click place · E use</span><span id="saveStatus">Not yet saved</span></div>
+</div>
+<div id="storm" hidden><span class="eyebrow">BEYOND THE LAST BUOY</span><h1>The sea has no memory.</h1><p>The outer storm has claimed this voyage.<br>Your safe checkpoint remains ashore.</p><div class="wave wave-a"></div><div class="wave wave-b"></div></div>
+<section id="ending" hidden><p class="eyebrow">VOYAGE ENDED</p><h1>Some horizons<br>are not meant to be crossed.</h1><p>The warning buoys are behind you. Your camp is not lost.<br>Restore your last safe checkpoint, or begin another life in a different slot.</p><div class="actions"><button class="primary" id="restoreSafe">Restore last safe checkpoint</button><button id="endingSaves">Open save slots</button></div><p class="caption">Restoring is an explicit rewind. This voyage cannot resume beyond the storm.</p></section>
+<dialog id="panel" aria-labelledby="panelTitle"><header><div><span class="eyebrow">THE TIDEKEEPER’S FIELD NOTES</span><h2 id="panelTitle">Your island life</h2></div><button id="resume">Return to the shore <kbd>Esc</kbd></button></header><nav id="tabs" aria-label="Field note pages"></nav><main id="panelContent"></main><footer id="panelFoot">Time rests while these pages are open. Your crops wait for you.</footer></dialog>
+<noscript><div class="nojs">Emberwake Isles requires JavaScript and WebGL 2. All game state stays in your browser.</div></noscript>
+<script src="js/data.js"></script><script src="js/world.js"></script><script src="js/mesher.js"></script><script src="js/game.js"></script><script src="js/saves.js"></script><script type="module" src="js/load.js"></script>
+</body></html>
