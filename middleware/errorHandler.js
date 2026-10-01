@@ -1,3 +1,5 @@
+const { httpErrorDiagnostics } = require('../utils/httpErrorDiagnostics');
+
 function createErrorHandler(logger) {
   return (error, req, res, next) => {
     if (res.headersSent) {
@@ -22,8 +24,9 @@ function createErrorHandler(logger) {
         metadata: {
           method: req.method,
           statusCode,
-          errorName: error?.name || 'Error',
-          errorCode: error?.code || null,
+          errorName: typeof error?.name === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(error.name) ? error.name : 'Error',
+          errorCode: /^[A-Z][A-Z0-9_]{0,63}$/.test(error?.code) ? error.code : null,
+          ...httpErrorDiagnostics(error, req),
         },
       });
     }

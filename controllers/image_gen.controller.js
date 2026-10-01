@@ -7,7 +7,8 @@ const { Readable } = require('stream');
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
-const EmbeddingApiService = require('../services/embeddingApiService');
+const embeddingQueueService = require('../services/embeddingQueueService');
+const { errorDiagnostics } = require('../utils/errorDiagnostics');
 const ComfyGatewayService = require('../services/comfyGatewayService');
 
 const { Prompt, BulkJob, BulkTestPrompt, GoodImage } = require('../database');
@@ -29,10 +30,6 @@ const IMAGE_INPUT_KEYS = ['image', 'image2', 'image3'];
 const JS_FILE_NAME = 'controllers/image_gen.controller.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 const GOOD_IMAGE_DIR = path.join(__dirname, '../public/img');
-const GOOD_IMAGE_COLLECTION = 'good_images';
-const GOOD_IMAGE_CONTENT_TYPE = 'image_prompt';
-const GOOD_IMAGE_PARENT_COLLECTION = 'image_gen_job';
-const embeddingApiService = new EmbeddingApiService();
 const comfyGatewayService = new ComfyGatewayService();
 const localJobStore = new Map(); // prompt_id -> job payload for quick lookups
 const BULK_FEATURE_DISABLED = false;
@@ -1749,18 +1746,6 @@ async function fetchJobDetail(jobId, instanceId) {
   return Object.assign({}, updated, { instance_id: effectiveInstance, files });
 }
 
-function buildGoodImageEmbeddingMetadata(doc) {
-  const documentId = doc?._id?.toString?.();
-  if (!documentId) return null;
-  return {
-    collectionName: GOOD_IMAGE_COLLECTION,
-    documentId,
-    contentType: GOOD_IMAGE_CONTENT_TYPE,
-    parentCollection: GOOD_IMAGE_PARENT_COLLECTION,
-    parentId: doc.job_id || null
-  };
-}
-
 function toGoodImageView(doc, overrides = {}) {
   if (!doc) return null;
   const id = doc._id?.toString?.() || doc.id || null;
@@ -1789,7 +1774,11 @@ function toGoodImageView(doc, overrides = {}) {
     download_url: doc.download_url || null,
     variables: doc.variables || null,
     embedding_status: doc.embedding_status || 'pending',
-    high_quality_embedding: Boolean(doc.high_quality_embedding),
+    high_quality_embedding_status: doc.high_quality_embedding_status
+      || (doc.high_quality_embedding ? doc.embedding_status || 'pending' : 'disabled'),
+    high_quality_embedding: doc.high_quality_embedding_status
+      ? doc.high_quality_embedding_status === 'completed'
+      : doc.embedding_status === 'completed' && Boolean(doc.high_quality_embedding),
     created_at: created,
     updated_at: doc.updated_at || doc.updatedAt || null
   };
@@ -1868,35 +1857,30 @@ async function persistGoodImagesFromJob({ jobId, rating, instanceId, context }) 
         cached_url: `/img/${encodeURIComponent(newName)}`,
         download_url: file.download_url || null,
         variables,
-        embedding_status: 'pending',
-        high_quality_embedding: ratingLabel === 'great'
+        embedding_queue_version: 1,
+        embedding_status: promptText ? 'pending' : 'failed',
+        embedding_error: promptText ? null : 'prompt missing',
+        high_quality_embedding_status: ratingLabel === 'great' ? (promptText ? 'pending' : 'failed') : 'disabled',
+        high_quality_embedding_error: ratingLabel === 'great' && !promptText ? 'prompt missing' : null,
+        high_quality_embedding: false
       });
 
-      const metadata = buildGoodImageEmbeddingMetadata(doc);
-      if (promptText && metadata) {
+      if (promptText) {
         try {
-          await embeddingApiService.embed([promptText], {}, [metadata]);
-          if (ratingLabel === 'great') {
-            await embeddingApiService.embedHighQuality([promptText], {}, [metadata]);
-          }
-          await GoodImage.updateOne(
-            { _id: doc._id },
-            { embedding_status: 'completed', embedding_error: null, high_quality_embedding: ratingLabel === 'great' }
-          );
+          await embeddingQueueService.enqueueGoodImage(doc);
         } catch (embedErr) {
-          const message = embedErr?.message || String(embedErr);
-          warnings.push(`Embedding failed for ${newName}: ${message}`);
-          await GoodImage.updateOne(
-            { _id: doc._id },
-            { embedding_status: 'failed', embedding_error: message }
-          );
+          // The persisted pending states let reconciliation repair a lost enqueue.
+          warnings.push('Image saved; embedding queue creation will be retried.');
+          logger.warning('Saved image embedding queue creation failed; reconciliation will retry', {
+            category: 'embedding_queue',
+            metadata: { documentId: String(doc._id), ...errorDiagnostics(embedErr) },
+          });
         }
       } else {
         warnings.push(`Prompt missing for ${newName}; embedding skipped.`);
-        await GoodImage.updateOne(
-          { _id: doc._id },
-          { embedding_status: 'failed', embedding_error: 'prompt missing' }
-        );
+        logger.warning('Saved image embedding cannot be queued without a prompt', {
+          category: 'embedding_queue', metadata: { documentId: String(doc._id) },
+        });
       }
 
       saved.push(toGoodImageView(doc, {
@@ -3746,6 +3730,12 @@ exports.getInputFile = async (req, res) => {
   let idleTimer = null;
   let clientDisconnected = false;
   let streamFinished = false;
+  let transferredBytes = 0;
+  let expectedBytes = null;
+  const forwardedHeaders = [
+    'accept-ranges', 'cache-control', 'content-disposition', 'content-length',
+    'content-range', 'content-type', 'etag', 'last-modified', 'x-content-type-options'
+  ];
 
   const clearIdleTimer = () => {
     if (idleTimer) {
@@ -3779,19 +3769,20 @@ exports.getInputFile = async (req, res) => {
       signal: upstreamController.signal
     });
     upstreamDiagnostics = upstream.comfyGateway || null;
-    if (clientDisconnected) return undefined;
+    if (clientDisconnected) {
+      cleanup();
+      await upstream.body?.cancel().catch(() => {});
+      return undefined;
+    }
+    const lengthHeader = upstream.headers.get('content-length');
+    if (/^\d+$/.test(lengthHeader) && Number.isSafeInteger(Number(lengthHeader))) {
+      expectedBytes = Number(lengthHeader);
+    }
+    if (upstreamDiagnostics?.proxyRequestId) {
+      res.setHeader('X-Request-Id', upstreamDiagnostics.proxyRequestId);
+    }
     res.status(upstream.status);
-    [
-      'accept-ranges',
-      'cache-control',
-      'content-disposition',
-      'content-length',
-      'content-range',
-      'content-type',
-      'etag',
-      'last-modified',
-      'x-content-type-options'
-    ].forEach((headerName) => {
+    forwardedHeaders.forEach((headerName) => {
       const value = upstream.headers.get(headerName);
       if (value) res.setHeader(headerName, value);
     });
@@ -3813,7 +3804,10 @@ exports.getInputFile = async (req, res) => {
       idleTimer.unref?.();
     };
     resetIdleTimer();
-    stream.on('data', resetIdleTimer);
+    stream.on('data', (chunk) => {
+      transferredBytes += chunk.length;
+      resetIdleTimer();
+    });
     stream.once('end', () => {
       streamFinished = true;
       cleanup();
@@ -3821,16 +3815,22 @@ exports.getInputFile = async (req, res) => {
     stream.on('error', (error) => {
       cleanup();
       if (clientDisconnected) return;
+      abortUpstream(error);
       logComfyGatewayFailure('ComfyUI input preview stream failed', error, {
         operation: 'openInputFile',
         endpoint: upstreamDiagnostics?.endpoint || null,
         phase: 'response-body',
         upstreamStatus: upstreamDiagnostics?.status || upstream.status,
         requestId: upstreamDiagnostics?.requestId || null,
+        proxyRequestId: upstreamDiagnostics?.proxyRequestId || null,
+        transferredBytes,
+        expectedBytes,
+        headersSent: res.headersSent,
         durationMs: Date.now() - startedAt,
         upstreamState: upstreamDiagnostics?.upstreamState || null,
       });
       if (!res.headersSent) {
+        forwardedHeaders.forEach(header => res.removeHeader?.(header));
         errorJson(
           res,
           ComfyGatewayService.gatewayHttpStatus(error),

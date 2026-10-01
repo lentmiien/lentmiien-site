@@ -20,15 +20,24 @@ const goodImageSchema = new mongoose.Schema({
   variables: mongoose.Schema.Types.Mixed,
   embedding_status: {
     type: String,
-    enum: ['pending', 'completed', 'failed'],
+    enum: ['pending', 'completed', 'failed', 'disabled'],
     default: 'pending'
   },
   embedding_error: { type: String },
-  high_quality_embedding: { type: Boolean, default: false }
+  high_quality_embedding: { type: Boolean, default: false },
+  high_quality_embedding_status: {
+    type: String,
+    enum: ['pending', 'completed', 'failed', 'disabled']
+  },
+  high_quality_embedding_error: { type: String },
+  // Missing on records written by the old synchronous embedding path.
+  embedding_queue_version: { type: Number }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });
 
 goodImageSchema.index({ created_at: -1 });
+goodImageSchema.index({ embedding_queue_version: 1, embedding_status: 1, created_at: 1 });
+goodImageSchema.index({ high_quality_embedding_status: 1, created_at: 1 });
 
 module.exports = mongoose.model('GoodImage', goodImageSchema, 'good_images');

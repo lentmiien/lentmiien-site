@@ -127,6 +127,23 @@ describe('ComfyGatewayService input files', () => {
     await expect(response.text()).resolves.toBe('partial audio');
   });
 
+  test('creates an opaque preview correlation ID even when the Gateway supplies none', async () => {
+    global.fetch.mockResolvedValue(new Response('image bytes'));
+    const response = await service.openInputFile('PRIVATE filename.png');
+    const requestId = global.fetch.mock.calls[0][1].headers['X-Request-Id'];
+    expect(requestId).toMatch(/^[a-f0-9-]{36}$/);
+    expect(response.comfyGateway).toMatchObject({ requestId, proxyRequestId: requestId });
+    expect(JSON.stringify(response.comfyGateway)).not.toContain('PRIVATE');
+    await response.text();
+  });
+
+  test('retains its generated request ID when preview header acquisition fails', async () => {
+    global.fetch.mockRejectedValue(new TypeError('fetch failed'));
+    const error = await service.openInputFile('PRIVATE filename.png').catch(error => error);
+    const requestId = global.fetch.mock.calls[0][1].headers['X-Request-Id'];
+    expect(error.comfyGateway).toMatchObject({ requestId, proxyRequestId: requestId });
+  });
+
   test('uses a separate cold-start deadline for mutating Gateway actions', async () => {
     const timeoutSpy = jest.spyOn(AbortSignal, 'timeout')
       .mockReturnValue(new AbortController().signal);

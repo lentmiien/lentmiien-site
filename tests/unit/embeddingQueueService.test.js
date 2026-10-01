@@ -33,6 +33,268 @@ const source = {
   parentId: 'conversation-1',
 };
 
+describe('saved image embedding recovery', () => {
+  function fixture(overrides = {}) {
+    const image = {
+      _id: '507f191e810c19729de860ea', job_id: 'image-job', prompt: ' Private image prompt\r\nsecond line ',
+      rating_label: 'great', rating_value: 4, embedding_status: 'pending',
+      high_quality_embedding_status: 'pending', high_quality_embedding: false, embedding_queue_version: 1,
+      ...overrides,
+    };
+    const jobs = new Map();
+    const jobModel = {
+      findById: jest.fn(async id => jobs.has(id) ? { ...jobs.get(id) } : null),
+      create: jest.fn(async job => { jobs.set(job._id, { ...job }); return { ...job }; }),
+      findOne: jest.fn(async filter => jobs.has(filter._id) ? { ...jobs.get(filter._id) } : null),
+      updateOne: jest.fn(async (filter, update) => {
+        const job = jobs.get(filter._id);
+        if (!job || Object.entries(filter).some(([key, value]) => job[key] !== value)) return { modifiedCount: 0 };
+        Object.assign(job, update.$set);
+        for (const key of Object.keys(update.$unset || {})) delete job[key];
+        return { matchedCount: 1, modifiedCount: 1 };
+      }),
+    };
+    const goodImageModel = {
+      findById: jest.fn(async () => ({ ...image })),
+      updateOne: jest.fn(async (_filter, update) => {
+        Object.assign(image, update.$set);
+        return { matchedCount: 1, modifiedCount: 1 };
+      }),
+    };
+    const embeddingService = createEmbeddingService();
+    const logger = createLogger();
+    const vectorModel = { exists: jest.fn().mockResolvedValue(null) };
+    const highQualityVectorModel = { exists: jest.fn().mockResolvedValue(null) };
+    const dependencies = { jobModel, goodImageModel, vectorModel, highQualityVectorModel, embeddingService, loggerImpl: logger };
+    function worker() {
+      const service = new EmbeddingQueueService(dependencies);
+      service.findLimited = jest.fn(async (model, filter) => {
+        if (model !== goodImageModel) return [];
+        if (filter.embedding_queue_version?.$exists === false) {
+          return image.embedding_queue_version === undefined && ['pending', 'failed'].includes(image.embedding_status) ? [{ ...image }] : [];
+        }
+        return image.embedding_status === 'pending' || image.high_quality_embedding_status === 'pending' ? [{ ...image }] : [];
+      });
+      service.markRemoteAttempt = jest.fn(async job => {
+        const updated = { ...jobs.get(job._id), attempts: job.attempts + 1 };
+        jobs.set(job._id, updated);
+        return { ...updated };
+      });
+      return service;
+    }
+    async function process(service, mode) {
+      const stored = [...jobs.values()].find(job => job.mode === mode);
+      Object.assign(stored, { status: 'processing', claimToken: `claim-${mode}` });
+      return service.processClaimedJob({ ...stored });
+    }
+    return { image, jobs, jobModel, goodImageModel, embeddingService, logger, vectorModel, highQualityVectorModel, worker, process };
+  }
+
+  test('creates distinct durable standard/HQ intents without embedding or storing prompt text in jobs', async () => {
+    const f = fixture();
+    const service = f.worker();
+    expect(await service.enqueueGoodImage(f.image)).toBe(2);
+    await service.enqueueGoodImage(f.image);
+    expect(f.jobs.size).toBe(2);
+    expect(f.jobModel.create).toHaveBeenCalledTimes(2);
+    expect([...f.jobs.values()].map(job => job.mode)).toEqual(['default', 'high_quality']);
+    expect(JSON.stringify([...f.jobs.values()])).not.toContain('Private image prompt');
+    expect(f.embeddingService.embed).not.toHaveBeenCalled();
+    expect(f.embeddingService.embedHighQuality).not.toHaveBeenCalled();
+  });
+
+  test('standard success survives an HQ timeout and a restarted worker completes only the pending mode', async () => {
+    const f = fixture();
+    const first = f.worker();
+    await first.enqueueGoodImage(f.image);
+    expect(await f.process(first, 'default')).toBe('completed');
+    f.embeddingService.embedHighQuality.mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }));
+    expect(await f.process(first, 'high_quality')).toBe('failed');
+    expect(f.image).toMatchObject({ embedding_status: 'completed', high_quality_embedding_status: 'pending', high_quality_embedding: false });
+    expect([...f.jobs.values()].find(job => job.mode === 'high_quality')).toMatchObject({ status: 'pending', nextAttemptAt: expect.any(Date) });
+    const restarted = f.worker();
+    await restarted.reconcileGoodImages();
+    expect(await f.process(restarted, 'high_quality')).toBe('completed');
+    await restarted.reconcileGoodImages();
+    expect(f.image).toMatchObject({ embedding_status: 'completed', high_quality_embedding_status: 'completed', high_quality_embedding: true });
+    expect(f.embeddingService.embed).toHaveBeenCalledTimes(1);
+    expect(f.embeddingService.embedHighQuality).toHaveBeenCalledTimes(2);
+    expect(f.embeddingService.persistEmbeddings).toHaveBeenCalledTimes(2);
+    expect(f.goodImageModel.updateOne).toHaveBeenCalledWith(expect.objectContaining({ prompt: f.image.prompt }), expect.any(Object));
+  });
+
+  test('a saved image remains durable while ComfyUI is loaded and is processed automatically after stop', async () => {
+    const f = fixture({ rating_label: 'good', rating_value: 3, high_quality_embedding_status: 'disabled' });
+    const service = f.worker();
+    await service.enqueueGoodImage(f.image);
+    service.getReservation = async () => ({ active: false });
+    service.getContainers = jest.fn().mockResolvedValue({ containers: [{ id: 'comfyui', state: 'running' }] });
+    service.reconcilePendingSourcesIfDue = jest.fn();
+    service.claimNext = jest.fn(async operation => {
+      if (operation === 'delete') return null;
+      const stored = [...f.jobs.values()].find(job => job.status === 'pending');
+      if (!stored) return null;
+      Object.assign(stored, { status: 'processing', claimToken: 'background-claim' });
+      return { ...stored };
+    });
+    expect(await service.drainQueue()).toMatchObject({ processed: 0, skipped: 'gpu_busy' });
+    expect([...f.jobs.values()][0]).toMatchObject({ status: 'pending', attempts: 0 });
+    expect(f.embeddingService.embed).not.toHaveBeenCalled();
+    service.getContainers.mockResolvedValue({ containers: [{ id: 'comfyui', state: 'exited' }] });
+    expect(await service.drainQueue()).toEqual({ processed: 1 });
+    expect(f.image.embedding_status).toBe('completed');
+    expect(f.embeddingService.embed).toHaveBeenCalledTimes(1);
+  });
+
+  test('recovers a saved source after enqueue loss and coalesces jobs after another restart', async () => {
+    const f = fixture();
+    f.jobModel.create.mockRejectedValueOnce(new Error('temporary database failure'));
+    await expect(f.worker().enqueueGoodImage(f.image)).rejects.toThrow();
+    expect(f.image.embedding_status).toBe('pending');
+    await f.worker().reconcileGoodImages();
+    await f.worker().reconcileGoodImages();
+    expect(f.jobs.size).toBe(2);
+    expect(f.embeddingService.embed).not.toHaveBeenCalled();
+  });
+
+  test('legacy partial success reuses its standard vectors and queues the missing HQ result once', async () => {
+    const f = fixture({ embedding_queue_version: undefined, embedding_status: 'failed', high_quality_embedding_status: undefined, high_quality_embedding: true });
+    f.vectorModel.exists.mockResolvedValue({ _id: 'existing-vector' });
+    const service = f.worker();
+    expect(await service.reconcileGoodImages()).toMatchObject({ queued: 1, markedCompleted: 1 });
+    expect(f.image).toMatchObject({ embedding_queue_version: 1, embedding_status: 'completed', high_quality_embedding_status: 'pending', high_quality_embedding: false });
+    expect([...f.jobs.values()].map(job => job.mode)).toEqual(['high_quality']);
+    await f.worker().reconcileGoodImages();
+    expect(f.jobModel.create).toHaveBeenCalledTimes(1);
+    expect(service.findLimited).toHaveBeenCalledWith(f.goodImageModel, {
+      embedding_queue_version: { $exists: false }, embedding_status: { $in: ['pending', 'failed'] },
+    }, { created_at: 1 });
+  });
+
+  test('legacy failed good images recover without requesting HQ embeddings', async () => {
+    const f = fixture({ rating_label: 'good', rating_value: 3, embedding_queue_version: undefined, embedding_status: 'failed', high_quality_embedding_status: undefined });
+    await f.worker().reconcileGoodImages();
+    expect(f.image).toMatchObject({ embedding_status: 'pending', high_quality_embedding_status: 'disabled' });
+    expect([...f.jobs.values()].map(job => job.mode)).toEqual(['default']);
+  });
+
+  test('missing prompts and permanent HQ failures stop retrying without changing a successful standard result', async () => {
+    const missing = fixture({ prompt: '', embedding_queue_version: undefined, embedding_status: 'failed', high_quality_embedding_status: undefined });
+    await missing.worker().reconcileGoodImages();
+    await missing.worker().reconcileGoodImages();
+    expect(missing.image.high_quality_embedding_status).toBe('failed');
+    expect(missing.jobs.size).toBe(0);
+    expect(missing.logger.warning).toHaveBeenCalledTimes(1);
+    const f = fixture();
+    const service = f.worker();
+    await service.enqueueGoodImage(f.image);
+    await f.process(service, 'default');
+    f.embeddingService.embedHighQuality.mockRejectedValueOnce(Object.assign(new Error('invalid'), { status: 400 }));
+    await f.process(service, 'high_quality');
+    await f.worker().reconcileGoodImages();
+    expect(f.image).toMatchObject({ embedding_status: 'completed', high_quality_embedding_status: 'failed' });
+    expect(f.embeddingService.embedHighQuality).toHaveBeenCalledTimes(1);
+  });
+
+  test('deletion during generation discards the computed image vector', async () => {
+    const f = fixture();
+    const service = f.worker();
+    await service.enqueueGoodImage(f.image);
+    f.goodImageModel.findById.mockResolvedValueOnce(f.image).mockResolvedValue(null);
+    service.enqueueDelete = jest.fn();
+    expect(await f.process(service, 'default')).toBe('superseded');
+    expect(f.embeddingService.persistEmbeddings).not.toHaveBeenCalled();
+    expect(service.enqueueDelete).toHaveBeenCalledWith(expect.objectContaining({ collectionName: 'good_images' }), { mode: 'default' });
+  });
+
+  test('reclaims an expired processing lease using the existing atomic claim filter', async () => {
+    const now = new Date();
+    const jobModel = { findOneAndUpdate: jest.fn().mockResolvedValue({ source: { collectionName: 'good_images' } }) };
+    const service = new EmbeddingQueueService({ jobModel, now: () => now, embeddingService: createEmbeddingService() });
+    await service.claimNext('upsert');
+    expect(jobModel.findOneAndUpdate.mock.calls[0][0].$or).toContainEqual({ status: 'processing', leaseExpiresAt: { $lte: now } });
+    expect(jobModel.findOneAndUpdate.mock.calls[0][1].$set.claimToken).toEqual(expect.any(String));
+  });
+});
+
+describe('embedding GPU admission', () => {
+  test.each([
+    [{ active: true, service: 'ollama' }, { containers: [{ id: 'comfyui', state: 'exited' }] }, true],
+    [{ active: false, dispatch_paused: true }, { containers: [{ id: 'comfyui', state: 'exited' }] }, true],
+    [{ active: false, blocked_queue_depth: 1 }, { containers: [{ id: 'comfyui', state: 'exited' }] }, true],
+    [{ active: false }, { containers: [{ id: 'comfyui', state: 'running' }] }, true],
+    [{ active: false }, { containers: [{ id: 'comfyui', state: 'restarting' }] }, true],
+    [{ active: false }, { containers: [{ id: 'comfyui', state: 'exited' }] }, false],
+    [{ active: false }, { containers: { comfyui: { running: false, state: 'stopped' } } }, false],
+    [{ active: false }, { containers: [] }, true],
+    [{ active: false }, { containers: [{ id: 'comfyui', state: 'unknown' }] }, true],
+    [{}, { containers: [{ id: 'comfyui', state: 'exited' }] }, true],
+  ])('reservation %j and containers %j produce busy=%s', async (reservation, containers, busy) => {
+    const service = new EmbeddingQueueService({ jobModel: {}, embeddingService: createEmbeddingService(), loggerImpl: createLogger(),
+      getReservation: async () => reservation, getContainers: async () => containers });
+    expect(await service.isGpuBusy()).toBe(busy);
+  });
+
+  test('waits between ComfyUI generations without an embedding attempt, then resumes after stop', async () => {
+    const logger = createLogger();
+    const getContainers = jest.fn().mockResolvedValue({ containers: [{ id: 'comfyui', state: 'running' }] });
+    const embeddingService = createEmbeddingService();
+    const service = new EmbeddingQueueService({ jobModel: {}, embeddingService, loggerImpl: logger,
+      getReservation: async () => ({ active: false }), getContainers });
+    service.reconcilePendingSourcesIfDue = jest.fn();
+    service.claimNext = jest.fn().mockImplementation(async operation => operation === 'upsert' ? createJob() : null);
+    service.releaseSupersededClaim = jest.fn();
+    service.processClaimedJob = jest.fn();
+    expect(await service.drainQueue()).toMatchObject({ skipped: 'gpu_busy' });
+    expect(await service.drainQueue()).toMatchObject({ skipped: 'gpu_busy' });
+    expect(service.processClaimedJob).not.toHaveBeenCalled();
+    expect(embeddingService.embed).not.toHaveBeenCalled();
+    expect(logger.notice).toHaveBeenCalledTimes(1);
+    getContainers.mockResolvedValue({ containers: [{ id: 'comfyui', state: 'exited' }] });
+    expect(await service.isGpuBusy()).toBe(false);
+    expect(logger.notice).toHaveBeenCalledTimes(2);
+  });
+
+  test('state lookup failure defers work and warns once without secrets', async () => {
+    const logger = createLogger();
+    const service = new EmbeddingQueueService({ jobModel: {}, embeddingService: createEmbeddingService(), loggerImpl: logger,
+      getReservation: async () => ({ active: false }), getContainers: async () => { throw new Error('PRIVATE-TOKEN'); } });
+    expect(await service.isGpuBusy()).toBe(true);
+    expect(await service.isGpuBusy()).toBe(true);
+    expect(logger.warning).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('PRIVATE');
+  });
+
+  test('bounded state reads use the configured Gateway hosts and admin header only for container inspection', async () => {
+    const previous = process.env.LLM_ADMIN_TOKEN;
+    process.env.LLM_ADMIN_TOKEN = 'PRIVATE-ADMIN';
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce(new Response('{"active":false}'))
+      .mockResolvedValueOnce(new Response('{"containers":[{"id":"comfyui","state":"exited"}]}'));
+    try {
+      const service = new EmbeddingQueueService({ jobModel: {}, embeddingService: createEmbeddingService(),
+        gatewayBaseUrl: 'http://queue.test', comfyBaseUrl: 'http://comfy.test' });
+      expect(await service.isGpuBusy()).toBe(false);
+      expect(fetchSpy).toHaveBeenNthCalledWith(1, 'http://queue.test/gpu/reservation', expect.objectContaining({ method: 'GET', headers: {}, redirect: 'error' }));
+      expect(fetchSpy).toHaveBeenNthCalledWith(2, 'http://comfy.test/containers', expect.objectContaining({ method: 'GET', headers: { 'X-Admin-Token': 'PRIVATE-ADMIN' }, redirect: 'error' }));
+    } finally {
+      fetchSpy.mockRestore();
+      if (previous === undefined) delete process.env.LLM_ADMIN_TOKEN;
+      else process.env.LLM_ADMIN_TOKEN = previous;
+    }
+  });
+
+  test('rejects oversized or failed Gateway state responses without consuming an embedding attempt', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce(new Response('x'.repeat(256 * 1024 + 1)))
+      .mockResolvedValueOnce(new Response('PRIVATE', { status: 401 }));
+    try {
+      const service = new EmbeddingQueueService({ jobModel: {}, embeddingService: createEmbeddingService() });
+      await expect(service.fetchReservation()).rejects.toThrow('size limit');
+      await expect(service.fetchReservation()).rejects.toMatchObject({ status: 401 });
+      expect(fetchSpy.mock.calls.every(([, options]) => options.signal.aborted)).toBe(true);
+    } finally { fetchSpy.mockRestore(); }
+  });
+});
+
 function createEmbeddingService() {
   return {
     timeoutMs: 17 * 60 * 1000,

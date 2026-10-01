@@ -4,12 +4,14 @@ const {
   Chat5Model,
   Conversation5Model,
   EmbeddingQueueJob,
+  GoodImage,
   MessageInboxEntry,
   PendingRequests,
   VectorEmbedding,
   VectorEmbeddingHighQuality,
 } = require('../database');
 const { normalizeAiGatewayReservation } = require('../utils/aiGatewayReservation');
+const { isComfyUiStopped } = require('../utils/comfyUiState');
 const logger = require('../utils/logger');
 const { errorDiagnostics } = require('../utils/errorDiagnostics');
 const EmbeddingApiService = require('./embeddingApiService');
@@ -28,6 +30,7 @@ const DEFAULT_STANDARD_RETENTION_DAYS = 90;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const CHAT_MESSAGE_COLLECTION = 'chat_message';
 const MESSAGE_INBOX_COLLECTION = 'message_inbox';
+const GOOD_IMAGE_COLLECTION = 'good_images';
 const SEARCH_MODES = new Set(['default', 'high_quality']);
 
 function positiveInteger(value, fallback) {
@@ -116,21 +119,28 @@ function matchedCount(result) {
   return null;
 }
 
+function wantsGoodImageHighQuality(image) {
+  return image.rating_label === 'great' || image.rating_value === 4;
+}
+
 class EmbeddingQueueService {
   constructor({
     jobModel = EmbeddingQueueJob,
     chatModel = Chat5Model,
     conversationModel = Conversation5Model,
     messageInboxModel = MessageInboxEntry,
+    goodImageModel = GoodImage,
     pendingModel = PendingRequests,
     vectorModel = VectorEmbedding,
     highQualityVectorModel = VectorEmbeddingHighQuality,
     embeddingService = null,
     loggerImpl = logger,
     getReservation = null,
+    getContainers = null,
     sourceResolver = null,
     sourceStateUpdater = null,
     gatewayBaseUrl = process.env.AI_GATEWAY_BASE_URL,
+    comfyBaseUrl = process.env.COMFY_API_BASE || gatewayBaseUrl,
     requestTimeoutMs = positiveInteger(
       process.env.EMBED_QUEUE_API_TIMEOUT_MS,
       DEFAULT_REQUEST_TIMEOUT_MS,
@@ -164,12 +174,14 @@ class EmbeddingQueueService {
     this.chatModel = chatModel;
     this.conversationModel = conversationModel;
     this.messageInboxModel = messageInboxModel;
+    this.goodImageModel = goodImageModel;
     this.pendingModel = pendingModel;
     this.vectorModel = vectorModel;
     this.highQualityVectorModel = highQualityVectorModel;
     this.embeddingService = embeddingService || new EmbeddingApiService({ timeoutMs: requestTimeoutMs });
     this.logger = loggerImpl;
     this.gatewayBaseUrl = normalizeBaseUrl(gatewayBaseUrl);
+    this.comfyBaseUrl = normalizeBaseUrl(comfyBaseUrl);
     this.requestTimeoutMs = requestTimeoutMs;
     this.reservationTimeoutMs = reservationTimeoutMs;
     this.pollIntervalMs = pollIntervalMs;
@@ -189,6 +201,9 @@ class EmbeddingQueueService {
           return readyState === undefined || readyState === 1;
         };
     this.getReservation = getReservation || (() => this.fetchReservation());
+    this.getContainers = getContainers || (() => this.fetchGatewayState('/containers', this.comfyBaseUrl, {
+      ...(process.env.LLM_ADMIN_TOKEN ? { 'X-Admin-Token': process.env.LLM_ADMIN_TOKEN } : {}),
+    }));
     this.sourceResolver = sourceResolver || ((job) => this.resolveStoredSource(job));
     this.sourceStateUpdater = sourceStateUpdater || ((job, state) => (
       this.updateStoredSourceState(job, state)
@@ -451,33 +466,49 @@ class EmbeddingQueueService {
   }
 
   async fetchReservation() {
+    return this.fetchGatewayState('/gpu/reservation');
+  }
+
+  async fetchGatewayState(endpoint, baseUrl = this.gatewayBaseUrl, headers = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.reservationTimeoutMs);
     try {
-      const response = await fetch(`${this.gatewayBaseUrl}/gpu/reservation`, {
+      const response = await fetch(`${baseUrl}${endpoint}`, {
         method: 'GET',
         signal: controller.signal,
+        headers,
+        redirect: 'error',
       });
       if (!response.ok) {
-        const error = new Error(`AI Gateway reservation check failed with HTTP ${response.status}.`);
+        const error = new Error(`AI Gateway state check failed with HTTP ${response.status}.`);
         error.status = response.status;
         throw error;
       }
-      return response.json();
+      const chunks = [];
+      let bytes = 0;
+      for await (const chunk of response.body) {
+        bytes += chunk.byteLength;
+        if (bytes > 256 * 1024) throw new Error('AI Gateway state response exceeded its size limit.');
+        chunks.push(Buffer.from(chunk));
+      }
+      return JSON.parse(Buffer.concat(chunks).toString('utf8'));
     } finally {
       clearTimeout(timer);
+      controller.abort();
     }
   }
 
   async isGpuBusy() {
+    let check = 'reservation';
     try {
       const rawReservation = await this.getReservation();
       const reservation = normalizeAiGatewayReservation(rawReservation);
-      this.reservationCheckFailed = false;
+      if (typeof reservation?.active !== 'boolean') throw new Error('AI Gateway reservation state is unknown.');
       const busy = reservation?.active === true
         || reservation?.dispatchPaused === true
         || Number(reservation?.blockedQueueDepth || 0) > 0;
       if (busy) {
+        this.reservationCheckFailed = false;
         const reservationKey = reservation?.id || reservation?.service || 'active';
         if (this.pausedReservation !== reservationKey) {
           this.pausedReservation = reservationKey;
@@ -492,6 +523,19 @@ class EmbeddingQueueService {
         }
         return true;
       }
+      check = 'comfyui_container';
+      const comfyStopped = isComfyUiStopped(await this.getContainers());
+      if (comfyStopped === null) throw new Error('ComfyUI container state is unknown.');
+      this.reservationCheckFailed = false;
+      if (!comfyStopped) {
+        if (this.pausedReservation !== 'comfyui_loaded') {
+          this.pausedReservation = 'comfyui_loaded';
+          this.logger.notice('Embedding queue waiting for ComfyUI to stop', {
+            category: 'embedding_queue',
+          });
+        }
+        return true;
+      }
       if (this.pausedReservation) {
         this.logger.notice('Embedding queue resumed after AI Gateway GPU work completed', {
           category: 'embedding_queue',
@@ -501,14 +545,13 @@ class EmbeddingQueueService {
       return false;
     } catch (error) {
       if (!this.reservationCheckFailed) {
-        this.logger.warning('Unable to inspect AI Gateway GPU reservation before embedding work', {
+        this.logger.warning('Embedding queue deferred because GPU availability could not be verified', {
           category: 'embedding_queue',
-          metadata: { message: safeErrorMessage(error) },
+          metadata: { check, ...errorDiagnostics(error) },
         });
         this.reservationCheckFailed = true;
       }
-      // The Gateway queue remains authoritative. Its long worker-only timeout covers this fallback.
-      return false;
+      return true;
     }
   }
 
@@ -666,6 +709,86 @@ class EmbeddingQueueService {
       if (vector?.source) return vector.source;
     }
     return null;
+  }
+
+  buildGoodImageSource(image) {
+    return {
+      collectionName: GOOD_IMAGE_COLLECTION,
+      documentId: String(image._id),
+      contentType: 'image_prompt',
+      parentCollection: 'image_gen_job',
+      parentId: image.job_id || null,
+    };
+  }
+
+  async enqueueGoodImage(image, { force = false } = {}) {
+    const text = this.normalizeSourceText(image.prompt);
+    if (!text) return 0;
+    const source = this.buildGoodImageSource(image);
+    let queued = 0;
+    if (image.embedding_status === 'pending') {
+      await this.enqueue(text, {}, [source], { mode: 'default', force });
+      queued += 1;
+    }
+    if (wantsGoodImageHighQuality(image) && image.high_quality_embedding_status === 'pending') {
+      await this.enqueue(text, {}, [source], { mode: 'high_quality', force });
+      queued += 1;
+    }
+    return queued;
+  }
+
+  async reconcileGoodImages() {
+    const counts = { queued: 0, markedCompleted: 0, markedFailed: 0 };
+    if (!this.goodImageModel) return counts;
+    // Upgrade only interrupted/failed synchronous work. Completed legacy sources
+    // may have had their standard vectors intentionally removed by retention.
+    const legacy = await this.findLimited(this.goodImageModel, {
+      embedding_queue_version: { $exists: false },
+      embedding_status: { $in: ['pending', 'failed'] },
+    }, { created_at: 1 });
+    for (const image of legacy || []) {
+      const text = this.normalizeSourceText(image.prompt);
+      const wantsHighQuality = wantsGoodImageHighQuality(image);
+      const source = this.buildGoodImageSource(image);
+      const vectorFilter = Object.fromEntries(Object.entries(source).map(([key, value]) => [`source.${key}`, value]));
+      const standardExists = text && await resolveQuery(this.vectorModel.exists(vectorFilter));
+      const highQualityExists = text && wantsHighQuality
+        && await resolveQuery(this.highQualityVectorModel.exists(vectorFilter));
+      const fields = {
+        embedding_queue_version: 1,
+        embedding_status: !text ? 'failed' : standardExists ? 'completed' : 'pending',
+        embedding_error: text ? null : 'prompt missing',
+        high_quality_embedding_status: !wantsHighQuality ? 'disabled'
+          : !text ? 'failed' : highQualityExists ? 'completed' : 'pending',
+        high_quality_embedding_error: wantsHighQuality && !text ? 'prompt missing' : null,
+        high_quality_embedding: Boolean(highQualityExists),
+      };
+      const result = await this.goodImageModel.updateOne({
+        _id: image._id,
+        prompt: image.prompt ?? null,
+        embedding_queue_version: { $exists: false },
+        embedding_status: image.embedding_status,
+      }, { $set: fields });
+      if (!modifiedCount(result)) continue;
+      if (standardExists) counts.markedCompleted += 1;
+      if (highQualityExists) counts.markedCompleted += 1;
+      if (!text) {
+        counts.markedFailed += 1;
+        this.logger.warning('Saved image embedding cannot be queued without a prompt', {
+          category: 'embedding_queue',
+          metadata: { jobId: buildEmbeddingQueueJobId(source) },
+        });
+      }
+    }
+
+    const pending = await this.findLimited(this.goodImageModel, {
+      embedding_queue_version: 1,
+      $or: [{ embedding_status: 'pending' }, { high_quality_embedding_status: 'pending' }],
+    }, { created_at: 1 });
+    for (const image of pending || []) {
+      counts.queued += await this.enqueueGoodImage(image);
+    }
+    return counts;
   }
 
   async reconcilePendingSources(now = this.now()) {
@@ -874,6 +997,11 @@ class EmbeddingQueueService {
       }
     }
 
+    const images = await this.reconcileGoodImages();
+    queued += images.queued;
+    markedCompleted += images.markedCompleted;
+    markedFailed += images.markedFailed;
+
     if (queued || markedCompleted || markedDisabled || markedFailed) {
       this.logger.debug('Reconciled embedding source intents', {
         category: 'embedding_queue',
@@ -948,6 +1076,18 @@ class EmbeddingQueueService {
 
   async resolveStoredSource(job) {
     const source = job.source || {};
+    if (source.collectionName === GOOD_IMAGE_COLLECTION) {
+      const image = await resolveQuery(this.goodImageModel.findById(source.documentId), { lean: true });
+      if (!image) return { exists: false, enabled: false, text: '' };
+      const rawText = typeof image.prompt === 'string' ? image.prompt : '';
+      const text = this.normalizeSourceText(rawText);
+      return {
+        exists: true,
+        enabled: Boolean(text) && (job.mode !== 'high_quality' || wantsGoodImageHighQuality(image)),
+        text,
+        rawText,
+      };
+    }
     if (source.collectionName === CHAT_MESSAGE_COLLECTION) {
       const message = await resolveQuery(this.chatModel.findById(source.documentId), { lean: true });
       if (!message) return { exists: false, enabled: false, text: '' };
@@ -986,6 +1126,21 @@ class EmbeddingQueueService {
 
   async updateStoredSourceState(job, state) {
     const source = job.source || {};
+    if (source.collectionName === GOOD_IMAGE_COLLECTION) {
+      const highQuality = job.mode === 'high_quality';
+      const prefix = highQuality ? 'high_quality_embedding' : 'embedding';
+      const filter = { _id: source.documentId };
+      if (state.rawText !== undefined) filter.prompt = state.rawText;
+      if (highQuality && state.status === 'completed') {
+        filter.$or = [{ rating_label: 'great' }, { rating_value: 4 }];
+      }
+      const fields = {
+        [`${prefix}_status`]: state.status,
+        [`${prefix}_error`]: state.status === 'failed' ? 'Embedding request failed; inspect the queue job.' : null,
+      };
+      if (highQuality) fields.high_quality_embedding = state.status === 'completed';
+      return this.goodImageModel.updateOne(filter, { $set: fields });
+    }
     if (source.collectionName === CHAT_MESSAGE_COLLECTION) {
       if (job.mode === 'high_quality') return null;
       const filter = { _id: source.documentId };

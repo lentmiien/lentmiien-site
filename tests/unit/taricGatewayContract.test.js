@@ -7,6 +7,21 @@ const withDiscovery = gateway => (path, options) => path === '/openapi.json' ? P
 const row = { descriptive_name: 'Synthetic', full_item_name: 'Synthetic', specs: '', hs_code: '950300' };
 let fixture;
 afterEach(async () => { if (fixture) await fixture.close(); fixture = null; });
+test('verified successful cleanup is debug-level while uncertain cleanup remains a warning', async () => {
+  const logger = require('../../utils/logger');
+  const debug = jest.spyOn(logger, 'debug').mockImplementation(() => {});
+  const warning = jest.spyOn(logger, 'warning').mockImplementation(() => {});
+  try {
+    const gateway = jest.fn().mockResolvedValue({ ...status(), state: 'closed', reclaim_verified: true });
+    const adapter = createGatewaySessions(withDiscovery(gateway));
+    expect(await adapter.close({ session: { id: 'session-1' } })).toEqual({ idle: true });
+    expect(debug).toHaveBeenCalledWith('TARIC owned cleanup observation', expect.any(Object));
+    expect(warning).not.toHaveBeenCalled();
+    gateway.mockResolvedValue({ ...status(), state: 'uncertain', reclaim_verified: false });
+    expect(await adapter.close({ session: { id: 'session-1' } })).toEqual({ idle: false, reason: 'BACKEND_RECLAIM_FAILED' });
+    expect(warning).toHaveBeenCalledWith('TARIC owned cleanup observation', expect.any(Object));
+  } finally { debug.mockRestore(); warning.mockRestore(); }
+});
 test('fixture matches exact exported Gateway field sets and limits (not invented nested JSON)', () => {
   expect(Object.keys(status()).sort()).toEqual(Object.keys(contract.status_shape).sort());
   expect(Object.keys(operation('op')).sort()).toEqual(Object.keys(contract.operation_shape).sort());

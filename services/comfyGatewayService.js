@@ -1,3 +1,4 @@
+const { randomUUID } = require('crypto');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 
 const DEFAULT_API_BASE = process.env.COMFY_API_BASE || 'http://192.168.0.20:8080';
@@ -134,6 +135,7 @@ function attachGatewayDiagnostics(error, {
   responseStatus,
   durationMs,
   clientAborted = false,
+  proxyRequestId = null,
 } = {}) {
   const target = error instanceof Error ? error : new Error('ComfyUI Gateway request failed');
   const upstreamStatus = Number(responseStatus);
@@ -162,7 +164,8 @@ function attachGatewayDiagnostics(error, {
     operation: String(functionName || 'unknown').slice(0, 100),
     endpoint: safeRequestPath(requestUrl),
     status,
-    requestId: gatewayRequestId(responseHeaders),
+    requestId: gatewayRequestId(responseHeaders) || proxyRequestId,
+    proxyRequestId,
     durationMs: Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null,
     upstreamState: extractUpstreamState(responseBody),
     clientAborted,
@@ -181,6 +184,14 @@ function gatewayLogMetadata(error, extra = {}) {
       ? Number(extra.upstreamStatus)
       : null,
     requestId: extra.requestId || diagnostics.requestId || null,
+    ...(extra.proxyRequestId || diagnostics.proxyRequestId
+      ? { proxyRequestId: extra.proxyRequestId || diagnostics.proxyRequestId } : {}),
+    ...(Number.isSafeInteger(extra.transferredBytes) ? {
+      transferredBytes: extra.transferredBytes,
+      expectedBytes: extra.expectedBytes ?? null,
+      headersSent: Boolean(extra.headersSent),
+      completed: false,
+    } : {}),
     durationMs: Number.isFinite(extra.durationMs)
       ? Math.max(0, Math.round(extra.durationMs))
       : diagnostics.durationMs ?? null,
@@ -383,7 +394,11 @@ class ComfyGatewayService {
 
     const params = new URLSearchParams({ path: normalizedPath });
     const requestUrl = this.buildUrl(`/comfy/input/view?${params.toString()}`);
-    const requestHeaders = this.apiHeaders(range ? { Range: range } : {});
+    const proxyRequestId = randomUUID();
+    const requestHeaders = this.apiHeaders({
+      ...(range ? { Range: range } : {}),
+      'X-Request-Id': proxyRequestId,
+    });
     const functionName = 'openInputFile';
     const startedAt = Date.now();
     let responseHeaders = null;
@@ -432,7 +447,8 @@ class ComfyGatewayService {
         operation: functionName,
         endpoint: safeRequestPath(requestUrl),
         status: response.status,
-        requestId: gatewayRequestId(responseHeaders),
+        requestId: gatewayRequestId(responseHeaders) || proxyRequestId,
+        proxyRequestId,
         durationMs: Math.max(0, Math.round(Date.now() - startedAt)),
         upstreamState: null,
         clientAborted: false,
@@ -460,6 +476,7 @@ class ComfyGatewayService {
         responseHeaders,
         durationMs: Date.now() - startedAt,
         clientAborted,
+        proxyRequestId,
       });
     }
   }

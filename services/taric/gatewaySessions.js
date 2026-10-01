@@ -111,7 +111,8 @@ function createGatewaySessions(gateway, { now = Date.now, closeDeadlineMs = 1000
         onCleanup?.(raw);
         const remote = diagnostics.cleanupStatus(raw);
         if (method === 'DELETE' || counter === 2 || counter % 10 === 0 || raw?.reclaim_verified || raw?.state === 'uncertain') {
-          logger.warning('TARIC owned cleanup observation', { category: 'taric', metadata: {
+          const level = raw?.reclaim_verified === true && raw?.state !== 'uncertain' ? 'debug' : 'warning';
+          logger[level]('TARIC owned cleanup observation', { category: 'taric', metadata: {
             method, counter, epoch, correlationId: lastTransport?.correlationId,
             originClock: 'site', elapsedMs: Date.now() - started, transport: lastTransport, ...remote,
           } });

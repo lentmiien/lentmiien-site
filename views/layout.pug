@@ -69,30 +69,31 @@ html(lang=pageLang || 'en')
       label.tools-search-label(for='tools-search') Find a tool
       input#tools-search(type='search', placeholder='Search tools, pages and groups…', autocomplete='off')
       p#tools-search-status(role='status')
-      - const catalog = typeof accountNavigation !== 'undefined' ? accountNavigation : [];
-      - const groups = typeof navigationGroups !== 'undefined' ? navigationGroups : [];
-      - const hasPermission = permission => Array.isArray(permissions) && permissions.includes(permission);
+      //- Prefix navigation locals: inherited page blocks share this scope (e.g. Quick Settings uses catalog).
+      - const navCatalog = typeof accountNavigation !== 'undefined' ? accountNavigation : [];
+      - const navGroups = typeof navigationGroups !== 'undefined' ? navigationGroups : [];
+      - const navHasPermission = permission => Array.isArray(permissions) && permissions.includes(permission);
       if loggedIn
         section.tools-shortcuts(aria-labelledby='shortcuts-title')
           .tools-section-heading
             h3#shortcuts-title Shortcuts
             a(href='/mypage#customize-shortcuts') Customize
           .tools-icon-grid
-            each item in catalog.filter(n => !n.hidden && !n.public).slice(0, 8)
+            each item in navCatalog.filter(n => !n.hidden && !n.public).slice(0, 8)
               a.tool-link(href=item.href, data-tool-search=`${item.label} ${item.group}`)
                 img(src=item.src, alt='', width='32', height='32', loading='lazy')
                 span= item.label
       .tools-groups
-        each group in groups
-          - const items = catalog.filter(n => n.group === group);
-          if items.length
+        each group in navGroups
+          - const navItems = navCatalog.filter(n => n.group === group);
+          if navItems.length
             details.tools-group(open)
               summary= group
-              each subgroup in [...new Set(items.map(n => n.subgroup))]
-                details.tools-subgroup(open=items.length < 10)
+              each subgroup in [...new Set(navItems.map(n => n.subgroup))]
+                details.tools-subgroup(open=navItems.length < 10)
                   summary= subgroup
                   .tools-icon-grid
-                    each item in items.filter(n => n.subgroup === subgroup)
+                    each item in navItems.filter(n => n.subgroup === subgroup)
                       a.tool-link(href=item.href, data-tool-id=item.id, data-tool-search=`${item.label} ${group} ${subgroup}`)
                         img(src=item.src, alt='', width='32', height='32', loading='lazy')
                         span
@@ -109,7 +110,7 @@ html(lang=pageLang || 'en')
           h3 Select head
           ul
             li#head_list
-      if loggedIn === true && hasPermission("quicknote")
+      if loggedIn === true && navHasPermission("quicknote")
         +navColumn('Quick Add')
           form#quickNoteForm
             .input-group.mb-1

@@ -254,6 +254,7 @@ describe('image_gen persistent workflow inputs', () => {
       name: 'AbortError',
       message: 'preview client disconnected',
     });
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   test('logs a terminated upstream preview body with safe correlation metadata', async () => {
@@ -264,13 +265,14 @@ describe('image_gen persistent workflow inputs', () => {
       },
     }), {
       status: 200,
-      headers: { 'content-type': 'image/png' },
+      headers: { 'content-type': 'image/png', 'content-length': '100' },
     });
     upstream.comfyGateway = {
       operation: 'openInputFile',
       endpoint: '/comfy/input/view',
       status: 200,
       requestId: 'gateway-stream-terminated-1',
+      proxyRequestId: 'opaque-proxy-request',
       durationMs: 12,
       upstreamState: { status: 'streaming' },
     };
@@ -287,6 +289,8 @@ describe('image_gen persistent workflow inputs', () => {
     res.on('error', () => {});
 
     await controller.getInputFile(req, res);
+    bodyController.enqueue(new Uint8Array([1, 2, 3]));
+    await new Promise((resolve) => setImmediate(resolve));
     bodyController.error(new Error('sentinel-sensitive-stream-termination'));
     await new Promise((resolve) => setImmediate(resolve));
 
@@ -301,6 +305,11 @@ describe('image_gen persistent workflow inputs', () => {
           status: 502,
           upstreamStatus: 200,
           requestId: 'gateway-stream-terminated-1',
+          proxyRequestId: 'opaque-proxy-request',
+          transferredBytes: 3,
+          expectedBytes: 100,
+          headersSent: true,
+          completed: false,
           durationMs: expect.any(Number),
           upstreamState: { status: 'streaming' },
         }),
@@ -308,6 +317,78 @@ describe('image_gen persistent workflow inputs', () => {
     );
     expect(JSON.stringify(logger.error.mock.calls))
       .not.toContain('sentinel-sensitive-stream-termination');
+    expect(mockGateway.openInputFile).toHaveBeenCalledTimes(1);
+    expect(res.destroyed).toBe(true);
+  });
+
+  test('clears upstream image and range headers before sending JSON on a failure before bytes', async () => {
+    let bodyController;
+    mockGateway.openInputFile.mockResolvedValue(new Response(new ReadableStream({ start(controller) { bodyController = controller; } }), {
+      status: 206, headers: { 'content-type': 'image/png', 'content-length': '100', 'content-range': 'bytes 0-99/200', 'etag': 'image-tag' },
+    }));
+    const req = Object.assign(new EventEmitter(), { query: { path: 'image.png' }, headers: {} });
+    const res = new PassThrough();
+    res.status = jest.fn().mockReturnValue(res);
+    res.setHeader = jest.fn();
+    res.removeHeader = jest.fn();
+    res.json = jest.fn();
+    res.headersSent = false;
+    await controller.getInputFile(req, res);
+    bodyController.error(Object.assign(new Error('terminated'), { cause: { code: 'UND_ERR_SOCKET' } }));
+    await new Promise(resolve => setImmediate(resolve));
+    for (const header of ['content-type', 'content-length', 'content-range', 'etag']) expect(res.removeHeader).toHaveBeenCalledWith(header);
+    expect(res.status).toHaveBeenLastCalledWith(502);
+    expect(res.json).toHaveBeenCalledWith({ error: 'failed to stream ComfyUI input file', details: 'The ComfyUI Gateway returned HTTP 502.' });
+    expect(mockGateway.openInputFile).toHaveBeenCalledTimes(1);
+    res.destroy();
+  });
+
+  test.each([200, 206])('streams a slow HTTP %s response across multiple idle windows without replay', async status => {
+    jest.useFakeTimers();
+    try {
+      let bodyController;
+      mockGateway.openInputFile.mockResolvedValue(new Response(new ReadableStream({ start(controller) { bodyController = controller; } }), {
+        status, headers: { 'content-type': 'image/png', 'content-length': '3', ...(status === 206 ? { 'content-range': 'bytes 0-2/10' } : {}) },
+      }));
+      const req = Object.assign(new EventEmitter(), { query: { path: 'image.png' }, headers: status === 206 ? { range: 'bytes=0-2' } : {} });
+      const res = new PassThrough();
+      res.status = jest.fn().mockReturnValue(res);
+      res.setHeader = jest.fn();
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      const finished = new Promise(resolve => res.once('finish', resolve));
+      await controller.getInputFile(req, res);
+      for (const byte of [1, 2, 3]) {
+        bodyController.enqueue(new Uint8Array([byte]));
+        await jest.advanceTimersByTimeAsync(45000);
+      }
+      bodyController.close();
+      await finished;
+      expect(Buffer.concat(chunks)).toEqual(Buffer.from([1, 2, 3]));
+      expect(res.status).toHaveBeenCalledWith(status);
+      if (status === 206) expect(res.setHeader).toHaveBeenCalledWith('content-range', 'bytes 0-2/10');
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(mockGateway.openInputFile).toHaveBeenCalledTimes(1);
+    } finally { jest.useRealTimers(); }
+  });
+
+  test('an idle body aborts upstream and logs timeout diagnostics once', async () => {
+    jest.useFakeTimers();
+    try {
+      mockGateway.openInputFile.mockResolvedValue(new Response(new ReadableStream({ start() {} })));
+      const req = Object.assign(new EventEmitter(), { query: { path: 'image.png' }, headers: {} });
+      const res = new PassThrough();
+      res.status = jest.fn().mockReturnValue(res);
+      res.setHeader = jest.fn();
+      res.headersSent = true;
+      res.on('error', () => {});
+      await controller.getInputFile(req, res);
+      await jest.advanceTimersByTimeAsync(60001);
+      expect(mockGateway.openInputFile.mock.calls[0][1].signal.aborted).toBe(true);
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(logger.error.mock.calls[0][1].metadata).toMatchObject({ status: 504, errorName: 'TimeoutError', transferredBytes: 0 });
+      expect(res.destroyed).toBe(true);
+    } finally { jest.useRealTimers(); }
   });
 
   test('returns a safe 504 and logs structured metadata for a preview header timeout', async () => {

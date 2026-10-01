@@ -201,4 +201,22 @@ describe('DisasterIngestionService OpenWeather integration', () => {
     expect(log.warning.mock.calls[0][1].metadata).toMatchObject({ errorCode: 'ETIMEDOUT', status: 504, operation: 'forecast' });
     expect(JSON.stringify(log.warning.mock.calls)).not.toMatch(/private|synthetic-weather-key/);
   });
+
+  test('401 responses from both OpenWeather endpoints retain JMA forecast and forecast-derived observations', async () => {
+    process.env.DISASTER_WEATHER_ENABLED = 'true';
+    process.env.OPENWEATHER_API_KEY = 'PRIVATE-KEY';
+    const logger = { warning: jest.fn() };
+    const { service } = createService(logger);
+    const rejected = Object.assign(new Error('PRIVATE provider body'), { response: { status: 401 } });
+    service.fetchJson = jest.fn().mockRejectedValueOnce(rejected).mockResolvedValueOnce({}).mockRejectedValueOnce(rejected);
+    service.parseOpenMeteoForecast = jest.fn().mockReturnValue({ source: 'open-meteo-jma', ...location, hourly: [{ time: new Date(), temperatureC: 20 }] });
+    const snapshot = await service.refreshWeatherSnapshot();
+    expect(snapshot.source).toBe('open-meteo-jma');
+    expect(service.saveWeatherObservation).toHaveBeenCalledWith(expect.objectContaining({ source: 'open-meteo-jma-hourly', temperatureC: 20 }));
+    expect(logger.warning.mock.calls.map(([, entry]) => entry.metadata)).toEqual([
+      expect.objectContaining({ source: 'openweather', operation: 'forecast', status: 401 }),
+      expect.objectContaining({ source: 'openweather', operation: 'current', status: 401 }),
+    ]);
+    expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('PRIVATE');
+  });
 });
