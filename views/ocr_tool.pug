@@ -112,7 +112,8 @@ block styles
     }
 
     .ocr-form input,
-    .ocr-form textarea {
+    .ocr-form textarea,
+    .ocr-form select {
       width: 100%;
       background: var(--ocr-surface-2);
       border: 1px solid var(--ocr-border);
@@ -128,7 +129,8 @@ block styles
     }
 
     .ocr-form input:focus,
-    .ocr-form textarea:focus {
+    .ocr-form textarea:focus,
+    .ocr-form select:focus {
       outline: 2px solid var(--ocr-focus);
       border-color: var(--ocr-focus);
     }
@@ -791,14 +793,23 @@ block content
         .ocr-left
           .ocr-card
             h2 Submit images
-            p.ocr-note The request will be queued; each file is processed sequentially with the same prompt and token limit.
+            p.ocr-note The request will be queued; each file is processed sequentially with the same model and settings.
             form#ocrForm.ocr-form(method='post', action='/ocr/jobs', enctype='multipart/form-data')
               label(for='images') Image files
               input#images(type='file', name='images', accept='image/*', multiple, required)
-              label(for='max_new_tokens') Max new tokens
-              input#max_new_tokens(type='number', name='max_new_tokens', min='1', max=tokenLimit, value=formValues.maxNewTokens, required)
-              label(for='prompt') Prompt
-              textarea#prompt(name='prompt')= formValues.prompt
+              label(for='ocrModel') OCR model
+              select#ocrModel(name='model')
+                each definition, model in modelCatalog.models
+                  option(value=model, selected=model === 'hunyuanocr')= definition.label
+              if modelCatalog.warning
+                p.ocr-note= modelCatalog.warning
+              p#ocrModelNote.ocr-note(aria-live='polite')
+              p#ocrModelWarning.ocr-note(role='status', style='color: var(--warning)', hidden)
+              #ocrModelOptions
+                label(for='max_new_tokens') Max new tokens
+                input#max_new_tokens(type='number', name='max_new_tokens', min='1', max=tokenLimit, value=formValues.maxNewTokens, required)
+                label(for='prompt') Prompt
+                textarea#prompt(name='prompt')= formValues.prompt
               button(type='submit') Queue OCR job
             p.ocr-note Upload limit: #{process.env.OCR_JOB_MAX_FILES || 5} files · 25MB each
           .ocr-card
@@ -840,6 +851,9 @@ block content
 
 block script
   script.
+    window.__OCR_MODEL_CATALOG__ = !{safeJson(modelCatalog || { models: {} })};
+    window.__OCR_DEFAULTS__ = !{safeJson(defaults)};
+    window.__OCR_CSRF__ = !{safeJson(csrfToken || '')};
     window.__INITIAL_JOBS__ = !{safeJson(jobs || [])};
     window.__INITIAL_JOBS_LAST_UPDATED__ = !{safeJson(latestUpdatedAt || null)};
     window.__INITIAL_HAS_OLDER__ = !{safeJson(hasOlder || false)};
@@ -847,9 +861,11 @@ block script
     window.__OCR_SINGLE_JOB_ID__ = !{safeJson(selectedJobId || null)};
     window.__OCR_SINGLE_JOB_DETAIL__ = !{safeJson(initialJobDetail || null)};
     window.__OCR_HIGHLIGHT_FILE_ID__ = !{safeJson(highlightFileId || null)};
+  script(src='/js/ocr-model-selector.js')
   script.
     (() => {
       const JOBS_ENDPOINT = '/ocr/jobs';
+      const isHunyuan = job => !job.model || job.model === 'hunyuanocr';
       const RECEIPT_ENDPOINT = '/receipt/upload_receipt';
       const FAST_POLL_MS = 5000;
       const SLOW_POLL_MS = 10000;
@@ -1261,7 +1277,7 @@ block script
               </div>
               <div class="job-meta-line">
                 <span>${escapeHtml(createdAt)}</span>
-                <span>${ownerLabel}</span>
+                <span>${escapeHtml(job.model || 'hunyuanocr')} · ${ownerLabel}</span>
               </div>
             </button>
           `;
@@ -1368,7 +1384,7 @@ block script
               : embeddingStatus === 'pending'
                 ? 'Standard embedding queued for the idle background worker.'
                 : 'No standard embedding is needed.';
-        const layoutSection = file.result
+        const layoutSection = file.result && isHunyuan(job)
           ? `
             <div class="text-card">
               <div class="text-card-header">
@@ -1396,6 +1412,19 @@ block script
           `
           : '';
 
+        const jsonId = `response-${file.id}`;
+        const responseSection = file.result && !isHunyuan(job)
+          ? `<div class="text-card">
+              <p class="ocr-note">Saved model response. Layout editing, embeddings and receipt forwarding are available for HunyuanOCR jobs.</p>
+              ${file.result.rawResponse?.finish_reason === 'length' ? '<p class="ocr-note" style="color: var(--warning)">The output token limit was reached; the text may be truncated.</p>' : ''}
+              <details>
+                <summary>Full response JSON</summary>
+                <div class="text-card-header"><h5>Original response</h5><button class="copy-btn" type="button" data-copy-source="${jsonId}">Copy</button></div>
+                <pre id="${jsonId}">${escapeHtml(JSON.stringify(file.result.rawResponse, null, 2))}</pre>
+              </details>
+            </div>`
+          : '';
+
         const fileError = file.error
           ? `<div class="file-error">${escapeHtml(file.error)}</div>`
           : '';
@@ -1410,6 +1439,7 @@ block script
             ${imageStage}
             ${rawTextSection}
             ${layoutSection}
+            ${responseSection}
             ${fileError}
           </section>
         `;
@@ -1469,7 +1499,7 @@ block script
           : '';
 
         const hasSendable = job.files.some((file) => file.status === 'completed' && file.result && file.result.imagePath);
-        const forwardHtml = `
+        const forwardHtml = isHunyuan(job) ? `
           <div class="job-actions">
             <button type="button" class="forward-btn" data-send-job="${job.id}" ${hasSendable ? '' : 'disabled'}>
               Send receipts to inbox
@@ -1477,9 +1507,10 @@ block script
             <p class="ocr-note">Layout text edits are forwarded with the receipts.</p>
             ${receiptsHtml}
           </div>
-        `;
+        ` : '';
         const metaHtml = `
           <div class="job-meta-grid">
+            <div class="meta-block"><div class="meta-label">Model</div><div class="meta-value">${escapeHtml(job.model || 'hunyuanocr')}</div></div>
             <div class="meta-block">
               <div class="meta-label">Status</div>
               <div class="meta-value"><span class="status-badge ${statusClass(job.status)}">${escapeHtml(job.status)}</span></div>
@@ -1505,7 +1536,8 @@ block script
               <h3>Prompt</h3>
               <button class="copy-btn" type="button" data-copy-source="prompt-block">Copy</button>
             </div>
-            <pre id="prompt-block">${escapeHtml(job.prompt)}</pre>
+            <pre id="prompt-block">${escapeHtml(job.prompt || 'Native model prompt')}</pre>
+            ${!isHunyuan(job) ? `<details><summary>Submitted settings</summary><pre>${escapeHtml(JSON.stringify(job.options || {}, null, 2))}</pre></details>` : ''}
           </div>
         `;
 
@@ -1565,8 +1597,8 @@ block script
           return;
         }
         const job = state.jobDetails[jobId];
-        if (!job) {
-          setFeedback('Select a job to send to receipts.', 'error');
+        if (!job || !isHunyuan(job)) {
+          setFeedback('Select a HunyuanOCR job to send to receipts.', 'error');
           return;
         }
         const sendableFiles = job.files.filter((file) => file.status === 'completed' && file.result && file.result.imagePath);
@@ -1637,7 +1669,7 @@ block script
           const response = await fetch(formEl.action, {
             method: 'POST',
             body: formData,
-            headers: { Accept: 'application/json' },
+            headers: { Accept: 'application/json', 'X-CSRF-Token': window.__OCR_CSRF__ },
           });
           const payload = await response.json();
           if (!response.ok) {
@@ -1710,7 +1742,11 @@ block script
             }
             mergeJobSummaries(payloadJobs);
             const selectedSummary = state.jobs.find((job) => job.id === state.selectedJobId);
-            if (selectedSummary && selectedSummary.status !== 'completed') {
+            const selectedDetail = state.jobDetails[state.selectedJobId];
+            if (selectedSummary && (selectedSummary.status !== 'completed'
+              || !selectedDetail
+              || selectedSummary.status !== selectedDetail.status
+              || selectedSummary.updatedAt !== selectedDetail.updatedAt)) {
               ensureJobDetail(selectedSummary.id, { refresh: true });
             }
           }
@@ -1790,6 +1826,7 @@ block script
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
+              'X-CSRF-Token': window.__OCR_CSRF__,
               Accept: 'application/json',
             },
             body: JSON.stringify({
@@ -1835,7 +1872,7 @@ block script
         try {
           const response = await fetch(`${JOBS_ENDPOINT}/${jobId}/files/${fileId}/embed-high-quality`, {
             method: 'POST',
-            headers: { Accept: 'application/json' },
+            headers: { Accept: 'application/json', 'X-CSRF-Token': window.__OCR_CSRF__ },
           });
           const payload = await response.json();
           if (!response.ok) {
@@ -1859,7 +1896,7 @@ block script
         setFeedback('Deleting job...', 'info');
 
         try {
-          const response = await fetch(`${JOBS_ENDPOINT}/${state.selectedJobId}`, { method: 'DELETE', headers: { Accept: 'application/json' } });
+          const response = await fetch(`${JOBS_ENDPOINT}/${state.selectedJobId}`, { method: 'DELETE', headers: { Accept: 'application/json', 'X-CSRF-Token': window.__OCR_CSRF__ } });
           const payload = await response.json();
           if (!response.ok) {
             throw new Error(payload.error || 'Failed to delete job.');

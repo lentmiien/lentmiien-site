@@ -9,18 +9,21 @@ const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 const EmbeddingApiService = require('../services/embeddingApiService');
 const ocrEmbeddingService = require('../services/ocrEmbeddingService');
 const { buildOcrEmbeddingMetadata } = ocrEmbeddingService;
-const { OcrJob } = require('../database');
+const { OcrJob, UseraccountModel } = require('../database');
+const { API_BASE_URL, DEFAULT_MODEL, DEFAULT_PROMPT, getCatalog, validateOptions } = require('../services/ocrModelService');
+const { canTestModels, isAlternativeJob, visibleJobs } = require('../utils/ocrAuthorization');
 
-const DEFAULT_PROMPT = 'Detect and recognize text in the image, and output the text coordinates in a formatted manner.';
 const DEFAULT_MAX_NEW_TOKENS = 2048;
 const MAX_ALLOWED_TOKENS = 8192;
 const MAX_COORD_VALUE = 1000;
-const API_BASE_URL = process.env.OCR_API_BASE_URL || 'http://192.168.0.20:8080';
 const OCR_TIMEOUT_MS = Number(process.env.OCR_API_TIMEOUT_MS || 1200000);
 const RECENT_WINDOW_DAYS = Number(process.env.OCR_JOB_RECENT_DAYS || 7);
 const LIST_PAGE_SIZE = Number(process.env.OCR_JOB_PAGE_SIZE || 30);
 const OCR_PREVIEW_DIR = path.join(__dirname, '..', 'public', 'ocr');
+const PRIVATE_PREVIEW_DIR = path.join(__dirname, '..', 'private_data', 'ocr');
 const MAX_PREVIEW_SIDE = 2048;
+const MAX_QUEUED_JOBS = 5;
+let preparingJobs = 0;
 const logApiDebug = createApiDebugLogger('controllers/ocrcontroller.js');
 const embeddingApiService = new EmbeddingApiService();
 
@@ -208,6 +211,7 @@ const fetchHealth = async () => {
 
 const buildViewState = (overrides = {}) => ({
   title: overrides.title || 'OCR Workspace',
+  modelCatalog: overrides.modelCatalog || { models: {} },
   tokenLimit: MAX_ALLOWED_TOKENS,
   defaults: {
     prompt: DEFAULT_PROMPT,
@@ -257,6 +261,8 @@ const sanitizeJobSummary = (job) => {
   const id = job._id?.toString?.() || job.id;
   return {
     id,
+    model: job.model || DEFAULT_MODEL,
+    options: job.options || { prompt: job.prompt, max_new_tokens: job.maxNewTokens },
     prompt: job.prompt,
     maxNewTokens: job.maxNewTokens,
     status: job.status,
@@ -306,6 +312,7 @@ const sanitizeJobDetail = (job) => {
       previewPath: formatImagePath(file.previewPath),
       result: file.result ? {
         rawText: file.result.rawText,
+        rawResponse: file.result.rawResponse ?? null,
         layoutText: file.result.layoutText,
         overlayBoxes: Array.isArray(file.result.overlayBoxes) ? file.result.overlayBoxes : [],
         originalOverlayBoxes: Array.isArray(file.result.originalOverlayBoxes) ? file.result.originalOverlayBoxes : [],
@@ -359,13 +366,14 @@ const deriveLatestUpdatedAt = (jobs = []) => {
   return latest ? new Date(latest).toISOString() : null;
 };
 
-const savePreviewImage = async (buffer, jobId, index, originalname) => {
-  await fs.mkdir(OCR_PREVIEW_DIR, { recursive: true });
+const savePreviewImage = async (buffer, jobId, index, originalname, privatePreview = false) => {
+  const directory = privatePreview ? PRIVATE_PREVIEW_DIR : OCR_PREVIEW_DIR;
+  await fs.mkdir(directory, { recursive: true });
   const safeBase = (originalname || 'image').replace(/[^a-zA-Z0-9-_]+/g, '').slice(0, 40) || 'image';
-  const filename = `${jobId}-${index + 1}-${safeBase}.jpg`;
-  const targetPath = path.join(OCR_PREVIEW_DIR, filename);
+  const filename = privatePreview ? `${jobId}-${index + 1}.jpg` : `${jobId}-${index + 1}-${safeBase}.jpg`;
+  const targetPath = path.join(directory, filename);
 
-  await sharp(buffer)
+  await sharp(buffer, privatePreview ? { limitInputPixels: 24000000, animated: false } : {})
     .rotate()
     .resize({
       width: MAX_PREVIEW_SIDE,
@@ -376,10 +384,19 @@ const savePreviewImage = async (buffer, jobId, index, originalname) => {
     .jpeg({ quality: 78, mozjpeg: true })
     .toFile(targetPath);
 
-  return path.join('ocr', filename);
+  return privatePreview ? `/ocr/jobs/${jobId}/files/${jobId}-file-${index + 1}/preview` : path.join('ocr', filename);
 };
 
-const createJobRecord = async (files, prompt, maxNewTokens, user) => {
+const previewDiskPath = (job, file) => {
+  if (!isAlternativeJob(job)) return path.join(__dirname, '..', 'public', file.previewPath);
+  const index = job.files.findIndex(entry => entry.id === file.id);
+  return path.join(PRIVATE_PREVIEW_DIR, `${job._id}-${index + 1}.jpg`);
+};
+
+const createJobRecord = async (files, model, options, user) => {
+  const privatePreview = model !== DEFAULT_MODEL;
+  const prompt = options.prompt || '';
+  const maxNewTokens = options.max_new_tokens ?? null;
   const jobId = randomUUID();
   const now = new Date();
   const preparedFiles = [];
@@ -388,7 +405,7 @@ const createJobRecord = async (files, prompt, maxNewTokens, user) => {
   try {
     for (let index = 0; index < files.length; index++) {
       const file = files[index];
-      const previewPath = await savePreviewImage(file.buffer, jobId, index, file.originalname);
+      const previewPath = await savePreviewImage(file.buffer, jobId, index, file.originalname, privatePreview);
 
       preparedFiles.push({
         id: `${jobId}-file-${index + 1}`,
@@ -402,7 +419,7 @@ const createJobRecord = async (files, prompt, maxNewTokens, user) => {
         startedAt: null,
         completedAt: null,
         updatedAt: now,
-        embeddingStatus: 'pending',
+        embeddingStatus: privatePreview ? 'not_applicable' : 'pending',
         embeddingAttempts: 0,
         embeddingRetryable: true,
         embeddingError: null,
@@ -422,6 +439,8 @@ const createJobRecord = async (files, prompt, maxNewTokens, user) => {
 
     const job = new OcrJob({
       _id: jobId,
+      model,
+      options,
       prompt,
       maxNewTokens,
       status: 'queued',
@@ -440,9 +459,11 @@ const createJobRecord = async (files, prompt, maxNewTokens, user) => {
     await Promise.all(preparedFiles.map(async (file) => {
       if (!file.previewPath) return;
       try {
-        await fs.unlink(path.join(__dirname, '..', 'public', file.previewPath));
-      } catch {
-        // ignore cleanup failures
+        await fs.unlink(previewDiskPath({ _id: jobId, model, files: preparedFiles }, file));
+      } catch (cleanupError) {
+        if (cleanupError.code !== 'ENOENT') logger.warning('Failed to clean up OCR preview after queue failure', {
+          category: 'ocr', metadata: { jobId, code: cleanupError.code || 'CLEANUP_FAILED' },
+        });
       }
     }));
     throw error;
@@ -457,28 +478,34 @@ const runFileOcr = async (job, file, payload) => {
     contentType: payload.mimetype || 'application/octet-stream',
     knownLength: payload.buffer.length,
   });
-  multipart.append('prompt', job.prompt);
-  multipart.append('max_new_tokens', String(job.maxNewTokens));
+  const model = job.model || DEFAULT_MODEL;
+  multipart.append('model', model);
+  const options = job.options || { prompt: job.prompt, max_new_tokens: job.maxNewTokens };
+  for (const [key, value] of Object.entries(options)) {
+    if (value != null && value !== '') multipart.append(key, String(value));
+  }
 
   logger.notice('Submitting OCR file to API', {
     category: 'ocr',
     metadata: {
       jobId: job.id || job._id,
       fileId: file.id,
-      filename: payload.originalname,
       sizeBytes: payload.size,
     },
   });
 
   try {
     const axiosResponse = await axios.post(requestUrl, multipart, {
-      timeout: OCR_TIMEOUT_MS,
+      timeout: model === DEFAULT_MODEL ? OCR_TIMEOUT_MS : Math.max(OCR_TIMEOUT_MS, 2800000),
+      maxContentLength: 1024 * 1024,
+      maxRedirects: 0,
       headers: {
         ...multipart.getHeaders(),
         Accept: 'application/json',
       },
     });
     const { data } = axiosResponse;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid OCR response.');
 
     try {
       await logApiDebug({
@@ -487,17 +514,14 @@ const runFileOcr = async (job, file, payload) => {
         requestBody: {
           jobId: job.id || job._id,
           fileId: file.id,
-          prompt: job.prompt,
-          max_new_tokens: job.maxNewTokens,
+          model,
           fileSizeBytes: payload.size,
           transport: 'multipart/form-data',
         },
         responseHeaders: axiosResponse.headers,
         responseBody: {
           model: data?.model,
-          prompt: data?.prompt,
           textLength: typeof data?.text === 'string' ? data.text.length : 0,
-          keys: Object.keys(data || {}),
         },
         functionName: 'runFileOcr',
       });
@@ -509,19 +533,20 @@ const runFileOcr = async (job, file, payload) => {
     }
 
     const rawText = typeof data?.text === 'string' ? data.text : '';
-    const boxes = parseOcrText(rawText);
+    const boxes = model === DEFAULT_MODEL ? parseOcrText(rawText) : [];
     const layoutResult = buildLayoutResult(boxes, { direction: 'auto' });
     const overlayBoxes = enrichBoxesForOverlay(boxes);
 
     return {
       rawText,
-      layoutText: layoutResult.layoutText || rawText,
+      rawResponse: model === DEFAULT_MODEL ? null : data,
+      layoutText: model === DEFAULT_MODEL ? layoutResult.layoutText || rawText : '',
       overlayBoxes,
       originalOverlayBoxes: overlayBoxes,
-      originalLayoutText: layoutResult.layoutText || rawText,
+      originalLayoutText: model === DEFAULT_MODEL ? layoutResult.layoutText || rawText : '',
       layoutDirection: layoutResult.layoutDirection,
       originalLayoutDirection: layoutResult.layoutDirection,
-      model: data?.model || 'Unknown model',
+      model: data?.model || data?.model_id || model,
       promptUsed: data?.prompt || job.prompt,
       segmentsCount: overlayBoxes.length,
       receivedAt: new Date(),
@@ -543,13 +568,12 @@ const runFileOcr = async (job, file, payload) => {
         requestBody: {
           jobId: job.id || job._id,
           fileId: file.id,
-          prompt: job.prompt,
-          max_new_tokens: job.maxNewTokens,
+          model,
           fileSizeBytes: payload.size,
           transport: 'multipart/form-data',
         },
         responseHeaders: error.response?.headers,
-        responseBody: error.response?.data || { error: error.message },
+        responseBody: { status: error.response?.status, code: error.code || 'OCR_REQUEST_FAILED' },
         functionName: 'runFileOcr',
       });
     } catch (loggingError) {
@@ -559,6 +583,10 @@ const runFileOcr = async (job, file, payload) => {
       });
     }
 
+    if (model !== DEFAULT_MODEL) {
+      logger.error('Alternative OCR gateway request failed', { category: 'ocr', metadata: { model, status: error.response?.status, code: error.code || 'INVALID_RESPONSE' } });
+      message = `OCR service failed${error.response?.status ? ` (HTTP ${error.response.status})` : ''}. Check the model warning and input settings, then retry.`;
+    }
     throw new Error(message);
   }
 };
@@ -617,18 +645,22 @@ const executeJob = async (queueItem) => {
     await job.save();
 
     try {
+      if (isAlternativeJob(job)) {
+        const principal = job.owner?.id ? await UseraccountModel.findById(job.owner.id) : null;
+        if (!principal || !await canTestModels(principal)) throw new Error('Model-testing access is no longer available.');
+      }
       const result = await runFileOcr(job, file, payload);
       file.result = { ...result, imagePath: file.previewPath };
       file.status = 'completed';
       file.completedAt = new Date();
       file.error = null;
-      queueOcrEmbedding(file);
+      if (!isAlternativeJob(job)) queueOcrEmbedding(file);
+      else { file.embeddingStatus = 'not_applicable'; file.embeddingRetryable = false; }
       logger.notice('OCR file completed', {
         category: 'ocr',
         metadata: {
           jobId: job.id,
           fileId: file.id,
-          filename: payload.originalname,
           segments: result.segmentsCount,
         },
       });
@@ -647,7 +679,6 @@ const executeJob = async (queueItem) => {
         metadata: {
           jobId: job.id,
           fileId: file.id,
-          filename: payload.originalname,
           message: file.error,
         },
       });
@@ -697,9 +728,9 @@ const buildListQuery = ({ scope, before, updatedSince }) => {
   return query;
 };
 
-const queryJobSummaries = async ({ scope = 'recent', before, updatedSince, limit = LIST_PAGE_SIZE } = {}) => {
+const queryJobSummaries = async ({ scope = 'recent', before, updatedSince, limit = LIST_PAGE_SIZE, visibility = {} } = {}) => {
   const normalizedLimit = clamp(limit, 1, 100);
-  const query = buildListQuery({ scope, before, updatedSince });
+  const query = { ...buildListQuery({ scope, before, updatedSince }), ...visibility };
   const jobs = await OcrJob.find(query)
     .sort({ createdAt: -1 })
     .limit(normalizedLimit)
@@ -709,9 +740,9 @@ const queryJobSummaries = async ({ scope = 'recent', before, updatedSince, limit
   let hasOlder = false;
   if (jobs.length) {
     const lastCreated = jobs[jobs.length - 1].createdAt;
-    hasOlder = Boolean(await OcrJob.exists({ createdAt: { $lt: lastCreated } }));
+    hasOlder = Boolean(await OcrJob.exists({ ...visibility, createdAt: { $lt: lastCreated } }));
   } else if (scope === 'recent') {
-    hasOlder = Boolean(await OcrJob.exists({ createdAt: { $lt: buildRecentCutoff() } }));
+    hasOlder = Boolean(await OcrJob.exists({ ...visibility, createdAt: { $lt: buildRecentCutoff() } }));
   }
 
   return {
@@ -721,11 +752,12 @@ const queryJobSummaries = async ({ scope = 'recent', before, updatedSince, limit
   };
 };
 
-exports.renderTool = async (_req, res) => {
-  const health = await fetchHealth();
-  const initial = await queryJobSummaries({ scope: 'recent' });
+exports.renderTool = async (req, res) => {
+  const [health, modelCatalog] = await Promise.all([fetchHealth(), getCatalog()]);
+  const initial = await queryJobSummaries({ scope: 'recent', visibility: visibleJobs(req) });
   res.render('ocr_tool', buildViewState({
     health,
+    modelCatalog,
     jobs: initial.jobs,
     latestUpdatedAt: initial.latestUpdatedAt,
     hasOlder: initial.hasOlder,
@@ -736,7 +768,7 @@ exports.renderJobPage = async (req, res) => {
   const { jobId } = req.params;
   const highlightFileId = (req.params.fileId || req.query.fileId || '').trim();
   try {
-    const job = await OcrJob.findById(jobId);
+    const job = await OcrJob.findOne({ _id: jobId, ...visibleJobs(req) });
     if (!job) {
       return res.status(404).render('error_page', { error: 'Job not found.' });
     }
@@ -775,6 +807,7 @@ exports.listJobs = async (req, res) => {
       before,
       updatedSince,
       limit,
+      visibility: visibleJobs(req),
     });
 
     res.json({
@@ -791,7 +824,7 @@ exports.listJobs = async (req, res) => {
 exports.getJobDetails = async (req, res) => {
   const { jobId } = req.params;
   try {
-    const job = await OcrJob.findById(jobId);
+    const job = await OcrJob.findOne({ _id: jobId, ...visibleJobs(req) });
     if (!job) {
       return res.status(404).json({ error: 'Job not found.' });
     }
@@ -803,18 +836,28 @@ exports.getJobDetails = async (req, res) => {
 };
 
 exports.enqueueJob = async (req, res) => {
-  const prompt = req.body.prompt && req.body.prompt.trim() ? req.body.prompt.trim() : DEFAULT_PROMPT;
-  const requestedTokens = parseInt(req.body.max_new_tokens, 10);
-  const maxNewTokens = Number.isFinite(requestedTokens)
-    ? clamp(requestedTokens, 1, MAX_ALLOWED_TOKENS)
-    : DEFAULT_MAX_NEW_TOKENS;
-
   if (!req.files || !req.files.length) {
     return res.status(400).json({ error: 'Please upload at least one image.' });
   }
-
+  let selection;
   try {
-    const { job, queueFiles } = await createJobRecord(req.files, prompt, maxNewTokens, req.user);
+    selection = validateOptions(req.body || {}, await getCatalog());
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  const { model, options } = selection;
+  if (model !== DEFAULT_MODEL && (!req.ocrCanTestModels || !req.user?._id)) {
+    return res.status(403).json({ error: 'Model-testing access is required.' });
+  }
+  if (jobQueue.length + preparingJobs + Number(Boolean(activeJobId)) >= MAX_QUEUED_JOBS) {
+    return res.status(429).json({ error: 'The OCR queue is full. Please try again shortly.' });
+  }
+  if (model !== DEFAULT_MODEL && req.files.some(file => file.size > 10 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp', 'image/tiff', 'image/bmp'].includes(file.mimetype))) {
+    return res.status(400).json({ error: 'Model tests accept raster images up to 10 MB each.' });
+  }
+  preparingJobs += 1;
+  try {
+    const { job, queueFiles } = await createJobRecord(req.files, model, options, req.user);
     ocrEmbeddingService.noteOcrActivity();
     jobQueue.push({ jobId: job.id, files: queueFiles });
     processQueue();
@@ -824,8 +867,7 @@ exports.enqueueJob = async (req, res) => {
       metadata: {
         jobId: job.id,
         files: job.files.length,
-        promptLength: prompt.length,
-        maxNewTokens,
+        model,
       },
     });
 
@@ -837,7 +879,9 @@ exports.enqueueJob = async (req, res) => {
       category: 'ocr',
       metadata: { message: error?.message || error },
     });
-    return res.status(500).json({ error: 'Failed to queue OCR job.' });
+    return res.status(500).json({ error: 'Failed to queue OCR job. Check that the uploads are valid raster images.' });
+  } finally {
+    preparingJobs -= 1;
   }
 };
 
@@ -846,10 +890,12 @@ exports.updateFileResult = async (req, res) => {
   const { layoutText, overlayBoxes, layoutDirection } = req.body || {};
 
   try {
-    const job = await OcrJob.findById(jobId);
+    const job = await OcrJob.findOne({ _id: jobId, ...visibleJobs(req) });
     if (!job) {
       return res.status(404).json({ error: 'Job not found.' });
     }
+
+    if (isAlternativeJob(job)) return res.status(400).json({ error: 'Layout editing and embeddings are available for HunyuanOCR only.' });
 
     const file = job.files.find((entry) => entry.id === fileId);
     if (!file) {
@@ -912,10 +958,12 @@ exports.embedFileHighQuality = async (req, res) => {
   const { jobId, fileId } = req.params;
 
   try {
-    const job = await OcrJob.findById(jobId);
+    const job = await OcrJob.findOne({ _id: jobId, ...visibleJobs(req) });
     if (!job) {
       return res.status(404).json({ error: 'Job not found.' });
     }
+
+    if (isAlternativeJob(job)) return res.status(400).json({ error: 'Layout editing and embeddings are available for HunyuanOCR only.' });
 
     const file = job.files.find((entry) => entry.id === fileId);
     if (!file) {
@@ -957,7 +1005,7 @@ exports.embedFileHighQuality = async (req, res) => {
 exports.deleteJob = async (req, res) => {
   const { jobId } = req.params;
   try {
-    const job = await OcrJob.findById(jobId);
+    const job = await OcrJob.findOne({ _id: jobId, ...visibleJobs(req) });
     if (!job) {
       return res.status(404).json({ error: 'Job not found.' });
     }
@@ -974,16 +1022,33 @@ exports.deleteJob = async (req, res) => {
     await Promise.all((job.files || []).map(async (file) => {
       if (!file.previewPath) return;
       try {
-        await fs.unlink(path.join(__dirname, '..', 'public', file.previewPath));
-      } catch {
-        // ignore removal failures
+        await fs.unlink(previewDiskPath(job, file));
+      } catch (error) {
+        if (error.code !== 'ENOENT') logger.warning('Failed to remove OCR preview', { category: 'ocr', metadata: { jobId, code: error.code } });
       }
     }));
 
-    await OcrJob.deleteOne({ _id: jobId });
+    await OcrJob.deleteOne({ _id: jobId, ...visibleJobs(req) });
     return res.json({ ok: true, jobId });
   } catch (error) {
     logger.error('Failed to delete OCR job', { category: 'ocr', metadata: { jobId, message: error?.message || error } });
     return res.status(500).json({ error: 'Unable to delete job.' });
+  }
+};
+
+exports.servePreview = async (req, res) => {
+  try {
+    const job = await OcrJob.findOne({ _id: req.params.jobId, ...visibleJobs(req) });
+    const file = job?.files.find(entry => entry.id === req.params.fileId);
+    if (!job || !isAlternativeJob(job) || !file?.previewPath) return res.sendStatus(404);
+    const target = previewDiskPath(job, file);
+    const stat = await fs.lstat(target);
+    if (!stat.isFile() || stat.isSymbolicLink()) return res.sendStatus(404);
+    return res.type('jpeg').sendFile(target, error => {
+      if (error && !res.headersSent) res.sendStatus(404);
+    });
+  } catch (error) {
+    if (error.code !== 'ENOENT') logger.warning('Failed to serve OCR preview', { category: 'ocr', metadata: { code: error.code || 'LOOKUP_FAILED' } });
+    return res.sendStatus(404);
   }
 };

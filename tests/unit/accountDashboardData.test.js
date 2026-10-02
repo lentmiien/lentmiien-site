@@ -40,6 +40,7 @@ test('mine feed filters permissions/owner before any source read or aggregation'
   await data.load('jobs', p, { ...DEFAULT_JOBS, types: ['ocr', 'asr', 'music', 'sora', 'bulk', 'gpt_image'] });
   expect(calls.map(c => c.name).sort()).toEqual(['gpt_image_generation', 'ocr_job']);
   expect(calls.find(c => c.name === 'ocr_job').filter['owner.id']).toBe(owner);
+  expect(calls.find(c => c.name === 'ocr_job').filter.model).toEqual({ $in: [null, 'hunyuanocr'] });
   const grouped = calls.find(c => c.name === 'gpt_image_generation').pipeline;
   expect(grouped[0].$match.createdBy).toBe('member');
   expect(grouped[1].$group._id).toBe('$generationId');

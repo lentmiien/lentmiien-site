@@ -18,6 +18,7 @@ const OverlayBoxSchema = new Schema({
 
 const FileResultSchema = new Schema({
   rawText: { type: String, default: '' },
+  rawResponse: { type: Schema.Types.Mixed, default: null },
   layoutText: { type: String, default: '' },
   layoutDirection: { type: String, default: 'horizontal' },
   overlayBoxes: { type: [OverlayBoxSchema], default: [] },
@@ -29,7 +30,7 @@ const FileResultSchema = new Schema({
   promptUsed: { type: String, default: null },
   segmentsCount: { type: Number, default: 0 },
   receivedAt: { type: Date, default: null },
-}, { _id: false });
+}, { _id: false, minimize: false });
 
 const FileSchema = new Schema({
   id: { type: String, required: true },
@@ -62,8 +63,10 @@ const FileSchema = new Schema({
 
 const OcrJobSchema = new Schema({
   _id: { type: String, default: () => randomUUID() },
-  prompt: { type: String, required: true },
-  maxNewTokens: { type: Number, required: true },
+  model: { type: String, default: 'hunyuanocr' },
+  options: { type: Schema.Types.Mixed, default: null },
+  prompt: { type: String, default: '' },
+  maxNewTokens: { type: Number, default: null },
   status: {
     type: String,
     enum: ['queued', 'processing', 'completed', 'failed'],
@@ -80,6 +83,7 @@ const OcrJobSchema = new Schema({
 }, {
   timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
   versionKey: false,
+  minimize: false,
 });
 
 OcrJobSchema.index({ createdAt: -1 });

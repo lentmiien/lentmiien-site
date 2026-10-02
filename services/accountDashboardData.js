@@ -32,6 +32,8 @@ function createDashboardData({ model = name => require(`../models/${name}`), now
     const results = await Promise.allSettled(types.map(async type => {
       const [name, href, label] = sources[type]; const dateField = type === 'bulk' ? 'created_at' : 'createdAt';
       const filter = { [dateField]: { $gte: new Date(now().getTime() - filters.dateWindow * DAY) } };
+      // Alternative OCR tests are private workspace records, not shared activity.
+      if (type === 'ocr') filter.model = { $in: [null, 'hunyuanocr'] };
       if (filters.scope === 'mine') filter[type === 'gpt_image' ? 'createdBy' : 'owner.id'] = type === 'gpt_image' ? policy.user.name : String(policy.user._id);
       else if (['trellis2', 'pixal3d'].includes(type)) filter.shared = true;
       const historical = ['gpt_image', 'music'].includes(type);
