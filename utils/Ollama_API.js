@@ -370,9 +370,7 @@ const convertMessageContent = ({ message, role, allowImages }) => {
 
   if (includeImages && Array.isArray(content.images)) {
     content.images.forEach((img) => {
-      if (typeof img === 'string' && img.trim().length > 0) {
-        images.push(img.trim());
-      }
+      images.push(normalizeInlineImage(img));
     });
   }
 
@@ -383,14 +381,10 @@ const convertMessageContent = ({ message, role, allowImages }) => {
       images.push(b64);
     } catch (error) {
       logger.error('Failed to load image for Ollama chat payload', {
-        error,
-        image: filename,
+        category: 'ollama_image_policy',
+        metadata: { reason: 'image_read_failed' },
       });
-      if (content.revisedPrompt) {
-        appendText(content.revisedPrompt);
-      } else {
-        appendText(`Image reference: ${filename}`);
-      }
+      throw new Error('Unable to read an attached image. Reattach it before retrying.');
     }
   };
 
@@ -489,48 +483,64 @@ const messageHasPayload = (message) => {
   return false;
 };
 
-const limitMessagesToLastImage = (messages, maxImages = null) => {
-  if (!Array.isArray(messages)) return [];
-  if (maxImages === 0) {
-    return messages
-      .map((message) => {
-        if (!message || typeof message !== 'object') return message;
-        const nextMessage = { ...message };
-        delete nextMessage.images;
-        return nextMessage;
-      })
-      .filter(messageHasPayload);
-  }
-  if (maxImages !== 1) {
-    return messages.filter(messageHasPayload).map((message) => ({ ...message }));
-  }
-
-  let lastImage = null;
-  let lastImageMessageIndex = -1;
-  messages.forEach((message, index) => {
-    if (message && Array.isArray(message.images) && message.images.length > 0) {
-      lastImage = message.images[message.images.length - 1];
-      lastImageMessageIndex = index;
-    }
+const rejectImageRequest = (reason, message, metadata = {}) => {
+  void logger.warning('Ollama image request rejected before submission', {
+    category: 'ollama_image_policy',
+    metadata: { reason, ...metadata },
   });
+  throw new Error(message);
+};
 
-  return messages
-    .map((message, index) => {
-      if (!message || typeof message !== 'object') return message;
-      if (!Array.isArray(message.images) || message.images.length === 0) {
-        return { ...message };
-      }
-      if (index === lastImageMessageIndex && lastImage) {
-        return {
-          ...message,
-          images: [lastImage],
-        };
-      }
-      const nextMessage = { ...message };
-      delete nextMessage.images;
-      return nextMessage;
-    })
-    .filter(messageHasPayload);
+const normalizeInlineImage = (image) => {
+  // Only inline raster base64 is accepted; never fetch caller-provided URLs.
+  const raw = typeof image === 'string' ? image.trim() : '';
+  const base64 = raw.replace(/^data:image\/(?:png|jpeg|jpg|webp|gif);base64,/i, '');
+  if (!base64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)
+    || base64.length % 4 === 1
+    || (base64.includes('=') && base64.length % 4 !== 0)) {
+    rejectImageRequest('invalid_inline_image', 'Attached images must be inline base64 raster images, not URLs.');
+  }
+  return base64;
+};
+
+const validateMessageImages = (messages, model, targetModel, options = {}) => {
+  // Reuse discovery already performed for availability. No extra request or
+  // family-wide hardcoded quota: the Gateway remains the final authority.
+  const declaredModel = cachedModels.find((entry) => modelMatches(entry, targetModel));
+  const allowImages = typeof declaredModel?.allow_images === 'boolean'
+    ? declaredModel.allow_images
+    : model.allow_images === true
+      || (Array.isArray(model.in_modalities) && model.in_modalities.includes('image'))
+      || isGemma4Model(targetModel);
+  const images = messages.flatMap((message) => message.images || []);
+  const imageCount = images.length;
+  if (imageCount && !allowImages) {
+    rejectImageRequest('images_not_allowed', 'The selected model does not allow images. Select a vision model or exclude image messages.');
+  }
+
+  if (options.maxImages !== undefined && options.maxImages !== null
+    && (!Number.isSafeInteger(options.maxImages) || options.maxImages < 0)) {
+    rejectImageRequest('invalid_max_images', 'maxImages must be a non-negative integer or null.');
+  }
+  const limits = declaredModel?.limits || {};
+  const counts = [limits.max_images, options.maxImages]
+    .filter((value) => Number.isSafeInteger(value) && value >= 0);
+  const maxImages = counts.length ? Math.min(...counts) : null;
+  if (maxImages !== null && imageCount > maxImages) {
+    rejectImageRequest('too_many_images',
+      `Selected history contains ${imageCount} images; the request limit is ${maxImages} total, including history. Exclude older image messages or start a new conversation.`,
+      { imageCount, maxImages });
+  }
+
+  // Conservative base64 decoded-size estimate, including padding overhead.
+  // Do not decode/copy all images merely to perform the budget check.
+  const imageBytes = images.reduce((total, image) => total + Math.floor(image.length * 3 / 4), 0);
+  const maxImageBytes = limits.max_image_bytes;
+  if (Number.isSafeInteger(maxImageBytes) && maxImageBytes >= 0 && imageBytes > maxImageBytes) {
+    rejectImageRequest('too_many_image_bytes',
+      `Selected images exceed the aggregate ${maxImageBytes}-byte image budget, including history. Use smaller images or exclude older image messages.`,
+      { imageCount, imageBytes, maxImageBytes });
+  }
 };
 
 const resolveMaxMessagesLimit = (conversation) => {
@@ -541,23 +551,19 @@ const resolveMaxMessagesLimit = (conversation) => {
 
 const sanitizeMessagesForLogging = (messages) => {
   if (!Array.isArray(messages)) return messages;
-  return messages.map((message) => {
-    if (!message || typeof message !== 'object' || !Array.isArray(message.images) || message.images.length === 0) {
-      return message;
-    }
-    return {
-      ...message,
-      images: message.images.map((img) => (typeof img === 'string'
-        ? `[base64:${img.length} chars]`
-        : '[binary image]')),
-    };
-  });
+  return messages.map((message) => ({
+    role: message?.role,
+    content: '[redacted]',
+    imageCount: Array.isArray(message?.images) ? message.images.length : 0,
+  }));
 };
 
 const sanitizeChatPayloadForLogging = (payload) => {
   if (!payload || typeof payload !== 'object') return payload;
   const sanitized = {
-    ...payload,
+    model: payload.model,
+    webhook_url: payload.webhook_url,
+    toolCount: Array.isArray(payload.tools) ? payload.tools.length : 0,
     messages: sanitizeMessagesForLogging(payload.messages),
   };
   if (typeof sanitized.webhook_url === 'string') {
@@ -1792,7 +1798,7 @@ const postChatPayload = async (payload, functionName) => {
           requestHeaders: null,
           requestBody: fallbackLogPayload,
           responseHeaders: headersToObject(fallbackError.response?.headers),
-          responseBody: fallbackError.response?.data || fallbackError.message || fallbackError,
+          responseBody: { statusCode: fallbackError.response?.status || null },
           functionName: `${functionName}.toolRoleFallback`,
         });
       }
@@ -1803,13 +1809,12 @@ const postChatPayload = async (payload, functionName) => {
       requestHeaders: null,
       requestBody: logPayload,
       responseHeaders: headersToObject(error.response?.headers),
-      responseBody: error.response?.data || error.message || error,
+      responseBody: { statusCode: error.response?.status || null },
       functionName,
     });
     logger.error('Failed to complete AI gateway chat request', {
-      error: error?.message || error,
-      model: payload?.model,
-      functionName,
+      category: 'ollama_chat',
+      metadata: { statusCode: error.response?.status || null, model: payload?.model, functionName },
     });
     throw error;
   }
@@ -1876,7 +1881,7 @@ const sendChatJobPayload = async (payload, functionName, options = {}) => {
       requestHeaders: null,
       requestBody: logPayload,
       responseHeaders: headersToObject(error.response?.headers),
-      responseBody: error.response?.data || error.message || error,
+      responseBody: { statusCode: error.response?.status || null },
       functionName,
     });
     throw error;
@@ -1906,7 +1911,7 @@ const postChatJobPayload = async (payload, functionName, options = {}) => {
       metadata: {
         model: payload?.model || null,
         statusCode: error?.response?.status || null,
-        ...(options.privateRequest ? { errorName: error?.name || 'Error' } : { error: error?.message || String(error) }),
+        errorName: error?.name || 'Error',
       },
     });
     throw error;
@@ -1925,9 +1930,6 @@ const submitChatJob = async (conversation, messages, model, options = {}) => {
 
   await ensureModelAvailable(targetModel);
 
-  const supportsImages = model.allow_images === true
-    || (Array.isArray(model.in_modalities) && model.in_modalities.includes('image'))
-    || isGemma4Model(targetModel);
   const toolManagerConfig = await resolveToolManagerToolsForConversation(conversation);
   const tools = toolManagerConfig.tools;
   const contextPrompt = appendToolGuidanceToContext(
@@ -1939,14 +1941,12 @@ const submitChatJob = async (conversation, messages, model, options = {}) => {
   const selectedMessages = selectMessagesForOllama(messagesFromConfiguredStart, maxMessagesLimit, {
     includeLastToolBatch: options.includeLastToolBatch === true,
   });
-  const rawMessageArray = buildChatCompletionMessages(
+  const messageArray = buildChatCompletionMessages(
     contextPrompt,
     selectedMessages,
-    supportsImages,
+    true,
   );
-  const messageArray = isGemma4Model(targetModel)
-    ? limitMessagesToLastImage(rawMessageArray, 1)
-    : rawMessageArray.filter(messageHasPayload);
+  validateMessageImages(messageArray, model, targetModel, options);
 
   if (messageArray.length === 0) {
     throw new Error('No messages available to send to the AI gateway');
@@ -2036,8 +2036,6 @@ const chat = async (conversation, messages, model) => {
 
   await ensureModelAvailable(targetModel);
 
-  const supportsImages = model.allow_images === true
-    || (Array.isArray(model.in_modalities) && model.in_modalities.includes('image'));
   const contextPrompt = resolveContextPrompt(conversation);
   const messagesFromConfiguredStart = sliceMessagesFromConfiguredStart(messages, conversation);
   const visibleMessages = messagesFromConfiguredStart.filter((message) => message && !message.hideFromBot);
@@ -2048,8 +2046,9 @@ const chat = async (conversation, messages, model) => {
   const messageArray = buildChatCompletionMessages(
     contextPrompt,
     limitedMessages,
-    supportsImages,
+    true,
   );
+  validateMessageImages(messageArray, model, targetModel);
 
   if (messageArray.length === 0) {
     throw new Error('No messages available to send to the AI gateway');
@@ -2076,9 +2075,6 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
 
   await ensureModelAvailable(targetModel);
 
-  const supportsImages = model.allow_images === true
-    || (Array.isArray(model.in_modalities) && model.in_modalities.includes('image'))
-    || isGemma4Model(targetModel);
   const toolManagerConfig = options.useToolManager === false
     ? { tools: [], toolNames: new Set(), toolGuidance: [] }
     : await resolveToolManagerToolsForConversation(conversation);
@@ -2094,17 +2090,12 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
   const limitedMessages = maxMessagesLimit
     ? visibleMessages.slice(-maxMessagesLimit)
     : visibleMessages;
-  const rawMessages = buildChatCompletionMessages(
+  const messageArray = buildChatCompletionMessages(
     contextPrompt,
     limitedMessages,
-    supportsImages,
+    true,
   );
-  const maxImages = Number.isInteger(options.maxImages) && options.maxImages >= 0
-    ? options.maxImages
-    : (isGemma4Model(targetModel) ? 1 : null);
-  const messageArray = Number.isInteger(maxImages)
-    ? limitMessagesToLastImage(rawMessages, maxImages)
-    : rawMessages.filter(messageHasPayload).map(cloneMessageForToolLoop);
+  validateMessageImages(messageArray, model, targetModel, options);
 
   if (messageArray.length === 0) {
     throw new Error('No messages available to send to the AI gateway');
@@ -2292,7 +2283,6 @@ const chatGemma4 = async (conversation, messages, model, options = {}) => {
   const normalizedOptions = options && typeof options === 'object'
     ? { ...options }
     : {};
-  normalizedOptions.maxImages = 1;
   return chatWithThinkingAndTools(conversation, messages, model, normalizedOptions);
 };
 

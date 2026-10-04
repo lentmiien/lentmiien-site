@@ -6,6 +6,10 @@ Gateway later notifies `POST /webhook/ollama`; the app retrieves the canonical
 job record from the Gateway, replaces the placeholder, and broadcasts the
 persisted output to Chat5 conversation and member rooms.
 
+Image messages are preserved across the selected history, including Gemma 4.
+See [multi-image policy and deployment](ollama-multi-image.md) before releasing:
+the Gateway policy must be deployed first, and image limits include history.
+
 ## Production configuration
 
 ```dotenv

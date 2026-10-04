@@ -12,9 +12,11 @@ Gemma 4 adds three requirements that are now handled by a separate helper path:
 
 1. Thinking output
 2. Tool calling
-3. Image input with a max of 1 image
+3. Image input within the selected model's Gateway policy
 
-The new Gemma-focused helper keeps the existing `chat()` function unchanged and adds a second path for Gemma 4 models.
+The Gemma-focused helper adds a path for thinking and tools. Regular `chat()`
+also delegates to the tool helper when Tool Manager tools are selected; all
+chat entry points share the image policy described below.
 
 ## New Functions
 
@@ -27,7 +29,7 @@ New exports:
 - `chatWithThinkingAndTools(conversation, messages, model, options = {})`
 - `chatGemma4(conversation, messages, model, options = {})`
 
-`chatGemma4()` is a convenience wrapper around `chatWithThinkingAndTools()` and forces the input image limit to 1.
+`chatGemma4()` is a convenience wrapper around `chatWithThinkingAndTools()`. Neither helper imposes a default one-image limit.
 
 ## Behavior
 
@@ -94,15 +96,19 @@ The helper:
 4. Sends a follow-up request with the tool result
 5. Returns the final assistant response
 
-### Image Input Limit
+### Image Input Policy
 
-Gemma 4 models support image input, but this integration intentionally limits the request to at most 1 image.
+The adapter preserves all selected user images in message/array order, including
+multiple images in one message. It checks cached Gateway `allow_images`,
+`limits.max_images`, and `limits.max_image_bytes` when available. The Gateway
+remains authoritative; the adapter does not assume that every model supports
+three images. An explicit `maxImages` option is an additional request-wide cap:
+exceeding it throws instead of discarding earlier attachments. `maxImages: 0`
+rejects image-bearing requests; omit it or use `null` for no caller-imposed cap.
 
-Rule:
-
-- If the conversation contains multiple images, only the last image is sent to the model.
-
-This is enforced in the Gemma 4 path before the request is posted to `/llm/chat`.
+See [Chat5 multi-image release notes](ollama-multi-image.md) for Gateway-first
+deployment, history/byte budgets, compatibility behavior, and the distinction
+between transport support and model accuracy.
 
 ### Tool-Call Recovery from Gemma 4 Output
 
