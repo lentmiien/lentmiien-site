@@ -1,0 +1,22 @@
+{
+  "checks": [
+    "Begin and pause advance, then hold the flight clock.",
+    "Five-times playback advances and can be paused.",
+    "Playback reaches stable rest with zero speed and thrust, then stops.",
+    "Replay returns from completed landing to the one-kilometre approach.",
+    "Keyboard cameras, pause, restart, and instrument visibility work.",
+    "Accessible mission notes open and close with Escape.",
+    "Phone portrait and landscape controls fit without horizontal overflow.",
+    "Missing model presents the recoverable load error and disables play.",
+    "Unavailable WebGL presents the recoverable graphics error.",
+    "No external requests, browser warnings/errors, or persistent browser data."
+  ],
+  "browser": "148.0.7778.96",
+  "viewport": "1440×1000 / 390×844 / 844×390",
+  "errors": [],
+  "externalRequests": [],
+  "contactTime": 111.48333333332829,
+  "duration": 135.4833333333333,
+  "touchdownSpeed": 1.996304814606759,
+  "remainingFuel": 1316.6585933672254
+}

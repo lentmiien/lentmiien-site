@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="description" content="The last kilometre to another world. A detailed, Apollo-inspired 3D lunar landing simulation with real lunar gravity and ballistic surface dust.">
+  <title>Tranquility · Moon Landing</title>
+  <link rel="icon" href="assets/insignia.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/color-theme.css">
+  <link rel="stylesheet" href="css/simulation.css">
+  <script src="js/physics.js" defer></script>
+  <script src="js/terrain.js" defer></script>
+  <script src="js/boot.js" defer></script>
+</head>
+<body>
+  <main id="experience">
+    <canvas id="scene" tabindex="0" aria-label="3D lunar landing. Drag to orbit the lander, scroll or pinch to zoom. Text flight instruments and playback controls follow."></canvas>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <header class="masthead">
+      <a class="identity" href="../games" aria-label="Return to games"><img src="assets/insignia.svg" width="38" height="38" alt=""><span>TRANQUILITY<small>A LUNAR LANDING EXPERIENCE</small></span></a>
+      <div class="header-actions"><span class="mission-tag">APOLLO-INSPIRED / LM-05</span><button id="notesButton" class="quiet">Mission notes <span aria-hidden="true">↗</span></button><button id="fullscreenButton" class="icon-button" aria-label="Enter fullscreen" title="Fullscreen">⛶</button></div>
+    </header>
+
+    <section id="intro" class="intro" aria-labelledby="title">
+      <p class="eyebrow"><span class="live-dot"></span> SEA OF TRANQUILITY · 1969</p>
+      <h1 id="title">The last<br><em>kilometre.</em></h1>
+      <p class="intro-copy">A fragile machine. An airless world.<br>Follow a crew of two to the lunar surface.</p>
+      <div class="intro-rule"></div>
+      <p class="intro-detail">One-sixth the gravity. No atmosphere.<br>Every metre, every burn, every grain of dust.</p>
+      <button id="beginButton" class="primary" disabled>Preparing the spacecraft…</button>
+      <span class="intro-footnote">AUTOMATED DESCENT · INTERACTIVE CAMERAS</span>
+    </section>
+
+    <section id="flightSummary" class="flight-summary" hidden aria-label="Landing status">
+      <p class="eyebrow"><span class="live-dot"></span> <span id="phase">BRAKING APPROACH</span></p>
+      <h1 id="flightTitle">Down to the Moon.</h1>
+      <p id="flightSubtitle">Guidance is flying. You have the view.</p>
+    </section>
+
+    <aside class="telemetry" aria-label="Live flight instruments">
+      <div class="telemetry-heading"><span>FLIGHT TELEMETRY</span><span id="telemetryState" class="telemetry-state">PREVIEW</span></div>
+      <div class="altitude"><span class="instrument-label">RADAR ALTITUDE <small>AGL</small></span><div><strong id="altitude">—</strong><span class="unit">m</span></div><div class="altitude-track"><i id="altitudeBar"></i></div></div>
+      <div class="instrument-pair"><div><span class="instrument-label">DESCENT RATE</span><strong id="velocity">—</strong><small>m/s ↓</small></div><div><span class="instrument-label">GROUND SPEED</span><strong id="groundSpeed">—</strong><small>m/s</small></div></div>
+      <div class="engine"><div><span class="instrument-label">DESCENT ENGINE</span><strong id="throttle">—</strong></div><div class="engine-track" aria-hidden="true"><i id="throttleBar"></i></div><p><span id="engineState">THROTTLE MODULATING</span><span id="fuel">— kg</span></p></div>
+      <div class="telemetry-footer"><span>CREW <b>02</b></span><span>g <b>1.625 m/s²</b></span></div>
+    </aside>
+
+    <div class="view-caption"><span id="viewName">01 / TRACKING CAMERA</span><span id="viewHint">DRAG TO ORBIT · SCROLL TO ZOOM</span></div>
+    <div class="surface-caption"><span>MARE TRANQUILLITATIS</span><small>0° 40′ 26″ N &nbsp; 23° 28′ 23″ E <span>· APPROXIMATE SETTING</span></small></div>
+
+    <footer class="console">
+      <div class="console-top"><div class="playback"><button id="playButton" aria-label="Play descent" disabled><span id="playIcon" aria-hidden="true">▶</span><span id="playLabel">Play</span></button><button id="restartButton" class="icon-button" aria-label="Restart from one kilometre" title="Restart · R">↺</button><span class="clock" id="clock">T − 00:00</span><label class="speed-label"><span class="sr-only">Playback speed</span><select id="speed"><option value="1">1× REAL TIME</option><option value="2">2× SPEED</option><option value="5">5× SPEED</option></select></label></div>
+        <nav class="camera-controls" aria-label="Camera views"><button data-camera="tracking" aria-pressed="true"><span>01</span> Tracking</button><button data-camera="wide" aria-pressed="false"><span>02</span> Wide</button><button data-camera="surface" aria-pressed="false"><span>03</span> Surface</button><button data-camera="onboard" aria-pressed="false"><span>04</span> Onboard</button></nav>
+      </div>
+      <div class="timeline"><label for="timeline" class="sr-only">Landing timeline in seconds</label><input id="timeline" type="range" min="0" max="180" value="0" step="0.1" disabled><div class="timeline-labels"><button data-phase="approach">1,000 m <span>APPROACH</span></button><button data-phase="terminal">60 m <span>TERMINAL DESCENT</span></button><button data-phase="contact">5 m <span>CONTACT</span></button><button data-phase="settled">0 m <span>TRANQUILITY BASE</span></button></div></div>
+      <div class="console-bottom"><span><i class="status-dot"></i> <span id="statusText">Loading local flight systems</span></span><span>SPACE TO PAUSE <span class="bottom-extra">· H TO HIDE INSTRUMENTS &nbsp; / &nbsp; VACUUM · SILENT EXTERIOR</span></span></div>
+    </footer>
+    <button id="showInterface" hidden>Show instruments · H</button>
+
+    <dialog id="notes">
+      <div class="dialog-heading"><p class="eyebrow">THE FLIGHT, IN CONTEXT</p><button id="closeNotes" class="icon-button" aria-label="Close mission notes">×</button></div>
+      <h2>A small step, carefully observed.</h2>
+      <p>This simulation follows an Apollo-style, two-person lunar module through its final 1,000 metres. Automatic guidance controls the descent. Pause, change cameras, or move along the timeline to inspect any moment.</p>
+      <div class="reference-grid"><figure><img src="assets/references/AS11-5927.jpg" alt="NASA Apollo 11 photograph of the lunar module, its gold foil, silver ascent stage, and landing legs" loading="lazy"><figcaption>AS11-40-5927 · NASA</figcaption></figure><figure><img src="assets/references/AS11-5454.jpg" alt="Apollo 11 view of gray lunar regolith, a black sky, and the lander's long shadow" loading="lazy"><figcaption>AS11-37-5454 · NASA</figcaption></figure></div>
+      <h3>Built around the real thing</h3>
+      <p>The spacecraft uses NASA / Michael D. Carbajal’s Apollo lunar module geometry, with adapted metal and thermal-blanket materials. Apollo photographs guide the low Sun, hard shadows, dark sky, small craters, and scattered stones. The two crew members stay inside the cabin.</p>
+      <h3>What you are seeing</h3>
+      <p>Lunar gravity is 1.625 m/s². Engine thrust changes with guidance and vehicle mass decreases as propellant is consumed. Contact probes trigger engine cutoff just above the ground; the landing gear absorbs the final drop.</p>
+      <p>In vacuum, dust travels in shallow ballistic arcs. The fast sheet leaves the landing area; a smaller, slower population falls back over several seconds. There are no floating smoke clouds. The faint engine plume is enhanced for visibility; actual exhaust can be difficult to see in sunlight. There is no exterior sound.</p>
+      <p class="model-note">An interpretive visualization, not a flight-certified simulator or a replay of Apollo 11 telemetry. Terrain is procedural, the coordinates identify the historical setting, and the guidance, gear response, exhaust, and dust population are approximations. A surface camera at 1 km tracks a tiny distant spacecraft; use Tracking for a close view.</p>
+      <h3>Controls</h3>
+      <p>Drag to orbit in Tracking or Wide; scroll or pinch to zoom. Space: play/pause. 1–4: cameras. R: restart. H: hide instruments. Playback pauses when this tab is hidden. Reduced-motion preferences start with a still preview.</p>
+      <div class="source-links"><a href="https://www.nasa.gov/wp-content/uploads/static/history/ap11ann/kippsphotos/apollo.html" target="_blank" rel="noopener noreferrer">Apollo 11 image archive ↗</a><a href="https://science.nasa.gov/3d-resources/apollo-lunar-module/" target="_blank" rel="noopener noreferrer">NASA lunar module model ↗</a><a href="https://www.nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-A17DustObscur.html" target="_blank" rel="noopener noreferrer">Apollo dust observations ↗</a></div>
+    </dialog>
+    <section id="failure" hidden role="alert"><p class="eyebrow">FLIGHT DISPLAY UNAVAILABLE</p><h2>The view could not open.</h2><p id="failureText">This experience needs WebGL 2 and its local assets served over HTTP. Enable hardware acceleration, then reload to try again.</p><button id="reloadButton" class="primary">Reload experience</button></section>
+    <p id="announcement" class="sr-only" role="status" aria-live="polite"></p>
+    <noscript><div class="no-script">Enable JavaScript to run the lunar landing simulation.</div></noscript>
+  </main>
+</body>
+</html>
