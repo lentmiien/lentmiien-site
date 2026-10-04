@@ -92,7 +92,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 - `/admin/ask-lennart` - Durable inbox for responding to Chat5 human-action tool calls.
 - `/codex-log-review` - Admin workflow for scheduled production-log analysis, reviewed fixes, and commit/push follow-ups.
 - `/sora` - Sora 2 Studio dashboard with job filters, polling, and ratings.
-- `/image_gen` - ComfyUI job queue, cached output browser, prompt library.
+- `/image_gen` - ComfyUI job queue, cached output browser, prompt library. Workflow inputs and saved picks use [bounded thumbnail previews](documentation/image-gen-thumbnails.md).
 - `/gpt-image` - OpenAI image generation workflow.
 - `/accounting` or `/budget` - Budget v2 dashboard, transaction review, credit cards, analytics APIs.
 - `/cooking` - Legacy cooking calendar (v1) view and edit flow.

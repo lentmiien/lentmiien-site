@@ -3,13 +3,15 @@ const path = require('path');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const { randomUUID } = require('crypto');
-const { Readable } = require('stream');
+const { Readable, Transform } = require('stream');
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 const embeddingQueueService = require('../services/embeddingQueueService');
 const { errorDiagnostics } = require('../utils/errorDiagnostics');
 const ComfyGatewayService = require('../services/comfyGatewayService');
+const { GoodImageThumbnailService, SETTINGS: THUMBNAIL_SETTINGS } = require('../services/goodImageThumbnailService');
+const goodImageThumbnails = new GoodImageThumbnailService();
 
 const { Prompt, BulkJob, BulkTestPrompt, GoodImage } = require('../database');
 
@@ -1757,6 +1759,7 @@ function toGoodImageView(doc, overrides = {}) {
     id,
     filename,
     public_url: publicUrl,
+    thumbnail_url: id ? `/image_gen/api/good-images/${encodeURIComponent(id)}/thumbnail` : null,
     original_filename: doc.original_filename || null,
     job_id: doc.job_id || null,
     instance_id: doc.instance_id || null,
@@ -3719,7 +3722,16 @@ exports.listFiles = async (req, res) => {
 };
 
 // Proxy a persistent input preview while preserving byte-range responses.
-exports.getInputFile = async (req, res) => {
+async function proxyInputFile(req, res, thumbnail = false) {
+  if (thumbnail && (typeof req.query.path !== 'string' || req.query.path.length > 1024
+    || /[\\\x00-\x1f\x7f]/.test(req.query.path) || req.query.path.startsWith('/')
+    || req.query.path.split('/').some(segment => !segment || segment === '.' || segment === '..')
+    || /^[a-z]:/i.test(req.query.path) || /%[a-f\d]{2}/i.test(req.query.path)
+    || Object.keys(req.query).some(key => key !== 'path')
+    || ['if-none-match', 'if-modified-since'].some(key => req.headers[key]?.length > 4096))) {
+    return errorJson(res, 400, 'invalid thumbnail request');
+  }
+  const operation = thumbnail ? 'openInputThumbnail' : 'openInputFile';
   const inputPath = String(req.query.path || '').trim();
   if (!inputPath) return errorJson(res, 400, 'input path required');
 
@@ -3728,11 +3740,13 @@ exports.getInputFile = async (req, res) => {
   let stream = null;
   let upstreamDiagnostics = null;
   let idleTimer = null;
+  let lifetimeTimer = null;
+  let sourceStream = null;
   let clientDisconnected = false;
   let streamFinished = false;
   let transferredBytes = 0;
   let expectedBytes = null;
-  const forwardedHeaders = [
+  const forwardedHeaders = thumbnail ? ['etag', 'last-modified'] : [
     'accept-ranges', 'cache-control', 'content-disposition', 'content-length',
     'content-range', 'content-type', 'etag', 'last-modified', 'x-content-type-options'
   ];
@@ -3753,8 +3767,10 @@ exports.getInputFile = async (req, res) => {
     error.name = 'AbortError';
     abortUpstream(error);
     stream?.destroy(error);
+    sourceStream?.destroy();
   };
   const cleanup = () => {
+    clearTimeout(lifetimeTimer);
     clearIdleTimer();
     req.off?.('aborted', onClientDisconnect);
     res.off?.('close', onClientDisconnect);
@@ -3762,10 +3778,18 @@ exports.getInputFile = async (req, res) => {
 
   req.once?.('aborted', onClientDisconnect);
   res.once?.('close', onClientDisconnect);
+  if (thumbnail) {
+    lifetimeTimer = setTimeout(() => {
+      const error = Object.assign(new Error('Gateway thumbnail deadline exceeded'), { name: 'TimeoutError' });
+      abortUpstream(error);
+      stream?.destroy(error);
+    }, 30000);
+    lifetimeTimer.unref?.();
+  }
 
   try {
-    const upstream = await comfyGatewayService.openInputFile(inputPath, {
-      range: req.headers.range,
+    const upstream = await comfyGatewayService[operation](inputPath, {
+      ...(thumbnail ? { ifNoneMatch: req.headers['if-none-match'], ifModifiedSince: req.headers['if-modified-since'] } : { range: req.headers.range }),
       signal: upstreamController.signal
     });
     upstreamDiagnostics = upstream.comfyGateway || null;
@@ -3778,6 +3802,12 @@ exports.getInputFile = async (req, res) => {
     if (/^\d+$/.test(lengthHeader) && Number.isSafeInteger(Number(lengthHeader))) {
       expectedBytes = Number(lengthHeader);
     }
+    if (thumbnail && upstream.status !== 304 && (upstream.status !== 200
+      || upstream.headers.get('content-type')?.split(';')[0] !== 'image/webp'
+      || expectedBytes > THUMBNAIL_SETTINGS.maxThumbnailBytes)) {
+      await upstream.body?.cancel().catch(() => {});
+      throw Object.assign(new Error('Invalid Gateway thumbnail response'), { status: 502 });
+    }
     if (upstreamDiagnostics?.proxyRequestId) {
       res.setHeader('X-Request-Id', upstreamDiagnostics.proxyRequestId);
     }
@@ -3786,13 +3816,37 @@ exports.getInputFile = async (req, res) => {
       const value = upstream.headers.get(headerName);
       if (value) res.setHeader(headerName, value);
     });
-    if (!upstream.body) {
+    if (thumbnail) {
+      res.setHeader('Cache-Control', 'private, no-cache');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (upstream.status !== 304) {
+        res.setHeader('Content-Type', 'image/webp');
+        res.setHeader('Content-Disposition', 'inline');
+      }
+    }
+    if (!upstream.body || (thumbnail && upstream.status === 304)) {
       streamFinished = true;
       cleanup();
       return res.end();
     }
 
-    stream = Readable.fromWeb(upstream.body);
+    sourceStream = Readable.fromWeb(upstream.body);
+    stream = sourceStream;
+    if (thumbnail) {
+      let receivedBytes = 0;
+      stream = new Transform({
+        transform(chunk, _encoding, callback) {
+          receivedBytes += chunk.length;
+          if (receivedBytes > THUMBNAIL_SETTINGS.maxThumbnailBytes) {
+            return callback(Object.assign(new Error('Gateway thumbnail exceeds byte limit'), { status: 502 }));
+          }
+          return callback(null, chunk);
+        },
+      });
+      sourceStream.on('error', error => stream.destroy(error));
+      stream.once('close', () => sourceStream.destroy());
+      sourceStream.pipe(stream);
+    }
     const resetIdleTimer = () => {
       clearIdleTimer();
       idleTimer = setTimeout(() => {
@@ -3817,7 +3871,7 @@ exports.getInputFile = async (req, res) => {
       if (clientDisconnected) return;
       abortUpstream(error);
       logComfyGatewayFailure('ComfyUI input preview stream failed', error, {
-        operation: 'openInputFile',
+        operation,
         endpoint: upstreamDiagnostics?.endpoint || null,
         phase: 'response-body',
         upstreamStatus: upstreamDiagnostics?.status || upstream.status,
@@ -3831,6 +3885,11 @@ exports.getInputFile = async (req, res) => {
       });
       if (!res.headersSent) {
         forwardedHeaders.forEach(header => res.removeHeader?.(header));
+        if (thumbnail) {
+          res.removeHeader?.('Content-Type');
+          res.removeHeader?.('Content-Disposition');
+          res.setHeader('Cache-Control', 'private, no-store');
+        }
         errorJson(
           res,
           ComfyGatewayService.gatewayHttpStatus(error),
@@ -3847,7 +3906,7 @@ exports.getInputFile = async (req, res) => {
     cleanup();
     if (clientDisconnected || req.aborted || res.destroyed) return undefined;
     logComfyGatewayFailure('ComfyUI input preview request failed', e, {
-      operation: 'openInputFile',
+      operation,
       phase: 'response-headers',
       durationMs: Date.now() - startedAt,
     });
@@ -3857,6 +3916,32 @@ exports.getInputFile = async (req, res) => {
       'failed to preview ComfyUI input file',
       ComfyGatewayService.gatewayClientMessage(e)
     );
+  }
+}
+exports.getInputFile = (req, res) => proxyInputFile(req, res);
+exports.getInputThumbnail = (req, res) => proxyInputFile(req, res, true);
+
+exports.getGoodImageThumbnail = async (req, res) => {
+  if (!/^[a-f\d]{24}$/i.test(req.params.id || '') || Object.keys(req.query).length) {
+    return errorJson(res, 404, 'Thumbnail unavailable.');
+  }
+  try {
+    // The route capability grants the entire admin-managed gallery. Only a
+    // persisted record may select a durable source, never a request filename.
+    const record = await GoodImage.findOne({ _id: req.params.id }).select('_id filename').lean();
+    if (!record) return errorJson(res, 404, 'Thumbnail unavailable.');
+    const thumbnail = await goodImageThumbnails.get(record);
+    if (req.aborted || res.destroyed) return undefined;
+    res.set({ 'Cache-Control': 'private, no-cache', 'ETag': thumbnail.etag,
+      'Last-Modified': thumbnail.lastModified, 'Content-Type': 'image/webp',
+      'Content-Disposition': 'inline', 'X-Content-Type-Options': 'nosniff' });
+    if (req.fresh) return res.status(304).end();
+    return res.send(thumbnail.buffer);
+  } catch (error) {
+    if (!error.status) logger.error('Saved image thumbnail lookup failed', {
+      category: 'image-gen-thumbnail', metadata: { errorName: error.name || 'Error' },
+    });
+    return errorJson(res, error.status || 500, 'Thumbnail unavailable.');
   }
 };
 

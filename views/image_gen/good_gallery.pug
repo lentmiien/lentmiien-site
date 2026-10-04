@@ -3,7 +3,8 @@ extends ../layout
 block styles
   style.
     .good-gallery .good-card{background:var(--surface-1);border:1px solid var(--border);border-radius:.85rem;padding:.75rem;box-shadow:0 14px 32px rgba(0,0,0,0.18);height:100%;display:flex;flex-direction:column}
-    .good-gallery .good-thumb{width:100%;border-radius:.65rem;border:1px solid var(--divider);background:var(--surface-2);object-fit:cover;max-height:240px}
+    .good-gallery .good-thumb{width:100%;border-radius:.65rem;border:1px solid var(--divider);background:var(--surface-2);object-fit:contain;max-height:240px}
+    .good-gallery .good-thumb-unavailable{min-height:150px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)}
     .good-gallery .meta{color:var(--text-secondary);font-size:.9rem}
     .good-gallery .prompt{white-space:pre-line;font-size:.95rem}
     .good-gallery .pinned{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-tint)}

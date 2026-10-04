@@ -349,3 +349,33 @@ describe('ComfyGatewayService input files', () => {
     expect(mockRecordApiDebugLog).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('ComfyGatewayService thumbnail contract', () => {
+  let originalFetch;
+  beforeEach(() => { originalFetch = global.fetch; global.fetch = jest.fn(); });
+  afterEach(() => { global.fetch = originalFetch; });
+  test.each([200, 304])('uses fixed authenticated thumbnail URL and conditional headers for %s', async status => {
+    global.fetch.mockResolvedValue(new Response(status === 304 ? null : 'webp', { status, headers: { ETag: '"v1"' } }));
+    const service = new ComfyGatewayService({ baseUrl: 'http://gateway.test', apiKey: 'test-key' });
+    const response = await service.openInputThumbnail('folder/image with spaces.png', {
+      ifNoneMatch: '"v1"', ifModifiedSince: 'Wed, 01 Oct 2025 00:00:00 GMT', range: 'bytes=0-1',
+    });
+    expect(response.status).toBe(status);
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(new URL(url).pathname).toBe('/comfy/input/thumbnail');
+    expect(new URL(url).searchParams.get('path')).toBe('folder/image with spaces.png');
+    expect(options.headers).toMatchObject({ 'x-api-key': 'test-key', 'If-None-Match': '"v1"', 'If-Modified-Since': 'Wed, 01 Oct 2025 00:00:00 GMT' });
+    expect(options.headers.Range).toBeUndefined();
+    expect(options.redirect).toBe('error');
+    expect(response.comfyGateway.operation).toBe('openInputThumbnail');
+    expect(mockRecordApiDebugLog).not.toHaveBeenCalled();
+  });
+  test('upstream failures cancel the body without reading private payloads or retrying the original', async () => {
+    let cancelled = false;
+    global.fetch.mockResolvedValue(new Response(new ReadableStream({ cancel() { cancelled = true; } }), { status: 404 }));
+    const service = new ComfyGatewayService({ baseUrl: 'http://gateway.test' });
+    await expect(service.openInputThumbnail('missing.png')).rejects.toMatchObject({ status: 404 });
+    expect(cancelled).toBe(true);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});

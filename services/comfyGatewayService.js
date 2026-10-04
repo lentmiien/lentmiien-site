@@ -384,7 +384,15 @@ class ComfyGatewayService {
     );
   }
 
-  async openInputFile(inputPath, { range, signal } = {}) {
+  async openInputFile(inputPath, options = {}) {
+    return this.openInputMedia(inputPath, options);
+  }
+
+  async openInputThumbnail(inputPath, options = {}) {
+    return this.openInputMedia(inputPath, { ...options, thumbnail: true });
+  }
+
+  async openInputMedia(inputPath, { range, signal, thumbnail = false, ifNoneMatch, ifModifiedSince } = {}) {
     const normalizedPath = String(inputPath || '').trim();
     if (!normalizedPath) {
       const err = new Error('input path is required');
@@ -393,13 +401,16 @@ class ComfyGatewayService {
     }
 
     const params = new URLSearchParams({ path: normalizedPath });
-    const requestUrl = this.buildUrl(`/comfy/input/view?${params.toString()}`);
+    const requestUrl = this.buildUrl(`/comfy/input/${thumbnail ? 'thumbnail' : 'view'}?${params.toString()}`);
     const proxyRequestId = randomUUID();
     const requestHeaders = this.apiHeaders({
-      ...(range ? { Range: range } : {}),
+      ...(!thumbnail && range ? { Range: range } : {}),
+      ...(thumbnail && ifNoneMatch ? { 'If-None-Match': ifNoneMatch } : {}),
+      ...(thumbnail && ifModifiedSince ? { 'If-Modified-Since': ifModifiedSince } : {}),
       'X-Request-Id': proxyRequestId,
     });
-    const functionName = 'openInputFile';
+    const functionName = thumbnail ? 'openInputThumbnail' : 'openInputFile';
+    const recordStreamDebug = thumbnail ? async () => {} : recordApiDebugLog;
     const startedAt = Date.now();
     let responseHeaders = null;
     let debugRecorded = false;
@@ -415,13 +426,15 @@ class ComfyGatewayService {
     try {
       const response = await fetch(requestUrl, {
         headers: requestHeaders,
-        signal: requestSignal
+        signal: requestSignal,
+        ...(thumbnail ? { redirect: 'error' } : {})
       });
       clearTimeout(headerTimer);
       responseHeaders = headersToObject(response.headers);
-      if (!response.ok) {
-        const responseBody = await response.text().catch(() => '');
-        await recordApiDebugLog({
+      if (!response.ok && !(thumbnail && response.status === 304)) {
+        const responseBody = thumbnail ? '' : await response.text().catch(() => '');
+        if (thumbnail) await response.body?.cancel().catch(() => {});
+        await recordStreamDebug({
           requestUrl,
           requestHeaders,
           requestBody: { path: normalizedPath, range: range || null },
@@ -435,7 +448,7 @@ class ComfyGatewayService {
         err.response = responseBody;
         throw err;
       }
-      await recordApiDebugLog({
+      await recordStreamDebug({
         requestUrl,
         requestHeaders,
         requestBody: { path: normalizedPath, range: range || null },
@@ -457,7 +470,7 @@ class ComfyGatewayService {
     } catch (err) {
       clearTimeout(headerTimer);
       if (!debugRecorded) {
-        await recordApiDebugLog({
+        await recordStreamDebug({
           requestUrl,
           requestHeaders,
           requestBody: { path: normalizedPath, range: range || null },

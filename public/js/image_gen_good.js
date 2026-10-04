@@ -38,8 +38,34 @@
     img.className = 'good-thumb';
     img.loading = 'lazy';
     img.alt = item.original_filename || item.filename || 'saved image';
-    img.src = item.public_url || item.cached_url || item.download_url || '';
+    const showUnavailable = () => {
+      const unavailable = document.createElement('div');
+      unavailable.className = 'good-thumb good-thumb-unavailable';
+      unavailable.textContent = 'Preview unavailable';
+      img.replaceWith(unavailable);
+    };
+    img.addEventListener('error', showUnavailable, { once: true });
     card.appendChild(img);
+    // Use only our record-scoped endpoint. Never auto-fetch legacy source URLs.
+    const thumbnailUrl = `/image_gen/api/good-images/${encodeURIComponent(item.id)}/thumbnail`;
+    if (item.thumbnail_url === thumbnailUrl) img.src = thumbnailUrl;
+    else showUnavailable();
+
+    const originalUrl = item.public_url || item.cached_url || item.download_url;
+    if (originalUrl) {
+      try {
+        const url = new URL(originalUrl, window.location.origin);
+        if (['http:', 'https:'].includes(url.protocol)) {
+          const open = document.createElement('a');
+          open.className = 'btn btn-sm btn-outline-secondary mt-2';
+          open.href = url.href;
+          open.target = '_blank';
+          open.rel = 'noopener noreferrer';
+          open.textContent = 'Open';
+          card.appendChild(open);
+        }
+      } catch (_) { /* Invalid legacy URLs cannot become navigation links. */ }
+    }
 
     const meta = document.createElement('div');
     meta.className = 'meta mt-2';

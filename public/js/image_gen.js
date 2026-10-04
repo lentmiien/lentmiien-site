@@ -740,7 +740,7 @@
     };
   }
 
-  function inputPreviewUrl(file) {
+  function inputOriginalUrl(file) {
     return `/image_gen/api/files/input/view?path=${encodeURIComponent(file.path)}`;
   }
 
@@ -782,13 +782,21 @@
     const preview = document.createElement('div');
     preview.className = 'input-card__preview';
     const previewType = detectInputPreviewType(file);
-    const src = inputPreviewUrl(file);
+    const src = previewType === 'image'
+      ? `/image_gen/api/files/input/thumbnail?path=${encodeURIComponent(file.path)}`
+      : inputOriginalUrl(file);
     let media;
 
     if (previewType === 'image') {
       media = document.createElement('img');
       media.alt = file.filename;
       media.loading = 'lazy';
+      media.addEventListener('error', () => {
+        const unavailable = document.createElement('span');
+        unavailable.className = 'text-muted';
+        unavailable.textContent = 'Preview unavailable';
+        media.replaceWith(unavailable);
+      }, { once: true });
       media.src = src;
     } else if (previewType === 'audio') {
       media = document.createElement('audio');
@@ -962,7 +970,7 @@
 
       const openLink = document.createElement('a');
       openLink.className = 'btn btn-sm btn-outline-secondary';
-      openLink.href = inputPreviewUrl(file);
+      openLink.href = inputOriginalUrl(file);
       openLink.target = '_blank';
       openLink.rel = 'noopener';
       openLink.textContent = 'Open';
