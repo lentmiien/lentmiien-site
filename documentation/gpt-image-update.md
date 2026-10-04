@@ -9,9 +9,9 @@
 - Mutations: POST with shared session CSRF token/origin validation before multipart parsing. Like IDs and reference IDs are validated.
 - Bounds: 32,000 prompt characters, 1–10 outputs, 16 total references, at most 8 uploads of 12 MiB each; decoded raster and stored-byte limits; bounded concurrent generations and browser mutation rate limits.
 - Output: escaped Pug/textContent, safeJson configuration, raster MIME allowlist and opaque generated filenames. No prompt text in new filenames.
-- Storage: all new outputs and uploaded references outside static roots; authenticated media route checks shared-library record membership and safe file resolution. No public copies or generated variants. Symlinks are rejected in private storage and static aliases into it are blocked.
+- Storage: all new outputs and uploaded references outside static roots; authenticated media route checks shared-library record membership and safe file resolution. No public copies or public generated variants. Private lazy thumbnail derivatives are documented in [image-gen-thumbnails.md](image-gen-thumbnails.md#gpt-image-studio-and-bulk-output-previews-october-2026). Symlinks are rejected in private storage and static aliases into it are blocked.
 - Outbound: OpenAI Images API only; references are read locally and uploaded as bytes. No client-controlled URL fetching.
-- Cache: private/no-store on studio, APIs and media (including errors); no analytics; nosniff, no-referrer and noindex headers.
+- Cache: private/no-store on studio, APIs and original media (including errors); authorized thumbnails use private/no-cache revalidation as documented in the thumbnail contract; no analytics; nosniff, no-referrer and noindex headers.
 - Logs: actionable failures with stable messages and bounded diagnostic codes, without prompts, filenames, usernames, credentials or provider response bodies.
 - Retention: durable library; failed new writes cleaned up, no automatic legacy migration/deletion. Back up private media alongside MongoDB.
 - Negative tests: unauthenticated/missing capability/invalid principal, unknown or unregistered media, traversal/symlinks/static aliases, CSRF, invalid uploads and model options, excess work and spoofed identity.

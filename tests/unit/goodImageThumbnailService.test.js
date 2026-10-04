@@ -129,3 +129,19 @@ test('cleanup expires derivatives and enforces retention/count budgets without s
   expect(await fs.readdir(cacheDir)).toEqual([path.basename(recent)]);
   expect(await fs.readdir(sourceDir)).toEqual([record.filename]);
 });
+
+test.each(['webp', 'avif', 'tiff'])('supports %s originals through the shared renderer', async format => {
+  const filename = `fixture.${format}`;
+  await sharp(await png(16, 8)).toFormat(format).toFile(path.join(sourceDir, filename));
+  const result = await service.get({ ...record, filename });
+  expect(await sharp(result.buffer).metadata()).toMatchObject({ format: 'webp', width: 16, height: 8 });
+});
+test('cache ancestor symlink is rejected before creating any directory outside the cache root', async () => {
+  const outside = path.join(root, 'outside');
+  await fs.mkdir(outside);
+  const alias = path.join(root, 'cache-alias');
+  await fs.symlink(outside, alias);
+  service.cacheDir = path.join(alias, 'must-not-create');
+  await expect(service.get(record)).rejects.toMatchObject({ status: 503 });
+  expect(await fs.readdir(outside)).toEqual([]);
+});

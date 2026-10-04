@@ -4,6 +4,10 @@ const GPT_IMAGE_CAPABILITIES = Object.freeze({
   like: 'gpt_image.library.like',
   generate: 'gpt_image.generate',
 });
+const GPT_IMAGE_THUMBNAIL_ROUTE = Object.freeze({
+  path: '/api/images/:id/thumbnail', capability: GPT_IMAGE_CAPABILITIES.read,
+  scope: 'member', handler: 'serveThumbnail',
+});
 const sharedCapabilities = Object.freeze(Object.values(GPT_IMAGE_CAPABILITIES));
 const GPT_IMAGE_ROLE_CAPABILITY_BUNDLES = Object.freeze({
   admin: sharedCapabilities,
@@ -18,4 +22,4 @@ function gptImageRoleBundles(principal) {
     ? { ...GPT_IMAGE_ROLE_CAPABILITY_BUNDLES, [principal.type_user]: sharedCapabilities }
     : GPT_IMAGE_ROLE_CAPABILITY_BUNDLES;
 }
-module.exports = { GPT_IMAGE_CAPABILITIES, GPT_IMAGE_ROLE_CAPABILITY_BUNDLES, gptImageRoleBundles };
+module.exports = { GPT_IMAGE_THUMBNAIL_ROUTE, GPT_IMAGE_CAPABILITIES, GPT_IMAGE_ROLE_CAPABILITY_BUNDLES, gptImageRoleBundles };

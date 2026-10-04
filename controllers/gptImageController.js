@@ -18,6 +18,16 @@ const {
   createImageGeneration,
 } = require('../services/gptImageService');
 
+const path = require('path');
+const { LocalImageThumbnailService } = require('../services/localImageThumbnailService');
+const { sendThumbnail, thumbnailFailure, unavailable } = require('../utils/localThumbnailResponse');
+const privateThumbnails = new LocalImageThumbnailService({
+  sourceDir: imageStorage.ensureStorage, cacheDir: path.join(__dirname, '../cache/gpt-image-thumbnails/private'),
+});
+const legacyThumbnails = new LocalImageThumbnailService({
+  cacheDir: path.join(__dirname, '../cache/gpt-image-thumbnails/legacy'),
+});
+
 const GALLERY_PATH = '/gpt-image';
 
 function jsonError(res, status, message, details) {
@@ -109,6 +119,7 @@ async function loadGallery({ page, keyword, username }) {
     prompt: item.prompt,
     revisedPrompt: item.revisedPrompt || '',
     outputUrl: item.outputUrl,
+    thumbnailUrl: `/gpt-image/api/images/${item._id.toString()}/thumbnail`,
     outputFileName: item.outputFileName,
     outputMimeType: item.outputMimeType,
     requestType: item.requestType,
@@ -224,6 +235,29 @@ async function toggleLike(req, res) {
   }
 }
 
+async function serveThumbnail(req, res) {
+  try {
+    if (!/^[a-f\d]{24}$/i.test(req.params.id || '') || Object.keys(req.query).length) throw unavailable();
+    // All complete logged-in principals are declared members of this library.
+    const record = await GptImageGeneration.findById(req.params.id).select('_id outputFileName outputUrl').lean();
+    if (!record || req.aborted || res.destroyed) {
+      if (!record) throw unavailable();
+      return;
+    }
+    const filename = record.outputFileName;
+    let renderer;
+    if (imageStorage.PRIVATE_NAME.test(filename) && record.outputUrl === `${imageStorage.MEDIA_PREFIX}${filename}`) {
+      renderer = privateThumbnails;
+    } else if (typeof record.outputUrl === 'string' && record.outputUrl.startsWith('/img/')
+      && decodeURIComponent(record.outputUrl.slice(5)) === filename) {
+      renderer = legacyThumbnails;
+    } else throw unavailable();
+    return sendThumbnail(req, res, await renderer.get({ _id: record._id, filename }));
+  } catch (error) {
+    return thumbnailFailure(req, res, error instanceof URIError ? unavailable() : error);
+  }
+}
+
 async function serveMedia(req, res) {
   const fileName = req.params.fileName;
   if (!imageStorage.PRIVATE_NAME.test(fileName)) return res.status(404).end();
@@ -254,6 +288,7 @@ module.exports = {
   buildPageData,
   loadGallery,
   serveMedia,
+  serveThumbnail,
   renderIndex,
   generate,
   toggleLike,

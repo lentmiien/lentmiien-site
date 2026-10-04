@@ -96,10 +96,10 @@
       el.playsInline = true;
       el.preload = 'metadata';
     } else {
-      el = document.createElement('img');
-      el.alt = filename || 'Preview';
+      el = window.ThumbnailPreview.create(prompt.thumbnail_url, filename || 'Preview', 'matrix-thumb-media');
     }
-    el.className = 'matrix-thumb-media';
+    el.classList.add('matrix-thumb-media');
+    if (mediaType !== 'video') return { element: el, mediaType };
     if (src) {
       el.src = src;
     } else {
@@ -444,12 +444,11 @@
       el.muted = true;
       el.loop = false;
     } else {
-      el = document.createElement('img');
-      el.alt = filename || 'Image preview';
-      el.loading = 'lazy';
+      el = window.ThumbnailPreview.create(item.thumbnail_url, filename || 'Image preview', 'gallery-media');
     }
     el.classList.add('gallery-media');
     if (mediaType === 'video') el.classList.add('gallery-media--video');
+    if (mediaType !== 'video') return window.ThumbnailPreview.link(el, src);
     if (src) el.src = src;
     return el;
   }
@@ -735,9 +734,10 @@
             const card = document.createElement('a');
             card.className = 'matrix-thumb';
             const linkUrl = prompt?.download_url || prompt?.file_url || '#';
-            if (linkUrl !== '#') {
+            if (linkUrl !== '#' && /^(?:https?:\/\/|\/(?!\/))/.test(linkUrl)) {
               card.href = linkUrl;
               card.target = '_blank';
+              card.rel = 'noopener noreferrer';
             } else {
               card.href = '#';
               card.addEventListener('click', (e) => e.preventDefault());

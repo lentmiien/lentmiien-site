@@ -11,6 +11,13 @@ const embeddingQueueService = require('../services/embeddingQueueService');
 const { errorDiagnostics } = require('../utils/errorDiagnostics');
 const ComfyGatewayService = require('../services/comfyGatewayService');
 const { GoodImageThumbnailService, SETTINGS: THUMBNAIL_SETTINGS } = require('../services/goodImageThumbnailService');
+const { LocalImageThumbnailService } = require('../services/localImageThumbnailService');
+const { sendThumbnail, thumbnailFailure, unavailable } = require('../utils/localThumbnailResponse');
+const bulkThumbnails = new LocalImageThumbnailService({
+  sourceDir: path.join(__dirname, '../public/imgen'),
+  cacheDir: path.join(__dirname, '../cache/bulk-image-thumbnails'),
+});
+const bulkThumbnailUrl = (job, prompt) => `/image_gen/api/bulk/jobs/${encodeURIComponent(String(job))}/prompts/${encodeURIComponent(String(prompt))}/thumbnail`;
 const goodImageThumbnails = new GoodImageThumbnailService();
 
 const { Prompt, BulkJob, BulkTestPrompt, GoodImage } = require('../database');
@@ -1020,6 +1027,7 @@ function hydrateImageResults(items, job) {
       filename: doc.filename,
       media_type: mediaType,
       cached_url: cacheRec ? cacheRec.url : null,
+      thumbnail_url: bulkThumbnailUrl(job._id, doc._id),
       download_url: downloadUrl,
       instance_id: instanceId,
       template_label: doc.template_label,
@@ -2478,6 +2486,7 @@ exports.getBulkMatrix = async (req, res) => {
               media_type: mediaType,
               download_url: downloadUrl,
               cached_url: cacheRec ? cacheRec.url : null,
+              thumbnail_url: bulkThumbnailUrl(job._id, doc._id),
               instance_id: instanceId,
               score_average: avg,
               score_count: doc.score_count || 0,
@@ -2641,6 +2650,7 @@ exports.listBulkGalleryImages = async (req, res) => {
         filename: doc.filename,
         media_type: mediaType,
         cached_url: cacheRec ? cacheRec.url : null,
+        thumbnail_url: bulkThumbnailUrl(job._id, doc._id),
         download_url: downloadUrl,
         instance_id: instanceId,
         score_total: scoreTotal,
@@ -3921,6 +3931,25 @@ async function proxyInputFile(req, res, thumbnail = false) {
 exports.getInputFile = (req, res) => proxyInputFile(req, res);
 exports.getInputThumbnail = (req, res) => proxyInputFile(req, res, true);
 
+exports.getBulkThumbnail = async (req, res) => {
+  try {
+    if (![req.params.id, req.params.promptId].every(id => /^[a-f\d]{24}$/i.test(id || ''))
+      || Object.keys(req.query).length) throw unavailable();
+    // Capability grants the admin-managed bulk library; require a live parent
+    // and a completed child belonging to that exact job before selecting a file.
+    const job = await BulkJob.findById(req.params.id).select('_id instance_id').lean();
+    if (!job) throw unavailable();
+    const record = await BulkTestPrompt.findOne({ _id: req.params.promptId, job: job._id, status: 'Completed' })
+      .select('_id filename instance_id').lean();
+    if (!record) throw unavailable();
+    if (req.aborted || res.destroyed) return;
+    // Same instance fallback and local name as buildCacheRecord; no ensureCached
+    // call here: a missing local original must never trigger a Gateway download.
+    const directory = record.instance_id || job.instance_id || '';
+    return sendThumbnail(req, res, await bulkThumbnails.get({ _id: record._id, filename: record.filename, directory }));
+  } catch (error) { return thumbnailFailure(req, res, error); }
+};
+
 exports.getGoodImageThumbnail = async (req, res) => {
   if (!/^[a-f\d]{24}$/i.test(req.params.id || '') || Object.keys(req.query).length) {
     return errorJson(res, 404, 'Thumbnail unavailable.');
@@ -3930,19 +3959,10 @@ exports.getGoodImageThumbnail = async (req, res) => {
     // persisted record may select a durable source, never a request filename.
     const record = await GoodImage.findOne({ _id: req.params.id }).select('_id filename').lean();
     if (!record) return errorJson(res, 404, 'Thumbnail unavailable.');
+    if (req.aborted || res.destroyed) return;
     const thumbnail = await goodImageThumbnails.get(record);
-    if (req.aborted || res.destroyed) return undefined;
-    res.set({ 'Cache-Control': 'private, no-cache', 'ETag': thumbnail.etag,
-      'Last-Modified': thumbnail.lastModified, 'Content-Type': 'image/webp',
-      'Content-Disposition': 'inline', 'X-Content-Type-Options': 'nosniff' });
-    if (req.fresh) return res.status(304).end();
-    return res.send(thumbnail.buffer);
-  } catch (error) {
-    if (!error.status) logger.error('Saved image thumbnail lookup failed', {
-      category: 'image-gen-thumbnail', metadata: { errorName: error.name || 'Error' },
-    });
-    return errorJson(res, error.status || 500, 'Thumbnail unavailable.');
-  }
+    return sendThumbnail(req, res, thumbnail);
+  } catch (error) { return thumbnailFailure(req, res, error); }
 };
 
 // Proxy: stream file by name

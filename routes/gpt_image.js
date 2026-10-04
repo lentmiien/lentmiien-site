@@ -4,9 +4,10 @@ const { rateLimit } = require('express-rate-limit');
 const controller = require('../controllers/gptImageController');
 const logger = require('../utils/logger');
 const { MAX_UPLOAD_IMAGE_COUNT, MAX_UPLOAD_FILE_SIZE_BYTES } = require('../services/gptImageService');
+const { thumbnailLimit, boundThumbnails } = require('../middleware/thumbnailLimits');
 const { createSessionCsrf } = require('../middleware/sessionCsrf');
 const { createRequireCapabilities } = require('../middleware/requireCapabilities');
-const { GPT_IMAGE_CAPABILITIES, gptImageRoleBundles } = require('../utils/gptImageAuthorizationPolicy');
+const { GPT_IMAGE_THUMBNAIL_ROUTE, GPT_IMAGE_CAPABILITIES, gptImageRoleBundles } = require('../utils/gptImageAuthorizationPolicy');
 
 const router = express.Router();
 const csrf = createSessionCsrf();
@@ -23,6 +24,7 @@ function requireCapability(capability) {
 }
 router.use(requireCapability(GPT_IMAGE_CAPABILITIES.read));
 router.get('/media/:fileName', controller.serveMedia);
+router.get(GPT_IMAGE_THUMBNAIL_ROUTE.path, thumbnailLimit, boundThumbnails, controller[GPT_IMAGE_THUMBNAIL_ROUTE.handler]);
 router.use(csrf.issueToken);
 router.use('/api', express.json({ limit: '512kb' }));
 const mutationLimit = rateLimit({ windowMs: 60 * 1000, limit: 30, keyGenerator: req => String(req.user._id || req.user.name), standardHeaders: 'draft-8', legacyHeaders: false });

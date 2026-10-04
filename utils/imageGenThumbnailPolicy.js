@@ -5,9 +5,11 @@ const { createRequireCapabilities } = require('../middleware/requireCapabilities
 const CAPABILITIES = Object.freeze({
   input: 'comfy.inputs.read',
   gallery: 'comfy.gallery.read',
+  bulk: 'comfy.bulk.read',
 });
 const ROLE_BUNDLES = Object.freeze({ admin: Object.values(CAPABILITIES), family: [], user: [] });
 const ROUTES = Object.freeze([
+  { path: '/api/bulk/jobs/:id/prompts/:promptId/thumbnail', capability: CAPABILITIES.bulk, scope: 'admin-managed', handler: 'getBulkThumbnail' },
   { path: '/api/files/input/thumbnail', capability: CAPABILITIES.input, scope: 'admin-managed', handler: 'getInputThumbnail' },
   { path: '/api/good-images/:id/thumbnail', capability: CAPABILITIES.gallery, scope: 'admin-managed', handler: 'getGoodImageThumbnail' },
 ]);

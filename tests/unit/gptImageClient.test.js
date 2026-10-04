@@ -8,13 +8,14 @@ let dom, window, document;
 beforeEach(async () => {
   const { JSDOM } = await import('jsdom');
   const config = buildPageData({
-    gallery: { totalCount: 1, currentPage: 1, items: [{ id: 'a'.repeat(24), modelLabel: 'GPT Image 2', prompt: '</script><script>bad()</script>', outputUrl: '/img/legacy.png', createdAt: new Date(), createdBy: 'Other' }] },
+    gallery: { totalCount: 1, currentPage: 1, items: [{ id: 'a'.repeat(24), modelLabel: 'GPT Image 2', prompt: '</script><script>bad()</script>', outputUrl: '/img/legacy.png', thumbnailUrl: `/gpt-image/api/images/${'a'.repeat(24)}/thumbnail`, createdAt: new Date(), createdBy: 'Other' }] },
     filters: {}, formDefaults: { ...DEFAULT_FORM_VALUES, model: STUDIO_MODEL_NAME },
   });
   const html = pug.renderFile(path.join(__dirname, '../../views/gpt_image/index.pug'), { pageLang: 'en', loggedIn: true, csrfToken: 'A'.repeat(43), ...config });
   dom = new JSDOM(html, { url: 'https://site.invalid/gpt-image', runScripts: 'outside-only' });
   window = dom.window; document = window.document;
   window.fetch = jest.fn().mockResolvedValue({ ok: false, text: async () => '{"ok":false,"error":"Synthetic stop"}' });
+  window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/thumbnail_preview.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/gpt_image.js'), 'utf8'));
 });
 afterEach(() => window?.close());
@@ -59,4 +60,35 @@ test('likes carry shared CSRF token', async () => {
   document.querySelector('[data-like-button]').click();
   await Promise.resolve();
   expect(window.fetch).toHaveBeenCalledWith(expect.stringContaining('/like'), expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'X-CSRF-Token': 'A'.repeat(43) }) }));
+});
+
+test('initial gallery and refreshed selected tray use thumbnails while Open retains original', () => {
+  const url = `/gpt-image/api/images/${'a'.repeat(24)}/thumbnail`;
+  const image = document.querySelector('.gpt-image-card__img');
+  expect(image.getAttribute('src')).toBe(url);
+  const open = document.querySelector('.gpt-image-card__actions a');
+  expect(open.getAttribute('href')).toBe('/img/legacy.png');
+  expect(open.target).toBe('_blank');
+  expect(open.rel).toBe('noopener noreferrer');
+  document.querySelector('[data-select-input]').click();
+  const selected = document.querySelector('#gptImageSelectedInputs img');
+  expect(selected.getAttribute('src')).toBe(url);
+  image.dispatchEvent(new window.Event('error'));
+  selected.dispatchEvent(new window.Event('error'));
+  expect(document.querySelectorAll('.thumbnail-unavailable')).toHaveLength(2);
+  expect(document.querySelectorAll('img[src="/img/legacy.png"]')).toHaveLength(0);
+  document.querySelector('[data-remove-selected]').click();
+  expect(document.querySelector('#gptImageSelectedCount').textContent).toBe('0 selected');
+  expect(open.getAttribute('href')).toBe('/img/legacy.png');
+});
+test('old session selections rehydrate by record ID without requesting stored originals', () => {
+  const id = 'b'.repeat(24);
+  window.sessionStorage.setItem('gpt-image-selected-inputs', JSON.stringify([
+    { id, previewUrl: '/img/huge.png', label: 'Existing selection' },
+    { id: 'bad', previewUrl: '/admin/action' },
+  ]));
+  window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/gpt_image.js'), 'utf8'));
+  const images = document.querySelectorAll('#gptImageSelectedInputs img');
+  expect(images).toHaveLength(1);
+  expect(images[0].getAttribute('src')).toBe(`/gpt-image/api/images/${id}/thumbnail`);
 });

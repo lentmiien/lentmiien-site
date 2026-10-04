@@ -42,13 +42,18 @@
     }
   }
 
+  document.querySelectorAll('.gpt-image-card__img').forEach(window.ThumbnailPreview.watch);
+
   function readSelection() {
     try {
       const parsed = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) || '[]');
       if (!Array.isArray(parsed)) {
         return [];
       }
-      return parsed.filter((entry) => entry && /^[a-f0-9]{24}$/i.test(entry.id) && typeof entry.previewUrl === 'string' && /^\/(img\/[^/?#]+|gpt-image\/media\/gpt-image-private-[0-9a-f-]{36}\.(png|jpg|webp))$/.test(entry.previewUrl)).slice(0, 16);
+      // Existing selections retain their IDs, but never reuse stored original URLs.
+      return parsed.filter(entry => entry && /^[a-f0-9]{24}$/i.test(entry.id)).slice(0, 16)
+        .map(entry => ({ id: entry.id, label: typeof entry.label === 'string' ? entry.label : entry.id,
+          previewUrl: `/gpt-image/api/images/${entry.id}/thumbnail` }));
     } catch (_error) {
       return [];
     }
@@ -111,10 +116,7 @@
     items.forEach((item) => {
       const wrapper = document.createElement('div');
       wrapper.className = 'gpt-image-selection__item';
-      const thumb = document.createElement('img');
-      thumb.className = 'gpt-image-selection__thumb';
-      thumb.src = item.previewUrl;
-      thumb.alt = '';
+      const thumb = window.ThumbnailPreview.create(item.previewUrl, '', 'gpt-image-selection__thumb');
 
       const label = document.createElement('p');
       label.className = 'gpt-image-selection__label';

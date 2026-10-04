@@ -1,6 +1,7 @@
 extends ../layout
 
 block styles
+  link(rel='stylesheet', href='/css/thumbnail_preview.css')
   link(rel='stylesheet', href='/css/gpt_image.css')
 
 block content
@@ -130,9 +131,9 @@ block content
               - const cardClasses = ['gpt-image-card'];
               - if (item.generationId === highlightGenerationId) cardClasses.push('gpt-image-card--highlight');
               - if (item.likedByCurrentUser) cardClasses.push('gpt-image-card--liked');
-              article(class=cardClasses.join(' '), data-gallery-card='1', data-image-id=item.id, data-generation-id=item.generationId, data-preview-url=item.outputUrl, data-card-label=promptPreview)
+              article(class=cardClasses.join(' '), data-gallery-card='1', data-image-id=item.id, data-generation-id=item.generationId, data-preview-url=item.thumbnailUrl, data-card-label=promptPreview)
                 .gpt-image-card__media
-                  img.gpt-image-card__img(src=item.outputUrl, alt=promptPreview, loading='lazy')
+                  img.gpt-image-card__img(src=item.thumbnailUrl, alt=promptPreview, loading='lazy')
                   .gpt-image-card__badges
                     if item.isRecentGeneration
                       span.gpt-image-badge.gpt-image-badge--recent Recent batch
@@ -164,7 +165,7 @@ block content
                       dd= new Date(item.createdAt).toLocaleString()
                   p.gpt-image-card__byline= `By ${item.createdBy}`
                 .gpt-image-card__actions
-                  a.btn.btn-sm.btn-outline-secondary(href=item.outputUrl, target='_blank', rel='noopener') Open image
+                  a.btn.btn-sm.btn-outline-secondary(href=item.outputUrl, target='_blank', rel='noopener noreferrer') Open image
                   button.btn.btn-sm.btn-outline-danger(type='button', data-like-button='1', data-image-id=item.id, data-liked=item.likedByCurrentUser ? 'true' : 'false')
                     = item.likedByCurrentUser ? 'Unlike' : 'Like'
                   button.btn.btn-sm.btn-outline-primary(type='button', data-select-input='1', data-image-id=item.id)
@@ -192,4 +193,5 @@ block content
   script(type='application/json', id='gptImagePageConfig') !{safeJson({ ...pageConfig, csrfToken })}
 
 block script
+  script(src='/js/thumbnail_preview.js', defer)
   script(src='/js/gpt_image.js', defer)

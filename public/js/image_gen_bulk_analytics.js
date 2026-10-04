@@ -296,11 +296,8 @@
       video.src = url;
       return video;
     }
-    const img = document.createElement('img');
-    img.src = url;
-    img.alt = item.filename || 'Image preview';
-    img.loading = 'lazy';
-    return img;
+    return window.ThumbnailPreview.link(
+      window.ThumbnailPreview.create(item.thumbnail_url, item.filename || 'Image preview'), url);
   }
 
   function renderImageGrid(container, items) {

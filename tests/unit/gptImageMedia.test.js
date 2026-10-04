@@ -155,6 +155,9 @@ test('shared gallery read falls back for historical models and retains paginatio
   expect(gallery.currentPage).toBe(2);
   expect(gallery.items.map(item => item.model)).toEqual(['gpt-image-2', 'gpt-image-2.5-flare']);
   expect(gallery.items[0].outputUrl).toBe('/img/old.png');
+  expect(gallery.items[0].thumbnailUrl).toBe(`/gpt-image/api/images/${'a'.repeat(24)}/thumbnail`);
+  expect(gallery.items[1].outputUrl).toBe(image.url);
+  expect(gallery.items[1].thumbnailUrl).toBe(`/gpt-image/api/images/${'b'.repeat(24)}/thumbnail`);
   expect(gallery.pagination.prevUrl).toBe('/gpt-image?keyword=cat');
   expect(model.countDocuments).toHaveBeenCalledWith({ promptKeywords: { $all: ['cat'] } });
 });

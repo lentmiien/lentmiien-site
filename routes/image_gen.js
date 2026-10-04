@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const ctrl = require('../controllers/image_gen.controller');
-const { rateLimit } = require('express-rate-limit');
+const { thumbnailLimit, boundThumbnails } = require('../middleware/thumbnailLimits');
 const { RoleModel } = require('../database');
 const { ROUTES, authorizeThumbnail } = require('../utils/imageGenThumbnailPolicy');
 
@@ -33,19 +33,6 @@ const upload = multer({
 router.use('/api', express.json({ limit: '1mb' }));
 
 // Thumbnail scope is explicitly admin-managed; authorize before any file/DB work.
-const thumbnailLimit = rateLimit({ windowMs: 60 * 1000, limit: 240,
-  keyGenerator: req => String(req.user._id || req.user.name),
-  standardHeaders: 'draft-8', legacyHeaders: false });
-let activeThumbnails = 0;
-function boundThumbnails(_req, res, next) {
-  if (activeThumbnails >= 32) return res.status(503).json({ error: 'Thumbnail service busy.' });
-  activeThumbnails += 1;
-  let released = false;
-  const release = () => { if (!released) { released = true; activeThumbnails -= 1; } };
-  res.once('finish', release);
-  res.once('close', release);
-  return next();
-}
 for (const route of ROUTES) {
   router.get(route.path, authorizeThumbnail(route.capability, RoleModel), thumbnailLimit, boundThumbnails, ctrl[route.handler]);
 }

@@ -49,8 +49,9 @@ beforeEach(async () => {
 });
 afterEach(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
 function request(url, headers = {}, options = {}) { return fetch(origin + url, { ...options, headers: { 'cache-control': 'max-age=0', ...headers } }); }
-test('registers both GET endpoints before legacy wildcard and retains parent authentication', () => {
+test('registers thumbnail GET endpoints before legacy wildcard and retains parent authentication', () => {
   expect(ROUTES.map(route => [route.path, route.scope])).toEqual([
+    ['/api/bulk/jobs/:id/prompts/:promptId/thumbnail', 'admin-managed'],
     ['/api/files/input/thumbnail', 'admin-managed'], ['/api/good-images/:id/thumbnail', 'admin-managed'],
   ]);
   const source = fs.readFileSync(path.join(__dirname, '../../app.js'), 'utf8');

@@ -2,6 +2,7 @@
 extends ../layout
 
 block styles
+  link(rel='stylesheet', href='/css/thumbnail_preview.css')
   style.
     .panel{background:var(--surface-1);border:1px solid var(--border);border-radius:1rem;padding:1.5rem;margin-bottom:1.5rem;box-shadow:0 20px 48px rgba(0,0,0,0.24)}
     .panel h2{font-size:1.05rem;margin-bottom:1rem;color:var(--text)}
@@ -26,7 +27,7 @@ block styles
     .image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem}
     .image-card{border:1px solid var(--divider);border-radius:.9rem;overflow:hidden;background:var(--surface-2);display:flex;flex-direction:column}
     .image-card figure{margin:0;background:var(--surface-1);display:flex;align-items:center;justify-content:center;min-height:180px}
-    .image-card img,.image-card video{width:100%;height:100%;object-fit:cover;max-height:280px}
+    .image-card img,.image-card video{width:100%;height:100%;object-fit:contain;max-height:280px}
     .image-card video{object-fit:contain;background:var(--surface-1)}
     .image-card .meta{padding:.75rem;font-size:.8rem;color:var(--text-secondary);display:flex;flex-direction:column;gap:.25rem}
     .tag{display:inline-flex;align-items:center;padding:.1rem .45rem;border-radius:999px;font-size:.7rem;border:1px solid var(--divider);text-transform:uppercase;letter-spacing:.08em}
@@ -157,4 +158,5 @@ block content
     p.empty-note#analyticsEmpty(style="display:none") No completed prompts with ratings yet. Come back after scoring a few images.
 
 block script
+  script(src="/js/thumbnail_preview.js")
   script(src="/js/image_gen_bulk_analytics.js")
