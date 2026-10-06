@@ -514,7 +514,33 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     if (!normal.locallyQualified) blockers.push('No current qualifying winner; inspect candidate status, fingerprint, policy and counts');
     return { normal: { ...normal, blockers, candidates, identityCapability: 'UNAVAILABLE' }, test, gateway, benchmark: { ready: !executionReasons.length, reasons: executionReasons, reason: executionReasons[0] || null }, inference, settings: s, credential: await query(Credential.findById('integration')), template: TEMPLATE, codeFingerprint: version() };
   }
-  const service = { models, transport, evidence, warmSessions, settings, authenticate, authorize, adminPrincipal, rate, rotate, revoke, admission, checkAdmission,
+  const approvedCodes = models.ApprovedCode ? require('./approvedCodes').createApprovedCodes({ model: models.ApprovedCode, adminPrincipal }) : null;
+  if (approvedCodes) {
+    const original = warmSessions;
+    warmSessions = { ...original, async generate(...args) {
+      let diagnostics = null;
+      const options = args[4] || {};
+      // generate(session, row, codes, maxTokens, options)
+      args[4] = { ...options, onDiagnostics: value => { diagnostics = value; options.onDiagnostics?.(value); } };
+      try {
+        const result = await original.generate(...args);
+        result.approved_code = await approvedCodes.check(result.taric_code);
+        if (result.approved_code.status !== 'approved') {
+          result.warnings = [...(result.warnings || []), 'unapproved_taric_code'];
+          logger.warning('TARIC generated an unapproved code; review the approved-code registry', { category: 'taric', metadata: { operation: 'generation.approval', code: result.taric_code } });
+        }
+        return result;
+      } catch (error) {
+        if (diagnostics?.proposal?.taric_code) {
+          diagnostics.approved_code = await approvedCodes.check(diagnostics.proposal.taric_code);
+          if (diagnostics.approved_code.status !== 'approved') logger.warning('TARIC rejected proposal contains an unapproved code; review the approved-code registry', { category: 'taric', metadata: { operation: 'generation.approval', code: diagnostics.proposal.taric_code } });
+          options.onDiagnostics?.(diagnostics);
+        }
+        throw error;
+      }
+    } };
+  }
+  const service = { approvedCodes, models, transport, evidence, warmSessions, settings, authenticate, authorize, adminPrincipal, rate, rotate, revoke, admission, checkAdmission,
     principalFrom, submit, retrieve, feedback, saveConfig, importBenchmark, publish, queueRun, cancelRun,
     inspect, detail, readiness, recoveryStatus, resumeInference, startRecovery, cancelPending, resumeRun, version, now };
   if (models.Reprocess) service.reprocess = require('./reprocess').createReprocess({ service,

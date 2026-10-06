@@ -94,6 +94,30 @@ class ConverterTest(unittest.TestCase):
             self.assertNotIn('WRONG MODEL', str(target))
         self.assertTrue(any(r['sourceStorage'] == 'archived_review' for r in meta['selected']))
 
+    def test_registry_export_uses_stable_text_and_rejects_forged_bindings(self):
+        self.input.write_bytes(subprocess.check_output(['node', str(ROOT / 'tests/helpers/taricDatasetExport.js'), '--registry'], cwd=ROOT))
+        manifest, rows, _ = c.read_export(self.input)
+        self.assertEqual(manifest['options']['descriptionSource'], 'registry')
+        result = self.cli()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        cleaned = list(csv.DictReader(io.StringIO((self.root / 'out/cleaned.csv').read_text(), newline='')))
+        for row in cleaned:
+            self.assertEqual(row['description_summary'], 'Stable summary ' + row['taric_code'])
+            self.assertEqual(row['description'], 'Synthetic goods')
+            self.assertEqual(row['taric_description'], 'Synthetic headings')
+        for row in rows:
+            self.assertEqual(row['approvedDescription'], row['approvedCode']['description_summary'])
+            self.assertNotEqual(row['approvedDescription'], row['review']['approvedDescription'])
+        for mutate in [lambda r: r.update(approvedDescription='Forged'),
+                       lambda r: r['approvedCode'].update(approved=False),
+                       lambda r: r['approvedCode'].update(taric_code='9999999999'),
+                       lambda r: r.update(approvedCodeHash='0' * 64)]:
+            broken = copy.deepcopy(rows)
+            mutate(broken[0])
+            self.reseal(broken, manifest)
+            with self.assertRaises(c.DatasetError):
+                c.read_export(self.input)
+
     def test_dry_run_existing_destination_and_atomic_failure(self):
         self.assertEqual(self.cli('--dry-run').returncode, 0)
         self.assertFalse((self.root / 'out').exists())

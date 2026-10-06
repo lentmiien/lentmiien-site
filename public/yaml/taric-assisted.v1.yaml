@@ -197,6 +197,8 @@ components:
                 description_source: {const: model_generated}
                 verification: {const: unverified}
                 training_approved: {const: false}
+                approved_code:
+                  $ref: '#/components/schemas/ApprovedCodeCheck'
                 warnings:
                   type: array
                   items: {type: string}
@@ -227,6 +229,15 @@ components:
         poll_url: {type: string}
         feedback_url: {type: string}
 
+    ApprovedCodeCheck:
+      type: object
+      additionalProperties: false
+      required: [status, taric_code, revision]
+      description: Operational membership in the private approved-code registry at generation time; independent of benchmark catalogs and legal classification. Unapproved results carry an unapproved_taric_code warning and still require human confirmation.
+      properties:
+        status: {type: string, enum: [approved, unapproved]}
+        taric_code: {type: string, pattern: '^[0-9]{10}$'}
+        revision: {type: [integer, 'null'], minimum: 1}
     TestDiagnostics:
       type: object
       additionalProperties: false
@@ -256,6 +267,8 @@ components:
               properties:
                 taric_code: {type: string, pattern: '^[0-9]{10}$'}
                 description: {type: string, minLength: 1, maxLength: 255}
+        approved_code:
+          $ref: '#/components/schemas/ApprovedCodeCheck'
         recognizedCode: {type: [boolean, 'null'], description: Membership in selected allowlist only.}
         applicable: {const: false}
         training_approved: {const: false}

@@ -144,10 +144,14 @@ function stats(rows) {
     eligible: count(r => r.eligible), codeCoverage: new Set(rows.filter(r => r.eligible).map(r => r.review.target)).size, errors };
 }
 function options(value = {}) {
-  object(value, ['mode', 'limit', 'perCode'], 'INVALID_REQUEST');
+  object(value, ['mode', 'limit', 'perCode', 'descriptionSource'], 'INVALID_REQUEST');
   const out = { mode: value.mode ?? 'newest', limit: value.limit ?? 100, perCode: value.perCode ?? 20 };
   if (!['newest', 'balanced'].includes(out.mode) || !Number.isInteger(out.limit) || out.limit < 1 || out.limit > 200
     || !Number.isInteger(out.perCode) || out.perCode < 1 || out.perCode > 100) fail('INVALID_REQUEST');
+  if (value.descriptionSource !== undefined) {
+    if (!['registry', 'review'].includes(value.descriptionSource)) fail('INVALID_REQUEST');
+    out.descriptionSource = value.descriptionSource;
+  }
   return out;
 }
 function select(rows, opts) {

@@ -5,7 +5,14 @@
   const token = document.querySelector('meta[name="csrf-token"]').content;
   let readiness = null; let recovery = null; let recoveryTimer = null; let recoveryPolls = 0; let mutationBusy = false;
   let previewSha = null; let cursor = null; let benchmarkCursor = null; let recoveryEpoch = null; let benchmarksMore = false; let inspectMore = false;
-  const show = (id, value) => { $(id).textContent = JSON.stringify(value, null, 2); };
+  const show = (id, value) => {
+    $(id).textContent = JSON.stringify(value, null, 2);
+    if (id === 'test-result') {
+      const check = value.result?.approved_code || value.diagnostics?.approved_code;
+      $('approval-alert').hidden = !check || check.status === 'approved';
+      $('approval-alert').textContent = check?.status === 'unapproved' ? `Unapproved TARIC code: ${check.taric_code}. Review the approved-code registry before using this code.` : '';
+    }
+  };
   async function api(path, body, multipart = false, extraHeaders = {}) {
     const response = await fetch(`/admin/taric${path}`, { method: body === undefined ? 'GET' : 'POST',
       headers: { ...extraHeaders, Accept: 'application/json', 'X-CSRF-Token': token, ...(!multipart && body !== undefined ? { 'Content-Type': 'application/json' } : {}) },

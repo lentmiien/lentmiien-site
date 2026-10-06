@@ -23,7 +23,8 @@ SOURCE_SCHEMA = 'reviewed-code-candidates/1'
 SOURCE_REASONS = {'unreviewed', 'needs_review', 'excluded', 'stale_source', 'pending_request',
                   'missing_valid_target', 'missing_full_item_name', 'missing_descriptive_name',
                   'missing_valid_original_hs6', 'conflicting_verified_targets', 'independent_holdout_overlap',
-                  'duplicate_input', 'per_code_cap', 'overall_limit', 'local_reprocess_running'}
+                  'duplicate_input', 'per_code_cap', 'overall_limit', 'local_reprocess_running',
+                  'unapproved_registry_code', 'missing_registry_description'}
 HEX = re.compile(r'[a-f0-9]{64}\Z')
 ID = re.compile(r'[a-f0-9]{32}\Z')
 # ECMAScript whitespace, deliberately not Python's broader \s character class.
@@ -145,7 +146,7 @@ def validate_candidate(r):
     keys(r, ('type', 'schema', 'requestId', 'feedbackId', 'feedback', 'reviewId', 'reviewRevision',
              'sourceHash', 'source', 'sourceStorage', 'review', 'reviewHash', 'inputs', 'facts', 'evidence',
              'targetCode', 'approvedDescription', 'missingness', 'groupKey', 'dedupeKey', 'factsHash',
-             'provenance', 'verifiedAt', 'verification', 'profile', 'formatterPending'))
+             'provenance', 'verifiedAt', 'verification', 'profile', 'formatterPending'), ('approvedCode', 'approvedCodeHash'))
     require(r['type'] == 'candidate' and r['schema'] == r['profile'] == SOURCE_SCHEMA,
             'Unsupported candidate schema.')
     s, v = r['source'], r['review']
@@ -161,7 +162,19 @@ def validate_candidate(r):
     if 'source' in v:
         require(v['source'] == s, 'Retained review source mismatch.')
     require(v['target'] is None or is_text(v['target'], 10), 'Invalid target type.')
-    require(r['targetCode'] == v['target'] and r['approvedDescription'] == v['approvedDescription'] and r['verifiedAt'] == v['at'], 'Candidate/review binding mismatch.')
+    require(r['targetCode'] == v['target'] and r['verifiedAt'] == v['at'], 'Candidate/review binding mismatch.')
+    if 'approvedCode' in r or 'approvedCodeHash' in r:
+        entry = r.get('approvedCode')
+        keys(entry, ('taric_code', 'headings', 'goods_summary', 'description_summary', 'approved', 'revision'))
+        require(entry['taric_code'] == r['targetCode'] and entry['approved'] is True
+                and type(entry['revision']) is int and 1 <= entry['revision'] <= 9007199254740991,
+                'Invalid approved-code identity or approval.')
+        require(is_text(entry['headings'], 4000) and is_text(entry['goods_summary'], 2000)
+                and is_text(entry['description_summary'], 255) and bool(entry['description_summary'].strip()), 'Invalid approved-code text.')
+        require(r.get('approvedCodeHash') == hash_json(entry)
+                and r['approvedDescription'] == entry['description_summary'], 'Approved-code description binding mismatch.')
+    else:
+        require(r['approvedDescription'] == v['approvedDescription'], 'Candidate/review binding mismatch.')
     require(is_text(v['actor'], 24) and re.fullmatch('[a-f0-9]{24}', v['actor']) and is_text(v['note'], 2000)
             and type(v['correction']) is bool, 'Invalid review metadata.')
     require(v['approvedDescription'] is None or is_text(v['approvedDescription'], 255), 'Invalid approved description.')
@@ -228,7 +241,7 @@ def validate_candidate(r):
     require(r['groupKey'] == group and r['factsHash'] == r['dedupeKey'] == fingerprint, 'Input fingerprint/group mismatch.')
     missing = dict(inputs={k: not val for k, val in s['inputs'].items()}, facts={k: not val for k, val in s['facts'].items()},
                    fullItemName=not s['facts']['name'], specifications=not s['facts']['specifications'],
-                   details=not s['facts']['details'], approvedDescription=not v['approvedDescription'])
+                   details=not s['facts']['details'], approvedDescription=not r['approvedDescription'])
     require(r['missingness'] == missing, 'Missingness metadata mismatch.')
 
 
@@ -251,7 +264,8 @@ def read_export(path, max_bytes=8 * 1024 * 1024, max_line=2 * 1024 * 1024, max_r
     require(isinstance(m['id'], str) and ID.fullmatch(m['id']) and isinstance(m['snapshotHash'], str)
             and HEX.fullmatch(m['snapshotHash']), 'Invalid manifest identity/hash.')
     require(is_text(m['actor'], 24) and re.fullmatch('[a-f0-9]{24}', m['actor']), 'Invalid export actor.')
-    keys(m['options'], ('mode', 'limit', 'perCode'))
+    keys(m['options'], ('mode', 'limit', 'perCode'), ('descriptionSource',))
+    require(m['options'].get('descriptionSource', 'review') in ('registry', 'review'), 'Invalid description source.')
     require(m['options']['mode'] in ('newest', 'balanced')
             and type(m['options']['limit']) is int and 1 <= m['options']['limit'] <= 200
             and type(m['options']['perCode']) is int and 1 <= m['options']['perCode'] <= 100, 'Invalid Site selection options.')
@@ -264,6 +278,7 @@ def read_export(path, max_bytes=8 * 1024 * 1024, max_line=2 * 1024 * 1024, max_r
     seen = set()
     for row in rows:
         validate_candidate(row)
+        require(('approvedCode' in row) == (m['options'].get('descriptionSource') == 'registry'), 'Description source mismatch.')
         require(row['requestId'] not in seen, 'Duplicate request/revision in export; use one fresh snapshot.')
         seen.add(row['requestId'])
         require(timestamp(row['verifiedAt']) <= cutoff, 'Review is newer than the export cutoff.')
@@ -376,7 +391,8 @@ def cleaned_row(r):
     hs = r['inputs']['input_hs_code']
     return dict(descriptive_name=r['inputs']['descriptive_name'], full_item_name=r['facts']['name'],
                 specs=r['facts']['specifications'] or '', hs_code=hs[:4] + '.' + hs[4:], taric_code=r['targetCode'],
-                description='', taric_description='', description_summary=r['approvedDescription'])
+                description=r.get('approvedCode', {}).get('goods_summary', ''),
+                taric_description=r.get('approvedCode', {}).get('headings', ''), description_summary=r['approvedDescription'])
 
 
 def json_bytes(value):

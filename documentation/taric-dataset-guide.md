@@ -30,7 +30,9 @@ Open a request and inspect its captured input, factual name/specifications, prop
 
 Select **Verified label** only after genuinely checking the classification against an appropriate source. Fill **Review target TARIC (10 digits)** and tick **I independently verified this exact target against the displayed source snapshot.** If correcting the training label, tick **This is a training-label correction…** and identify the reason/source in **Review note / verification source / withdrawal reason**. This changes the review target only; it does not change original final feedback or the GCS operational mapping.
 
-Fill **Independently approved short description (optional; blank means not approved)** with a separately checked, nonempty description of at most 255 characters, then **Save explicit review revision**. This field is optional for code-only verification and Site source export, but REQUIRED for the current Qwen dataset. Model text is never automatically approved. The converter maps this field to `description_summary`, which supplies the response JSON's `description`. Neither the model description nor an unreviewed official-looking description is a fallback.
+For stable training labels, open [Approved codes and stable descriptions](/admin/taric/codes). Import your CSV with its `taricCode` column, then edit each code's TARIC headings, goods summary, and **Stable description_summary for training** (at most 255 characters). Repeated imports preserve saved text and approval status. Registry-based exports reuse that summary for every verified product with the same target code. They exclude missing/revoked codes and blank summaries. Model text never updates the registry automatically.
+
+The per-request **Independently approved short description** field remains optional for code review. It supplies the description only when you explicitly choose **Legacy per-review descriptions** for export. Neither model text nor an unreviewed official-looking description is a fallback.
 
 A verified code outside the 53-code v0 test catalog is allowed. Catalog membership and ten-digit syntax are not legal validation. For `EVIDENCE_NOT_FOUND` or missing factual names, the label can remain verified but the source stays ineligible until actual facts are available. The review form does not invent or edit facts. Use the separate manual item import and filtered local re-do flow above, then independently review the resulting source. Do not fabricate fields to make a CSV row pass.
 
@@ -44,7 +46,7 @@ Raw requests and feedback expire after 90 days. User-started local batch plans/r
 
 ## 4. Export a fresh, sufficiently broad source pool
 
-In **Prepare reviewed source candidates**, choose **Newest verified first** or **Balanced by TARIC**, an **Overall row limit (1–200)** and **Per-code cap (1–100)**. Defaults are 100 and 20. Use **Preview current filters**, inspect exclusion diagnostics and description readiness, then **Freeze manifest & download JSONL**. The preview is invalidated when filters/options change. Zero candidates is a useful signal to check missing facts, staleness, conflicts, holdouts and review status; it is not automatically an export bug.
+In **Prepare reviewed source candidates**, leave **Description source** on **Stable approved-code registry** (the default), or explicitly choose the legacy per-review option. Registry exports freeze the code record, revision and hash alongside the unchanged human review. Editing a selected registry entry invalidates an outstanding preview; existing downloaded exports remain immutable. Use the converter from this release to read registry provenance. Then choose **Newest verified first** or **Balanced by TARIC**, an **Overall row limit (1–200)** and **Per-code cap (1–100)**. Defaults are 100 and 20. Use **Preview current filters**, inspect exclusion diagnostics and description readiness, then **Freeze manifest & download JSONL**. The preview is invalidated when filters/options change. Zero candidates is a useful signal to check missing facts, staleness, conflicts, holdouts and review status; it is not automatically an export bug.
 
 The Site selector keeps the latest exact normalized-input duplicate and excludes known independent published holdout overlaps. Same-JAN changed facts can be distinct records, but remain one product group. Missing specifications are allowed. The export is at most **200 rows / 8 MiB**, not a full backlog dump. To give the offline profile room to choose, deliberately widen the relevant filter scope and raise the Site limits within those pilot maxima. A converter cannot recover anything Site omitted or balance the entire database from a partial export. Asking for more rows than available never creates duplicates.
 
@@ -65,7 +67,7 @@ python3 scripts/taric_dataset_converter.py \
   --output-dir "$HOME/private-taric-datasets/run-001" --dry-run
 ```
 
-Inspect aggregate counts and warnings. No row text is printed and dry-run writes nothing. Missing required facts, valid HS6/code10, or explicit description are skipped by the supplied profiles and counted by reason. If every row lacks a description, return to step 2, approve descriptions individually and export again. Zero selected rows exits unsuccessfully and does not create an empty “ready” dataset. A strict profile can fail the whole run on missing required data.
+Inspect aggregate counts and warnings. No row text is printed and dry-run writes nothing. Missing required facts, valid HS6/code10, or explicit description are skipped by the supplied profiles and counted by reason. If every row lacks a description, complete the stable summaries in the approved-code registry (or per-review descriptions for a legacy export) and export again. Zero selected rows exits unsuccessfully and does not create an empty “ready” dataset. A strict profile can fail the whole run on missing required data.
 
 Run the identical command **without `--dry-run`** to create the files. The tool publishes all four artifacts together in a new mode-700 directory with mode-600 files. It refuses existing directories/files/symlinks, including concurrent publication; there is no `--force`. Failed staging is cleaned up. Use a local filesystem supporting Linux atomic no-replace rename. Keep private parents outside `public`, shared/synchronized folders and tracked repository data. The tool does not decide whether your chosen storage location is backed up appropriately.
 
@@ -120,8 +122,8 @@ Optional input limits `--max-input-bytes`, `--max-line-bytes`, `--max-input-rows
 | `specs` | `source.facts.specifications`, verbatim; null becomes empty string |
 | `hs_code` | Original six-digit string rendered as `0000.00`, preserving zeros; original HS6 also in manifest |
 | `taric_code` | Explicit reviewed target string, ten ASCII digits |
-| `description`, `taric_description` | Empty: current source schema provides no separately approved text for these fields |
-| `description_summary` | Explicit `review.approvedDescription`, never model fallback |
+| `description`, `taric_description` | Registry goods summary and TARIC headings respectively; empty for legacy per-review exports |
+| `description_summary` | Frozen registry `description_summary`, or explicit `review.approvedDescription` for legacy exports; never model fallback |
 | `prompt-response.csv` | Exactly `system,prompt,response`, UTF-8 quoted CSV |
 | `manifest.json` | Versions, resolved profile/hash, effective cutoff, exact input digest, export ID/digests, ordered source/review IDs/revisions/hashes, JAN/groups, original HS6, renderer/template hashes, both CSV hashes and report hash |
 | `selection-report.json` | Aggregate eligibility/exclusion counts, optional missingness, per-code/rare/empty-class counts and excluded request IDs/reasons |
@@ -146,7 +148,7 @@ New genuinely verified entries → fresh source snapshot → selected profile an
 
 | Implemented now | Still to build or prepare |
 | --- | --- |
-| Human review, separate description approval, audit and retained final-feedback-bound sources | Official catalog plus internal goods-description composition |
+| Human review, separate description approval, audit and retained final-feedback-bound sources | Automatic official-heading synchronization and automatic goods-description composition |
 | Source preview/export, bounded dedup/conflict/known-holdout checks | A missing-fact enrichment and re-review workflow |
 | Offline strict source validation, two deterministic profiles, cleaned/Qwen CSVs, private manifests | Final dataset registry and automated training orchestration |
 | Existing manual dataset upload and training tools | Independently reviewed gold v1 benchmark and promotion evidence |

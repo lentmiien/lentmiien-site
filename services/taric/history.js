@@ -14,6 +14,7 @@ const requestProjection = { _id: 1, owner: 1, input: 1, createdAt: 1, finishedAt
   'admission.identity': 1, 'admission.fingerprint': 1 };
 function createHistory({ models, adminPrincipal, now = () => new Date() }) {
   const { Request, Feedback, Benchmark, Run, Review, Export, Settings } = models;
+  const registry = models.ApprovedCode ? require('./approvedCodes').createApprovedCodes({ model: models.ApprovedCode, adminPrincipal }) : null;
   async function scope(actor) {
     string(actor, 24, 'FORBIDDEN', /^[a-f0-9]{24}$/);
     const principal = await adminPrincipal(actor);
@@ -121,7 +122,9 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
     const audit = await query(Review.findOne({ owner, request: id }).select('revision history localRevision localHistory originalSource localClaim'));
     if ((audit?.revision || 0) !== row.revision || (audit?.localRevision || 0) !== row.localRevision) fail('STALE');
     const settings = await query(Settings.findOne({ _id: 'tool', owner }).select('testCatalog.codes'));
-    return { ...row, audit: audit?.history || [], original: audit?.originalSource || null, localHistory: audit?.localHistory || [],
+    const registryCodes = [row.suggestion?.code, row.diagnostic?.code, row.feedback?.code, row.review?.target];
+    const approvedCodes = registry ? Object.fromEntries(await registry.lookup(registryCodes)) : {};
+    return { ...row, approvedCodes, audit: audit?.history || [], original: audit?.originalSource || null, localHistory: audit?.localHistory || [],
       targetInTestCatalog: settings?.testCatalog?.codes?.includes(row.review?.target || row.feedback?.code || row.suggestion?.code) || false };
   }
   // Internal worker-only owner-scoped resolver, never mounted as an HTTP action.
@@ -191,8 +194,22 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
     const filters = domain.filters(value.filters || {}); delete filters.cursor; delete filters.snapshot;
     const options = domain.options(value.options || {});
     const { rows, populationHash } = await population(owner, filters);
-    const selection = domain.select(rows.filter(r => domain.matches(r, filters)), options);
-    const candidates = selection.selected.map(domain.candidate);
+    let eligibleRows = rows.filter(r => domain.matches(r, filters));
+    let entries = new Map();
+    if (options.descriptionSource === 'registry') {
+      if (!registry) fail('CONFIG_NOT_READY');
+      entries = await registry.lookup(eligibleRows.map(r => r.review?.target));
+      eligibleRows = eligibleRows.map(r => {
+        const entry = entries.get(r.review?.target);
+        const reason = !entry?.approved ? 'unapproved_registry_code' : !entry.description_summary ? 'missing_registry_description' : null;
+        return reason ? { ...r, eligible: false, reasons: [...r.reasons, reason] } : r;
+      });
+    }
+    const selection = domain.select(eligibleRows, options);
+    const candidates = selection.selected.map(r => {
+      const candidate = domain.candidate(r);
+      return options.descriptionSource === 'registry' ? require('./approvedCodes').registryCandidate(candidate, entries.get(candidate.targetCode)) : candidate;
+    });
     const snapshotHash = hash({ populationHash, filters, options, candidates, skipped: selection.skipped });
     return { snapshotHash, profile: domain.PROFILE, algorithm: domain.ALGORITHM, filters, options,
       summary: selection.summary, skipped: selection.skipped, candidates };

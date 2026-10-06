@@ -1,0 +1,51 @@
+doctype html
+html(lang='en')
+  head
+    meta(charset='utf-8')
+    meta(name='viewport' content='width=device-width, initial-scale=1')
+    meta(name='csrf-token' content=csrfToken)
+    title Approved TARIC codes
+    link(rel='stylesheet' href='/css/color-theme.css')
+    link(rel='stylesheet' href='/css/taric.css')
+    script(src='/js/taric-codes.js' defer)
+  body
+    main
+      nav
+        a(href='/admin/taric') TARIC classification
+        |  · 
+        a(href='/admin/taric/history') History and training exports
+      h1 Approved TARIC codes
+      p Keep one stable description_summary for each code. Approval means this code is allowed for your workflow; product classifications still need human review.
+      p#status(role='status' aria-live='polite') Loading codes…
+      section
+        h2 Import approved codes
+        p Upload a UTF-8 CSV with a taricCode column. Optional columns: headings, goods_summary, description_summary. The taric_code header is also accepted. Maximum 2 MiB / 10,000 rows. Keep codes as ten-digit text, including leading zeroes.
+        p Repeated codes are combined. Conflicting text rejects the file. Existing records keep their saved descriptions and approval status; edit them below.
+        label(for='csv') CSV file
+        input#csv(type='file' accept='.csv,text/csv')
+        button#preview(type='button') Preview import
+        pre#import-preview
+        button#import(type='button' disabled) Approve and import new codes
+      section
+        h2 Existing codes
+        form#search
+          label(for='prefix') Filter by code or code prefix
+          input#prefix(type='text' inputmode='numeric' pattern='[0-9]{0,10}' maxlength='10')
+          button(type='submit') Search
+        p#empty(hidden) No matching codes. Import your CSV to create approved records.
+        div#codes
+        button#next(type='button' hidden) Next page
+      section#editor(hidden)
+        h2#edit-title Edit code
+        form#edit
+          label
+            input#approved(type='checkbox')
+            |  Approved for use
+          label(for='headings') TARIC headings
+          textarea#headings(rows='5' maxlength='4000')
+          label(for='goods-summary') Summary of goods you classify under this code
+          textarea#goods-summary(rows='3' maxlength='2000')
+          label(for='description-summary') Stable description_summary for training
+          textarea#description-summary(rows='3' maxlength='255')
+          p Leave blank until reviewed. Registry-based training exports exclude codes without this summary. Saving changes affects future exports; downloaded exports stay unchanged.
+          button#save(type='submit') Save code

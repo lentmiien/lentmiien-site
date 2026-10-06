@@ -11,6 +11,7 @@ html(lang='en')
   body
     main
       nav
+        a(href='/admin/taric/codes') Approved codes and stable descriptions
         a(href='/admin') Administration
         a(href='/admin/taric/history') Request history and human review
       h1 TARIC assisted classification
@@ -65,6 +66,7 @@ html(lang='en')
         button#test(type='button' disabled) Submit manual-confirmation test
         button#test-poll(type='button') Poll test
         p Generated diagnostic text is UNVALIDATED / REJECTED and cannot be applied as an approved suggestion. A test allowlist rejection is not a legal TARIC validity judgment. Historical discarded output is not captured and cannot be recovered.
+        p#approval-alert(role='alert' hidden)
         pre#test-result
         label(for='test-selected-code') Human-selected final TARIC code (ten digits)
         input#test-selected-code(type='text' maxlength='10' pattern='[0-9]{10}')

@@ -13,7 +13,7 @@ const { request, actor, id } = require('../helpers/taricHistoryFixture');
 const { hash } = require('../../utils/taricProtocol');
 const { spawnSync } = require('child_process');
 const fs = require('fs'); const os = require('os'); const path = require('path');
-jest.mock('../../utils/logger', () => ({ warning: jest.fn(), error: jest.fn(), notice: jest.fn() }));
+jest.mock('../../utils/logger', () => ({ warning: jest.fn(), error: jest.fn(), notice: jest.fn(), debug: jest.fn() }));
 const uri = process.env.TARIC_TEST_MONGO_URL;
 const run = /^mongodb:\/\/127\.0\.0\.1:\d+\/taric_test_[a-z0-9_]+$/.test(uri || '') ? describe : describe.skip;
 run('filtered JAN export and local immutable enrichment', () => {

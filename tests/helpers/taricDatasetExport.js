@@ -3,7 +3,7 @@ const domain = require('../../services/taric/historyDomain');
 const { createHistory } = require('../../services/taric/history');
 const { request, actor } = require('./taricHistoryFixture');
 const { hash } = require('../../utils/taricProtocol');
-async function exportedFixture() {
+async function exportedFixture(useRegistry = false) {
   const raw = Array.from({ length: 8 }, (_, i) => {
     const r = request(i + 1);
     r.input.input_hs_code = '001234';
@@ -31,11 +31,14 @@ async function exportedFixture() {
     Feedback: { collection: { name: 'feedback' } }, Run: { collection: { name: 'runs' } },
     Benchmark: { find: () => query([]) }, Export: { create: async () => {} },
   };
+  if (useRegistry) models.ApprovedCode = { find: () => query(['0000000002', '0000000003'].map(code => ({
+    _id: code, approved: true, revision: 3, headings: 'Synthetic headings', goods_summary: 'Synthetic goods', description_summary: `Stable summary ${code}`,
+  }))) };
   const history = createHistory({ models, adminPrincipal: async () => ({ id: `admin_${actor}`, owner: 'synthetic-owner' }),
     now: () => new Date('2026-09-24T00:00:00.000Z') });
-  const options = { mode: 'newest', limit: 200, perCode: 100 };
+  const options = { mode: 'newest', limit: 200, perCode: 100, ...(useRegistry ? { descriptionSource: 'registry' } : {}) };
   const preview = await history.preview(actor, { options });
   return (await history.download(actor, { options, expectedSnapshotHash: preview.snapshotHash })).jsonl;
 }
-if (require.main === module) exportedFixture().then(jsonl => process.stdout.write(jsonl)).catch(() => { process.exitCode = 1; });
+if (require.main === module) exportedFixture(process.argv.includes('--registry')).then(jsonl => process.stdout.write(jsonl)).catch(() => { process.exitCode = 1; });
 module.exports = { exportedFixture };

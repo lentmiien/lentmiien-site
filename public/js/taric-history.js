@@ -15,7 +15,7 @@
   function pairs(container, values) { const dl = el('dl'); for (const [key, value] of Object.entries(values)) { dl.append(el('dt', key), el('dd', value ?? 'Not captured')); } container.append(dl); }
   function details(container, title, text) { const d = el('details'); d.append(el('summary', title), el('pre', text || 'Not captured')); container.append(d); }
   function activeFilters() { return Object.fromEntries([...new FormData($('filters'))].filter(([, v]) => v !== '')); }
-  function selection() { return { mode: $('selection-mode').value, limit: Number($('selection-limit').value), perCode: Number($('selection-cap').value) }; }
+  function selection() { return { descriptionSource: $('description-source').value, mode: $('selection-mode').value, limit: Number($('selection-limit').value), perCode: Number($('selection-cap').value) }; }
   async function load(cursor) {
     const epoch = ++listEpoch; $('stats').replaceChildren(); $('requests').replaceChildren(); $('next').hidden = true;
     $('detail').hidden = true; current = null; detailEpoch++;
@@ -48,6 +48,11 @@
     const epoch = ++detailEpoch;
     const r = await (await api(`/${id}`)).json(); if (epoch !== detailEpoch) return; current = r;
     const container = $('detail-content'); container.replaceChildren();
+    for (const code of new Set([r.suggestion?.code, r.diagnostic?.code, r.feedback?.code, r.review?.target].filter(Boolean))) {
+      const entry = r.approvedCodes?.[code];
+      const message = entry?.approved ? `${code}: approved. Stable summary: ${entry.description_summary || 'Not yet set'}` : `${code}: UNAPPROVED — review the approved-code registry before use.`;
+      const notice = el('p', message, entry?.approved ? '' : 'warning'); if (!entry?.approved) notice.setAttribute('role', 'alert'); container.append(notice);
+    }
     pairs(container, { 'Request ID': r.id, 'Created / finished (UTC)': `${r.createdAt} / ${r.finishedAt || 'pending'}`, 'Mode / status': `${r.mode} / ${r.state}`,
       'Request application source': 'Unknown (not persisted)', JAN: r.inputs.jan, 'Item code': r.inputs.item_code,
       'Descriptive category': r.inputs.descriptive_name, 'Original HS6': r.inputs.input_hs_code, 'Full item name': r.facts.name || 'Missing evidence — label review can still be recorded',
@@ -109,7 +114,7 @@
       } finally { $('save-review').disabled = false; }
     });
   });
-  for (const id of ['selection-mode', 'selection-limit', 'selection-cap']) $(id).addEventListener('input', invalidate);
+  for (const id of ['selection-mode', 'selection-limit', 'selection-cap', 'description-source']) $(id).addEventListener('input', invalidate);
   $('preview').addEventListener('click', () => run(async () => {
     invalidate(); const epoch = previewEpoch; const input = { filters: activeFilters(), options: selection() };
     const result = await (await api('/preview', input)).json(); if (epoch !== previewEpoch) return; preview = { input, result };

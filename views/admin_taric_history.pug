@@ -11,6 +11,7 @@ html(lang='en')
   body
     main
       nav
+        a(href='/admin/taric/codes') Approved codes and stable descriptions
         a(href='/admin/taric') TARIC manager / JSON inspection
         a(href='/admin/taric/history/guide') Review & dataset guide
         button#theme(type='button') Toggle light / dark
@@ -95,7 +96,12 @@ html(lang='en')
           button#save-review(type='submit') Save explicit review revision
       section(aria-labelledby='export-heading')
         h2#export-heading Prepare reviewed source candidates
-        p Code-only candidate profile. Full item name, descriptive category and original HS6 are required; specifications may be missing. An approved description is optional here. Use the linked guide and offline converter to create Qwen CSVs from complete sources with explicitly approved descriptions. Grouped splits and training are separate manual steps.
+        p Registry descriptions are the default: only approved codes with a saved stable summary enter the export. Each product still requires a verified code review. Legacy per-review descriptions remain available.
+        label(for='description-source') Description source
+        select#description-source
+          option(value='registry') Stable approved-code registry
+          option(value='review') Legacy per-review descriptions
+        p Code-only candidate profile. Full item name, descriptive category and original HS6 are required; specifications may be missing. An approved description is optional only for legacy per-review exports. Use the linked guide and offline converter to create Qwen CSVs from complete sources with explicitly approved descriptions. Grouped splits and training are separate manual steps.
         p Exact normalized input duplicates keep the latest review. Disagreeing current labels within a JAN or identical input group are blocked, including records hidden by filters. Independent published holdout identities are excluded where known. No semantic near-duplicate guarantee.
         .fields
           label

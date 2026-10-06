@@ -1,0 +1,41 @@
+const fs = require('fs');
+const path = require('path');
+const pug = require('pug');
+test('registry page previews/imports camel-case CSV, edits safely, and requires fresh previews', async () => {
+  const { JSDOM } = await import('jsdom');
+  const html = pug.renderFile(path.join(__dirname, '../../views/admin_taric_codes.pug'), { csrfToken: 'synthetic-csrf' });
+  const dom = new JSDOM(html, { url: 'http://localhost/admin/taric/codes', runScripts: 'outside-only' });
+  const doc = dom.window.document;
+  const attack = '<img src=x onerror="window.compromised=true">';
+  let row = { _id: '0000000002', revision: 1, approved: true, headings: attack, goods_summary: '', description_summary: attack };
+  dom.window.fetch = jest.fn(async (url, options) => {
+    let result;
+    if (url.includes('/data?')) result = { rows: [row], next: null };
+    else if (url.endsWith('/imports')) result = { sha256: 'a'.repeat(64), rows: 2, unique: 1, duplicates: 1, additions: 0, existing: 1, missingDescriptions: 0, inserted: 0 };
+    else { const body = JSON.parse(options.body); expect(body.expectedRevision).toBe(1); row = { ...row, ...body, revision: 2 }; result = row; }
+    expect(options.headers['X-CSRF-Token']).toBe('synthetic-csrf');
+    return { ok: true, json: async () => result };
+  });
+  const settle = () => new Promise(setImmediate);
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-codes.js'), 'utf8')); await settle();
+  expect(doc.querySelector('#codes').textContent).toContain(attack);
+  expect(doc.querySelectorAll('img')).toHaveLength(0);
+  doc.querySelector('#codes button').click();
+  expect(doc.querySelector('#headings').value).toBe(attack);
+  doc.querySelector('#description-summary').value = 'Stable summary';
+  doc.querySelector('#edit').dispatchEvent(new dom.window.Event('submit', { cancelable: true })); await settle();
+  expect(row.description_summary).toBe('Stable summary');
+  const input = doc.querySelector('#csv');
+  Object.defineProperty(input, 'files', { value: [new dom.window.File(['taricCode\n0000000002'], 'codes.csv')] });
+  doc.querySelector('#preview').click(); await settle();
+  expect(doc.querySelector('#import').disabled).toBe(false);
+  expect(doc.querySelector('#import-preview').textContent).toContain('1 duplicate rows');
+  input.dispatchEvent(new dom.window.Event('change'));
+  expect(doc.querySelector('#import').disabled).toBe(true);
+  doc.querySelector('#preview').click(); await settle();
+  doc.querySelector('#import').click(); await settle();
+  const upload = dom.window.fetch.mock.calls.find(([url, options]) => url.endsWith('/imports') && options.headers['X-Import-Sha']);
+  expect(upload[1].headers['X-Import-Sha']).toBe('a'.repeat(64));
+  expect(doc.querySelector('#import').disabled).toBe(true);
+  expect(dom.window.compromised).toBeUndefined(); dom.window.close();
+});

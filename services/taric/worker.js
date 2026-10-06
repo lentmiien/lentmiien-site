@@ -72,7 +72,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
           onDiagnostics: test ? value => { diagnostics = value; } : undefined });
       await service.authorize(service.principalFrom(r), SCOPES[0]);
       await service.checkAdmission(r);
-      result.warnings = result.taric_code.startsWith(request.input_hs_code) ? [] : ['input_hs_prefix_mismatch'];
+      result.warnings = [...(result.warnings || []), ...(result.taric_code.startsWith(request.input_hs_code) ? [] : ['input_hs_prefix_mismatch'])];
       await finishRequest(r, holder, { state: 'complete', evidence, diagnostics, result, errorStatus: transportStatus, inferenceDispatched: true, error: null });
     } catch (e) {
       const error = report(e, 'request');

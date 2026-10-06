@@ -13,3 +13,6 @@ button:disabled { opacity: .45; cursor: default; }
 pre { background: var(--surface-2); padding: 1rem; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 36rem; overflow: auto; }
 #secret { display: block; overflow-wrap: anywhere; color: var(--accent); }
 #status { position: sticky; top: 0; padding: .8rem; background: var(--surface-3); border-bottom: 1px solid var(--divider); }
+
+#approval-alert { color: var(--warning); border-left: 3px solid var(--warning); padding: .8rem; background: var(--surface-2); }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; }
