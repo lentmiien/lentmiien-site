@@ -6,7 +6,7 @@ const multer = require('multer');
 const ctrl = require('../controllers/image_gen.controller');
 const { thumbnailLimit, boundThumbnails } = require('../middleware/thumbnailLimits');
 const { RoleModel } = require('../database');
-const { ROUTES, authorizeThumbnail } = require('../utils/imageGenThumbnailPolicy');
+const { ROUTES, CAPABILITIES, authorizeThumbnail } = require('../utils/imageGenThumbnailPolicy');
 
 const router = express.Router();
 const BULK_DISABLED = false;
@@ -60,9 +60,9 @@ router.get('/api/workflows/:name', ctrl.getWorkflowDetail);
 // Submit a prompt job (async)
 router.post('/api/generate', ctrl.generate);
 router.post('/api/submit', ctrl.generate);
-router.get('/api/jobs/:id', ctrl.getJob);
-router.get('/api/jobs/:id/files/:index', ctrl.getJobFile);
-router.get('/api/jobs/:id/images/:index', ctrl.getJobImage); // legacy alias
+router.get('/api/jobs/:id', authorizeThumbnail(CAPABILITIES.output, RoleModel), ctrl.getJob);
+router.get('/api/jobs/:id/files/:index', authorizeThumbnail(CAPABILITIES.output, RoleModel), ctrl.getJobFile);
+router.get('/api/jobs/:id/images/:index', authorizeThumbnail(CAPABILITIES.output, RoleModel), ctrl.getJobImage); // legacy alias
 router.get('/api/files/:bucket', ctrl.listFiles);
 router.get('/api/files/input/view', ctrl.getInputFile);
 router.get('/api/files/:bucket/:filename', ctrl.getFile);

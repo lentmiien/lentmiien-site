@@ -26,6 +26,7 @@ const BulkTestPromptSchema = new mongoose.Schema({
   comfy_error: { type: String, default: null },
   filename: { type: String, default: null },
   file_url: { type: String, default: null },
+  output_file: { type: mongoose.Schema.Types.Mixed, default: null },
   score_total: { type: Number, default: 0 },
   score_count: { type: Number, default: 0 },
   defect_rating_value: { type: Number, min: 0, max: 5, default: null },

@@ -10,11 +10,13 @@ const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 const embeddingQueueService = require('../services/embeddingQueueService');
 const { errorDiagnostics } = require('../utils/errorDiagnostics');
 const ComfyGatewayService = require('../services/comfyGatewayService');
+const { ComfyOutputCacheService } = require('../services/comfyOutputCacheService');
 const { GoodImageThumbnailService, SETTINGS: THUMBNAIL_SETTINGS } = require('../services/goodImageThumbnailService');
 const { LocalImageThumbnailService } = require('../services/localImageThumbnailService');
 const { sendThumbnail, thumbnailFailure, unavailable } = require('../utils/localThumbnailResponse');
+const OUTPUT_CACHE_DIR = path.join(__dirname, '../private_data/comfy-output/v2');
 const bulkThumbnails = new LocalImageThumbnailService({
-  sourceDir: path.join(__dirname, '../public/imgen'),
+  sourceDir: OUTPUT_CACHE_DIR,
   cacheDir: path.join(__dirname, '../cache/bulk-image-thumbnails'),
 });
 const bulkThumbnailUrl = (job, prompt) => `/image_gen/api/bulk/jobs/${encodeURIComponent(String(job))}/prompts/${encodeURIComponent(String(prompt))}/thumbnail`;
@@ -40,7 +42,13 @@ const JS_FILE_NAME = 'controllers/image_gen.controller.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 const GOOD_IMAGE_DIR = path.join(__dirname, '../public/img');
 const comfyGatewayService = new ComfyGatewayService();
-const localJobStore = new Map(); // prompt_id -> job payload for quick lookups
+const outputCache = new ComfyOutputCacheService({
+  provider: comfyGatewayService.baseUrl || COMFY_API_BASE,
+  directory: OUTPUT_CACHE_DIR,
+  fetchImage: descriptor => comfyGatewayService.fetchImage(descriptor),
+});
+const localJobKey = (jobId, instanceId) => JSON.stringify([instanceId || null, jobId]);
+const localJobStore = new Map(); // [instance, prompt_id] -> job payload
 const BULK_FEATURE_DISABLED = false;
 
 // Track in-flight downloads to avoid duplicate fetches
@@ -52,10 +60,11 @@ const ratedJobs = new Set();    // jobIds already rated (prevents double rating)
 const MAP_TTL_MS = 24 * 60 * 60 * 1000; // drop job mappings after 24h
 function rememberLocalJob(jobId, payload) {
   if (!jobId || !payload) return null;
-  const current = localJobStore.get(jobId);
+  const key = localJobKey(jobId, payload.instance_id);
+  const current = localJobStore.get(key);
   const next = current ? Object.assign({}, current, payload) : payload;
-  localJobStore.set(jobId, next);
-  setTimeout(() => localJobStore.delete(jobId), MAP_TTL_MS);
+  localJobStore.set(key, next);
+  setTimeout(() => localJobStore.delete(key), MAP_TTL_MS).unref?.();
   return next;
 }
 
@@ -319,50 +328,27 @@ function detectMimeType(mediaType, name) {
   return 'image/png';
 }
 
+function jobFileUrl(jobId, index, instanceId) {
+  return `/image_gen/api/jobs/${encodeURIComponent(jobId)}/files/${index}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`;
+}
+
 function normalizeJobFiles(jobId, files, instanceId) {
   if (!Array.isArray(files)) return [];
-  return files.map((entry, index) => {
-    const base = typeof entry === 'string' ? { filename: entry } : Object.assign({}, entry);
-    const rawName = base.filename || base.name || base.file || base.file_name || `file_${index}`;
-    const safeName = toSafeName(rawName) || `file_${index}`;
-    const mediaType = base.media_type || detectMediaType(safeName);
-    const bucket = base.bucket || (mediaType === 'video' ? 'video' : 'output');
-    const allowLocal = base.cached !== false;
-    const cacheRec = allowLocal ? buildCacheRecord(safeName, { bucket, mediaType, instanceId }) : null;
-    const cachedUrl = base.cached_url || (cacheRec ? cacheRec.url : null);
-    const query = new URLSearchParams();
-    query.set('filename', safeName);
-    if (bucket) query.set('bucket', bucket);
-    if (mediaType) query.set('mediaType', mediaType);
-    if (instanceId) query.set('instance_id', instanceId);
-    const localUrl = allowLocal
-      ? `/image_gen/api/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(index)}?${query.toString()}`
-      : null;
-    const downloadUrl = base.download_url || localUrl;
-    const remoteUrl = base.gateway_view_url || base.download_url || base.url || base.path || null;
-    return Object.assign({}, base, {
-      index,
-      filename: safeName,
-      bucket,
-      media_type: mediaType,
-      cached_url: cachedUrl,
-      gateway_view_url: base.gateway_view_url || null,
-      remote_url: remoteUrl,
-      download_url: downloadUrl,
-      instance_id: base.instance_id || instanceId || null
-    });
+  return files.map((file, index) => {
+    const rec = outputCache.verifiedRecord(jobId, file, instanceId);
+    const cached = Boolean(rec && file.cached);
+    return { ...file, index, cached, cached_url: cached ? rec.url : null,
+      gateway_view_url: null, remote_url: null,
+      download_url: cached ? rec.url : jobFileUrl(jobId, index, instanceId), instance_id: instanceId || null };
   });
 }
 
-async function getLocalCacheRecord(name, { bucket, mediaType, instanceId } = {}) {
-  const rec = buildCacheRecord(name, { bucket, mediaType, instanceId });
-  if (!rec) return null;
-  try {
-    await fsp.access(rec.localPath, fs.constants.R_OK);
-    return rec;
-  } catch (_) {
-    return null;
-  }
+// Bulk records must carry the complete, versioned identity. Legacy file_url and
+// basename fields cannot establish provenance; recover by Gateway job and index.
+function bulkOutputLinks(doc, instanceId) {
+  const rec = outputCache.verifiedRecord(doc.comfy_job_id, doc.output_file, instanceId);
+  return { cacheRec: rec, downloadUrl: rec?.url || (doc.comfy_job_id
+    ? jobFileUrl(doc.comfy_job_id, 0, instanceId) : null) };
 }
 
 function normalizeGatewayStatus(raw, jobId, workflowHint) {
@@ -397,49 +383,26 @@ function isTerminalJobStatus(status) {
 
 async function cacheGatewayOutputs(jobId, outputs, instanceId) {
   if (!Array.isArray(outputs) || !outputs.length) return [];
-  const items = await mapWithConcurrency(outputs, CACHE_CONCURRENCY, async (output, index) => {
-    const rawName = output?.filename || output?.name || output?.file || `output_${index}.png`;
-    const safeName = toSafeName(rawName) || `${jobId}_${index}.png`;
-    const mediaType = detectMediaType(safeName);
-    const bucket = mediaType === 'video' ? 'video' : 'output';
-    let cacheRec = await getLocalCacheRecord(safeName, { bucket, mediaType, instanceId });
-    let cached = Boolean(cacheRec);
-    if (!cacheRec) {
-      try {
-        const { buffer } = await comfyGatewayService.fetchImage({
-          gateway_view_url: output?.gateway_view_url || null,
-          filename: output?.filename || safeName,
-          type: output?.type || null,
-          subfolder: output?.subfolder || null
-        });
-        cacheRec = await writeCacheFile(safeName, buffer, { bucket, mediaType, instanceId });
-        cached = Boolean(cacheRec);
-      } catch (outputErr) {
-        logComfyGatewayFailure('ComfyUI output fetch failed', outputErr, {
-          operation: 'fetchImage',
-          phase: 'response-body',
-        });
-        cached = false;
-      }
+  if (outputs.length > 10000) throw new Error('Too many ComfyUI outputs');
+  return mapWithConcurrency(outputs, CACHE_CONCURRENCY, async (output, index) => {
+    let rec;
+    try {
+      rec = outputCache.record(jobId, output, index, instanceId || null);
+      await outputCache.ensure(jobId, output, index, instanceId || null);
+      const { localPath, url, ...identity } = rec;
+      return { ...identity, media_type: detectMediaType(rec.filename), cached: true,
+        cached_url: url, download_url: url };
+    } catch (error) {
+      logger.warning('ComfyUI output could not be validated or cached; retry job retrieval', {
+        category: 'comfy-gateway', metadata: { operation: 'cacheOutput', index, code: /^[A-Z0-9_]{1,40}$/.test(error.code || '') ? error.code : null },
+      });
+      // Keep indices stable, but never expose unvalidated URLs or stale bytes.
+      const identity = rec ? { filename: rec.filename, subfolder: rec.subfolder, type: rec.type, node_id: rec.node_id } : {};
+      return { ...identity, index, cached: false, cached_url: null,
+        media_type: rec ? detectMediaType(rec.filename) : null,
+        download_url: jobFileUrl(jobId, index, instanceId) };
     }
-    const gatewayUrl = output?.gateway_view_url || null;
-    return {
-      index,
-      filename: safeName,
-      bucket,
-      media_type: mediaType,
-      cached,
-      cached_url: cacheRec?.url || null,
-      download_url: cacheRec?.url || gatewayUrl,
-      gateway_view_url: gatewayUrl,
-      node_id: output?.node_id || null,
-      type: output?.type || null,
-      subfolder: output?.subfolder || null,
-      kind: output?.kind || null,
-      instance_id: instanceId || null
-    };
   });
-  return items.filter(Boolean);
 }
 
 function clonePlain(value) {
@@ -1013,12 +976,8 @@ function hydrateImageResults(items, job) {
   if (!Array.isArray(items) || !items.length) return [];
   return items.map((doc) => {
     const mediaType = detectMediaType(doc.filename);
-    const bucket = mediaType === 'video' ? 'video' : 'output';
     const instanceId = doc.instance_id || job.instance_id || null;
-    const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType, instanceId }) : null;
-    const downloadUrl = doc.filename
-      ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`
-      : null;
+    const { cacheRec, downloadUrl } = bulkOutputLinks(doc, instanceId);
     const scoreAvg = typeof doc.score_average === 'number'
       ? doc.score_average
       : averageOrNull(doc.score_total, doc.score_count) || 0;
@@ -1135,12 +1094,8 @@ function isBetterCompareItem(candidate, existing) {
 
 function hydrateBulkCompareItem(doc, job) {
   const mediaType = detectMediaType(doc.filename);
-  const bucket = mediaType === 'video' ? 'video' : 'output';
   const instanceId = doc.instance_id || job?.instance_id || null;
-  const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType, instanceId }) : null;
-  const downloadUrl = doc.filename
-    ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`
-    : null;
+  const { cacheRec, downloadUrl } = bulkOutputLinks(doc, instanceId);
   const scoreCount = Number(doc.score_count || 0);
   const scoreTotal = Number(doc.score_total || 0);
   return {
@@ -1400,6 +1355,7 @@ async function processBulkPrompt(job, prompt) {
     const stored = await cacheGatewayOutputs(comfyJobId, outputs, instanceId);
     if (!stored.length) throw new Error('failed to cache generated outputs');
     const primary = stored[0] || null;
+    if (!primary?.cached) throw new Error('Primary ComfyUI output unavailable');
     await BulkTestPrompt.updateOne(
       { _id: prompt._id },
       {
@@ -1407,7 +1363,8 @@ async function processBulkPrompt(job, prompt) {
           status: 'Completed',
           completed_at: new Date(),
           filename: primary?.filename || primary?.safeName || null,
-          file_url: primary?.cached_url || primary?.url || primary?.download_url || null,
+          file_url: primary.download_url,
+          output_file: primary,
           comfy_error: null,
           instance_id: instanceId || null
         }
@@ -1442,7 +1399,8 @@ async function hydrateMissingBulkPromptOutputs(job, { limit = 25 } = {}) {
     $or: [
       { filename: { $exists: false } },
       { filename: null },
-      { filename: '' }
+      { filename: '' },
+      { 'output_file.cache_version': { $ne: 2 } }
     ]
   })
     .sort({ completed_at: -1, updated_at: -1 })
@@ -1466,6 +1424,7 @@ async function hydrateMissingBulkPromptOutputs(job, { limit = 25 } = {}) {
       if (!outputs.length) return;
       const stored = await cacheGatewayOutputs(comfyJobId, outputs, instanceId);
       const primary = stored[0] || null;
+      if (!primary?.cached) throw new Error('Primary ComfyUI output unavailable');
       const filename = primary?.filename || primary?.safeName || null;
       const fileUrl = primary?.cached_url || primary?.url || primary?.download_url || null;
       if (!filename) return;
@@ -1475,6 +1434,7 @@ async function hydrateMissingBulkPromptOutputs(job, { limit = 25 } = {}) {
           $set: {
             filename,
             file_url: fileUrl,
+            output_file: primary,
             comfy_error: null,
             instance_id: instanceId || null
           }
@@ -1482,10 +1442,8 @@ async function hydrateMissingBulkPromptOutputs(job, { limit = 25 } = {}) {
       );
       repaired += 1;
     } catch (err) {
-      logger.warn('[hydrateMissingBulkPromptOutputs] failed to hydrate output', {
-        promptId: String(doc._id),
-        comfyJobId,
-        message: err?.message || String(err)
+      logger.warning('Legacy bulk output recovery failed; retain record for retry', {
+        category: 'comfy-gateway', metadata: { operation: 'recoverBulkOutput', code: /^[A-Z0-9_]{1,40}$/.test(err.code || '') ? err.code : null },
       });
     }
   });
@@ -1730,12 +1688,16 @@ async function applyPromptRating(mapping, delta) {
 }
 
 async function fetchJobDetail(jobId, instanceId) {
-  const local = localJobStore.get(jobId);
+  const local = localJobStore.get(localJobKey(jobId, instanceId));
   const localStatus = normalizeJobStatus(local?.status);
   const hasFiles = Array.isArray(local?.files) && local.files.length > 0;
   const canUseLocalTerminal = isTerminalJobStatus(localStatus)
-    && (!isCompletedStatus(localStatus) || hasFiles);
-  if (local && canUseLocalTerminal) {
+    && (!isCompletedStatus(localStatus) || (hasFiles && local.files.every(file =>
+      file.cached && outputCache.verifiedRecord(jobId, file, instanceId || null))));
+  const cachedFilesExist = local && canUseLocalTerminal && (!hasFiles ||
+    (await Promise.all(local.files.map(file => outputCache.exists(
+      outputCache.verifiedRecord(jobId, file, instanceId || null)).catch(() => false)))).every(Boolean));
+  if (local && canUseLocalTerminal && cachedFilesExist) {
     const effectiveInstance = local.instance_id || instanceId || null;
     const files = normalizeJobFiles(jobId, Array.isArray(local.files) ? local.files : [], effectiveInstance);
     return Object.assign({}, local, { instance_id: effectiveInstance, files });
@@ -1747,9 +1709,9 @@ async function fetchJobDetail(jobId, instanceId) {
     const files = await cacheGatewayOutputs(jobId, normalized.outputs, instanceId);
     if (files.length) normalized.files = files;
     const mapping = jobPromptMap.get(jobId);
-    if (mapping && files.length) mapping.files = files;
+    if (mapping && files.length && (mapping.instanceId || null) === (instanceId || null)) mapping.files = files;
   }
-  const updated = rememberLocalJob(jobId, normalized);
+  const updated = rememberLocalJob(jobId, { ...normalized, instance_id: instanceId || null, files: normalized.files || [] });
 
   const effectiveInstance = updated.instance_id || instanceId || null;
   const files = normalizeJobFiles(jobId, Array.isArray(updated.files) ? updated.files : [], effectiveInstance);
@@ -1821,11 +1783,9 @@ async function persistGoodImagesFromJob({ jobId, rating, instanceId, context }) 
   const modelMetadata = job?.metadata || job?.meta || null;
   const variables = context?.variables || job?.variables || job?.placeholder_values || null;
 
-  const files = Array.isArray(context?.files)
-    ? context.files
-    : Array.isArray(job?.files)
-      ? job.files
-      : [];
+  const files = Array.isArray(job?.files) ? job.files
+    : (Array.isArray(context?.files) ? context.files.filter(file =>
+      outputCache.verifiedRecord(jobId, file, effectiveInstanceId)) : []);
   const imageFiles = files.filter((file) => {
     const mt = (file?.media_type || '').toLowerCase();
     return mt === 'image' || mt === 'gif';
@@ -1839,7 +1799,8 @@ async function persistGoodImagesFromJob({ jobId, rating, instanceId, context }) 
   for (const file of imageFiles) {
     try {
       const bucket = file.bucket || 'output';
-      const cacheRec = await resolveCachedRecord(bucket, file.filename, effectiveInstanceId);
+      const verified = outputCache.verifiedRecord(jobId, file, effectiveInstanceId);
+      const cacheRec = verified ? await outputCache.ensure(jobId, file, file.index, effectiveInstanceId) : null;
       if (!cacheRec || !cacheRec.localPath) {
         warnings.push(`Missing cached file for ${file.filename || '(unknown)'}.`);
         continue;
@@ -1902,7 +1863,8 @@ async function persistGoodImagesFromJob({ jobId, rating, instanceId, context }) 
         modelMetadata
       }));
     } catch (err) {
-      warnings.push(`Failed to save image for ${file.filename || '(unknown)'}: ${err?.message || err}`);
+      warnings.push('Failed to save image.');
+      logger.warning('ComfyUI favorite could not be saved', { category: 'image_gen', metadata: { operation: 'saveFavorite', code: /^[A-Z0-9_]{1,40}$/.test(err.code || '') ? err.code : null } });
     }
   }
 
@@ -2390,7 +2352,7 @@ exports.listBulkTestPrompts = async (req, res) => {
         input_values: doc.input_values || {},
         negative_used: doc.negative_used,
         filename: doc.filename,
-        file_url: doc.file_url,
+        file_url: bulkOutputLinks(doc, doc.instance_id || job?.instance_id || null).downloadUrl,
         comfy_job_id: doc.comfy_job_id,
         comfy_error: doc.comfy_error,
         score_total: doc.score_total || 0,
@@ -2473,16 +2435,12 @@ exports.getBulkMatrix = async (req, res) => {
           const mapped = docs.map((doc) => {
             const avg = (doc.score_count || 0) > 0 ? doc.score_total / doc.score_count : 0;
             const mediaType = detectMediaType(doc.filename);
-            const bucket = mediaType === 'video' ? 'video' : 'output';
             const instanceId = doc.instance_id || job.instance_id || null;
-            const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType, instanceId }) : null;
-            const downloadUrl = doc.filename
-              ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`
-              : null;
+            const { cacheRec, downloadUrl } = bulkOutputLinks(doc, instanceId);
             return {
               id: String(doc._id),
               filename: doc.filename,
-              file_url: doc.file_url,
+              file_url: downloadUrl,
               media_type: mediaType,
               download_url: downloadUrl,
               cached_url: cacheRec ? cacheRec.url : null,
@@ -2634,12 +2592,8 @@ exports.listBulkGalleryImages = async (req, res) => {
 
     const items = selectedDocs.map((doc) => {
       const mediaType = detectMediaType(doc.filename);
-      const bucket = mediaType === 'video' ? 'video' : 'output';
       const instanceId = doc.instance_id || job.instance_id || null;
-      const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType, instanceId }) : null;
-      const downloadUrl = doc.filename
-        ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`
-        : null;
+      const { cacheRec, downloadUrl } = bulkOutputLinks(doc, instanceId);
       const scoreTotal = Number(doc.score_total || 0);
       const scoreCount = Number(doc.score_count || 0);
       const scoreAverage = Number.isFinite(doc.score_average) ? Number(doc.score_average) : 0;
@@ -3108,6 +3062,8 @@ exports.getBulkAnalytics = async (req, res) => {
                 input_values: 1,
                 negative_used: 1,
                 filename: 1,
+                comfy_job_id: 1,
+                output_file: 1,
                 instance_id: 1,
                 score_total: 1,
                 score_count: 1,
@@ -3128,6 +3084,8 @@ exports.getBulkAnalytics = async (req, res) => {
                 input_values: 1,
                 negative_used: 1,
                 filename: 1,
+                comfy_job_id: 1,
+                output_file: 1,
                 instance_id: 1,
                 score_total: 1,
                 score_count: 1,
@@ -3262,12 +3220,8 @@ exports.getBulkSlideshowItem = async (req, res) => {
     const parts = await ensurePromptAlignmentParts(doc, job);
     const alignmentStatus = computePendingAlignmentParts(parts, doc.prompt_alignment_ratings);
     const mediaType = detectMediaType(doc.filename);
-    const bucket = mediaType === 'video' ? 'video' : 'output';
     const instanceId = doc.instance_id || job.instance_id || null;
-    const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType, instanceId }) : null;
-    const downloadUrl = doc.filename
-      ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`
-      : null;
+    const { cacheRec, downloadUrl } = bulkOutputLinks(doc, instanceId);
 
     res.json({
       remaining,
@@ -3391,25 +3345,21 @@ exports.getBulkScorePair = async (req, res) => {
     if (docs.length < 2) return errorJson(res, 404, 'not enough completed images to score');
     const pair = docs.map((doc) => {
       const mediaType = detectMediaType(doc.filename);
-      const bucket = mediaType === 'video' ? 'video' : 'output';
       const instanceId = doc.instance_id || job.instance_id || null;
-    const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType, instanceId }) : null;
-    const downloadUrl = doc.filename
-      ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`
-      : null;
-    return {
-      id: String(doc._id),
-      filename: doc.filename,
-      file_url: doc.file_url,
-      media_type: mediaType,
-      download_url: downloadUrl,
-      cached_url: cacheRec ? cacheRec.url : null,
-      instance_id: instanceId,
-      template_label: doc.template_label,
-      negative_used: doc.negative_used,
-      variables: toPlainVariables(doc.variables),
-      score_average: (doc.score_count || 0) > 0 ? doc.score_total / doc.score_count : 0,
-      score_count: doc.score_count || 0
+      const { cacheRec, downloadUrl } = bulkOutputLinks(doc, instanceId);
+      return {
+        id: String(doc._id),
+        filename: doc.filename,
+        file_url: downloadUrl,
+        media_type: mediaType,
+        download_url: downloadUrl,
+        cached_url: cacheRec ? cacheRec.url : null,
+        instance_id: instanceId,
+        template_label: doc.template_label,
+        negative_used: doc.negative_used,
+        variables: toPlainVariables(doc.variables),
+        score_average: (doc.score_count || 0) > 0 ? doc.score_total / doc.score_count : 0,
+        score_count: doc.score_count || 0
       };
     });
     res.json({ pair });
@@ -3652,13 +3602,12 @@ exports.getJob = async (req, res) => {
       logger.notice('[getJob] job expired or not found', { category: 'image_gen' });
       return res.status(404).json({
         error: 'job expired or not found',
-        details: String(e.message || e),
         code: 'JOB_NOT_FOUND',
         terminal: true
       });
     }
-    logger.error('[getJob] error', e);
-    return errorJson(res, status, 'failed to fetch job', String(e.message || e));
+    logComfyGatewayFailure('ComfyUI job retrieval failed', e, { operation: 'getStatus' });
+    return errorJson(res, status, 'failed to fetch job');
   }
 };
 
@@ -3667,22 +3616,53 @@ exports.getJobFile = async (req, res) => {
   try {
     const jobId = String(req.params.id || '').trim();
     const index = Number(req.params.index);
-    const job = localJobStore.get(jobId);
-    if (!job) return errorJson(res, 404, 'job not found');
-    const files = Array.isArray(job.files) ? job.files : [];
-    const fileMeta = files[index];
+    if (!Number.isSafeInteger(index) || index < 0 || index >= 10000) return errorJson(res, 400, 'invalid file index');
+    const instanceId = extractInstanceId(req);
+    const cacheKey = req.query?.cache_key;
+    if (cacheKey !== undefined && (typeof cacheKey !== 'string' || !/^[a-f\d]{64}$/.test(cacheKey))) {
+      return errorJson(res, 400, 'invalid file identity');
+    }
+    // A scoped, versioned bulk record can serve its verified local bytes even
+    // after Gateway history expires. Never substitute its legacy filename.
+    let fileMeta = null;
+    const localFile = localJobStore.get(localJobKey(jobId, instanceId))?.files?.[index];
+    const localRecord = outputCache.verifiedRecord(jobId, localFile, instanceId);
+    if (localRecord && (!cacheKey || cacheKey === localRecord.cache_key)
+      && await outputCache.exists(localRecord)) fileMeta = localFile;
+    if (!fileMeta && cacheKey) {
+      const filter = applyInstanceFilter({ comfy_job_id: jobId, status: 'Completed',
+        'output_file.cache_key': cacheKey }, instanceId);
+      try {
+        const persisted = await BulkTestPrompt.findOne(filter).select('job output_file').lean();
+        const candidate = persisted?.output_file;
+        const rec = outputCache.verifiedRecord(jobId, candidate, instanceId);
+        if (rec && rec.index === index && persisted.job
+          && await BulkJob.findById(persisted.job).select('_id').lean()
+          && await outputCache.exists(rec)) fileMeta = candidate;
+      } catch (error) {
+        logger.warning('ComfyUI persisted output lookup unavailable; retrying Gateway job lookup', {
+          category: 'image_gen', metadata: { operation: 'getJobFile' },
+        });
+      }
+    }
+    if (!fileMeta) {
+      const job = await fetchJobDetail(jobId, instanceId);
+      fileMeta = Array.isArray(job?.files) ? job.files[index] : null;
+    }
     if (!fileMeta) return errorJson(res, 404, 'file not found for job');
     const fileName = fileMeta.filename || fileMeta.name || `file_${index}`;
-    const bucket = fileMeta.bucket || 'output';
     const mediaType = fileMeta.media_type || detectMediaType(fileName);
-    const cacheRecord = await resolveCachedRecord(bucket, fileName, fileMeta.instance_id || null);
+    const verified = outputCache.verifiedRecord(jobId, fileMeta, instanceId);
+    if (req.query?.cache_key && req.query.cache_key !== verified?.cache_key) return errorJson(res, 404, 'file identity not found');
+    const cacheRecord = verified ? await outputCache.ensure(jobId, fileMeta, index, instanceId) : null;
     if (!cacheRecord || !cacheRecord.localPath) {
       return errorJson(res, 404, 'cached file not found');
     }
     const ct = detectMimeType(mediaType, fileName);
     res.setHeader('Content-Type', ct);
     res.setHeader('Content-Disposition', 'inline');
-    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, no-store');
     return res.sendFile(cacheRecord.localPath, (err) => {
       if (err) {
         logger.error('[getJobFile] failed to send cached file', err);
@@ -3691,8 +3671,8 @@ exports.getJobFile = async (req, res) => {
     });
   } catch (e) {
     const isTimeout = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
-    logger.error('[getJobFile] error', e);
-    return errorJson(res, 502, isTimeout ? 'timeout' : 'failed to stream file', String(e.message || e));
+    logComfyGatewayFailure('ComfyUI job file retrieval failed', e, { operation: 'getJobFile' });
+    return errorJson(res, e?.status === 404 ? 404 : 502, isTimeout ? 'timeout' : 'failed to stream file');
   }
 };
 
@@ -3940,13 +3920,12 @@ exports.getBulkThumbnail = async (req, res) => {
     const job = await BulkJob.findById(req.params.id).select('_id instance_id').lean();
     if (!job) throw unavailable();
     const record = await BulkTestPrompt.findOne({ _id: req.params.promptId, job: job._id, status: 'Completed' })
-      .select('_id filename instance_id').lean();
+      .select('_id filename instance_id comfy_job_id output_file').lean();
     if (!record) throw unavailable();
     if (req.aborted || res.destroyed) return;
-    // Same instance fallback and local name as buildCacheRecord; no ensureCached
-    // call here: a missing local original must never trigger a Gateway download.
-    const directory = record.instance_id || job.instance_id || '';
-    return sendThumbnail(req, res, await bulkThumbnails.get({ _id: record._id, filename: record.filename, directory }));
+    const { cacheRec } = bulkOutputLinks(record, record.instance_id || job.instance_id || null);
+    if (!cacheRec) throw unavailable();
+    return sendThumbnail(req, res, await bulkThumbnails.get({ _id: record._id, filename: cacheRec.cache_name }));
   } catch (error) { return thumbnailFailure(req, res, error); }
 };
 
@@ -3969,6 +3948,7 @@ exports.getGoodImageThumbnail = async (req, res) => {
 exports.getFile = async (req, res) => {
   const bucket = req.params.bucket;
   if (!['input', 'output', 'video'].includes(bucket)) return errorJson(res, 400, 'bucket must be input, output, or video');
+  if (bucket !== 'input') return errorJson(res, 409, 'Output identity required; use the job files URL');
   const name = req.params.filename;
   const functionName = 'getFile';
   let requestHeaders = null;

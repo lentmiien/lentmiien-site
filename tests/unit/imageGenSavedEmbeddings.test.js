@@ -15,7 +15,8 @@ const controller = require('../../controllers/image_gen.controller');
 
 beforeEach(() => {
   jest.useFakeTimers();
-  jest.spyOn(fsp, 'access').mockResolvedValue();
+  jest.spyOn(fsp, 'realpath').mockImplementation(async value => value);
+  jest.spyOn(fsp, 'lstat').mockResolvedValue({ isFile: () => true, isSymbolicLink: () => false, nlink: 1, size: 10 });
   jest.spyOn(fsp, 'mkdir').mockResolvedValue();
   jest.spyOn(fsp, 'copyFile').mockResolvedValue();
   mockGoodImage.create.mockImplementation(async fields => ({ _id: '507f191e810c19729de860ea', ...fields }));

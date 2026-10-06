@@ -216,7 +216,6 @@ describe('image_gen persistent workflow inputs', () => {
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({
       error: 'job expired or not found',
-      details: 'Unknown prompt_id',
       code: 'JOB_NOT_FOUND',
       terminal: true,
     });

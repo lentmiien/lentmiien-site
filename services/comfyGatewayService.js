@@ -604,7 +604,19 @@ class ComfyGatewayService {
         error.response = txt;
         throw error;
       }
-      const buf = Buffer.from(await r.arrayBuffer());
+      const maxBytes = 512 * 1024 * 1024;
+      if (Number(r.headers.get('content-length')) > maxBytes) {
+        await r.body?.cancel();
+        throw new Error('ComfyUI output exceeds cache size limit');
+      }
+      const chunks = [];
+      let length = 0;
+      for await (const chunk of r.body) {
+        length += chunk.length;
+        if (length > maxBytes) throw new Error('ComfyUI output exceeds cache size limit');
+        chunks.push(chunk);
+      }
+      const buf = Buffer.concat(chunks, length);
       await recordApiDebugLog({
         requestUrl,
         requestHeaders,

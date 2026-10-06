@@ -6,6 +6,7 @@ const CAPABILITIES = Object.freeze({
   input: 'comfy.inputs.read',
   gallery: 'comfy.gallery.read',
   bulk: 'comfy.bulk.read',
+  output: 'comfy.outputs.read',
 });
 const ROLE_BUNDLES = Object.freeze({ admin: Object.values(CAPABILITIES), family: [], user: [] });
 const ROUTES = Object.freeze([

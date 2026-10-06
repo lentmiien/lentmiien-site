@@ -15,12 +15,14 @@ jest.mock('../../services/localImageThumbnailService', () => {
   return { ...actual, LocalImageThumbnailService: class extends actual.LocalImageThumbnailService {
     constructor(options = {}) { super(options); this.options = options; }
     get(record) {
-      const source = typeof this.options.sourceDir === 'function' ? 'private' : this.options.sourceDir?.endsWith('imgen') ? 'bulk' : 'legacy';
+      const source = typeof this.options.sourceDir === 'function' ? 'private' : this.options.sourceDir?.endsWith('comfy-output/v2') ? 'bulk' : 'legacy';
       return mockGet(record, source);
     }
   } };
 });
 const { LocalImageThumbnailService } = jest.requireActual('../../services/localImageThumbnailService');
+const { ComfyOutputCacheService } = require('../../services/comfyOutputCacheService');
+const ComfyGatewayService = require('../../services/comfyGatewayService');
 const { BulkJob, BulkTestPrompt, RoleModel } = require('../../database');
 const Gpt = require('../../models/gpt_image_generation');
 const { GPT_IMAGE_THUMBNAIL_ROUTE } = require('../../utils/gptImageAuthorizationPolicy');
@@ -31,7 +33,8 @@ const privateName = 'gpt-image-private-11111111-2222-3333-4444-555555555555.png'
 const bulk = `/image_gen/api/bulk/jobs/${jobId}/prompts/${promptId}/thumbnail`;
 const gpt = `/gpt-image/api/images/${imageId}/thumbnail`;
 const query = value => ({ select: () => ({ lean: async () => value }) });
-let server, origin, renderers;
+let server, origin, renderers, outputFile;
+const bulkRecord = () => ({ _id: promptId, filename: 'result.png', comfy_job_id: 'synthetic-comfy-job', output_file: outputFile });
 beforeEach(async () => {
   mockRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'output-thumbnails-'));
   renderers = {};
@@ -40,15 +43,16 @@ beforeEach(async () => {
     await fs.mkdir(dir);
     renderers[kind] = new LocalImageThumbnailService({ sourceDir: dir, cacheDir: path.join(mockRoot, kind + '-cache') });
   }
-  await fs.mkdir(path.join(mockRoot, 'bulk', 'instance-1'));
+  outputFile = new ComfyOutputCacheService({ provider: new ComfyGatewayService().baseUrl, directory: path.join(mockRoot, 'bulk') })
+    .record('synthetic-comfy-job', { filename: 'result.png', subfolder: 'workflow', type: 'output' }, 0, 'instance-1');
   const png = await sharp({ create: { width: 900, height: 450, channels: 4, background: '#ff000080' } }).png().toBuffer();
   await fs.writeFile(path.join(mockRoot, 'private', privateName), png);
   await fs.writeFile(path.join(mockRoot, 'legacy', 'old image.png'), png);
-  await fs.writeFile(path.join(mockRoot, 'bulk', 'instance-1', 'result.png'), png);
+  await fs.writeFile(path.join(mockRoot, 'bulk', outputFile.cache_name), png);
   mockGet.mockImplementation((record, kind) => renderers[kind].get(record));
   RoleModel.findOne.mockResolvedValue(null);
   BulkJob.findById.mockReturnValue(query({ _id: jobId, instance_id: 'instance-1' }));
-  BulkTestPrompt.findOne.mockReturnValue(query({ _id: promptId, filename: 'result.png' }));
+  BulkTestPrompt.findOne.mockReturnValue(query(bulkRecord()));
   Gpt.findById.mockReturnValue(query({ _id: imageId, outputFileName: privateName, outputUrl: '/gpt-image/media/' + privateName }));
   const app = express();
   app.set('view engine', 'pug');
@@ -91,7 +95,7 @@ test.each([gpt, bulk])('GET/HEAD authorize, render, cache and revalidate %s', as
   expect(head.status).toBe(200);
   expect(Number(head.headers.get('content-length'))).toBe(bytes.length);
   expect(await head.text()).toBe('');
-  const source = url === bulk ? path.join(mockRoot, 'bulk/instance-1/result.png') : path.join(mockRoot, 'private', privateName);
+  const source = url === bulk ? path.join(mockRoot, 'bulk', outputFile.cache_name) : path.join(mockRoot, 'private', privateName);
   await fs.writeFile(source, await sharp({ create: { width: 100, height: 200, channels: 3, background: 'blue' } }).png().toBuffer());
   const changed = await request(url, { 'if-none-match': etag });
   expect(changed.status).toBe(200);
@@ -146,17 +150,17 @@ test.each(['../secret', '/tmp', '..\\secret', '%2e%2e', 'a/b'])('bulk rejects un
   BulkTestPrompt.findOne.mockReturnValue(query({ _id: promptId, filename: 'result.png', instance_id: directory }));
   expect((await request(bulk)).status).toBe(404);
 });
-test('bulk prompt instance takes precedence; legacy records use the root mapping', async () => {
-  await fs.copyFile(path.join(mockRoot, 'bulk/instance-1/result.png'), path.join(mockRoot, 'bulk/result.png'));
+test('bulk prompt instance selects the verified identity; legacy records cannot use root files', async () => {
+  await fs.copyFile(path.join(mockRoot, 'bulk', outputFile.cache_name), path.join(mockRoot, 'bulk/result.png'));
   BulkJob.findById.mockReturnValue(query({ _id: jobId, instance_id: 'nonexistent' }));
-  BulkTestPrompt.findOne.mockReturnValue(query({ _id: promptId, filename: 'result.png', instance_id: 'instance-1' }));
+  BulkTestPrompt.findOne.mockReturnValue(query({ ...bulkRecord(), instance_id: 'instance-1' }));
   expect((await request(bulk)).status).toBe(200);
   BulkJob.findById.mockReturnValue(query({ _id: jobId }));
   BulkTestPrompt.findOne.mockReturnValue(query({ _id: promptId, filename: 'result.png' }));
-  expect((await request(bulk)).status).toBe(200);
+  expect((await request(bulk)).status).toBe(404);
 });
 test.each([gpt, bulk])('missing/corrupt/symlink sources fail lightly without original fallback: %s', async url => {
-  const source = url === bulk ? path.join(mockRoot, 'bulk/instance-1/result.png') : path.join(mockRoot, 'private', privateName);
+  const source = url === bulk ? path.join(mockRoot, 'bulk', outputFile.cache_name) : path.join(mockRoot, 'private', privateName);
   await fs.unlink(source);
   expect((await request(url)).status).toBe(404);
   await fs.writeFile(source, 'corrupt');
@@ -168,13 +172,13 @@ test.each([gpt, bulk])('missing/corrupt/symlink sources fail lightly without ori
   await fs.symlink(path.join(mockRoot, 'legacy/old image.png'), source);
   expect((await request(url)).status).toBe(404);
 });
-test('nested symlink and hardlink cannot redirect bulk output reads', async () => {
-  await fs.rename(path.join(mockRoot, 'bulk/instance-1'), path.join(mockRoot, 'elsewhere'));
-  await fs.symlink(path.join(mockRoot, 'elsewhere'), path.join(mockRoot, 'bulk/instance-1'));
+test('symlink root and hardlink cannot redirect bulk output reads', async () => {
+  await fs.rename(path.join(mockRoot, 'bulk'), path.join(mockRoot, 'elsewhere'));
+  await fs.symlink(path.join(mockRoot, 'elsewhere'), path.join(mockRoot, 'bulk'));
   expect((await request(bulk)).status).toBe(404);
-  await fs.unlink(path.join(mockRoot, 'bulk/instance-1'));
-  await fs.rename(path.join(mockRoot, 'elsewhere'), path.join(mockRoot, 'bulk/instance-1'));
-  await fs.link(path.join(mockRoot, 'bulk/instance-1/result.png'), path.join(mockRoot, 'alias.png'));
+  await fs.unlink(path.join(mockRoot, 'bulk'));
+  await fs.rename(path.join(mockRoot, 'elsewhere'), path.join(mockRoot, 'bulk'));
+  await fs.link(path.join(mockRoot, 'bulk', outputFile.cache_name), path.join(mockRoot, 'alias.png'));
   expect((await request(bulk)).status).toBe(404);
 });
 test.each([gpt, bulk])('disconnect during local conversion sends no late response or operational error: %s', async url => {
@@ -192,10 +196,10 @@ test.each([gpt, bulk])('disconnect during local conversion sends no late respons
   expect(logger.error).not.toHaveBeenCalled();
   expect(logger.warning).not.toHaveBeenCalled();
 });
-test('bulk gallery, matrix and analytics serializers keep original URLs and add scoped thumbnail URLs', async () => {
+test('bulk gallery, matrix and analytics serializers use verified output URLs and scoped thumbnails', async () => {
   const job = { _id: jobId, instance_id: 'instance-1', prompt_templates: [{ label: 'One' }, { label: 'Two' }], negative_prompt: 'bad', negative_prompt_mode: 'compare' };
   BulkJob.findById.mockReturnValue({ lean: async () => job });
-  const record = { _id: promptId, filename: 'result.png', template_label: 'One', negative_used: false,
+  const record = { ...bulkRecord(), template_label: 'One', negative_used: false,
     file_url: '/imgen/instance-1/result.png', score_total: 1, score_count: 1 };
   BulkTestPrompt.find.mockImplementation(filter => filter.$or
     ? { sort: () => ({ limit: () => ({ lean: async () => [] }) }) }
@@ -212,8 +216,7 @@ test('bulk gallery, matrix and analytics serializers keep original URLs and add 
   expect(analytics.status).toBe(200);
   const data = await analytics.json();
   for (const item of [galleryItem, matrixItem, data.topImages[0], data.lowDefectImages[0]]) {
-    expect(item).toMatchObject({ thumbnail_url: bulk, cached_url: '/imgen/instance-1/result.png',
-      download_url: '/image_gen/api/files/output/result.png?instance_id=instance-1' });
+    expect(item).toMatchObject({ thumbnail_url: bulk, cached_url: outputFile.url, download_url: outputFile.url });
   }
   expect(mockGet).not.toHaveBeenCalled(); // Listing does no thumbnail conversion.
 });

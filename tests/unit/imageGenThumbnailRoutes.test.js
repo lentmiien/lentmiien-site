@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const mockGateway = { openInputThumbnail: jest.fn(), openInputFile: jest.fn(), streamIdleTimeoutMs: 5000 };
+const mockGateway = { getStatus: jest.fn(), openInputThumbnail: jest.fn(), openInputFile: jest.fn(), streamIdleTimeoutMs: 5000 };
 const mockThumbnail = jest.fn();
 jest.mock('../../database', () => ({ GoodImage: { findOne: jest.fn(), find: jest.fn(), countDocuments: jest.fn(), findById: jest.fn() }, RoleModel: { findOne: jest.fn() } }));
 jest.mock('../../services/embeddingQueueService', () => ({}));
@@ -57,7 +57,7 @@ test('registers thumbnail GET endpoints before legacy wildcard and retains paren
   const source = fs.readFileSync(path.join(__dirname, '../../app.js'), 'utf8');
   expect(source).toContain('app.use(\'/image_gen\', isAuthenticated, authorize("image_gen"), imageGenRouter);');
 });
-test.each([input, gallery])('denies anonymous and missing capabilities before work: %s', async url => {
+test.each([input, gallery, '/api/jobs/test', '/api/jobs/test/files/0', '/api/jobs/test/images/0'])('denies anonymous and missing capabilities before work: %s', async url => {
   expect((await request(url, { 'x-anonymous': 'yes' })).status).toBe(401);
   for (const role of ['family', 'user', 'unrelated']) {
     const result = await request(url, { 'x-role': role });
@@ -201,4 +201,15 @@ test('bounds simultaneous thumbnail requests and releases slots on completion', 
     expect((await request(input)).status).toBe(503);
   } finally { release(); await Promise.all(pending); }
   expect((await request(input)).status).toBe(200);
+});
+
+
+test('output read capability explicitly grants the shared job library', async () => {
+  mockGateway.getStatus.mockResolvedValue({ status: 'failed' });
+  RoleModel.findOne.mockImplementation(async query => query.type === 'user' ? { permissions: ['comfy.outputs.read'] } : null);
+  const result = await request('/api/jobs/synthetic-shared-job', { 'x-role': 'user' });
+  expect(result.status).toBe(200);
+  expect(result.headers.get('cache-control')).toBe('private, no-store');
+  expect(mockGateway.getStatus).toHaveBeenCalledWith('synthetic-shared-job');
+  expect((await request(gallery, { 'x-role': 'user' })).status).toBe(403);
 });

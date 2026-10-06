@@ -18,7 +18,7 @@ function createStorage(initialValue) {
   };
 }
 
-function runClient({ storedValue, jobStatus = 200, jobTtlMs = null } = {}) {
+function runClient({ storedValue, jobStatus = 200, jobTtlMs = null, jobPayload = null } = {}) {
   const localStorage = createStorage(storedValue);
   const requests = [];
   const fetch = jest.fn(async (url) => {
@@ -28,7 +28,7 @@ function runClient({ storedValue, jobStatus = 200, jobTtlMs = null } = {}) {
         ? { error: 'job expired or not found', code: 'JOB_NOT_FOUND', terminal: true }
         : jobStatus >= 500
           ? { error: 'gateway unavailable' }
-          : { job_id: 'job-1', status: 'running', files: [] };
+          : jobPayload || { job_id: 'job-1', status: 'running', files: [] };
       return new Response(JSON.stringify(payload), {
         status: jobStatus,
         headers: { 'content-type': 'application/json' },
@@ -121,4 +121,19 @@ describe('image generation polling policy', () => {
       jest.useRealTimers();
     }
   });
+});
+
+
+test('completed jobs with uncached outputs keep polling until bounded expiry', async () => {
+  jest.useFakeTimers();
+  try {
+    const state = runClient({
+      storedValue: JSON.stringify({ jobId: 'job-1', storedAt: Date.now() }),
+      jobTtlMs: 10000,
+      jobPayload: { job_id: 'job-1', status: 'completed', files: [{ cached: false }] },
+    });
+    await jest.runAllTimersAsync();
+    expect(state.requests.filter(url => url.includes('/api/jobs/')).length).toBeGreaterThan(1);
+    expect(state.localStorage.value('imageGenActiveJobId')).toBeNull();
+  } finally { jest.useRealTimers(); }
 });

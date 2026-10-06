@@ -272,6 +272,31 @@ describe('ComfyGatewayService input files', () => {
       .not.toContain('sensitive timeout detail');
   });
 
+  test('fetches exact output descriptor bytes with encoded subfolder and type', async () => {
+    global.fetch.mockResolvedValue(new Response('synthetic uncensored bytes', { headers: { 'content-type': 'image/png' } }));
+    const result = await service.fetchImage({ filename: 'same.png', subfolder: 'Uncensored/nested folder', type: 'output' });
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(new URL(url).searchParams.get('filename')).toBe('same.png');
+    expect(new URL(url).searchParams.get('subfolder')).toBe('Uncensored/nested folder');
+    expect(new URL(url).searchParams.get('type')).toBe('output');
+    expect(options.redirect).toBe('error');
+    expect(result.buffer.toString()).toBe('synthetic uncensored bytes');
+  });
+
+  test('rejects advertised or streamed oversized output bodies', async () => {
+    const cancel = jest.fn();
+    global.fetch.mockResolvedValueOnce({ ok: true, headers: new Headers({ 'content-length': String(512 * 1024 * 1024 + 1) }), body: { cancel } });
+    await expect(service.fetchImage({ filename: 'large.png' })).rejects.toThrow('size limit');
+    expect(cancel).toHaveBeenCalled();
+    let closed = false;
+    async function* oversized() {
+      try { yield { length: 512 * 1024 * 1024 + 1 }; } finally { closed = true; }
+    }
+    global.fetch.mockResolvedValueOnce({ ok: true, headers: new Headers(), body: oversized() });
+    await expect(service.fetchImage({ filename: 'large.png' })).rejects.toThrow('size limit');
+    expect(closed).toBe(true);
+  });
+
   test('rejects cross-origin Gateway view URLs before forwarding the API key', async () => {
     await expect(service.fetchImage({
       gateway_view_url: '//attacker.example/collect',

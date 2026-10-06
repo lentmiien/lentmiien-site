@@ -239,7 +239,7 @@
     updateJobMeta(job);
 
     const files = Array.isArray(job.files) ? job.files : [];
-    const awaitingFiles = isSuccessStatus(job?.status) && files.length === 0;
+    const awaitingFiles = isSuccessStatus(job?.status) && (files.length === 0 || files.some(file => file.cached === false));
     if (files.length) {
       await showResults(jobId, files);
     } else if (!fromPoll && job?.status) {
