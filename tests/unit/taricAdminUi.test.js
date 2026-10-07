@@ -1,6 +1,48 @@
 const fs = require('fs');
 const path = require('path');
 const pug = require('pug');
+test('test adapter editor saves a new default and the benchmark selector uses saved names independently', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric.pug'), { csrfToken: 'synthetic' }), { url: 'http://localhost/admin/taric', runScripts: 'outside-only' });
+  const doc = dom.window.document; const old = 'taric-v1-20260917-2'; const next = 'taric-v1.1-20261007';
+  let settings = { enabled: true, testAdapters: { names: [old], default: old } };
+  const benchmark = { _id: 'a'.repeat(32), version: 0, state: 'draft', contaminated: true };
+  dom.window.fetch = jest.fn(async (url, options) => {
+    if (url === '/admin/taric/config') settings = JSON.parse(options.body);
+    const value = url === '/admin/taric/state' ? { settings, gateway: { ready: true }, inference: { blocked: false }, test: { ready: true, adapter: settings.testAdapters.default }, benchmark: { ready: true } }
+      : url === '/admin/taric/inspect/benchmarks' ? [benchmark] : { id: 'b'.repeat(32) };
+    return { ok: true, json: async () => value };
+  });
+  const settle = () => new Promise(setImmediate);
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-admin.js'), 'utf8')); await settle();
+  expect(doc.querySelector('#default-test-adapter').value).toBe(old);
+  const edit = names => { doc.querySelector('#test-adapters').value = names; doc.querySelector('#test-adapters').dispatchEvent(new dom.window.Event('input')); };
+  edit(`${old}\n${next}`); doc.querySelector('#default-test-adapter').value = next;
+  expect(doc.querySelector('#adapter').options).toHaveLength(1);
+  doc.querySelector('#save-config').click(); await settle();
+  expect(settings.testAdapters).toEqual({ names: [old, next], default: next });
+  expect(doc.querySelector('#test-adapter-status').textContent).toContain(next);
+  expect(doc.querySelector('#adapter').options).toHaveLength(2);
+  doc.querySelector('#adapter').value = next;
+  doc.querySelector('#run').click(); await settle();
+  const queued = dom.window.fetch.mock.calls.find(([url]) => url.endsWith('/runs'));
+  expect(JSON.parse(queued[1].body)).toEqual({ adapter: next });
+  doc.querySelector('#refresh').click(); await settle();
+  expect(doc.querySelector('#adapter').value).toBe(next);
+  doc.querySelector('#adapter').value = old;
+  doc.querySelector('#test').click(); await settle();
+  const testCall = dom.window.fetch.mock.calls.find(([url]) => url.endsWith('/test'));
+  expect(JSON.parse(testCall[1].body)).toMatchObject({ test: true });
+  expect(JSON.parse(testCall[1].body).adapter).toBeUndefined();
+  const count = dom.window.fetch.mock.calls.filter(([url]) => url.endsWith('/config')).length;
+  edit(`${old}\n${old}`); doc.querySelector('#save-config').click(); await settle();
+  expect(doc.querySelector('#status').textContent).toContain('unique adapter names');
+  expect(dom.window.fetch.mock.calls.filter(([url]) => url.endsWith('/config'))).toHaveLength(count);
+  edit('<img src=x onerror="window.compromised=true">');
+  expect(doc.querySelectorAll('img')).toHaveLength(0); expect(dom.window.compromised).toBeUndefined();
+  expect(dom.window.fetch.mock.calls.some(([url]) => url.endsWith('/adapters'))).toBe(false);
+  dom.window.close();
+});
 test('management page renders private source strings as inert text and starts closed', async () => {
   const { JSDOM } = await import('jsdom');
   const attack = '</textarea><img src=x onerror="window.compromised=true"><script>window.compromised=true</script>';

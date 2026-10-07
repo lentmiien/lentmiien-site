@@ -6,7 +6,7 @@ Status: feedback patch implemented with synthetic validation; **owned Gateway se
 
 The external application's existing same-JAN reuse and manual selection continue. This service can offer a suggestion immediately before manual selection; a person makes the final choice. Errors, invalid output, missing evidence, held releases and timeouts retain the manual path. There is no automatic selection, confidence claim, training approval, training wrapper, model download, or automatic promotion.
 
-Only literal JSON `test:true` selects the pinned `taric-v1-20260917-2` adapter. It is an **untested baseline**, always requiring manual confirmation, and can never authorize normal release. Missing/false `test` requires the latest explicitly published independent v1+ benchmark and an actually passing adapter. Strings such as `"true"` and `"false"` are invalid. No base model or alternative adapter fallback exists.
+Only literal JSON `test:true` selects the saved default test adapter. Existing installations default to `taric-v1-20260917-2`; managers can [register test adapters and select a default](taric-test-adapters.md). Test results always require manual confirmation and cannot authorize normal release. Missing/false `test` requires the latest explicitly published independent v1+ benchmark and an actually passing adapter. Strings such as `"true"` and `"false"` are invalid. No base model or alternative adapter fallback exists.
 
 ## Implemented architecture
 

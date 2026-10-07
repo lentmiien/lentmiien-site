@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { fail } = require('../../utils/taricContracts');
+const { fail, object, string } = require('../../utils/taricContracts');
 const { hash, sha, TEST_ADAPTER, TEMPLATE } = require('../../utils/taricProtocol');
 const CODE_FILES = ['package-lock.json', 'utils/taricProtocol.js', 'utils/taricContracts.js', 'services/taricEvidenceService.js',
   'services/amiamiScraperService.js', 'models/amiami_item.js',
@@ -42,10 +42,19 @@ function selectWinner(settings, benchmark, runs, codeVersion, now = Date.now()) 
   if (!qualified.length) fail('RELEASE_CLOSED');
   return qualified[0];
 }
+function testAdapterConfig(settings, error = 'CONFIG_NOT_READY') {
+  const value = settings?.testAdapters === undefined ? { names: [TEST_ADAPTER], default: TEST_ADAPTER } : settings.testAdapters;
+  object(value, ['names', 'default'], error);
+  if (!Array.isArray(value.names) || !value.names.length || value.names.length > 20) fail(error);
+  for (const name of value.names) string(name, 100, error, /^[A-Za-z0-9][A-Za-z0-9_.-]*$/);
+  if (new Set(value.names).size !== value.names.length || !value.names.includes(value.default)) fail(error);
+  return { names: [...value.names], default: value.default };
+}
 function testAdmission(settings, codeVersion) {
   if (!settings?.enabled || !settings.testCatalog?.codes?.length) fail('CONFIG_NOT_READY');
-  return { test: true, adapter: TEST_ADAPTER, fingerprint: hash({ codeVersion, template: TEMPLATE,
+  const adapter = testAdapterConfig(settings).default;
+  return { test: true, adapter, fingerprint: hash({ codeVersion, adapter, template: TEMPLATE,
     catalog: settings.testCatalog, maxTokens: settings.maxTokens, revision: settings.revision }),
     revision: settings.revision, benchmark: null, run: null, identity: null };
 }
-module.exports = { CODE_FILES, codeFingerprint, configuration, runtimeReady, selectWinner, testAdmission };
+module.exports = { CODE_FILES, codeFingerprint, configuration, runtimeReady, selectWinner, testAdapterConfig, testAdmission };

@@ -8,7 +8,7 @@ function model(name, fields, indexes = []) {
   return mongoose.models[name] || mongoose.model(name, schema, name);
 }
 const Settings = model('taric_settings', { _id: String, revision: Number, nextRunSequence: { type: Number, default: 0 }, enabled: Boolean,
-  owner: String, currentBenchmark: String, catalog: mixed, testCatalog: mixed, runtime: mixed, maxTokens: Number });
+  owner: String, currentBenchmark: String, catalog: mixed, testCatalog: mixed, testAdapters: mixed, runtime: mixed, maxTokens: Number });
 const Credential = model('taric_credentials', { _id: String, owner: String, generation: Number,
   digest: { type: String, select: false }, active: Boolean, scopes: [String], expiresAt: Date, issuedBy: String,
   revokedAt: Date, rateWindow: Number, rateCount: Number });

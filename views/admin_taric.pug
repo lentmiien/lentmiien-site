@@ -48,6 +48,12 @@ html(lang='en')
           |  Enable tool (clear for kill switch)
         label(for='max-tokens') Maximum output tokens (1–512)
         input#max-tokens(type='number' min='1' max='512' value='256')
+        label(for='test-adapters') Test adapters (one name per line, maximum 20)
+        textarea#test-adapters(rows='4' maxlength='2019' spellcheck='false' placeholder='taric-v1.1-20261007')
+        p Add names already available to the inference service. Each adapter must use the current TARIC prompt and output format.
+        label(for='default-test-adapter') Default test adapter
+        select#default-test-adapter
+        p Save configuration to apply these choices. The default is used for test requests and history reprocessing; v0 benchmark runs can use any saved test adapter.
         label(for='catalog') Approved catalog JSON (null keeps normal mode closed)
         textarea#catalog(rows='8' spellcheck='false') null
         label(for='runtime') Runtime attestations JSON; immutable identity capability is currently UNAVAILABLE
@@ -56,7 +62,8 @@ html(lang='en')
         button#save-config(type='button') Save configuration
       section
         h2 Test a stored AmiAmi item
-        p Uses the pinned untested adapter. Only an item code and caller hints are accepted; facts come from AmiAmi. This action calls the provider when the tool is enabled.
+        p#test-adapter-status Uses the saved default test adapter.
+        p Only an item code and caller hints are accepted; facts come from AmiAmi. This action calls the provider when the tool is enabled.
         label(for='test-code') AmiAmi gcode
         input#test-code(type='text' maxlength='64')
         label(for='test-name') Descriptive category
@@ -89,7 +96,8 @@ html(lang='en')
         h2 Benchmark execution and publication
         p Drafts are inert for release. Import reviewed independent v1+ only after checking provenance and product-family overlap. Publishing explicitly replaces the current version and holds older normal results. Benchmark runs make live provider calls; run them only during an authorized GPU window.
         p Successful cases share one owned session. Its 120-second idle lease is renewed; its 15-minute hard cap cannot be extended. Rotation reserves 260 seconds for the next generation, reconciliation and cleanup, or occurs at 256 operations. Interactive requests take priority after the current case and cleanup; rotated runs go behind waiting benchmarks. The whole run has a six-hour deadline and can be cancelled here.
-        p The fixed v0 test adapter is available without metadata calls. Adapter discovery is unavailable until Gateway provides a guaranteed GPU-free route; its current fallback can acquire the GPU. Immutable runtime identity is also unavailable, so normal release remains closed.
+        p Saved test adapters are available for v0 without metadata calls. Select an adapter below for this benchmark run. Importing v1 creates a draft; publishing it changes the release benchmark, not the default test adapter. v1+ runs require an approved catalog and verified runtime identity, which is currently unavailable.
+        p Adapter discovery is unavailable until Gateway provides a guaranteed GPU-free route; its current fallback can acquire the GPU. Add test adapter names in Configuration above.
         button#adapters(type='button') Check adapter metadata availability
         label(for='adapter') Adapter to benchmark
         select#adapter

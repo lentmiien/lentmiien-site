@@ -63,6 +63,68 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       results: [{}, {}], score: 1, passed: true, cancelRequested: false });
     return b;
   }
+  test('saved test adapters persist, reach request and v0 sessions, and never enable normal release', async () => {
+    const next = 'taric-v1.1-20261007';
+    const testAdapters = { names: [TEST_ADAPTER, next], default: next };
+    const value = { enabled: true, maxTokens: 256, catalog: null, runtime: { adapters: [] }, testAdapters };
+    expect((await service.readiness()).settings.testAdapters.default).toBe(TEST_ADAPTER);
+    await service.saveConfig(value);
+    expect((await service.readiness()).test.adapter).toBe(next);
+    expect((await service.settings()).testAdapters).toEqual(testAdapters);
+    const { testAdapters: omitted, ...legacyConfig } = value;
+    await service.saveConfig(legacyConfig);
+    expect((await service.settings()).testAdapters).toEqual(omitted);
+    const job = await service.submit(principal, 'new-adapter-test-0001', requestInput);
+    await worker.tick();
+    expect(warmSessions.open).toHaveBeenLastCalledWith(expect.objectContaining({ adapter: next }));
+    expect(await service.retrieve(principal, job.id)).toMatchObject({ state: 'complete', test: true, adapter: next });
+    const b = await benchmark();
+    const queued = await service.queueRun(b._id, next, 'synthetic-admin');
+    await worker.tick();
+    expect(warmSessions.open).toHaveBeenLastCalledWith(expect.objectContaining({ adapter: next }));
+    expect(await models.Run.findById(queued.id).lean()).toMatchObject({ state: 'complete', adapter: next, passed: true });
+    await expect(service.queueRun(b._id, 'unregistered', 'synthetic-admin')).rejects.toThrow('INVALID_REQUEST');
+    expect(transport.verifyIdentity).not.toHaveBeenCalled();
+    await expect(service.submit(principal, 'new-adapter-normal-0001', { ...requestInput, test: false })).rejects.toThrow('RELEASE_CLOSED');
+    await expect(service.submit(principal, 'new-adapter-override-001', { ...requestInput, adapter: TEST_ADAPTER })).rejects.toThrow('INVALID_REQUEST');
+  });
+  test('default changes invalidate queued test work and registry removal invalidates queued v0 work', async () => {
+    const next = 'taric-v1.1-20261007';
+    const value = { enabled: true, maxTokens: 256, catalog: null, runtime: { adapters: [] } };
+    const b = await benchmark();
+    const job = await service.submit(principal, 'old-default-test-0001', requestInput);
+    const queued = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
+    await service.saveConfig({ ...value, testAdapters: { names: [next], default: next } });
+    await worker.tick(); await worker.tick();
+    expect(await models.Request.findById(job.id).lean()).toMatchObject({ state: 'failed', error: 'STALE' });
+    expect(await models.Run.findById(queued.id).lean()).toMatchObject({ error: 'STALE', passed: false });
+    expect(warmSessions.open).not.toHaveBeenCalled();
+    expect(transport.generate).not.toHaveBeenCalled();
+  });
+  test('adapter config requires capability and CSRF, validates membership, and preserves settings on rejection', async () => {
+    const app = express(); let role = 'user'; let authenticated = true; const csrf = 'x'.repeat(43);
+    app.set('views', require('path').join(__dirname, '../../views')); app.set('view engine', 'pug');
+    app.use((req, _res, next) => { req.user = { _id: 'a'.repeat(24), name: 'synthetic', type_user: role }; req.isAuthenticated = () => authenticated; req.session = { csrfToken: csrf }; next(); });
+    app.use('/admin/taric', createTaricAdminRouter(service, { roleModel: { findOne: async () => null } }));
+    const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+    const url = `http://127.0.0.1:${server.address().port}/admin/taric/config`;
+    const value = { enabled: true, maxTokens: 256, catalog: null, runtime: { adapters: [] }, testAdapters: { names: [TEST_ADAPTER, 'new-adapter'], default: 'new-adapter' } };
+    const post = (body = value, token = csrf) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token }, body: JSON.stringify(body) });
+    try {
+      authenticated = false; expect((await post()).status).toBe(401); authenticated = true;
+      for (const denied of ['user', 'family']) { role = denied; expect((await post()).status).toBe(403); }
+      role = 'admin'; expect((await post(value, '')).status).toBe(403);
+      const before = await service.settings();
+      for (const testAdapters of [{ names: ['../bad'], default: '../bad' }, { names: [TEST_ADAPTER], default: 'missing' }, { names: [], default: '' }]) {
+        expect((await post({ ...value, testAdapters })).status).toBe(400);
+      }
+      expect(await service.settings()).toEqual(before);
+      expect((await post()).status).toBe(200);
+      expect((await service.settings()).testAdapters).toEqual(value.testAdapters);
+      expect(warmSessions.open).not.toHaveBeenCalled();
+      expect(transport.adapters).not.toHaveBeenCalled();
+    } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  });
   test('rejected visible output and resolved evidence survive holds, disablement and provider failure without bypassing scope', async () => {
     const { output } = require('../../utils/taricProtocol');
     const text = JSON.stringify({ taric_code: '9999999999', description: '<script>unsafe()</script>' });

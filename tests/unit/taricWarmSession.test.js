@@ -33,6 +33,16 @@ test('expired handles cannot generate or renew; own release remains permitted', 
   await expect(sessions.renew(handle)).rejects.toThrow('RECOVERY_REQUIRED');
   await sessions.close(handle); expect(adapter.generate).not.toHaveBeenCalled();
 });
+test('selected test adapter reaches generation and an old-adapter envelope is rejected', async () => {
+  const { sessions, adapter } = fixture(); const name = 'taric-v1.1-20261007';
+  const handle = await sessions.open({ adapter: name });
+  const original = await adapter.generate(); adapter.generate.mockClear();
+  adapter.generate.mockResolvedValueOnce({ ...original, adapter_name: name });
+  await expect(sessions.generate(handle, row, ['0000000001'], 256)).resolves.toMatchObject({ taric_code: '0000000001' });
+  expect(adapter.generate.mock.calls[0][0].body.adapter_name).toBe(name);
+  await expect(sessions.generate(handle, row, ['0000000001'], 256)).rejects.toThrow('INVALID_RESULT');
+  await sessions.close(handle);
+});
 test('open hard budget violations and lost remote response remain uncertain; no owner guessing', async () => {
   const { sessions, adapter } = fixture(); adapter.open.mockResolvedValue({ id: 'id', expiresAt: 90000, hardExpiresAt: 999999 });
   await expect(sessions.open({})).rejects.toThrow('ADMISSION_UNCERTAIN'); expect(adapter.close).not.toHaveBeenCalled();

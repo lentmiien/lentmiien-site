@@ -1,9 +1,9 @@
 const crypto = require('crypto');
 const logger = require('../../utils/logger');
 const { TaricError, fail, object, string, idempotencyKey, validateFeedback } = require('../../utils/taricContracts');
-const { input, hash, sha, TEST_ADAPTER, TEMPLATE, CLEANED_SHA } = require('../../utils/taricProtocol');
+const { input, hash, sha, TEMPLATE, CLEANED_SHA } = require('../../utils/taricProtocol');
 const { preview, draft, overlaps } = require('./importer');
-const { codeFingerprint, configuration, selectWinner, testAdmission } = require('./gate');
+const { codeFingerprint, configuration, selectWinner, testAdapterConfig, testAdmission } = require('./gate');
 const SCOPES = ['taric.requests.create', 'taric.requests.read', 'taric.feedback.write'];
 const id = () => crypto.randomBytes(16).toString('hex');
 const validId = value => string(value, 32, 'NOT_FOUND', /^[a-f0-9]{32}$/);
@@ -190,7 +190,8 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     }
   }
   async function saveConfig(value) {
-    object(value, ['enabled', 'maxTokens', 'catalog', 'runtime'], 'INVALID_REQUEST');
+    object(value, ['enabled', 'maxTokens', 'catalog', 'runtime', 'testAdapters'], 'INVALID_REQUEST');
+    if (Object.hasOwn(value, 'testAdapters')) value = { ...value, testAdapters: testAdapterConfig(value, 'INVALID_REQUEST') };
     if (typeof value.enabled !== 'boolean' || !Number.isInteger(value.maxTokens) || value.maxTokens < 1 || value.maxTokens > 512) fail('INVALID_REQUEST');
     if (value.catalog !== null) {
       object(value.catalog, ['approved', 'version', 'source', 'date', 'applicability', 'attestation', 'codes'], 'INVALID_REQUEST');
@@ -263,7 +264,8 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     await warmSessions.preflight?.();
     const s = await settings(); if (!s?.enabled) fail('CONFIG_NOT_READY');
     const b = await query(Benchmark.findById(benchmarkId)); if (!b) fail('NOT_FOUND');
-    if (!warmSessions.ready() || (b.version === 0 && adapter !== TEST_ADAPTER)) fail('WARM_SESSION_NOT_READY');
+    if (!warmSessions.ready()) fail('WARM_SESSION_NOT_READY');
+    if (b.version === 0 && !testAdapterConfig(s).names.includes(adapter)) fail('INVALID_REQUEST');
     if (b.version > 0 && b.state !== 'published') fail('CONFIG_NOT_READY');
     if (b.version > 0) await transport.verifyIdentity(adapter, configuration(s, adapter, version()).runtime);
     const config = configuration(s, adapter, version());
@@ -502,7 +504,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     if (!s?.enabled || !inference) executionReasons.push('CONFIG_NOT_READY');
     if (!gateway.ready) executionReasons.push(gateway.reason);
     if (inference?.blocked) executionReasons.push('RECOVERY_REQUIRED');
-    try { testAdmission(s, version()); test = { ready: !executionReasons.length, reasons: [...executionReasons], adapter: TEST_ADAPTER, status: 'untested baseline; manual confirmation required' }; }
+    try { const selected = testAdmission(s, version()); test = { ready: !executionReasons.length, reasons: [...executionReasons], adapter: selected.adapter, status: 'test adapter; manual confirmation required' }; }
     catch (e) { test = { ready: false, reasons: [...new Set([...executionReasons, e instanceof TaricError ? e.code : 'STORAGE_FAILED'])] }; }
     test.reason = test.reasons[0] || null;
     const blockers = ['Immutable GPU-free runtime identity capability unavailable'];
@@ -512,7 +514,7 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     if (!s?.runtime?.adapters?.some(a => a.verified)) blockers.push('No verified runtime identity');
     if (!candidates.length) blockers.push('No authoritative runs for configured adapters');
     if (!normal.locallyQualified) blockers.push('No current qualifying winner; inspect candidate status, fingerprint, policy and counts');
-    return { normal: { ...normal, blockers, candidates, identityCapability: 'UNAVAILABLE' }, test, gateway, benchmark: { ready: !executionReasons.length, reasons: executionReasons, reason: executionReasons[0] || null }, inference, settings: s, credential: await query(Credential.findById('integration')), template: TEMPLATE, codeFingerprint: version() };
+    return { normal: { ...normal, blockers, candidates, identityCapability: 'UNAVAILABLE' }, test, gateway, benchmark: { ready: !executionReasons.length, reasons: executionReasons, reason: executionReasons[0] || null }, inference, settings: s ? { ...s, testAdapters: testAdapterConfig(s) } : s, credential: await query(Credential.findById('integration')), template: TEMPLATE, codeFingerprint: version() };
   }
   const approvedCodes = models.ApprovedCode ? require('./approvedCodes').createApprovedCodes({ model: models.ApprovedCode, adminPrincipal }) : null;
   if (approvedCodes) {

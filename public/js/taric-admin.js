@@ -31,14 +31,28 @@
     try { const result = await fn(); $('status').textContent = result?.pending ? 'Cleanup continues on the server. Status will refresh; closing this page does not cancel cleanup.' : `${$(id).textContent}: done.`; } catch (e) { $('status').textContent = `${$(id).textContent}: ${e.message}`; }
     finally { $(id).disabled = (id === 'import' && !previewSha) || (id === 'benchmarks-more' && !benchmarksMore) || (id === 'next' && !inspectMore); updateBenchmarkActions(); }
   });
+  function adapterOptions(id, names, preferred, fallback, defaultName) {
+    $(id).replaceChildren(...names.map(name => {
+      const option = document.createElement('option'); option.value = name;
+      option.textContent = name === defaultName ? `${name} (default test adapter)` : name;
+      return option;
+    }));
+    $(id).value = names.includes(preferred) ? preferred : names.includes(fallback) ? fallback : names[0] || '';
+  }
+  function editedAdapterNames() { return $('test-adapters').value.split(/\r?\n/).map(name => name.trim()).filter(Boolean); }
+  $('test-adapters').addEventListener('input', () => {
+    adapterOptions('default-test-adapter', [...new Set(editedAdapterNames())], $('default-test-adapter').value);
+  });
   async function refresh() {
     clearTimeout(recoveryTimer); clearSecret(); $('confirm-idle').checked = false;
     recovery = null; recoveryEpoch = null; show('recovery-status', {});
     const state = await api('/state'); readiness = state;
     if (state.inference?.blocked === false) setRecovery({ control: state.inference, ownership: { action: 'recovery_not_needed' } });
-    if (!$('adapter').options.length && state.test?.adapter) {
-      const option = document.createElement('option'); option.value = state.test.adapter; option.textContent = `${state.test.adapter} (fixed v0 test adapter)`; $('adapter').append(option);
-    }
+    const adapters = state.settings?.testAdapters || { names: state.test?.adapter ? [state.test.adapter] : [], default: state.test?.adapter };
+    $('test-adapters').value = adapters.names.join('\n');
+    adapterOptions('default-test-adapter', adapters.names, adapters.default);
+    adapterOptions('adapter', adapters.names, $('adapter').value, adapters.default, adapters.default);
+    $('test-adapter-status').textContent = adapters.default ? `Saved default test adapter: ${adapters.default}. Manual confirmation is required.` : 'Configure a default test adapter before testing.';
     show('readiness', { gateway: state.gateway, normal: state.normal, test: state.test, inference: state.inference, benchmark: state.benchmark, credential: state.credential, template: state.template, codeFingerprint: state.codeFingerprint });
     $('enabled').checked = state.settings?.enabled === true; $('max-tokens').value = state.settings?.maxTokens || 256;
     $('catalog').value = JSON.stringify(state.settings?.catalog || null, null, 2);
@@ -111,7 +125,14 @@
   });
   on('clear-secret', clearSecret); window.addEventListener('pagehide', clearSecret);
   on('revoke', async () => { clearSecret(); await api('/credential/revoke', {}); await refresh(); });
-  on('save-config', async () => { await api('/config', { enabled: $('enabled').checked, maxTokens: Number($('max-tokens').value), catalog: JSON.parse($('catalog').value), runtime: JSON.parse($('runtime').value) }); await refresh(); });
+  on('save-config', async () => {
+    const names = editedAdapterNames();
+    if (!names.length || names.length > 20 || new Set(names).size !== names.length || names.some(name => name.length > 100 || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name))) {
+      throw new Error('Enter 1–20 unique adapter names, each at most 100 characters, starting with a letter or digit and using only letters, digits, dots, underscores or hyphens.');
+    }
+    await api('/config', { enabled: $('enabled').checked, maxTokens: Number($('max-tokens').value), catalog: JSON.parse($('catalog').value), runtime: JSON.parse($('runtime').value),
+      testAdapters: { names, default: $('default-test-adapter').value } }); await refresh();
+  });
   async function upload(action) {
     const file = $('csv').files[0]; if (!file) throw new Error('Choose a private CSV file.');
     const form = new FormData(); form.append('file', file);
@@ -140,7 +161,7 @@
     const reasons = [...new Set([...(readiness?.benchmark?.reasons || []), ...(readiness?.test?.reasons || []), ...(readiness?.gateway?.reason ? [readiness.gateway.reason] : [])])];
     $('execution-help').textContent = reasons.length ? `Execution unavailable: ${reasons.join(', ')}. ${readiness?.gateway?.message || ''} ${!readiness?.settings?.enabled ? 'Enable the tool in Configuration after completing bootstrap.' : ''} ${!readiness?.settings?.testCatalog?.codes?.length ? 'Import the reviewed training-derived v0 test catalog.' : ''} ${readiness?.inference?.blocked ? 'Read remote status, cancel all pending local work, then recover the hold using exclusive admission.' : ''}`
       : readiness?.test?.ready ? 'Manual-confirmation tests are available. v0 benchmarks remain diagnostic and cannot pass normal release.' : 'Refresh status to verify execution prerequisites.';
-    if (available && readiness?.benchmark?.ready === true && !$('adapter').value) $('execution-help').textContent += ' Choose the fixed v0 test adapter before queuing a benchmark.';
+    if (available && readiness?.benchmark?.ready === true && !$('adapter').value) $('execution-help').textContent += ' Save and choose a test adapter before queuing a v0 benchmark.';
     const held = recovery?.control?.blocked === true;
     $('cancel-pending').disabled = mutationBusy || recovery?.ownership?.active || !held || recoveryEpoch === null;
     $('resume').textContent = recovery && !held ? 'Recovery not needed' : recovery?.ownership?.available ? 'Continue owned cleanup' : 'Acquire recovery admission';
@@ -207,7 +228,7 @@
     $('kind').value = 'runs'; $('detail-id').value = run._id;
     show('details', { results: run.results, attempts: run.attempts });
   });
-  on('adapters', async () => { const rows = await api('/adapters'); $('adapter').replaceChildren(...rows.map(r => { const option = document.createElement('option'); option.value = r.name; option.textContent = r.name; return option; })); });
+  on('adapters', async () => { const rows = await api('/adapters'); show('records', rows); });
   on('run', async () => { const run = await api(`/benchmarks/${encodeURIComponent($('benchmark-id').value)}/runs`, { adapter: $('adapter').value }); $('run-id').value = run.id; show('records', run); });
   on('publish', async () => { await api(`/benchmarks/${encodeURIComponent($('benchmark-id').value)}/publish`, {}); await refresh(); });
   on('cancel', async () => { await api(`/runs/${encodeURIComponent($('run-id').value)}/cancel`, {}); });

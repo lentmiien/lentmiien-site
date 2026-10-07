@@ -1,5 +1,10 @@
 # TARIC deployment and operator runbook
 
+Test adapter selection: [configure additional adapters and the default](taric-test-adapters.md)
+in `/admin/taric` → Configuration. This replaces the original fixed-adapter policy
+described in historical rollout examples below. Existing settings retain
+`taric-v1-20260917-2` until a manager saves another default.
+
 Management URL: `/admin/taric`. API: `/api/taric/v1` (shipped jobs use `/requests`, not `/recommendations`). OpenAPI **3.1.0**, contract **1.0.3**: raw `/yaml/taric-assisted.v1.yaml`, viewer `/yaml-viewer/view/taric-assisted.v1.yaml`, parsed spec `/yaml-viewer/spec/taric-assisted.v1.yaml`. Read [the release/security plan](taric-assisted-pilot.md) first. This release does not initialize production data at startup and does not run `setup.js` on your behalf.
 
 Request/outcome history and explicit human label review: `/admin/taric/history`. See [the history/export operator guide](taric-history.md) for additive bootstrap, private audit collections, candidate eligibility and bounded JSONL selection. Verification cannot enable production or publish a benchmark.
@@ -171,7 +176,7 @@ Normal mode requires runtime configuration for every candidate adapter:
 
 Choose a realistic short verification expiry; the long date is only a schema illustration. Verified entries cannot currently be accepted because the required identity capability is unavailable:
 
-Immutable runtime identity capability is currently **UNAVAILABLE**. The Site transport fails normal identity verification with `RELEASE_CLOSED` without calling `/model` or `/adapters`. `/model` is unowned and conflicts with an owned session; the existing upstream lacks the required immutable revisions. `/adapters` may acquire GPU work when its local mount is absent, so metadata discovery fails closed with `METADATA_UNAVAILABLE`. The fixed v0 adapter remains selectable without a metadata call; its exact identity is required in every generation envelope.
+Immutable runtime identity capability is currently **UNAVAILABLE**. The Site transport fails normal identity verification with `RELEASE_CLOSED` without calling `/model` or `/adapters`. `/model` is unowned and conflicts with an owned session; the existing upstream lacks the required immutable revisions. `/adapters` may acquire GPU work when its local mount is absent, so metadata discovery fails closed with `METADATA_UNAVAILABLE`. Saved test adapters remain selectable for v0 without a metadata call; the selected adapter name is required in every generation envelope.
 
 A future reviewed, guaranteed GPU-free metadata capability must prove immutable deployment/base/tokenizer revisions and the selected adapter artifact digest before normal verification can be implemented. User-entered attestations and publishing a benchmark do not satisfy this missing capability. No guessed revisions, manual-reservation borrowing or unowned identity calls are permitted inside an owned session.
 
@@ -179,7 +184,7 @@ A future reviewed, guaranteed GPU-free metadata capability must prove immutable 
 
 ## Runs, cancellation and rollback
 
-Use the fixed v0 test adapter and select a benchmark from the newest-first version selector, and explicitly queue a run during an authorized GPU window. Load more to view older versions; selection survives refresh and imports select their new version. Maximum eight active runs. All worker generation uses the owned-session integration described below; deploy both repositories before enabling work. Cases run sequentially in one warm session where its hard lifetime permits, with interactive priority after each completed case, a six-hour total run deadline, all required cases in the denominator, and optional diagnostic lexical similarity. Each new run supersedes the previous run's release authority for that adapter/configuration immediately. Inspect run state/counts/fingerprint/results and the readiness winner/reason.
+Select a saved test adapter and the v0 benchmark from the newest-first version selector, then explicitly queue a run during an authorized GPU window. Register additional adapter names and choose the default in Configuration; v1+ execution retains the release identity requirements above. Load more to view older versions; selection survives refresh and imports select their new version. Maximum eight active runs. All worker generation uses the owned-session integration described below; deploy both repositories before enabling work. Cases run sequentially in one warm session where its hard lifetime permits, with interactive priority after each completed case, a six-hour total run deadline, all required cases in the denominator, and optional diagnostic lexical similarity. Each new run supersedes the previous run's release authority for that adapter/configuration immediately. Inspect run state/counts/fingerprint/results and the readiness winner/reason.
 
 An uncertain dispatched generation is recorded as a failed/unavailable attempted case before recovery. Bounded correlated terminal/idle status can permit the NEXT case, never a retry. If safety cannot be proved, the run enters recovery_required and the global hold blocks admission. Every owned operation is reconciled by its persisted ID, including HTTP errors; an HTTP status alone never permits the next case. Recovery requires the explicit remote-status and epoch-checked workflow below; a checkbox alone is insufficient. Cancellation stops future cases without claiming remote cancellation.
 
@@ -308,8 +313,9 @@ Release and human deployment/recovery instructions: [dual-repository handoff](ta
 `services/taric/index.js` now wires `gatewaySessions.js` through `warmSession.js` into
 both interactive requests and benchmarks. Ordinary TEST requests use a one-shot owned
 session; they do not require benchmark runtime identity. Normal mode retains all v1+
-release/identity gates. Generate bodies are unchanged and test calls always name
-`taric-v1-20260917-2`; no null/base/alternate fallback exists.
+release/identity gates. Generate bodies use the saved default test adapter for
+test requests and the selected registered adapter for v0 benchmarks; no
+null/base/alternate fallback exists.
 
 The copied non-private contract fixture matches Gateway main
 `689c68a907b5afdda3bd6916df791cafbc61a67c`; SHA-256:
