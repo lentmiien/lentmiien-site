@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="description" content="Play a 3×3 Rubik’s Cube, enter your own cube, and follow an animated solution one turn at a time.">
+  <title>Rubik’s Cube Studio</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/css/color-theme.css">
+  <link rel="stylesheet" href="css/cube.css">
+  <script src="vendor/cube.js" defer></script>
+  <script src="js/core.js" defer></script>
+  <script src="js/solver-client.js" defer></script>
+  <script src="js/renderer.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="topbar"><a href="/games">← All games</a><span class="wordmark"><span class="brand-mark">▦</span> CUBE STUDIO</span><span class="edition">3 × 3 / INTERACTIVE</span></header>
+    <section class="intro">
+      <div><p class="eyebrow">A LITTLE PATIENCE. A FEW GOOD TURNS.</p><h1>Find your way <em>to solved.</em></h1></div>
+      <p>Make a move. Try a scramble.<br>Or bring your own cube and solve along.</p>
+    </section>
+    <div class="workspace">
+      <section class="stage-card" aria-label="Interactive cube">
+        <div class="stage-top"><span class="eyebrow" id="stageLabel">THE PLAYGROUND</span><span id="cubeBadge" class="badge">Solved</span></div>
+        <canvas id="cube" tabindex="0" aria-label="3D cube. Drag to orbit, or use arrow keys while focused. Use the face buttons below to turn a layer. The six-face map below also shows all stickers."></canvas>
+        <div class="stage-bottom"><span>↔ Drag to look around</span><button id="resetView" class="quiet">Reset view ↗</button></div>
+        <div class="move-bank">
+          <div class="section-heading"><h2>Make a turn</h2><span>↻ clockwise · ↺ counterclockwise</span></div>
+          <div id="moveButtons" class="move-buttons" aria-label="Face turns"></div>
+          <p class="hint">Keyboard: U R F D L B · Hold Shift to reverse. Directions are viewed facing that side.</p>
+        </div>
+      </section>
+      <aside class="control-card">
+        <div class="mode-switch" role="group" aria-label="Cube mode"><button id="gameMode" aria-pressed="true">Play</button><button id="solveMode" aria-pressed="false">Show solution</button></div>
+        <section id="gamePanel">
+          <p class="eyebrow">01 / YOUR MOVE</p><h2>Mix it up.<br> Make it yours.</h2>
+          <p>Get all nine stickers on each face to match its center. Six colors, one goal.</p>
+          <div class="stats"><div><strong id="moveCount">0</strong><span>YOUR TURNS</span></div><div><strong id="matchCount">54<span>/54</span></strong><span>MATCHING STICKERS</span></div></div>
+          <button id="scramble" class="primary wide">↝ Scramble cube</button>
+          <div class="button-row"><button id="undo">↶ Undo turn</button><button id="reset">Reset cube</button></div>
+          <p class="hint">Stuck? Choose “Show solution” to follow a solution for this exact cube.</p>
+          <details><summary>Last scramble</summary><p id="scrambleText" class="notation">No scramble yet.</p></details>
+        </section>
+        <section id="solvePanel" hidden>
+          <p class="eyebrow">02 / ONE TURN AT A TIME</p><h2>Let’s solve<br> it together.</h2>
+          <p id="solveIntro">Use the cube on screen, or paint your physical cube in the editor below.</p>
+          <button id="findSolution" class="primary wide">Find solution</button>
+          <button id="cancelSearch" class="wide" hidden>Cancel search</button>
+          <div id="player" hidden>
+            <div class="step-heading"><span id="stepCount">Ready</span><strong id="nextMove">—</strong></div>
+            <p id="instruction" class="instruction"></p>
+            <progress id="progress" max="1" value="0" aria-label="Solution progress"></progress>
+            <div class="playback"><button id="back" aria-label="Undo previous solution step">← Back</button><button id="play" class="primary">▶ Play</button><button id="next" aria-label="Play next solution step">Next →</button></div>
+            <label class="speed-label" for="speed">Time per turn <output id="speedValue" for="speed">2.5 seconds</output></label>
+            <input id="speed" type="range" min="1" max="6" step="0.5" value="2.5">
+            <p class="hint">Pause stops after the current turn. Keep the same front and top centers as the reference frame.</p>
+            <div id="solutionMoves" class="solution-moves" aria-label="Solution move list"></div>
+            <div class="button-row"><button id="replay">↶ Start over</button><button id="editCube">Edit cube</button></div>
+          </div>
+          <p class="hint">A practical two-phase solution, with every turn explained. It is not a beginner layer-by-layer method.</p>
+        </section>
+        <p id="status" class="status" role="status" aria-live="polite">Ready when you are. Scramble to start playing.</p>
+      </aside>
+    </div>
+    <section id="editor" class="editor-card">
+      <div class="section-heading"><div><p class="eyebrow">ALL SIX SIDES</p><h2 id="editorTitle">Your cube, unfolded.</h2></div><span id="editorHint" class="hint">Live view · centers stay fixed</span></div>
+      <div class="editor-layout">
+        <div>
+          <div id="palette" class="palette" role="group" aria-label="Choose sticker color" hidden></div>
+          <div id="net" class="cube-net" aria-label="Cube face map"></div>
+        </div>
+        <div class="entry-guide">
+          <p class="eyebrow">KEEP YOUR BEARINGS</p>
+          <h3>White above. Green in front.</h3>
+          <p>Start with the white center on top and the green center facing you. Red is on your right. Face letters refer to this fixed frame, even when you orbit the view.</p>
+          <div id="entryHelp" hidden>
+            <p><strong>Choose a color, then click a sticker.</strong> Each square is labeled with its color initial. Centers cannot change.</p>
+            <ul>
+              <li><b>F, R, B, L:</b> face that center toward you, keeping white on top. Read left to right.</li>
+              <li><b>U:</b> tip the top toward you; blue is at the top of the grid, green at the bottom.</li>
+              <li><b>D:</b> tip the bottom toward you; green is at the top of the grid, blue at the bottom.</li>
+            </ul>
+            <p class="hint">Different color scheme? Map your center colors to this reference frame, then use that mapping for every sticker.</p>
+            <div class="button-row"><button id="useGame">Copy game cube</button><button id="clearEntry">Start from solved</button></div>
+          </div>
+          <div id="colorCounts" class="color-counts" aria-label="Sticker counts"></div>
+        </div>
+      </div>
+    </section>
+    <details class="notation-guide"><summary>A quick guide to cube notation</summary><p><b>U</b> = top, <b>R</b> = right, <b>F</b> = front, <b>D</b> = bottom, <b>L</b> = left, <b>B</b> = back. A plain letter is a clockwise quarter turn, a prime (′) reverses it, and 2 means a half turn. Always judge clockwise while looking directly at the face being turned, including the back and bottom.</p><p>For example, <b>R U R′ U′</b> turns the right clockwise, top clockwise, right counterclockwise, then top counterclockwise. Only turn the indicated layer; keep the whole physical cube in its starting orientation.</p></details>
+    <footer><span>TAKE YOUR TIME. EVERY TURN TEACHES YOU SOMETHING.</span><span>Local solving · No uploads</span></footer>
+    <noscript><p class="status">JavaScript is required to play and solve the cube.</p></noscript>
+  </main>
+</body>
+</html>
