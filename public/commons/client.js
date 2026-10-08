@@ -3,6 +3,7 @@
   const $ = id => document.getElementById(id);
   const W = window.CommonsWorld;
   let renderer, socket, state, lastNearby = '', toastTimer, awaiting = false, lastStateAt = 0;
+  let connectionEpoch = 0;
   const held = new Set();
   let touch = { x: 0, y: 0 }, lastInput = '';
   const errors = {
@@ -20,6 +21,7 @@
   function toast(text) { $('toast').textContent = text; $('toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 5500); }
   function stopMovement() { held.clear(); touch = { x: 0, y: 0 }; sendInput(true); }
   function showCover(text) {
+    connectionEpoch++; awaiting = false; $('npc-send').disabled = false;
     stopMovement(); $('status').textContent = text; $('enter').textContent = 'Enter the Commons'; $('enter').disabled = !renderer;
     $('cover').hidden = false; $('online').textContent = 'Offline';
     if ($('interaction').open) $('interaction').close();
@@ -61,13 +63,14 @@
     const key = `${x},${y}`;
     if (force || x || y || key !== lastInput) { socket.emit('input', { x, y }); lastInput = key; }
   }
-  function command(event, data, retry = true) {
+  function command(event, data, retry = true, connection = socket, epoch = connectionEpoch) {
     return new Promise(resolve => {
-      if (!socket?.connected) return resolve({ error: 'UNAUTHORIZED' });
-      socket.timeout(event === 'talk' ? 16000 : 6000).emit(event, data, (error, result) => {
-        if (error && event === 'action' && retry && socket.connected) {
+      if (epoch !== connectionEpoch || connection !== socket || !connection?.connected) return resolve({ error: 'UNAUTHORIZED' });
+      connection.timeout(event === 'talk' ? 16000 : 6000).emit(event, data, (error, result) => {
+        if (epoch !== connectionEpoch || connection !== socket || !connection.connected) return resolve({ error: 'UNAUTHORIZED' });
+        if (error && event === 'action' && retry) {
           toast('Confirming the saved action…');
-          return resolve(command(event, data, false)); // Same receipt ID: an uncertain acknowledgement cannot duplicate the action.
+          return resolve(command(event, data, false, connection, epoch)); // Retry only on the originating connection, with the same receipt.
         }
         resolve(error ? { error: 'BUSY', uncertain: true } : result || { error: 'BUSY' });
       });
@@ -75,8 +78,10 @@
   }
   async function interact(target) {
     if (awaiting || !state) return;
+    const epoch = connectionEpoch;
     awaiting = true; stopMovement();
     const result = await command('action', { id: crypto.randomUUID(), target });
+    if (epoch !== connectionEpoch) return;
     awaiting = false;
     if (result.error) return toast(errors[result.error] || 'That action is unavailable.');
     if (!$('cover').hidden) return;
@@ -93,7 +98,8 @@
   }
   $('enter').addEventListener('click', () => {
     if (!renderer) return;
-    socket?.disconnect(); $('enter').disabled = true; $('status').textContent = 'Finding your place in the village…';
+    socket?.disconnect(); connectionEpoch++; awaiting = false; $('npc-send').disabled = false;
+    $('enter').disabled = true; $('status').textContent = 'Finding your place in the village…';
     socket = window.io('/commons', { auth: { csrf: document.querySelector('meta[name="csrf-token"]').content },
       path: '/commons/socket.io', transports: ['websocket'], forceNew: true, reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1500, reconnectionDelayMax: 5000 });
     socket.on('joined', snapshot => { $('cover').hidden = true; lastNearby = '__new__'; update(snapshot); $('world').focus({ preventScroll: true }); toast(`Welcome home. Cottage ${snapshot.self.plot + 1} is yours.`); });
@@ -116,8 +122,11 @@
   $('reduced-motion').addEventListener('change', () => { if (renderer) renderer.reducedMotion = $('reduced-motion').checked; });
   $('npc-form').addEventListener('submit', async event => {
     event.preventDefault(); const text = $('npc-text').value.trim(); if (!text) return;
+    const epoch = connectionEpoch;
     $('npc-send').disabled = true; $('npc-answer').textContent = 'Mori is listening… You can close this and keep exploring.';
-    const result = await command('talk', { text }); $('npc-send').disabled = false;
+    const result = await command('talk', { text });
+    if (epoch !== connectionEpoch) return;
+    $('npc-send').disabled = false;
     $('npc-answer').textContent = result.error ? errors[result.error] || 'Mori is unavailable.' : `${result.mode === 'llm' ? 'AI reply' : result.mode === 'fallback' ? 'Local reply · AI unavailable' : 'Local scripted reply'}\n${result.text}`;
   });
   window.addEventListener('keydown', event => {

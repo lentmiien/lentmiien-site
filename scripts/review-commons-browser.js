@@ -11,7 +11,7 @@ async function run() {
     .catch(async error => { await preview.stop(); throw error; });
   const errors = [], results = [];
   async function resident(number, viewport, mobile = false) {
-    const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: mobile ? 2 : 1 });
+    const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: mobile ? 2 : 1, reducedMotion: mobile ? 'reduce' : 'no-preference' });
     await context.request.post(preview.url + '/__preview/login', { data: { resident: number } });
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     await page.goto(preview.url + '/commons'); await page.waitForFunction(() => !document.getElementById('enter').disabled);
@@ -31,12 +31,20 @@ async function run() {
     expect(player().x > oldX + 1, 'Keyboard moves authoritative server position');
     const after = player().x; await desktop.page.waitForTimeout(450);
     expect(Math.abs(player().x - after) < .5, 'Released input expires/stops');
+    await desktop.page.waitForTimeout(1550);
+    const priorPlot = player().plot, priorX = player().x;
+    preview.io.of('/commons').sockets.values().next().value.conn.close();
+    await desktop.page.waitForFunction(() => !document.getElementById('cover').hidden);
+    await desktop.page.waitForFunction(() => document.getElementById('cover').hidden);
+    expect(player().plot === priorPlot && Math.abs(player().x - priorX) < .01, 'Transport interruption automatically rejoins the same saved cottage and position');
     await desktop.page.evaluate(() => { window.realCommonsClock = CommonsWorld.clock; CommonsWorld.clock = now => ({ ...window.realCommonsClock(now), darkness: 0, phase: 'Daylight' }); });
     await desktop.page.waitForTimeout(150); await desktop.page.screenshot({ path: path.join(output, 'desktop-daylight.png') });
     await desktop.page.evaluate(() => { CommonsWorld.clock = window.realCommonsClock; });
     const mobile = await resident(2, { width: 390, height: 844 }, true);
     await mobile.page.screenshot({ path: path.join(output, 'mobile-welcome.png') });
     await enter(mobile.page); await mobile.page.waitForTimeout(300);
+    expect(await mobile.page.isChecked('#reduced-motion'), 'Reduced-motion device preference is applied');
+    expect(await mobile.page.evaluate(() => { const c = document.getElementById('world'); return c.width === Math.round(c.getBoundingClientRect().width * 2); }), 'Portrait canvas uses DPR 2 backing resolution');
     expect(preview.room.connections.size === 2, 'Two independent browser sessions share the room');
     await mobile.page.screenshot({ path: path.join(output, 'mobile-village.png') });
     const beforeTouch = preview.room.state.players[1].x;
@@ -47,6 +55,7 @@ async function run() {
     await mobile.page.setViewportSize({ width: 844, height: 390 }); await mobile.page.waitForTimeout(200);
     await mobile.page.screenshot({ path: path.join(output, 'mobile-landscape.png') });
     expect(await mobile.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Landscape has no horizontal page overflow');
+    expect(await mobile.page.evaluate(() => { const c = document.getElementById('world'); return c.width === Math.round(c.getBoundingClientRect().width * 2) && c.height === Math.round(c.getBoundingClientRect().height * 2); }), 'Orientation resize updates both canvas dimensions');
     const old = desktop.page;
     const newTab = await desktop.context.newPage(); await newTab.goto(preview.url + '/commons');
     await newTab.waitForFunction(() => !document.getElementById('enter').disabled); await enter(newTab);
@@ -80,6 +89,11 @@ async function run() {
     await newTab.screenshot({ path: path.join(output, 'save-failure.png') });
     expect(preview.room.connections.size === 0, 'Save failure pauses and disconnects the room');
     expect(errors.length === 0, `No browser JavaScript errors (${errors.length})`);
+    const unloaded = await resident(3, { width: 390, height: 844 }, true);
+    await unloaded.page.route('**/village-atlas.v1.webp', route => route.abort());
+    await unloaded.page.reload();
+    await unloaded.page.waitForFunction(() => document.getElementById('status').textContent.includes('could not load'));
+    expect(await unloaded.page.isDisabled('#enter'), 'Missing art displays recovery text and prevents entry');
     await fs.writeFile(path.join(output, 'browser-results.json'), JSON.stringify({ environment: 'Headless Chromium, synthetic accounts and in-memory repository; real HTTP/session/Socket.IO and rendering, no production or provider', results, errors }, null, 2) + '\n');
     console.log(JSON.stringify({ results, errors }, null, 2));
   } finally { await browser.close(); await preview.stop(); }

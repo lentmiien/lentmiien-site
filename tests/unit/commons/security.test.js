@@ -64,3 +64,40 @@ test('corrupt or unsupported persisted state fails closed before exposing reside
   expect(validState({ version: 1, revision: 0, players: [], blooms: 0 })).toBe(true);
   for (const value of [null, { version: 2 }, { version: 1, revision: 0, players: [{ userId: user._id }], blooms: 0 }]) expect(validState(value)).toBe(false);
 });
+test('slow authorization cannot renew stale grants or outlive cookie expiry', async () => {
+  for (const expiry of [100000, 3000]) {
+    const { socket, deps, session } = authFixture();
+    let time = 1000;
+    deps.now = () => time;
+    session.cookie.expires = new Date(expiry);
+    deps.userModel.findOne.mockImplementation(async () => { time += 6000; return user; });
+    await expect(authorize(socket, deps)).rejects.toThrow('UNAUTHORIZED');
+  }
+});
+test('actual Mongoose save casting retains immutable account IDs in resident subdocuments', async () => {
+  const model = require('../../../models/commons_world');
+  expect(model.collection.name).toBe('commonsworlds');
+  expect(model.schema.path('players').schema.path('userId').options.immutable).toBe(true);
+  const update = jest.spyOn(model.collection, 'updateOne').mockResolvedValue({ modifiedCount: 1 });
+  try {
+    const repo = new CommonsRepository({ model });
+    await repo.save({ version: 1, revision: 0, blooms: 0, players: [{ userId: user._id, plot: 0, x: 32, y: 25, facing: 'down', scene: 'village' }] });
+    expect(update.mock.calls[0][1].$set.players[0].userId).toBe(user._id);
+    expect(update.mock.calls[0][0]).toMatchObject({ _id: 'lantern-commons-v1', revision: 0, leaseOwner: repo.owner });
+  } finally { update.mockRestore(); }
+});
+test('HTTP server shutdown clears all room timers without relying on an Engine.IO close event', () => {
+  jest.useFakeTimers();
+  try {
+    const { EventEmitter } = require('events');
+    const { registerCommons } = require('../../../socket_io/commons');
+    const httpServer = new EventEmitter();
+    const namespace = { use: jest.fn(), on: jest.fn(), sockets: new Map() };
+    const io = { of: () => namespace, httpServer };
+    const registration = registerCommons(io, jest.fn(), { room: {}, npc: {}, config: { checkpointMs: 5000 } });
+    expect(jest.getTimerCount()).toBe(3);
+    httpServer.emit('close');
+    expect(jest.getTimerCount()).toBe(0); expect(httpServer.listenerCount('close')).toBe(0);
+    registration.stop(); expect(jest.getTimerCount()).toBe(0);
+  } finally { jest.useRealTimers(); }
+});

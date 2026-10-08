@@ -8,6 +8,8 @@ const logger = require('../utils/logger');
 let lastAuthorizationWarning = -Infinity;
 const reload = session => new Promise((resolve, reject) => session.reload(error => error ? reject(error) : resolve()));
 async function authorize(socket, { userModel, roleModel, config, now = Date.now }, capability = PLAY) {
+  // Authority ages from the start of the lookup, not from a delayed database reply.
+  const checkedAt = now();
   if (!config.enabled || !config.origins.includes(socket.handshake.headers.origin)) throw new Error('UNAUTHORIZED');
   if (!socket.request.session?.reload) throw new Error('UNAUTHORIZED');
   await reload(socket.request.session);
@@ -30,7 +32,15 @@ async function authorize(socket, { userModel, roleModel, config, now = Date.now 
     throw error;
   }
   if (socket.data.userId && socket.data.userId !== id) throw new Error('UNAUTHORIZED');
-  return { principal: { _id: id, name: principal.name, type_user: principal.type_user }, userId: id, validUntil: Math.min(expires, now() + 5000) };
+  const validUntil = Math.min(expires, checkedAt + 5000);
+  if (validUntil <= now()) {
+    if (now() - checkedAt >= 5000 && now() - lastAuthorizationWarning > 60000) {
+      lastAuthorizationWarning = now();
+      logger.warning('Commons authorization exceeded freshness window; check session and database latency', { category: 'commons.authorization' });
+    }
+    throw new Error('UNAUTHORIZED');
+  }
+  return { principal: { _id: id, name: principal.name, type_user: principal.type_user }, userId: id, validUntil };
 }
 function registerCommons(io, sessionMiddleware, dependencies) {
   const { room, npc, config, roleModel } = dependencies;
@@ -152,9 +162,22 @@ function registerCommons(io, sessionMiddleware, dependencies) {
     finally { checkpointPending = false; }
   }, config.checkpointMs);
   for (const timer of [tick, snapshots, checkpoints]) timer.unref?.();
-  const stop = () => { clearInterval(tick); clearInterval(snapshots); clearInterval(checkpoints); };
-  io.engine.on('close', stop);
+  const stop = () => {
+    clearInterval(tick); clearInterval(snapshots); clearInterval(checkpoints);
+    io.httpServer?.off('close', stop);
+  };
+  // Engine.IO Server.close() does not emit a close event; the HTTP server does.
+  io.httpServer?.once('close', stop);
   return { namespace, stop };
+}
+function createCommonsTransport(server, config) {
+  const io = new (require('socket.io').Server)(server, {
+    path: '/commons/socket.io', serveClient: false, maxHttpBufferSize: 4096, transports: ['websocket'],
+    allowRequest: (req, callback) => callback(null, config.origins.includes(req.headers.origin)),
+  });
+  // Only /commons has the session/capability middleware. Never admit the default namespace.
+  io.use((_socket, next) => next(new Error('UNAUTHORIZED')));
+  return io;
 }
 function installCommons(server, sessionMiddleware) {
   try {
@@ -167,10 +190,7 @@ function installCommons(server, sessionMiddleware) {
     const { UseraccountModel, RoleModel } = require('../database');
     const room = new CommonsRoom({ repository: new CommonsRepository({ leaseMs: config.leaseMs }), maxOnline: config.maxOnline });
     const npc = new CommonsNpc({ provider: gatewayProvider() });
-    const io = new (require('socket.io').Server)(server, {
-      path: '/commons/socket.io', serveClient: false, maxHttpBufferSize: 4096, transports: ['websocket'],
-      allowRequest: (req, callback) => callback(null, config.origins.includes(req.headers.origin)),
-    });
+    const io = createCommonsTransport(server, config);
     require('../services/commons/runtime').setRoom(room);
     return registerCommons(io, sessionMiddleware, { room, npc, config, userModel: UseraccountModel, roleModel: RoleModel });
   } catch (_) {
@@ -178,4 +198,4 @@ function installCommons(server, sessionMiddleware) {
     return null;
   }
 }
-module.exports = { authorize, registerCommons, installCommons };
+module.exports = { authorize, registerCommons, installCommons, createCommonsTransport };

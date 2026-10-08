@@ -13,7 +13,7 @@ function gatewayProvider(env = process.env, client = axios) {
   return async (messages, signal) => {
     const { data } = await client.post(new URL('/llm/chat', base).href, {
       model, messages, stream: false, max_tokens: 180, temperature: 0.7,
-    }, { signal, timeout: 12000, maxRedirects: 0, maxContentLength: 32768, maxBodyLength: 16384,
+    }, { signal, timeout: 12000, maxRedirects: 0, maxContentLength: 32768, maxBodyLength: 32768,
       headers: { 'Content-Type': 'application/json' } });
     const message = data?.message || data?.choices?.[0]?.message;
     if (message?.tool_calls?.length || typeof message?.content !== 'string' || !message.content.trim()) throw new Error('Invalid NPC response');

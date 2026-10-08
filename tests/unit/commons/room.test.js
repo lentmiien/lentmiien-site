@@ -126,3 +126,17 @@ test('a save reply arriving after lease expiry cannot resurrect the closed room'
   expect(h.room.state).toBeNull(); resolve(); await expect(pending).rejects.toThrow('SAVE_UNAVAILABLE');
   expect(h.room.state).toBeNull(); expect(h.room.connections.size).toBe(0);
 });
+test('overlapping same-account takeovers and an old disconnect leave exactly the newest connection', async () => {
+  const h = harness(1), first = h.connection('first'), second = h.connection('second'), third = h.connection('third');
+  await h.room.join(id(1), first);
+  const save = h.repository.save.getMockImplementation(); let finish;
+  h.repository.save.mockImplementationOnce(state => new Promise(resolve => { finish = async () => resolve(await save(state)); }));
+  const joiningSecond = h.room.join(id(1), second); await Promise.resolve();
+  const joiningThird = h.room.join(id(1), third);
+  const oldDisconnect = h.room.leave(id(1), 'first');
+  await finish(); await Promise.all([joiningSecond, joiningThird, oldDisconnect]);
+  expect(first.close).toHaveBeenCalledWith('TAKEN_OVER'); expect(second.close).toHaveBeenCalledWith('TAKEN_OVER');
+  expect(h.room.connections.size).toBe(1); expect(h.persisted().players).toHaveLength(1);
+  expect(h.room.snapshot(id(1), 'third').self.plot).toBe(0);
+  await h.room.leave(id(1), 'second'); expect(h.room.connections.size).toBe(1);
+});

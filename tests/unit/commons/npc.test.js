@@ -53,3 +53,21 @@ test('slow providers cannot exceed two global calls and timeout returns fallback
     expect(npc.active.size).toBe(0);
   } finally { jest.useRealTimers(); }
 });
+test('real HTTP adapter accepts bounded multilingual history with the Gateway request/response shape', async () => {
+  const http = require('http'); let received;
+  const server = http.createServer((req, res) => {
+    let body = ''; req.on('data', part => { body += part; }); req.on('end', () => {
+      received = { url: req.url, body: JSON.parse(body), bytes: Buffer.byteLength(body) };
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ model: 'catalog-alias', message: { role: 'assistant', content: 'ようこそ' }, done: true }));
+    });
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const provider = gatewayProvider({ COMMONS_NPC_ENABLED: 'true', COMMONS_NPC_MODEL: 'catalog-alias', AI_GATEWAY_BASE_URL: `http://127.0.0.1:${server.address().port}` });
+    const messages = [{ role: 'system', content: LORE }, ...Array.from({ length: 6 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: '灯'.repeat(i % 2 ? 1200 : 400) })), { role: 'user', content: '灯'.repeat(400) }];
+    expect(await provider(messages)).toBe('ようこそ');
+    expect(received.url).toBe('/llm/chat'); expect(received.body).toEqual({ model: 'catalog-alias', messages, stream: false, max_tokens: 180, temperature: .7 });
+    expect(received.bytes).toBeGreaterThan(16384); expect(received.bytes).toBeLessThan(32768);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});

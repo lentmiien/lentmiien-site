@@ -104,6 +104,7 @@
     frame(t) {
       requestAnimationFrame(this.frame);
       if (!this.state || document.hidden) return;
+      if (this.dpr !== Math.min(devicePixelRatio || 1, 2)) this.resize();
       const c = this.ctx, s = this.state, own = s.self;
       c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); c.fillStyle = '#344a3d'; c.fillRect(0, 0, this.width, this.height);
       const scale = own.scene === 'home' ? Math.min(this.width / 450, this.height / 390, 1.7) : this.scale;
