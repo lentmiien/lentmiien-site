@@ -245,3 +245,14 @@ TARIC_GATEWAY_ADMIN_TOKEN=
 # Fixed AmiAmi transport: curl (default, Chrome136, bounded libcurl 8.15.0-IMPERSONATE)
 # or native (Node verified default+OS CA, may still return HTTP403). No automatic fallback.
 TARIC_AMIAMI_TRANSPORT=curl
+
+# Lantern Commons: lazy, private village; admin enabled by role bundle. No startup DB writes.
+# Existing /admin/manage_roles can grant commons.world.play and commons.npc.talk to users/groups.
+COMMONS_ENABLED=true
+COMMONS_MAX_ONLINE=10
+# Exact browser origins, comma-separated, no trailing slash. Add a loopback origin only for local development.
+COMMONS_ALLOWED_ORIGINS=https://home.lentmiien.com
+# Optional non-streaming /llm/chat at existing OLLAMA_BASE_URL or AI_GATEWAY_BASE_URL.
+# No model discovery, GPU provisioning, tools, callbacks, voice or runtime art generation.
+COMMONS_NPC_ENABLED=false
+COMMONS_NPC_MODEL=

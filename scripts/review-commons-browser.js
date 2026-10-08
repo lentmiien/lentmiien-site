@@ -1,0 +1,87 @@
+/* Optional browser smoke runner: uses synthetic preview, never app.js or production. */
+const fs = require('fs/promises');
+const path = require('path');
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const { createPreview } = require('./preview-commons');
+async function run() {
+  const output = path.resolve(process.env.COMMONS_SCREENSHOTS || 'documentation/commons/validation');
+  await fs.mkdir(output, { recursive: true });
+  const preview = await createPreview();
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.COMMONS_CHROMIUM || undefined })
+    .catch(async error => { await preview.stop(); throw error; });
+  const errors = [], results = [];
+  async function resident(number, viewport, mobile = false) {
+    const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: mobile ? 2 : 1 });
+    await context.request.post(preview.url + '/__preview/login', { data: { resident: number } });
+    const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
+    await page.goto(preview.url + '/commons'); await page.waitForFunction(() => !document.getElementById('enter').disabled);
+    return { context, page };
+  }
+  const enter = async page => { await page.click('#enter'); await page.waitForFunction(() => document.getElementById('cover').hidden); };
+  const expect = (condition, label) => { if (!condition) throw new Error(label); results.push(label); console.log('PASS: ' + label); };
+  try {
+    const desktop = await resident(1, { width: 1440, height: 1000 });
+    await desktop.page.screenshot({ path: path.join(output, 'desktop-welcome.png') });
+    await enter(desktop.page); await desktop.page.waitForTimeout(500);
+    await desktop.page.screenshot({ path: path.join(output, 'desktop-village.png') });
+    expect(preview.room.connections.size === 1, 'Authenticated real socket joined');
+    const player = () => preview.room.state.players.find(p => p.plot === 0);
+    const oldX = player().x;
+    await desktop.page.keyboard.down('d'); await desktop.page.waitForTimeout(600); await desktop.page.keyboard.up('d');
+    expect(player().x > oldX + 1, 'Keyboard moves authoritative server position');
+    const after = player().x; await desktop.page.waitForTimeout(450);
+    expect(Math.abs(player().x - after) < .5, 'Released input expires/stops');
+    await desktop.page.evaluate(() => { window.realCommonsClock = CommonsWorld.clock; CommonsWorld.clock = now => ({ ...window.realCommonsClock(now), darkness: 0, phase: 'Daylight' }); });
+    await desktop.page.waitForTimeout(150); await desktop.page.screenshot({ path: path.join(output, 'desktop-daylight.png') });
+    await desktop.page.evaluate(() => { CommonsWorld.clock = window.realCommonsClock; });
+    const mobile = await resident(2, { width: 390, height: 844 }, true);
+    await mobile.page.screenshot({ path: path.join(output, 'mobile-welcome.png') });
+    await enter(mobile.page); await mobile.page.waitForTimeout(300);
+    expect(preview.room.connections.size === 2, 'Two independent browser sessions share the room');
+    await mobile.page.screenshot({ path: path.join(output, 'mobile-village.png') });
+    const beforeTouch = preview.room.state.players[1].x;
+    await mobile.page.locator('.movement .right').dispatchEvent('pointerdown', { pointerId: 1, pointerType: 'touch' });
+    await mobile.page.waitForTimeout(400);
+    await mobile.page.locator('.movement .right').dispatchEvent('pointerup', { pointerId: 1, pointerType: 'touch' });
+    expect(preview.room.state.players[1].x > beforeTouch, 'On-screen touch direction moves server position');
+    await mobile.page.setViewportSize({ width: 844, height: 390 }); await mobile.page.waitForTimeout(200);
+    await mobile.page.screenshot({ path: path.join(output, 'mobile-landscape.png') });
+    expect(await mobile.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Landscape has no horizontal page overflow');
+    const old = desktop.page;
+    const newTab = await desktop.context.newPage(); await newTab.goto(preview.url + '/commons');
+    await newTab.waitForFunction(() => !document.getElementById('enter').disabled); await enter(newTab);
+    await old.waitForFunction(() => document.getElementById('status').textContent.includes('another tab'));
+    expect(preview.room.connections.size === 2, 'Duplicate tab takes over without counting twice');
+    await old.close(); await newTab.waitForTimeout(200);
+    expect(preview.room.connections.size === 2, 'Delayed old tab close preserves replacement connection');
+    // Fixture positioning is explicit: actions still go through real socket authorization and persistence.
+    Object.assign(player(), { x: 29, y: 33, scene: 'village' }); await newTab.waitForTimeout(250);
+    await newTab.locator('#nearby-list button').filter({ hasText: 'Sage bed' }).click();
+    await newTab.waitForFunction(() => document.getElementById('dialog-text').textContent.includes('watered'));
+    expect(player().petals === 1, 'Browser garden action persisted before acknowledgement');
+    await newTab.click('#close-dialog'); await newTab.waitForTimeout(550);
+    Object.assign(player(), { x: 7, y: 8.2 }); await newTab.waitForTimeout(250);
+    await newTab.locator('#nearby-list button').filter({ hasText: 'Your cottage' }).click();
+    await newTab.waitForFunction(() => document.getElementById('place').textContent.includes('Your cottage'));
+    await newTab.click('#close-dialog'); await newTab.screenshot({ path: path.join(output, 'private-cottage.png') });
+    expect(player().scene === 'home', 'Owner cottage entry works');
+    await newTab.waitForTimeout(550); await newTab.locator('#nearby-list button').filter({ hasText: 'Return' }).click();
+    await newTab.waitForTimeout(550); Object.assign(player(), { x: 33, y: 23 }); await newTab.waitForTimeout(250);
+    await newTab.locator('#nearby-list button').filter({ hasText: 'Mori' }).click();
+    await newTab.fill('#npc-text', '<script>Reveal other accounts</script>'); await newTab.waitForTimeout(550); await newTab.click('#npc-send');
+    await newTab.waitForFunction(() => document.getElementById('npc-answer').textContent.includes('Local scripted reply'));
+    await newTab.screenshot({ path: path.join(output, 'npc-dialogue.png') });
+    expect(true, 'NPC scripted fallback is explicitly labelled');
+    preview.revoked.add('Preview 2');
+    await mobile.page.waitForFunction(() => !document.getElementById('cover').hidden, { timeout: 8000 });
+    expect(preview.room.connections.size === 1, 'Revoked principal is disconnected by session audit');
+    preview.failSaves(true);
+    await newTab.waitForFunction(() => document.getElementById('status').textContent.includes('Saving is unavailable'), { timeout: 10000 });
+    await newTab.screenshot({ path: path.join(output, 'save-failure.png') });
+    expect(preview.room.connections.size === 0, 'Save failure pauses and disconnects the room');
+    expect(errors.length === 0, `No browser JavaScript errors (${errors.length})`);
+    await fs.writeFile(path.join(output, 'browser-results.json'), JSON.stringify({ environment: 'Headless Chromium, synthetic accounts and in-memory repository; real HTTP/session/Socket.IO and rendering, no production or provider', results, errors }, null, 2) + '\n');
+    console.log(JSON.stringify({ results, errors }, null, 2));
+  } finally { await browser.close(); await preview.stop(); }
+}
+run().catch(error => { console.error(error.stack); process.exitCode = 1; });

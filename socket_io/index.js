@@ -93,6 +93,8 @@ module.exports = (server, sessionMiddleware, { databaseReady = isDatabaseReady }
     }
   });
 
+  require('./commons').installCommons(server, sessionMiddleware);
+
   io.userRoom = roomForUser;
   io.conversationRoom = roomForConversation;
 

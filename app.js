@@ -409,6 +409,12 @@ protectedStaticDirectories.forEach((directory) => {
 
 // Serve static files
 app.get('/assets/forms/:revision/:filename', formAssets.serve);
+app.use('/commons', imageSafeStatic(path.join(__dirname, 'public', 'commons'), {
+  index: false, redirect: false, maxAge: '1h',
+  setHeaders(res, filename) {
+    if (/\.v1\.webp$/.test(filename)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  },
+}));
 app.use(imageSafeStatic(path.join(__dirname, 'public')));
 app.use('/vendor/katex', imageSafeStatic(path.join(__dirname, 'node_modules', 'katex', 'dist')));
 app.use('/vendor/mermaid', imageSafeStatic(path.join(__dirname, 'node_modules', 'mermaid', 'dist')));
@@ -503,6 +509,7 @@ app.use('/mypage', (req, res, next) => {
   }
   return isAuthenticated(req, res, next);
 }, mypageRouter);
+app.use('/commons', require('./routes/commons').createCommonsRouter());
 app.use('/learning', isAuthenticated, learningRouter);
 app.use('/chat', isAuthenticated, authorize("chat"), chatRouter);
 app.use('/chat2', isAuthenticated, authorize("chat2"), chat2Router);

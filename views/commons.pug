@@ -1,0 +1,126 @@
+doctype html
+html(lang='en')
+  head
+    meta(charset='utf-8')
+    meta(name='viewport', content='width=device-width, initial-scale=1, viewport-fit=cover')
+    meta(name='csrf-token', content=csrfToken)
+    meta(name='theme-color', content='#0E0F13')
+    title Lantern Commons · A little light, a place to return
+    link(rel='icon', href='/commons/icon.svg', type='image/svg+xml')
+    link(rel='stylesheet', href='/css/color-theme.css')
+    link(rel='stylesheet', href='/commons/style.css')
+    script(src='/socket.io/socket.io.js', defer)
+    script(src='/commons/world.js', defer)
+    script(src='/commons/renderer.js', defer)
+    script(src='/commons/client.js', defer)
+  body
+    header.topbar
+      a.brand(href='/mypage', aria-label='Back to My Account')
+        img(src='/commons/icon.svg', alt='', width='38', height='38')
+        span
+          strong Lantern Commons
+          small A LITTLE LIGHT. A PLACE TO RETURN.
+      .village-time
+        span#phase Village time
+        small#time Asia/Tokyo
+      button#help(type='button', aria-label='Open field guide') Field guide
+    main.shell
+      section.stage(aria-label='Village exploration')
+        canvas#world(tabindex='0', aria-label='Lantern Commons. Move with arrow keys, WASD or on-screen directions. Nearby places are also listed as buttons.')
+        .scene-tag
+          span.small-label LANTERN COMMONS
+          strong#place The village square
+        .presence
+          span.presence-dot(aria-hidden='true')
+          span#online Connecting
+        #toast.toast(role='status', aria-live='polite')
+        .movement(aria-label='Movement controls')
+          button.up(type='button', data-x='0', data-y='-1', aria-label='Walk north') ↑
+          button.left(type='button', data-x='-1', data-y='0', aria-label='Walk west') ←
+          button.down(type='button', data-x='0', data-y='1', aria-label='Walk south') ↓
+          button.right(type='button', data-x='1', data-y='0', aria-label='Walk east') →
+        .stage-actions
+          button#interact.primary(type='button', disabled) Explore nearby
+          button#wave(type='button', aria-label='Wave hello to nearby villagers') Wave
+        .zoom-controls
+          button#zoom-out(type='button', aria-label='Zoom out') −
+          button#zoom-in(type='button', aria-label='Zoom in') +
+        #cover.cover
+          .welcome-card
+            img.welcome-art(src='/commons/blue-hour.v1.webp', alt='An original painting of a woodland village illuminated by golden lanterns at blue hour.')
+            .welcome-copy
+              span.small-label YOUR QUIET CORNER OF THE WORLD
+              h1 Come in. <br>Stay a little.
+              p Wander the woodland, tend a shared garden, and make a light to bring home. There is nothing to keep up with here.
+              p#status(role='status', aria-live='polite') Loading the village art…
+              button#enter.primary(type='button', disabled) Enter the Commons
+              small One connection per account. Entering here takes over from your other tab or device.
+      aside.journal(aria-label='Your field notes')
+        .journal-heading
+          span.small-label A SLOW LITTLE ADVENTURE
+          h2 Field notes
+          p#identity Your own cottage is waiting.
+        .quest
+          .quest-number 01 — YOUR FIRST LANTERN
+          h3 A light of your own
+          p Follow the western woodland path. Listen to its three stones, gather petals in the garden, then visit the workshop.
+          ul.progress-list
+            li
+              span Woodland wisdom
+              strong#discoveries 0 / 3
+            li
+              span Golden petals
+              strong#petals 0 / 3
+            li
+              span Your lantern
+              strong#lantern Not yet made
+        .community
+          span.small-label THE COMMUNITY GARDEN
+          p
+            strong#blooms 0
+            |  small acts of care
+          small Every watered bed leaves the village a little brighter.
+        section.nearby
+          h3 Within reach
+          #nearby-list
+            p Walk towards a place to discover it.
+        .journal-footer
+          p#save-status Saved places, unhurried days.
+          small WASD / arrows to walk · E to interact<br>On a phone, hold the direction buttons.
+          a(href='/mypage') Return to My Account
+    dialog#interaction(aria-labelledby='dialog-title')
+      .dialog-heading
+        span.small-label LANTERN COMMONS
+        button#close-dialog(type='button', aria-label='Close interaction') Close
+      h2#dialog-title A moment in the village
+      p#dialog-text
+      a#portal.primary(hidden, target='_blank', rel='noopener noreferrer') Open
+      figure#gallery(hidden)
+        img(src='/commons/blue-hour.v1.webp', alt='Blue hour in Lantern Commons: a lantern-lit woodland village beneath the stars.')
+        figcaption Blue Hour · Original generated art, 2026
+      form#npc-form(hidden)
+        label(for='npc-text') Say something to Mori
+        textarea#npc-text(maxlength='400', rows='3', placeholder='What can I make in the workshop?')
+        small Optional AI dialogue. Only this conversation is sent to the configured Gateway. Replies cannot perform actions. Avoid personal information.
+        button#npc-send.primary(type='submit') Talk to Mori
+        p#npc-answer(role='status', aria-live='polite')
+    dialog#guide(aria-labelledby='guide-title')
+      .dialog-heading
+        span.small-label MAKE YOURSELF AT HOME
+        button#close-guide(type='button') Close
+      h2#guide-title The field guide
+      p#home-hint Your cottage is assigned when you first enter.
+      p Walk with WASD, arrow keys, or hold the on-screen direction buttons. Choose a nearby place in Field notes, or press E / Explore nearby. Zoom out to find your bearings.
+      ul
+        li The western woodland holds three stones. Visit all three.
+        li Three flower beds south of the square offer one petal each per Tokyo day.
+        li Willow Workshop makes your lantern from three petals and three discoveries.
+        li Your numbered cottage is on the north or south lane. Only you can enter.
+        li Mori waits by the square. AI dialogue is optional and may use local scripted replies.
+        li Conversation House opens Chat5 only with your normal permission. The shelter has no household-data connection.
+      p The sun follows Asia/Tokyo time. Nobody collides with other villagers. Closing your tab has no penalty. Movement is checkpointed every five seconds while storage is healthy; a crash can lose movement since the last successful save.
+      label.motion-setting
+        input#reduced-motion(type='checkbox')
+        |  Reduce ambient motion
+      p This release has no voice input, shared memories, trading, or scheduled events.
+    noscript Lantern Commons requires JavaScript. Your normal account pages remain available.
