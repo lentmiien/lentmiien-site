@@ -54,6 +54,7 @@ const {
   buildSpendingInsights,
 } = require('../services/openaiUsageMetricsService');
 const { toLocalDateOnlyString } = require('../utils/dateOnly');
+const { createMonitoringService } = require('../services/aiGatewayMonitoringService');
 const { isAiGatewayDashboardStatusAccepted } = require('../utils/aiGatewayHttp');
 const {
   buildAiGatewayReservationRequest,
@@ -178,6 +179,11 @@ const AI_GATEWAY_ENDPOINTS = {
   checkpoints: '/lentmiienlm/checkpoints',
   monitor: '/lentmiienlm/monitor',
 };
+let gatewayMonitoring;
+function getGatewayMonitoring() {
+  if (!gatewayMonitoring) gatewayMonitoring = createMonitoringService({ baseUrl: AI_GATEWAY_BASE_URL, headers: buildAiGatewayAdminHeaders });
+  return gatewayMonitoring;
+}
 const AI_GATEWAY_TIMEOUT_MS = 5000;
 const AI_GATEWAY_RESERVATION_TIMEOUT_MS = 630000;
 
@@ -3618,8 +3624,8 @@ function buildAiGatewayDashboard(rawData) {
   const summaryCards = [
     {
       label: 'Gateway',
-      value: health.status === 'ok' ? 'Healthy' : (health.status || 'Unknown'),
-      helper: `${health.upstreamOk}/${health.upstreamTotal || 0} upstreams responding`,
+      value: 'See live service status below',
+      helper: 'Availability includes lifecycle policy and monitoring freshness',
     },
     containers.length
       ? {
@@ -3739,6 +3745,7 @@ exports.ai_gateway_dashboard = async (req, res) => {
     { key: 'limits', path: AI_GATEWAY_ENDPOINTS.limits },
     { key: 'musicModels', path: '/music/models' },
     { key: 'health', path: AI_GATEWAY_ENDPOINTS.health },
+    { key: 'queue', path: '/gpu/queue' },
     { key: 'reservation', path: AI_GATEWAY_ENDPOINTS.reservation },
     { key: 'containers', path: AI_GATEWAY_ENDPOINTS.containers, admin: true },
     { key: 'autoStop', path: AI_GATEWAY_ENDPOINTS.autoStop },
@@ -3751,6 +3758,7 @@ exports.ai_gateway_dashboard = async (req, res) => {
     `${AI_GATEWAY_BASE_URL}${endpoint.path}`,
     {
       timeout: AI_GATEWAY_TIMEOUT_MS,
+      ...(['health', 'containers', 'queue', 'reservation'].includes(endpoint.key) ? { maxContentLength: 1024 * 1024, maxRedirects: 0 } : {}),
       responseType: ['musicModels', 'limits'].includes(endpoint.key) ? 'text' : endpoint.responseType || 'json',
       ...(['musicModels', 'limits'].includes(endpoint.key) ? { transformResponse: [parseLosslessJson], maxContentLength: 1024 * 1024, maxRedirects: 0 } : {}),
       headers: endpoint.admin ? buildAiGatewayAdminHeaders() : undefined,
@@ -3776,10 +3784,16 @@ exports.ai_gateway_dashboard = async (req, res) => {
   });
 
   const dashboard = buildAiGatewayDashboard(rawData);
+  dashboard.monitoring = getGatewayMonitoring().observe(rawData);
 
-  return res.render('admin_ai_gateway', {
+  return res.set('Cache-Control', 'private, no-store, max-age=0').render('admin_ai_gateway', {
     dashboard,
   });
+};
+
+exports.ai_gateway_monitoring = async (_req, res) => {
+  const monitoring = await getGatewayMonitoring().get();
+  return res.set('Cache-Control', 'private, no-store, max-age=0').json(monitoring);
 };
 
 exports.ai_gateway_gpu = async (req, res) => {

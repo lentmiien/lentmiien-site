@@ -56,6 +56,8 @@ block content
             if card.helper
               .stat-card__helper= card.helper
 
+    include includes/aiGatewayMonitoring
+
     .ai-gateway__hero-grid
       .panel
         .panel__header
@@ -101,25 +103,8 @@ block content
     .ai-gateway__details
       .panel
         .panel__header
-          h2.panel__title Health & Upstreams
-          p.panel__subtitle Latest response from /health.
-        if dashboard.health && dashboard.health.upstreams && dashboard.health.upstreams.length
-          .health-grid
-            each upstream in dashboard.health.upstreams
-              .health-card(class= upstream.ok ? 'health-card--ok' : 'health-card--fail')
-                .health-card__title= upstream.key
-                .health-card__status= upstream.ok ? 'OK' : 'Issue'
-                if upstream.meta && upstream.meta.length
-                  each line in upstream.meta
-                    .health-card__meta= line
-                if upstream.detail
-                  .health-card__detail= upstream.detail
-        else
-          p.text-muted.mb-0 No upstream data available.
-      .panel
-        .panel__header
           h2.panel__title GPU Reservation
-          p.panel__subtitle Keep one managed GPU service ready for an interactive or bulk session.
+          p.panel__subtitle Keep one managed GPU service ready for an interactive or bulk session. Manual GPU start/restart creates an exclusive reservation; it is not a health check.
         .reservation-controls#reservationControls
           .reservation-controls__summary
             div
@@ -629,6 +614,8 @@ block content
           p.text-muted.mb-0 No ComfyUI log entries yet.
 
 block script
+  script(type='application/json', id='aiGatewayMonitoringData') !{safeJson(dashboard.monitoring || null)}
+  script(src='/js/aiGatewayMonitoring.js', defer)
   script(src='https://d3js.org/d3.v7.min.js', defer)
   script(type='application/json', id='aiGatewayData') !{safeJson({ csrfToken: typeof csrfToken !== 'undefined' ? csrfToken : '', fetchedAt: dashboard.fetchedAt, chartData: dashboard.chartData, gpu: dashboard.gpu, autoStop: dashboard.autoStop, containers: dashboard.containers, containerSummary: dashboard.containerSummary, reservation: dashboard.reservation })}
   script(src='/js/aiGateway.js', defer)

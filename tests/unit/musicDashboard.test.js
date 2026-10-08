@@ -11,6 +11,7 @@ function fixture() {
       if (name === 'axios') return axios;
       if (name === '../utils/logger') return logger;
       if (name === '../utils/apiDebugLogger') return { createApiDebugLogger: jest.fn() };
+      if (name === '../services/aiGatewayMonitoringService') return require('../../services/aiGatewayMonitoringService');
       if (name === '../services/musicGatewayService') return require('../../services/musicGatewayService');
       if (name.startsWith('../utils/') && !name.includes('OpenAI')) return require(path.resolve('controllers', name));
       if (name.startsWith('../services/')) return class {};
@@ -63,6 +64,7 @@ test('registered dashboard safety middleware covers case/trailing-slash variants
     require: name => {
       if (name === 'express') return { Router: () => router, json: () => noop, urlencoded: () => noop };
       if (name === 'express-rate-limit') return { rateLimit: () => noop };
+      if (name === '../middleware/requireCapabilities') return { createRequireCapabilities: () => noop };
       if (name === '../middleware/musicAccess') return { requireMusic: () => noop, CAPABILITIES: {}, csrf: { issueToken: noop, requireToken: noop } };
       if (name === '../middleware/sessionCsrf') return { createSessionCsrf: () => ({ issueToken: noop, requireToken: noop }) };
       if (['fs', 'path', 'crypto', 'multer'].includes(name)) return require(name);

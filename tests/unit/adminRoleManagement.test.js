@@ -126,6 +126,7 @@ test('registered role routes issue and enforce shared CSRF before permission wri
     require: name => {
       if (name === 'express') return { Router: () => router, json: () => () => {}, urlencoded: () => () => {} };
       if (name === 'express-rate-limit') return { rateLimit: () => (_req, _res, next) => next() };
+      if (name === '../middleware/requireCapabilities') return { createRequireCapabilities: () => (_req, _res, next) => next() };
       if (name === '../middleware/musicAccess') return { requireMusic: () => (_req, _res, next) => next(), CAPABILITIES: {}, csrf: { issueToken: () => {}, requireToken: () => {} } };
       if (name === '../controllers/admincontroller') return f.controller;
       if (name === '../middleware/sessionCsrf') return {

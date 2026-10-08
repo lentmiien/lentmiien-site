@@ -14,7 +14,15 @@ const { requireMusic, CAPABILITIES: MUSIC_CAPABILITIES, csrf: musicCsrf, bounded
 const { rateLimit: musicRateLimit } = require('express-rate-limit');
 const adminMusicLimit = musicRateLimit({ windowMs: 60000, limit: 5, keyGenerator: req => String(req.user._id), standardHeaders: 'draft-8', legacyHeaders: false });
 router.use('/music-test', requireMusic(MUSIC_CAPABILITIES.admin), (req, _res, next) => { req.musicAdmin = true; next(); }, express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '64kb', parameterLimit: 30 }), musicCsrf.issueToken);
-router.use(/^\/ai-gateway(?:\/(?:gpu|reservation|containers(?:\/.*)?|auto-stop|monitor))?\/?$/i, requireMusic(MUSIC_CAPABILITIES.admin), musicCsrf.issueToken, (req, res, next) => ['GET', 'HEAD'].includes(req.method) ? next() : musicCsrf.requireToken(req, res, next));
+router.use(/^\/ai-gateway(?:\/(?:gpu|monitoring|reservation|containers(?:\/.*)?|auto-stop|monitor))?\/?$/i, requireMusic(MUSIC_CAPABILITIES.admin), musicCsrf.issueToken, (req, res, next) => ['GET', 'HEAD'].includes(req.method) ? next() : musicCsrf.requireToken(req, res, next));
+// Read-only operational metadata remains inside the existing admin and music gates.
+const { createRequireCapabilities } = require('../middleware/requireCapabilities');
+const gatewayMonitorAccess = createRequireCapabilities({
+  capabilities: ['ai_gateway.monitor.read'],
+  roleModel: require('../database').RoleModel,
+  roleCapabilityBundles: { admin: ['ai_gateway.monitor.read'], family: [], user: [] },
+});
+router.use(/^\/ai-gateway(?:\/monitoring)?\/?$/i, gatewayMonitorAccess);
 const learningAdminController = require('../controllers/learningAdminController');
 const messageInboxController = require('../controllers/messageInboxAdminController');
 const toolManagerController = require('../controllers/toolManagerController');
@@ -277,6 +285,7 @@ router.get('/ai-gateway/modular-llm/runs/:id', modularLlmAdminController.showRun
 router.get('/ai-gateway/modular-llm/gateway-runs/:runId', modularLlmAdminController.showGatewayRun);
 router.get('/ai-gateway/documentation', aiGatewayDocumentationAdminController.index);
 router.get('/ai-gateway/documentation/:filename', aiGatewayDocumentationAdminController.show);
+router.get('/ai-gateway/monitoring', controller.ai_gateway_monitoring);
 router.get('/ai-gateway/gpu', controller.ai_gateway_gpu);
 router.get('/ai-gateway/reservation', controller.ai_gateway_reservation);
 router.post('/ai-gateway/reservation', controller.ai_gateway_reservation_create);

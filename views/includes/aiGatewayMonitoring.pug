@@ -1,0 +1,63 @@
+section.panel.gateway-monitoring(aria-labelledby='serviceMonitoringTitle')
+  .panel__header
+    h2.panel__title#serviceMonitoringTitle Service availability & recovery
+    p.panel__subtitle Read-only observations. Refreshes every 30 seconds while visible; snapshots are not atomic.
+    button.btn.btn-warning.btn-sm#refreshServiceMonitoring(type='button') Refresh service status
+  #serviceMonitoringStatus(role='status', aria-live='polite') Loading service observations…
+  #serviceMonitoringContext
+  #serviceMonitoringCards.health-grid
+  noscript
+    p JavaScript is required for live service status. Recovery instructions below remain available.
+  p Most AI services should release VRAM when unused. MPNet and Nomic are the ordinary GPU idle residents; they yield to heavy work, reservations and training, and warming can be delayed (normally about 15 seconds after queue idle). Heavy models are on demand. Some OCR containers stay running with their model unloaded. CPU services may retain models in RAM.
+  p A successful probe indicates responsiveness/readiness, not a completed inference or synthesis test. Voicevox’s /version and the static voices catalog do not verify speech generation. GPU host totals are not per-service VRAM. Stop cause, maintenance intent, last use and last successful request are not available from these snapshots.
+  details.gateway-runbook
+    summary Recovery runbook — operator actions on the Gateway host
+    p These commands are copyable instructions only. Confirm maintenance intent and current jobs before acting. No monitoring action starts, unloads, releases or restarts a service.
+    h3#recovery-voicevox Voicevox stopped or TTS unavailable
+    p Inspect the existing CPU engine first. An explicit maintenance stop can persist across Docker restarts under unless-stopped. Restore required CPU services after maintenance.
+    pre#voicevox-diagnostics
+      code.
+        cd /home/lennart/ai-services/voicevox
+        docker compose ps --all voicevox_engine
+        docker compose logs --tail=200 voicevox_engine
+        docker inspect --format 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} restarts={{.RestartCount}}' voicevox-engine
+    button.btn.btn-outline-warning.btn-sm(type='button', data-copy-command='voicevox-diagnostics') Copy diagnostics
+    p Only after confirming the existing CPU engine is stopped and this is not intentional maintenance:
+    pre#voicevox-recovery
+      code.
+        cd /home/lennart/ai-services/voicevox
+        docker compose start voicevox_engine
+        curl --fail-with-body --max-time 15 http://127.0.0.1:8080/containers/voicevox
+    button.btn.btn-outline-warning.btn-sm(type='button', data-copy-command='voicevox-recovery') Copy targeted recovery
+    p Read the actual JSON health; HTTP 200 alone is insufficient. Allow cold startup, then retry one intended TTS generation in the site and listen to it. A running container is not necessarily ready.
+    h3#recovery-idle Normal GPU idle / model unloaded
+    p No recovery needed for a recoverable suspended GPU service or a responsive lazy model with an unloaded model. Let the next legitimate request acquire the GPU. Embedding suspension alone is not an outage. Recoverability does not prove an intentional stop or rule out a prior crash.
+    h3#recovery-cpu Required CPU service stopped
+    p Check the service’s verified Compose runbook, state, logs and maintenance intent, then start only the existing stopped service. Do not start all services or reset defaults.
+    h3#recovery-probe Running but probe failed
+    p Inspect service logs, configuration, model assets and networking. Semantic/model errors are real failures. Readiness success still does not verify an inference request. Check existing work before retrying.
+    h3#recovery-missing Missing / not installed
+    p Follow that service’s provisioning runbook. A start command cannot create a missing container. Missing is not healthy idle.
+    h3#recovery-monitoring Docker, inspection, telemetry or monitoring unknown
+    p Investigate monitoring connectivity, Docker access and telemetry first. Unknown inspection is not a crash and does not mean every service is down. Refresh after transitions; never assume docker_available proves successful inspection.
+    h3#recovery-queue Queue pressure / HTTP 429
+    p Inspect queue and reservation ownership, including training. Use bounded backoff. Do not restart busy services. Active reservations intentionally retain the selected GPU service and suppress embeddings. Queue completion counters are not inference-success counters.
+    h3#recovery-preparation Preparation / readiness / HTTP 503
+    p Inspect logs, model assets, Docker control and telemetry. A stopped GPU service marked unrecoverable cannot automatically start. Let cold startup finish before deciding recovery is needed.
+    h3 Upstream HTTP 502 / timeout HTTP 504
+    p For 502, inspect the upstream’s sanitized status and host logs, and check for an existing job before retrying. For 504, the job may still have executed: inspect output/job status before resubmitting. Status codes are clues, not universal one-to-one diagnoses.
+    h3 Resource manager degradation / cleanup / release_failed
+    p Inspect the reason in Gateway logs, queue ownership, reservation and host VRAM. Do not force release, unload or restart. Historical hook errors are sticky and untimestamped; they do not prove a current failure. Driver/runtime faults require preserving logs and operator escalation, not repeated model launches.
+    h3 Read-only host diagnostics
+    pre#gateway-diagnostics
+      code.
+        curl --fail-with-body --max-time 20 http://127.0.0.1:8080/health
+        curl --fail-with-body --max-time 20 http://127.0.0.1:8080/containers
+        curl --fail-with-body --max-time 10 http://127.0.0.1:8080/gpu/queue
+        curl --fail-with-body --max-time 10 http://127.0.0.1:8080/gpu/reservation
+        curl --fail-with-body --max-time 10 http://127.0.0.1:8080/gpu
+        cd /home/lennart/ai-services/ai-gateway
+        docker compose ps --all ai_gateway
+        docker compose logs --tail=200 ai_gateway
+    button.btn.btn-outline-warning.btn-sm(type='button', data-copy-command='gateway-diagnostics') Copy Gateway diagnostics
+    p#monitoringCopyFeedback(role='status', aria-live='polite')

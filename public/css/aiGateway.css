@@ -683,3 +683,16 @@
     min-height: 260px;
   }
 }
+
+.gateway-monitoring > * + * { margin-top: 1rem; }
+.gateway-monitoring .health-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.gateway-monitoring .health-card { overflow-wrap: anywhere; }
+.monitoring-card--normal { border-color: var(--success); }
+.monitoring-card--failure { border-color: var(--danger); }
+.monitoring-card--unknown { border-color: var(--warning); }
+.monitoring-warning { color: var(--warning); }
+.gateway-runbook { border-top: 1px solid var(--divider); padding-top: 1rem; }
+.gateway-runbook summary { color: var(--accent); cursor: pointer; font-weight: 600; }
+.gateway-runbook h3 { font-size: 1.1rem; margin-top: 1.5rem; scroll-margin-top: 5rem; }
+.gateway-runbook pre { background: var(--bg); color: var(--text); padding: 1rem; border: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
+.gateway-runbook button:focus-visible, .gateway-runbook summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
