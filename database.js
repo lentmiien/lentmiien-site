@@ -9,6 +9,7 @@ mongoose.set('bufferCommands', false);
 const UseraccountModel = require('./models/useraccount');
 const RoleModel = require('./models/role');
 const CommonsWorld = require('./models/commons_world');
+const CommonsDiary = require('./models/commons_diary');
 // Article
 const ArticleModel = require('./models/article');
 // ChatGPT
@@ -203,6 +204,7 @@ const RunpodPodBillingPeriod = require('./models/runpod_pod_billing_period');
 // Export models
 module.exports = {
   CommonsWorld,
+  CommonsDiary,
   UseraccountModel,
   RoleModel,
   ArticleModel,

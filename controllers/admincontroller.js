@@ -500,6 +500,7 @@ const PERFORMANCE_RANGE_OPTIONS = [
   { value: 72, label: 'Last 3 days' },
   { value: 168, label: 'Last 7 days' },
 ];
+const { PRIVATE_DATABASE_COLLECTIONS } = require('../utils/privateDatabaseCollections');
 const DB_VIEWER_DEFAULT_LIMIT = 25;
 const DB_VIEWER_MAX_LIMIT = 200;
 const DB_VIEWER_SYSTEM_PREFIX = 'system.';
@@ -805,7 +806,7 @@ async function listVisibleCollections() {
   const collections = await db.listCollections({}, { nameOnly: true }).toArray();
   return collections
     .map((entry) => entry.name)
-    .filter((name) => typeof name === 'string' && !name.startsWith(DB_VIEWER_SYSTEM_PREFIX))
+    .filter((name) => typeof name === 'string' && !name.startsWith(DB_VIEWER_SYSTEM_PREFIX) && !PRIVATE_DATABASE_COLLECTIONS.has(name))
     .sort((a, b) => a.localeCompare(b));
 }
 
@@ -4404,8 +4405,9 @@ exports.database_viewer_page = async (req, res) => {
 exports.database_viewer_data = async (req, res) => {
   res.set('Cache-Control', 'private, no-store');
   try {
-    const availableCollections = await listVisibleCollections();
     const collection = typeof req.query.collection === 'string' ? req.query.collection : '';
+    if (PRIVATE_DATABASE_COLLECTIONS.has(collection)) return res.status(403).json({ error: 'Collection unavailable.' });
+    const availableCollections = await listVisibleCollections();
     const limit = normalizeDbViewerLimit(req.query.limit);
 
     if (!collection || !availableCollections.includes(collection)) {
@@ -4443,6 +4445,7 @@ exports.database_viewer_delete = async (req, res) => {
     const collection = typeof req.body?.collection === 'string' ? req.body.collection.trim() : '';
     const id = typeof req.body?.id === 'string' ? req.body.id : '';
 
+    if (PRIVATE_DATABASE_COLLECTIONS.has(collection)) return res.status(403).json({ error: 'Collection unavailable.' });
     // Deny even for admins and even when the collection/record does not yet exist.
     if (DB_VIEWER_READ_ONLY_COLLECTIONS.has(collection)) {
       logger.warning('Blocked generic accounting collection deletion; use Accounting operations', {

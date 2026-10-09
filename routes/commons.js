@@ -1,9 +1,9 @@
 const express = require('express');
 const { createRequireCapabilities } = require('../middleware/requireCapabilities');
 const { createSessionCsrf, PRIVATE_NO_STORE } = require('../middleware/sessionCsrf');
-const { PLAY, OPERATIONS, ROLE_BUNDLES } = require('../utils/commonsAuthorizationPolicy');
+const { PLAY, ROLE_BUNDLES } = require('../utils/commonsAuthorizationPolicy');
 const { config: readConfig } = require('../services/commons/config');
-function createCommonsRouter({ roleModel = require('../models/role'), configReader = readConfig, diagnosticsReader = require('../services/commons/runtime').diagnostics } = {}) {
+function createCommonsRouter({ roleModel = require('../models/role'), userModel = require('../models/useraccount'), configReader = readConfig, privateOptions = {}, diagnosticsReader = require('../services/commons/runtime').diagnostics } = {}) {
   const router = express.Router();
   const csrf = createSessionCsrf();
   router.use((req, res, next) => {
@@ -17,13 +17,20 @@ function createCommonsRouter({ roleModel = require('../models/role'), configRead
     return next();
   });
   router.use(createRequireCapabilities({ capabilities: [PLAY], roleModel, roleCapabilityBundles: ROLE_BUNDLES }));
+  router.use('/api', require('./commonsPrivate').createCommonsPrivateRouter(privateOptions));
   router.get('/', csrf.issueToken, (_req, res) => res.render('commons', { pageTitle: 'Lantern Commons', gtag: false }));
-  router.get('/diagnostics', createRequireCapabilities({ capabilities: [OPERATIONS], roleModel, roleCapabilityBundles: ROLE_BUNDLES }), (req, res) => {
-    if (req.user.type_user !== 'admin') return res.status(403).send('Access denied.');
-    const config = configReader();
-    return res.json({ feature: 'Lantern Commons', runtime: diagnosticsReader(), schemaVersion: 1, maxOnline: config.maxOnline, plots: 12,
-      checkpointMs: config.checkpointMs, leaseMs: config.leaseMs, npcEnabled: config.npcEnabled,
-      timeZone: 'Asia/Tokyo', ownership: 'Single MongoDB-fenced room owner', documentation: 'documentation/commons/README.md' });
+  router.get('/diagnostics', async (req, res) => {
+    try {
+      const principal = await userModel.findOne({ _id: req.user._id }, 'name type_user', { maxTimeMS: 2000 });
+      if (!principal || !await require('../services/commons/policy').permitted(principal, 'diagnostics', roleModel)) return res.status(403).send('Access denied.');
+      const config = configReader();
+      return res.json({ feature: 'Lantern Commons', runtime: diagnosticsReader(), schemaVersion: 1, maxOnline: config.maxOnline, plots: 12,
+        checkpointMs: config.checkpointMs, leaseMs: config.leaseMs, npcEnabled: config.npcEnabled,
+        timeZone: 'Asia/Tokyo', ownership: 'Single MongoDB-fenced room owner', documentation: 'documentation/commons/README.md' });
+    } catch (_) {
+      require('../utils/logger').warning('Commons diagnostics authorization unavailable', { category: 'commons.authorization' });
+      return res.status(503).send('Diagnostics unavailable.');
+    }
   });
   return router;
 }

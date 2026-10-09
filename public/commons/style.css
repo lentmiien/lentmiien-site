@@ -723,3 +723,19 @@ textarea {
     scroll-behavior: auto!important;
   }
 }
+/* v1.2 private content panels use the shared Graphite/Ember/Amber tokens. */
+#private-panel { border-top: 1px solid var(--divider); padding-top: 1rem; }
+#private-panel h4 { margin: .6rem 0; }
+#private-panel button, #private-panel a { margin: .35rem .5rem .35rem 0; }
+#private-panel textarea, #private-panel input { display: block; width: 100%; box-sizing: border-box; background: var(--surface-1); color: var(--text); border: 1px solid var(--border); border-radius: .5rem; padding: .7rem; font: inherit; }
+#private-panel textarea { resize: vertical; line-height: 1.6; }
+#private-panel textarea[readonly] { color: var(--text-secondary); }
+.panel-note, .panel-status { color: var(--text-secondary); }
+.panel-status { min-height: 1.5em; }
+.panel-actions, .diary-history { display: flex; flex-wrap: wrap; gap: .4rem; }
+.metric { padding: .7rem; margin: .6rem 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: .6rem; }
+.metric p { margin: .4rem 0; }
+.metric progress { display: block; width: 100%; height: .6rem; margin-top: .6rem; accent-color: var(--accent); }
+.panel-art { height: 160px; width: 160px; float: right; margin: 0 0 .7rem .8rem; }
+#private-panel::after { content: ''; display: block; clear: both; }
+@media(max-width: 520px) { .panel-art { width: 112px; height: 112px; } }

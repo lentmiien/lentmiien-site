@@ -3,9 +3,9 @@ const fs = require('fs');
 const vm = require('vm');
 const sharp = require('sharp');
 
-test('v1.1 keeps the persistence contract, content counts and movement model', () => {
+test('v1.2 preserves v1.1 content and adds one quest board', () => {
   expect(W.VERSION).toBe(1);
-  expect(W.locations).toHaveLength(24); expect(W.homes).toHaveLength(12); expect(W.trees).toHaveLength(45);
+  expect(W.locations).toHaveLength(25); expect(W.homes).toHaveLength(12); expect(W.trees).toHaveLength(45);
   expect(W.scenery).toHaveLength(24);
   const cardinal = { ...W.SPAWN }, diagonal = { ...W.SPAWN };
   W.move(cardinal, { x: 1, y: 0, at: 0 }, .1, 0);

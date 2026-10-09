@@ -3,7 +3,15 @@
   const $ = id => document.getElementById(id);
   const W = window.CommonsWorld;
   let renderer, socket, state, lastNearby = null, toastTimer, awaiting = false, lastStateAt = 0;
-  let connectionEpoch = 0;
+  let connectionEpoch = 0, connectionTicket = null;
+  const panels = window.CommonsPanels({ toast, request: async (path, body) => {
+    const epoch = connectionEpoch;
+    const response = await fetch(`/commons/api/${path}`, { method: body ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content, 'X-Commons-Connection': connectionTicket || '' },
+      ...(body ? { body: JSON.stringify(body) } : {}) });
+    const result = await response.json();
+    return epoch === connectionEpoch && connectionTicket ? result : { error: 'UNAUTHORIZED' };
+  } });
   const held = new Set();
   let touch = { x: 0, y: 0 }, lastInput = '';
   const errors = {
@@ -14,13 +22,14 @@
     ROOM_UNAVAILABLE: 'The village cannot open right now. Storage or another room owner may be unavailable. Try again shortly.',
     SAVE_UNAVAILABLE: 'Saving is unavailable. The village has paused to protect your progress. Retry shortly; movement since the last save may be lost.',
     TAKEN_OVER: 'Your account entered from another tab or device. Enter here to take over again.',
-    TOO_FAR: 'Move a little closer to that place.', PRIVATE_HOUSE: 'This cottage belongs to another villager. Your cottage number is in Field notes.',
+    TOO_FAR: 'Move a little closer to that place.', FORBIDDEN: 'This place is not available for your account.', PRIVATE_HOUSE: 'This cottage belongs to another villager. Your cottage number is in Field notes.',
     NEED_LANTERN: 'Make a lantern at Willow Workshop first.', NPC_BUSY: 'Mori needs a moment. Try again in fifteen seconds.',
     BUSY: 'One moment, please.', INVALID_INPUT: 'Please use a short message of up to 400 characters.',
   };
   function toast(text) { $('toast').textContent = text; $('toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 5500); }
   function stopMovement() { held.clear(); touch = { x: 0, y: 0 }; sendInput(true); }
   function showCover(text) {
+    connectionTicket = null; panels.reset();
     connectionEpoch++; awaiting = false; $('npc-send').disabled = false;
     stopMovement(); $('status').textContent = text; $('enter').textContent = 'Enter the Commons'; $('enter').disabled = !renderer;
     $('cover').hidden = false; $('online').textContent = 'Offline';
@@ -29,11 +38,12 @@
   }
   function update(snapshot) {
     if (snapshot.version !== W.VERSION || snapshot.clientRevision !== W.CLIENT_REVISION) { socket.disconnect(); showCover('The village has changed. Reload this page for the new version.'); return false; }
+    if (state && state.self.scene !== snapshot.self.scene) { const privateOpen = !$('private-panel').hidden; panels.reset(); if (privateOpen && $('interaction').open) $('interaction').close(); }
     state = snapshot; lastStateAt = Date.now(); renderer.update(snapshot);
     const clock = W.clock(snapshot.serverTime), self = snapshot.self;
     $('phase').textContent = clock.phase; $('time').textContent = `${clock.time} · Tokyo`;
     $('online').textContent = `${snapshot.online} / ${snapshot.maxOnline} here`;
-    $('place').textContent = self.scene === 'home' ? `Your cottage · ${self.plot + 1}` : self.x < 16 ? 'The woodland path' : self.y > 29 ? 'The garden lane' : 'The village square';
+    $('place').textContent = self.sceneDefinition?.name || (self.scene === 'home' ? `Your cottage · ${self.plot + 1}` : self.x < 16 ? 'The woodland path' : self.y > 29 ? 'The garden lane' : 'The village square');
     $('home-hint').textContent = `Your cottage is number ${self.plot + 1} on the ${self.plot < 6 ? 'north' : 'south'} lane. Each lane runs west to east, six cottages across.`;
     $('identity').textContent = `Cottage ${self.plot + 1} · ${self.plot < 6 ? 'North' : 'South'} lane`;
     $('discoveries').textContent = `${self.discoveries.length} / 3`;
@@ -89,8 +99,10 @@
     awaiting = false;
     if (result.error) return toast(errors[result.error] || 'That action is unavailable.');
     if (!$('cover').hidden) return;
-    const location = W.locations.find(l => l.id === target);
-    $('dialog-title').textContent = location?.name || (target === 'exit' ? 'Back to the village' : 'A little warmth');
+    panels.reset();
+    const location = W.locations.find(l => l.id === target) || state.self.sceneDefinition?.entities.find(e => e.id === target);
+    const panelTitles = { diary: 'Your cottage diary', stock: 'Household reserves', statistics: 'Site almanac', diagnostics: 'Village chronicle' };
+    $('dialog-title').textContent = location?.name || panelTitles[result.panel] || (target === 'exit' ? 'Back to the village' : 'A little warmth');
     $('dialog-text').textContent = result.message || '';
     $('portal').hidden = !result.href;
     // Server allowlist, also checked here: model text never creates a destination.
@@ -99,6 +111,7 @@
     $('gallery').hidden = !result.gallery; $('npc-form').hidden = !result.npc; $('npc-answer').textContent = '';
     if (['exit'].includes(target)) return toast(result.message);
     $('interaction').showModal();
+    if (result.panel) panels.open(result.panel);
   }
   $('enter').addEventListener('click', () => {
     if (!renderer) return;
@@ -106,7 +119,8 @@
     $('enter').disabled = true; $('status').textContent = 'Finding your place in the village…';
     socket = window.io('/commons', { auth: { csrf: document.querySelector('meta[name="csrf-token"]').content },
       path: '/commons/socket.io', transports: ['websocket'], forceNew: true, reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1500, reconnectionDelayMax: 5000 });
-    socket.on('joined', snapshot => { $('cover').hidden = true; lastNearby = '__new__'; if (!update(snapshot)) return; $('world').focus({ preventScroll: true }); toast(`Welcome home. Cottage ${snapshot.self.plot + 1} is yours.`); });
+    socket.on('private-reset', () => { panels.reset(); if ($('interaction').open) $('interaction').close(); toast('Access changed. This private display has closed.'); });
+    socket.on('joined', snapshot => { connectionTicket = snapshot.connection; panels.identify(snapshot.ownerSession); $('cover').hidden = true; lastNearby = '__new__'; if (!update(snapshot)) return; $('world').focus({ preventScroll: true }); toast(`Welcome home. Cottage ${snapshot.self.plot + 1} is yours.`); });
     socket.on('state', update);
     socket.on('closed', ({ code }) => { socket.io.reconnection(false); showCover(errors[code] || 'The village connection closed.'); });
     socket.on('connect_error', error => {
@@ -118,7 +132,8 @@
   });
   $('interact').addEventListener('click', () => { const p = state && W.nearby(state.self)[0]; if (p) interact(p.id); });
   $('wave').addEventListener('click', async () => { const result = await command('emote', 'Hello!'); if (result.error) toast(errors[result.error] || 'Unable to wave.'); });
-  $('close-dialog').addEventListener('click', () => $('interaction').close());
+  $('interaction').addEventListener('cancel', () => panels.reset());
+  $('close-dialog').addEventListener('click', () => { panels.reset(); $('interaction').close(); });
   $('help').addEventListener('click', () => { stopMovement(); $('guide').showModal(); });
   $('close-guide').addEventListener('click', () => $('guide').close());
   $('zoom-in').addEventListener('click', () => renderer?.zoom(.15)); $('zoom-out').addEventListener('click', () => renderer?.zoom(-.15));
@@ -147,9 +162,9 @@
   });
   setInterval(() => { sendInput(); if (state && $('cover').hidden && Date.now() - lastStateAt > 6000) { stopMovement(); toast('Waiting for the village connection…'); } }, 100);
   function loadImage(src) { return new Promise((resolve, reject) => { const image = new Image(); const timer = setTimeout(reject, 15000); image.onload = () => { clearTimeout(timer); resolve(image); }; image.onerror = () => { clearTimeout(timer); reject(new Error('Art unavailable')); }; image.src = src; }); }
-  Promise.all([loadImage('/commons/village-atlas.v1.webp'), loadImage('/commons/blue-hour.v1.webp'), loadImage('/commons/scenery-atlas.v1.webp'), loadImage('/commons/cottage.v1.webp')]).then(([atlas, painting, scenery, cottage]) => {
+  Promise.all([loadImage('/commons/village-atlas.v1.webp'), loadImage('/commons/blue-hour.v1.webp'), loadImage('/commons/scenery-atlas.v1.webp'), loadImage('/commons/cottage.v1.webp'), loadImage('/commons/furnishings.v1.2.webp')]).then(([atlas, painting, scenery, cottage, furnishings]) => {
     if (!window.io || !W || !window.CommonsRenderer) throw new Error('Client unavailable');
-    renderer = new window.CommonsRenderer($('world'), atlas, painting, scenery, cottage);
+    renderer = new window.CommonsRenderer($('world'), atlas, painting, scenery, cottage, furnishings);
     $('status').textContent = 'Your place will be saved. Leave whenever you like.'; $('enter').disabled = false;
   }).catch(() => { $('status').textContent = 'The village art or connection library could not load. Reload this page to try again.'; });
 }());

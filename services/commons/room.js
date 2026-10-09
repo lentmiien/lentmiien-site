@@ -1,4 +1,5 @@
 const World = require('../../public/commons/world');
+const { scenes } = require('./scenes');
 const logger = require('../../utils/logger');
 class CommonsError extends Error {
   constructor(code) { super(code); this.code = code; }
@@ -70,6 +71,8 @@ class CommonsRoom {
         player = { userId, plot, ...World.SPAWN, petals: 0, discoveries: [], watered: [], receipts: [], lantern: false, decorated: false };
         next.players.push(player);
       }
+      // Restricted rooms always restore at the public door before any snapshot.
+      if (scenes[player.scene]) Object.assign(player, scenes[player.scene].publicExit);
       const repair = World.repairPosition(player);
       if (repair) {
         Object.assign(player, repair);
@@ -101,7 +104,7 @@ class CommonsRoom {
     if (this.busy) return;
     for (const p of this.state.players) {
       const c = this.connections.get(p.userId);
-      if (c && c.validUntil > now) World.move(p, c.input, dt, now);
+      if (c && c.validUntil > now) World.move(p, c.input, dt, now, scenes[p.scene]);
     }
   }
   snapshot(userId, token) {
@@ -113,10 +116,10 @@ class CommonsRoom {
       emote: this.connections.get(p.userId)?.emote?.until > this.now() ? this.connections.get(p.userId).emote.text : null });
     return { version: World.VERSION, clientRevision: World.CLIENT_REVISION, serverTime: this.now(), savedAt: this.state.savedAt,
       online: this.connections.size, maxOnline: this.maxOnline, blooms: this.state.blooms,
-      self: { ...transform(own), scene: own.scene, petals: own.petals, discoveries: own.discoveries, decorated: own.decorated },
+      self: { ...transform(own), scene: own.scene, ...(scenes[own.scene] ? { sceneDefinition: scenes[own.scene] } : {}), petals: own.petals, discoveries: own.discoveries, decorated: own.decorated },
       players: presence.map(transform) };
   }
-  async action(userId, token, request) {
+  async action(userId, token, request, eligible = {}) {
     return this.serial(async () => {
       const connection = this.current(userId, token);
       if (!request || Object.keys(request).some(k => !['id', 'target'].includes(k))
@@ -126,7 +129,7 @@ class CommonsRoom {
       const p = next.players.find(row => row.userId === userId);
       const receipt = p.receipts.find(r => r.id === request.id);
       if (receipt) return { message: receipt.message, duplicate: true };
-      if (!World.nearby(p).some(l => l.id === request.target)) fail('TOO_FAR');
+      if (!World.nearby({ ...p, sceneDefinition: scenes[p.scene] }).some(l => l.id === request.target)) fail('TOO_FAR');
       connection.input = null;
       let message;
       const target = request.target;
@@ -134,9 +137,13 @@ class CommonsRoom {
         if (target !== `home-${p.plot}`) fail('PRIVATE_HOUSE');
         Object.assign(p, { scene: 'home', x: 6, y: 7, facing: 'up' });
         message = 'Welcome home. This room and its keepsakes belong only to you.';
+      } else if (['hall', 'shelter'].includes(target)) {
+        if (!eligible[target]) fail('FORBIDDEN');
+        Object.assign(p, { scene: target, ...scenes[target].spawn });
+        message = `Welcome to ${scenes[target].name}. Explore the displays within reach.`;
       } else if (target === 'exit') {
         const home = World.homes[p.plot];
-        Object.assign(p, { scene: 'village', x: home.x, y: home.y + 1.6, facing: 'down' });
+        Object.assign(p, scenes[p.scene]?.publicExit || { scene: 'village', x: home.x, y: home.y + 1.6, facing: 'down' });
         message = 'The village is waiting, just as you left it.';
       } else if (target === 'decorate') {
         if (!p.lantern) fail('NEED_LANTERN');
@@ -158,12 +165,26 @@ class CommonsRoom {
         if (p.lantern) message = 'Your lantern is already made. Take it home and arrange it in your cottage.';
         else if (p.discoveries.length < 3 || p.petals < 3) message = 'A lantern needs three garden petals and the wisdom of all three woodland stones.';
         else { p.petals -= 3; p.lantern = true; message = 'You made a woodland lantern! Carry its glow, or place it in your cottage.'; }
-      } else if (['chat', 'hall', 'shelter', 'gallery', 'keeper'].includes(target)) {
+      } else if (['quests', 'diary', 'commons-books', 'site-books', 'water-stock', 'food-stock', 'equipment-stock'].includes(target)) {
+        return { panel: target === 'quests' || target === 'diary' ? target : scenes[p.scene].entities.find(e => e.id === target).panel };
+      } else if (['chat', 'gallery', 'keeper'].includes(target)) {
         return { target };
       } else fail('INVALID_ACTION');
       p.receipts.push({ id: request.id, message }); p.receipts = p.receipts.slice(-64);
       await this.persist(next);
       return { message };
+    });
+  }
+  async enforceScene(userId, token, eligible) {
+    const p = this.state?.players.find(row => row.userId === userId);
+    if (!scenes[p?.scene] || eligible[p.scene]) return false;
+    return this.serial(async () => {
+      const c = this.current(userId, token);
+      const next = structuredClone(this.state);
+      const own = next.players.find(row => row.userId === userId);
+      if (!scenes[own.scene] || eligible[own.scene]) return false;
+      Object.assign(own, scenes[own.scene].publicExit); c.input = null;
+      await this.persist(next); return true;
     });
   }
   emote(userId, token, text) {

@@ -1,3 +1,5 @@
+const { permitted } = require('../services/commons/policy');
+const { privateAccess: defaultAccess } = require('../services/commons/privateAccess');
 const crypto = require('crypto');
 const { hasCapabilities } = require('../utils/authorization');
 const { PLAY, TALK, ROLE_BUNDLES } = require('../utils/commonsAuthorizationPolicy');
@@ -20,7 +22,7 @@ async function authorize(socket, { userModel, roleModel, config, now = Date.now 
   if (!/^[a-f0-9]{24}$/i.test(id) || (!Number.isFinite(expires) || expires <= now())) throw new Error('UNAUTHORIZED');
   let principal;
   try {
-    principal = await userModel.findOne({ _id: id });
+    principal = await userModel.findOne({ _id: id }, 'name type_user', { maxTimeMS: 2000 });
     if (!principal || !await hasCapabilities(principal, [PLAY, capability], { roleModel, roleCapabilityBundles: ROLE_BUNDLES })) throw new Error('UNAUTHORIZED');
   } catch (error) {
     if (error.message !== 'UNAUTHORIZED' && now() - lastAuthorizationWarning > 60000) {
@@ -43,7 +45,7 @@ async function authorize(socket, { userModel, roleModel, config, now = Date.now 
   return { principal: { _id: id, name: principal.name, type_user: principal.type_user }, userId: id, validUntil };
 }
 function registerCommons(io, sessionMiddleware, dependencies) {
-  const { room, npc, config, roleModel } = dependencies;
+  const { room, npc, config, roleModel, privateAccess = defaultAccess } = dependencies;
   const namespace = io.of('/commons');
   let admitting = 0;
   let joining = 0;
@@ -75,6 +77,7 @@ function registerCommons(io, sessionMiddleware, dependencies) {
     let auditTimer;
     const close = code => { socket.emit('closed', { code }); socket.disconnect(); };
     socket.on('disconnect', () => {
+      privateAccess.remove(token);
       stopped = true; clearInterval(auditTimer); npc.cancel(userId, token); memory.length = 0;
       room.leave(userId, token).catch(() => {});
     });
@@ -83,7 +86,7 @@ function registerCommons(io, sessionMiddleware, dependencies) {
     try {
       const snapshot = await room.join(userId, { token, validUntil: socket.data.validUntil, close });
       if (stopped) { await room.leave(userId, token); return; }
-      socket.emit('joined', { ...snapshot, npcEnabled: config.npcEnabled });
+      socket.emit('joined', { ...snapshot, connection: token, ownerSession: crypto.createHash('sha256').update(`${socket.request.sessionID}:${userId}`).digest('hex'), npcEnabled: config.npcEnabled });
     } catch (error) { close(error.code || 'ROOM_UNAVAILABLE'); return; }
     finally { joining--; }
     const check = async capability => {
@@ -91,9 +94,26 @@ function registerCommons(io, sessionMiddleware, dependencies) {
       if (stopped) throw new Error('UNAUTHORIZED');
       room.authorize(userId, token, auth.validUntil);
       room.current(userId, token);
+      const eligible = { hall: await permitted(auth.principal, 'hall', roleModel), shelter: await permitted(auth.principal, 'shelter', roleModel) };
+      room.current(userId, token);
+      if (await room.enforceScene(userId, token, eligible)) socket.emit('private-reset');
+      if (socket.data.surface && !await permitted(auth.principal, socket.data.surface, roleModel)) {
+        socket.data.surface = null; socket.emit('private-reset');
+      }
+      socket.data.eligible = eligible;
       socket.data.principal = auth.principal;
       return auth.principal;
     };
+    privateAccess.add(token, { sessionId: socket.request.sessionID, userId, check: async surface => {
+      const principal = await check(PLAY);
+      if (!await permitted(principal, surface, roleModel)) throw Object.assign(new Error('FORBIDDEN'), { code: 'FORBIDDEN' });
+      const self = room.snapshot(userId, token).self;
+      const targets = { quests: ['quests'], 'quest-done': ['quests'], diary: ['diary'], 'diary-save': ['diary'],
+        statistics: ['site-books'], diagnostics: ['commons-books'], stock: ['water-stock', 'food-stock', 'equipment-stock'] };
+      if (!World.nearby(self).some(e => targets[surface]?.includes(e.id))) throw Object.assign(new Error('TOO_FAR'), { code: 'TOO_FAR' });
+      socket.data.surface = surface;
+      return principal;
+    } });
     auditTimer = setInterval(async () => {
       if (auditing || stopped) return;
       auditing = true;
@@ -124,9 +144,9 @@ function registerCommons(io, sessionMiddleware, dependencies) {
       } finally { if (talking) pendingTalk = false; else pending = false; }
     }
     socket.on('action', (payload, ack) => command(payload, ack, async principal => {
-      const result = await room.action(userId, token, payload);
-      if (['chat', 'hall'].includes(result.target)) return portal(result.target, principal, roleModel);
-      if (result.target === 'shelter') return { message: 'A quiet refuge. Household supplies are not connected in this release.' };
+      const result = await room.action(userId, token, payload, socket.data.eligible);
+      if (result.panel && !await permitted(principal, result.panel, roleModel)) return { error: 'FORBIDDEN' };
+      if (['chat'].includes(result.target)) return portal(result.target, principal, roleModel);
       if (result.target === 'gallery') return { gallery: true, message: 'The first collection: a village made of small, warm lights. Original art generated for Lantern Commons.' };
       if (result.target === 'keeper') {
         const canTalk = await hasCapabilities(principal, [TALK], { roleModel, roleCapabilityBundles: ROLE_BUNDLES });

@@ -9,7 +9,7 @@ function validState(state) {
     if (!/^[a-f0-9]{24}$/i.test(p.userId) || users.has(p.userId) || plots.has(p.plot)
       || !Number.isInteger(p.plot) || p.plot < 0 || p.plot >= World.homes.length
       || !Number.isFinite(p.x) || !Number.isFinite(p.y)
-      || !['up', 'down', 'left', 'right'].includes(p.facing) || !['village', 'home'].includes(p.scene)
+      || !['up', 'down', 'left', 'right'].includes(p.facing) || !['village', 'home', 'hall', 'shelter'].includes(p.scene)
       || !Number.isInteger(p.petals) || p.petals < 0 || p.petals > 12
       || typeof p.lantern !== 'boolean' || typeof p.decorated !== 'boolean'
       || !Array.isArray(p.discoveries) || p.discoveries.length > 3 || new Set(p.discoveries).size !== p.discoveries.length

@@ -8,11 +8,12 @@ html(lang='en')
     title Lantern Commons · A little light, a place to return
     link(rel='icon', href='/commons/icon.svg', type='image/svg+xml')
     link(rel='stylesheet', href='/css/color-theme.css')
-    link(rel='stylesheet', href='/commons/style.css?v=1.1.0')
+    link(rel='stylesheet', href='/commons/style.css?v=1.2.0')
     script(src='/socket.io/socket.io.js', defer)
-    script(src='/commons/world.js?v=1.1.0', defer)
-    script(src='/commons/renderer.js?v=1.1.0', defer)
-    script(src='/commons/client.js?v=1.1.0', defer)
+    script(src='/commons/world.js?v=1.2.0', defer)
+    script(src='/commons/renderer.js?v=1.2.0', defer)
+    script(src='/commons/panels.js?v=1.2.0', defer)
+    script(src='/commons/client.js?v=1.2.0', defer)
   body
     header.topbar
       a.brand(href='/mypage', aria-label='Back to My Account')
@@ -95,6 +96,7 @@ html(lang='en')
       h2#dialog-title A moment in the village
       p#dialog-text
       a#portal.primary(hidden, target='_blank', rel='noopener noreferrer') Open
+      section#private-panel(hidden, aria-live="polite")
       figure#gallery(hidden)
         img(src='/commons/blue-hour.v1.webp', alt='Blue hour in Lantern Commons: a lantern-lit woodland village beneath the stars.')
         figcaption Blue Hour · Original generated art, 2026
@@ -116,8 +118,9 @@ html(lang='en')
         li Three flower beds south of the square offer one petal each per Tokyo day.
         li Willow Workshop makes your lantern from three petals and three discoveries.
         li Your numbered cottage is on the north or south lane. Only you can enter.
+        li The Quest board near Mori shows your My Account tasks. Your cottage desk holds your private diary.
         li Mori waits by the square. AI dialogue is optional and may use local scripted replies.
-        li Conversation House opens Chat5 only with your normal permission. The shelter has no household-data connection.
+        li Conversation House opens Chat5 only with your normal permission. The Shelter holds household reserves for eligible family accounts. Lantern Hall is for administrators.
       p The sun follows Asia/Tokyo time. Nobody collides with other villagers. Closing your tab has no penalty. Movement is checkpointed every five seconds while storage is healthy; a crash can lose movement since the last successful save.
       label.motion-setting
         input#reduced-motion(type='checkbox')

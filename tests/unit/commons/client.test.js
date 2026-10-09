@@ -14,7 +14,7 @@ function harness() {
   const context = {
     document: { getElementById: element, querySelector: () => element('csrf'), querySelectorAll: () => [], createElement: () => element('generated'), addEventListener() {} },
     CommonsWorld: World, CommonsRenderer: class { update() {} }, addEventListener() {},
-    Image: class { set src(_) { queueMicrotask(() => this.onload()); } },
+    Image: class { addEventListener() {} set src(_) { queueMicrotask(() => this.onload?.()); } },
     matchMedia: () => ({ matches: false }), setTimeout: () => 0, clearTimeout() {}, setInterval() {}, crypto,
     io() {
       const handlers = {}, calls = [];
@@ -27,8 +27,9 @@ function harness() {
     },
   };
   context.window = context;
+  vm.runInNewContext(fs.readFileSync('public/commons/panels.js', 'utf8'), context);
   vm.runInNewContext(fs.readFileSync('public/commons/client.js', 'utf8'), context);
-  const snapshot = { version: 1, clientRevision: World.CLIENT_REVISION, serverTime: Date.now(), savedAt: new Date(), online: 1, maxOnline: 10, blooms: 0,
+  const snapshot = { ownerSession: 'owner-session', version: 1, clientRevision: World.CLIENT_REVISION, serverTime: Date.now(), savedAt: new Date(), online: 1, maxOnline: 10, blooms: 0,
     self: { ...World.SPAWN, id: 'villager-0', plot: 0, petals: 0, discoveries: [] }, players: [] };
   const join = socket => socket.handlers.joined(snapshot);
   return { element, sockets, join };
@@ -61,7 +62,7 @@ test('model markup renders as plain text and late replies cannot overwrite a new
 });
 test('completed quest copy and empty nearby state describe current progress', async () => {
   const h = harness(); await settle(); h.element('enter').click(); const socket = h.sockets[0];
-  const snapshot = { version: 1, clientRevision: World.CLIENT_REVISION, serverTime: Date.now(), savedAt: new Date(), online: 1, maxOnline: 10, blooms: 3,
+  const snapshot = { ownerSession: 'owner-session', version: 1, clientRevision: World.CLIENT_REVISION, serverTime: Date.now(), savedAt: new Date(), online: 1, maxOnline: 10, blooms: 3,
     self: { ...World.SPAWN, x: 50, y: 35, id: 'villager-0', plot: 0, petals: 0, discoveries: ['stone-0', 'stone-1', 'stone-2'], lantern: true, decorated: false }, players: [] };
   socket.handlers.joined(snapshot);
   expect(h.element('quest-guidance').textContent).toContain('Return to your cottage');

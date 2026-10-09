@@ -1,5 +1,10 @@
 # Lantern Commons — first release
 
+**v1.2 development:** see [delivered features and release steps](V1.2.md),
+[extended security contract](V1.2-SECURITY.md), and [validation](V1.2-VALIDATION.md).
+The v1/v1.1 material below is retained as historical context; v1.2 supersedes its sealed
+Shelter, Hall portal, empty family/user diary bundles, and world-only index statements.
+
 A private, peaceful village at **`/commons`**. This change is prepared for the normal release process; it does not deploy, run setup, restart services, provision a GPU, or change any real account grants.
 
 ## v1.1 corrections — release handoff

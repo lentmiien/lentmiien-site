@@ -5,9 +5,9 @@
   const TILE = 32;
   const colors = ['#ffc247', '#83d8be', '#cfa9df', '#ffa37e', '#a5cbea', '#dcd9a0'];
   class CommonsRenderer {
-    constructor(canvas, atlas, painting, sceneryAtlas, cottage) {
+    constructor(canvas, atlas, painting, sceneryAtlas, cottage, furnishings) {
       this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.atlas = atlas; this.painting = painting;
-      this.cottage = cottage; this.sceneryAtlas = sceneryAtlas; this.scale = innerWidth < 700 ? .7 : 1; this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      this.furnishings = furnishings; this.cottage = cottage; this.sceneryAtlas = sceneryAtlas; this.scale = innerWidth < 700 ? .7 : 1; this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
       this.ground = this.makeGround(); this.state = null; this.camera = null;
       this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(canvas);
       this.resize(); this.frame = this.frame.bind(this); requestAnimationFrame(this.frame);
@@ -96,6 +96,34 @@
       if (p.emote) this.label(p.emote, x, y - 83, true);
       else this.label(own ? 'You' : `Villager ${p.plot + 1}`, x, y + 24 / (this.drawScale || 1), own);
     }
+    furnishing(asset, x, y) {
+      const c = this.ctx;
+      const sprite = W.art.furnishings[asset];
+      if (!sprite || !this.furnishings) return;
+      const [sx, sy, sw, sh] = sprite.source;
+      const width = sprite.width * TILE, height = width * sh / sw;
+      c.drawImage(this.furnishings, sx, sy, sw, sh, x - width / 2, y - height, width, height);
+    }
+    interior(t) {
+      const c = this.ctx, own = this.state.self, scene = own.sceneDefinition;
+      const floor = c.createLinearGradient(0, 0, 0, 320); floor.addColorStop(0, '#473d32'); floor.addColorStop(1, '#806047');
+      c.fillStyle = floor; c.fillRect(0, 0, 384, 320);
+      c.fillStyle = '#38392f'; c.fillRect(10, 10, 364, 68);
+      c.strokeStyle = '#302c25'; c.lineWidth = 2;
+      for (let y = 85; y < 320; y += 19) { c.beginPath(); c.moveTo(10, y); c.lineTo(374, y); c.stroke();
+        for (let x = 20 + (y % 3) * 29; x < 374; x += 87) { c.beginPath(); c.moveTo(x, y); c.lineTo(x, Math.min(320, y + 19)); c.stroke(); }
+      }
+      c.fillStyle = '#4f6659'; c.fillRect(134, 152, 116, 129); c.strokeStyle = '#bfa66c'; c.strokeRect(141, 159, 102, 115);
+      c.fillStyle = '#443027'; c.fillRect(0, 0, 12, 320); c.fillRect(372, 0, 12, 320); c.fillRect(0, 0, 384, 12);
+      this.label(scene.name, 192, 48, true);
+      for (const item of scene.entities) if (item.asset) {
+        this.furnishing(item.asset, item.x * TILE, item.y * TILE);
+        this.label(item.label || item.name, item.x * TILE, item.y * TILE + 23, true);
+      }
+      for (const x of [38, 346]) this.glow(x, 73, 70, .42);
+      this.label('Village', 192, 308, true);
+      this.person(own, t, true); this.personLabel(own, true);
+    }
     home(t) {
       const c = this.ctx, own = this.state.self;
       c.drawImage(this.cottage, 0, 0, 384, 320);
@@ -105,6 +133,10 @@
         c.fillStyle = '#ffc247'; c.fillRect(262, 176, 10, 23);
         this.label('Your handmade lantern', 268, 164, true);
       }
+      // The diary lies on the existing desk, with a reachable floor interaction.
+      const diary = W.diaryEntity, dx = diary.x * TILE, dy = diary.y * TILE;
+      c.fillStyle = '#eadbb4'; c.fillRect(dx - 8, dy - 12, 17, 11); c.strokeStyle = '#6b5133'; c.lineWidth = 1; c.strokeRect(dx - 8, dy - 12, 17, 11); c.beginPath(); c.moveTo(dx, dy - 11); c.lineTo(dx, dy - 2); c.stroke();
+      this.label(diary.label, dx, dy - 25, true);
       this.label('Village', 193, 308, true);
       this.person(own, t, true);
       this.personLabel(own, true);
@@ -114,12 +146,12 @@
       if (!this.state || document.hidden) return;
       if (this.dpr !== Math.min(devicePixelRatio || 1, 2)) this.resize();
       const c = this.ctx, s = this.state, own = s.self;
-      c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); c.fillStyle = '#344a3d'; c.fillRect(0, 0, this.width, this.height);
-      const scale = own.scene === 'home' ? Math.min(this.width / 450, this.height / 390, 1.7) : this.scale;
+      c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); c.fillStyle = own.scene === 'village' ? '#344a3d' : '#20242a'; c.fillRect(0, 0, this.width, this.height);
+      const scale = own.scene !== 'village' ? Math.min(this.width / 450, this.height / 390, 1.7) : this.scale;
       this.drawScale = scale;
-      const target = own.scene === 'home' ? { x: 192, y: 180 } : { x: own.x * TILE, y: own.y * TILE - 50 / scale };
+      const target = own.scene !== 'village' ? { x: 192, y: 180 } : { x: own.x * TILE, y: own.y * TILE - 50 / scale };
       const clampCamera = (point) => {
-        if (own.scene === 'home') return;
+        if (own.scene !== 'village') return;
         const clamp = (value, size, visible) => visible >= size ? size / 2 : Math.max(visible / 2, Math.min(size - visible / 2, value));
         point.x = clamp(point.x, W.WIDTH * TILE, this.width / scale);
         point.y = clamp(point.y, W.HEIGHT * TILE, this.height / scale);
@@ -130,7 +162,8 @@
       this.camera.x += (target.x - this.camera.x) * ease; this.camera.y += (target.y - this.camera.y) * ease;
       clampCamera(this.camera);
       c.translate(this.width / 2, this.height / 2); c.scale(scale, scale); c.translate(-this.camera.x, -this.camera.y);
-      if (own.scene === 'home') this.home(t);
+      if (own.sceneDefinition) this.interior(t);
+      else if (own.scene === 'home') this.home(t);
       else {
         c.drawImage(this.ground, 0, 0);
         const items = [...W.trees.map(tree => ({ ...tree, tree: true })), ...W.scenery.map(prop => ({ ...prop, scenery: true })), ...W.locations, ...s.players.map(p => ({ ...p, person: true }))].sort((a, b) => W.depth(a) - W.depth(b));
@@ -141,6 +174,7 @@
           if (item.person) { this.person(item, t, item.id === own.id); continue; }
           if (item.tree) { this.sprite(6, x, y + 8, 124); continue; }
           if (item.sprite != null) this.sprite(item.sprite, x, y + 8, item.sprite === 7 ? 73 : item.sprite === 0 ? 188 : 146);
+          if (item.kind === 'board') this.furnishing('noticeboard', x, y);
           if (item.kind === 'garden') {
             c.fillStyle = '#72533a'; c.beginPath(); c.roundRect(x - 34, y - 20, 68, 43, 5); c.fill();
             for (let j = 0; j < 9; j++) {
@@ -165,9 +199,9 @@
           this.glow(x, y + (this.reducedMotion ? 0 : Math.sin(t / 1500 + i) * 6), 10, .3);
         }
         // Labels and interaction affordances remain legible above the night tint.
-        for (const item of W.locations.filter(l => l.sprite != null && l.sprite < 6)) {
+        for (const item of W.locations.filter(l => l.sprite != null && l.sprite < 6 || l.kind === 'board')) {
           const near = Math.hypot(item.x - own.x, item.y - own.y) < 16;
-          if (near || item.plot === own.plot) this.label(item.kind === 'home' && item.plot === own.plot ? `Your cottage · ${own.plot + 1}` : item.name, item.x * TILE, item.y * TILE + 29, item.plot === own.plot);
+          if (near || item.plot === own.plot) this.label(item.kind === 'home' && item.plot === own.plot ? `Your cottage · ${own.plot + 1}` : item.name, item.x * TILE, item.y * TILE + (item.kind === 'board' ? -96 : 29), item.plot === own.plot);
         }
         this.label('Mori · lantern keeper', 33 * TILE, 23 * TILE - 77, true);
         for (const player of s.players) this.personLabel(player, player.id === own.id);

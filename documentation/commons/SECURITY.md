@@ -1,5 +1,10 @@
 # Lantern Commons security contract
 
+**v1.2 development:** see [delivered features and release steps](V1.2.md),
+[extended security contract](V1.2-SECURITY.md), and [validation](V1.2-VALIDATION.md).
+The v1/v1.1 material below is retained as historical context; v1.2 supersedes its sealed
+Shelter, Hall portal, empty family/user diary bundles, and world-only index statements.
+
 - Feature: Lantern Commons v1. Zone: logged-in. Interactive principals: admin, family, user with explicit semantic capabilities; machine principals: none.
 - Data: public shipped map/art/lore; private account IDs, saved transforms, house decorations, discoveries and inventory; ephemeral private NPC text. No household, chat-history, role or private-media data enters world snapshots or model context.
 - Capabilities: `commons.world.play`, `commons.npc.talk`, `commons.operations.read`. Admin bundle has all three; family and user bundles empty, assigned through existing typed group/user role grants. Diagnostics additionally require the admin bundle identity; no admin override of houses.

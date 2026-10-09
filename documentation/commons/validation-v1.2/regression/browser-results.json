@@ -1,0 +1,25 @@
+{
+  "environment": "Headless Chromium, synthetic accounts and in-memory repository; real HTTP/session/Socket.IO and rendering, no production or provider",
+  "results": [
+    "Authenticated real socket joined",
+    "Keyboard moves authoritative server position",
+    "Released input expires/stops",
+    "Transport interruption automatically rejoins the same saved cottage and position",
+    "Reduced-motion device preference is applied",
+    "Portrait canvas uses DPR 2 backing resolution",
+    "Two independent browser sessions share the room",
+    "On-screen touch direction moves server position",
+    "Landscape has no horizontal page overflow",
+    "Orientation resize updates both canvas dimensions",
+    "Duplicate tab takes over without counting twice",
+    "Delayed old tab close preserves replacement connection",
+    "Browser garden action persisted before acknowledgement",
+    "Owner cottage entry works",
+    "NPC scripted fallback is explicitly labelled",
+    "Revoked principal is disconnected by session audit",
+    "Save failure pauses and disconnects the room",
+    "No browser JavaScript errors (0)",
+    "Missing art displays recovery text and prevents entry"
+  ],
+  "errors": []
+}

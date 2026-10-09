@@ -9,7 +9,7 @@ beforeEach(async () => {
   const app = express(); app.set('views', require('path').resolve('views')); app.set('view engine', 'pug');
   app.use(session({ secret: 'synthetic-test-secret-only', resave: false, saveUninitialized: false }));
   app.use((req, res, next) => { req.user = user; req.isAuthenticated = () => authenticated; res.locals.gtag = true; next(); });
-  app.use('/commons', createCommonsRouter({ roleModel: { findOne: async () => ({ permissions: grants }) }, configReader: () => ({ enabled: true, maxOnline: 10, checkpointMs: 5000 }) }));
+  app.use('/commons', createCommonsRouter({ userModel: { findOne: async () => user }, roleModel: { findOne: async () => ({ permissions: grants }) }, configReader: () => ({ enabled: true, maxOnline: 10, checkpointMs: 5000 }) }));
   await new Promise(resolve => { server = app.listen(0, '127.0.0.1', resolve); }); base = `http://127.0.0.1:${server.address().port}/commons`;
 });
 afterEach(() => new Promise(resolve => server.close(resolve)));

@@ -134,6 +134,13 @@ function evaluateAlerts(usage, options = {}) {
 
 module.exports = {
   fetchDatabaseUsage,
+  // A bounded subset of the same collStats source used by the admin page.
+  async fetchSelectedCollectionStats(collectionName) {
+    const db = assertConnectionReady();
+    const stats = await db.command({ collStats: collectionName, scale: 1, maxTimeMS: 2000 });
+    if (!Number.isFinite(stats.count) || stats.count < 0) throw new Error('Collection count unavailable');
+    return { count: stats.count };
+  },
   evaluateAlerts,
   DEFAULT_ALERT_THRESHOLDS,
 };

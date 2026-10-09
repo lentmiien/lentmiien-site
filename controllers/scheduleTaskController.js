@@ -218,6 +218,10 @@ async function saveTaskCompletion(task, done, { skipUnchangedSave = false } = {}
   return deletedReminders;
 }
 
+const completeMypageTask = require('../services/scheduleTaskCompletion').createTaskCompletion({ Task,
+  deleteReminders: (userId, id) => deletePendingTaskReminders({ userId, _id: id }, 'mark-completed') });
+exports.completeMypageTask = completeMypageTask;
+
 exports.completeMypageTaskApi = async function(req, res) {
   if (!/^[a-f\d]{24}$/i.test(req.params.id)
     || Object.keys(req.query || {}).length
@@ -226,14 +230,9 @@ exports.completeMypageTaskApi = async function(req, res) {
     return res.status(400).json({ ok: false, error: 'Invalid task completion request.' });
   }
   try {
-    const task = await Task.findOne({
-      _id: req.params.id,
-      userId: req.user.name,
-      type: { $in: ['todo', 'tobuy'] },
-    });
-    if (!task) return res.status(404).json({ ok: false, error: 'Task not found.' });
-    // Repeating an acknowledged completion must not change its completion timestamp.
-    const deletedReminders = await saveTaskCompletion(task, true, { skipUnchangedSave: true });
+    const result = await completeMypageTask(req.user, req.params.id);
+    if (!result) return res.status(404).json({ ok: false, error: 'Task not found.' });
+    const { deletedReminders } = result;
     return res.json({ ok: true, done: true, deletedReminders });
   } catch (error) {
     logger.error('Failed to complete a task from My Page', {

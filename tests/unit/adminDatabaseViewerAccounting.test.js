@@ -7,7 +7,7 @@ beforeAll(async () => { ({ JSDOM } = await import('jsdom')); });
 afterEach(() => dom?.window.close());
 
 function fixture() {
-  const names = ['account_dbs', 'transaction_dbs', 'accounting_write_locks', 'ordinary_entries'];
+  const names = ['account_dbs', 'transaction_dbs', 'accounting_write_locks', 'ordinary_entries', 'commonsdiaries'];
   const records = [{ _id: 'ledger', note: 'synthetic' }];
   const deleteOne = jest.fn(async () => ({ deletedCount: 1 }));
   const cursor = { sort: () => cursor, limit: () => cursor, toArray: async () => records };
@@ -21,6 +21,7 @@ function fixture() {
     exports: controller, __dirname: path.resolve('controllers'), process: { env: {} },
     require: name => {
       if (name === 'mongoose') return { connection: { readyState: 1, db }, Types: require('mongoose').Types };
+      if (name === '../utils/privateDatabaseCollections') return require('../../utils/privateDatabaseCollections');
       if (name === '../utils/logger') return logger;
       if (name === 'path' || name === 'fs') return require(name);
       if (name === '../utils/apiDebugLogger') return { createApiDebugLogger: jest.fn() };
@@ -71,4 +72,16 @@ test.each(['account_dbs', 'transaction_dbs', 'accounting_write_locks', 'ordinary
   await new Promise(resolve => setImmediate(resolve));
   expect(dom.window.document.querySelectorAll('.db-viewer__delete').length).toBe(canDelete ? 1 : 0);
   if (!canDelete) expect(dom.window.document.getElementById('dbViewerStatus').textContent).toContain('offline operator procedure');
+});
+
+
+test('private Commons diary is absent from generic admin list and direct read/delete are denied', async () => {
+  const f = fixture();
+  await f.controller.database_viewer_page({ query: {} }, f.res);
+  expect(f.res.render.mock.calls[0][1].collections).not.toContain('commonsdiaries');
+  await f.controller.database_viewer_data({ query: { collection: 'commonsdiaries' } }, f.res);
+  expect(f.res.status).toHaveBeenLastCalledWith(403);
+  await f.controller.database_viewer_delete({ body: { collection: 'commonsdiaries', id: '1'.repeat(24) } }, f.res);
+  expect(f.res.status).toHaveBeenLastCalledWith(403);
+  expect(f.db.collection).not.toHaveBeenCalled();
 });

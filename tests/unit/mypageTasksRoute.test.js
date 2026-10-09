@@ -1,4 +1,4 @@
-jest.mock('../../database', () => ({ Task: { findOne: jest.fn() }, Palette: {} }));
+jest.mock('../../database', () => ({ Task: { findOne: jest.fn(), findOneAndUpdate: jest.fn() }, Palette: {} }));
 jest.mock('../../models/role', () => ({ findOne: jest.fn() }));
 jest.mock('../../services/scheduleTaskStatsService', () => ({}));
 jest.mock('../../services/pushoverReminderService', () => ({ PUSHOVER_PRIORITY_OPTIONS: [] }));
@@ -26,10 +26,12 @@ beforeEach(async () => {
   principal = { name: 'owner', type_user: 'user' };
   authenticated = true;
   task = { _id: id, userId: 'owner', type: 'todo', done: false, meta: { recurrence: 'untouched' }, save: jest.fn() };
-  Task.findOne.mockImplementation(async (query) => (
-    task && query._id === task._id && query.userId === task.userId
-    && query.type.$in.includes(task.type) ? task : null
-  ));
+  const scoped = query => task && query._id === task._id && query.userId === task.userId && query.type.$in.includes(task.type);
+  Task.findOne.mockImplementation(query => ({ maxTimeMS: async () => scoped(query) && task.done ? task : null }));
+  Task.findOneAndUpdate.mockImplementation(async query => {
+    if (!scoped(query) || task.done) return null;
+    task.done = true; await task.save(); return task;
+  });
   Role.findOne.mockResolvedValue(null);
   reminders.deletePendingForTask.mockResolvedValue(2);
   const app = express();
@@ -64,7 +66,7 @@ test.each(['admin', 'family', 'user', 'explicit-grant'])('allows %s only within 
   expect(response.status).toBe(200);
   expect(response.headers.get('cache-control')).toContain('private, no-store');
   expect(await response.json()).toEqual({ ok: true, done: true, deletedReminders: 2 });
-  expect(Task.findOne).toHaveBeenCalledWith({ _id: id, userId: 'owner', type: { $in: ['todo', 'tobuy'] } });
+  expect(Task.findOneAndUpdate).toHaveBeenCalledWith({ _id: id, userId: 'owner', type: { $in: ['todo', 'tobuy'] }, done: { $ne: true } }, { $set: { done: true } }, expect.objectContaining({ returnDocument: 'after' }));
   expect(task.done).toBe(true);
   expect(task.save).toHaveBeenCalledTimes(1);
   expect(reminders.deletePendingForTask).toHaveBeenCalledWith('owner', id);
@@ -85,6 +87,7 @@ test.each(['anonymous', 'incomplete', 'ungranted'])('denies %s before accessing 
   if (mode === 'ungranted') principal.type_user = 'other';
   expect((await complete()).status).toBe(mode === 'anonymous' ? 401 : 403);
   expect(Task.findOne).not.toHaveBeenCalled();
+  expect(Task.findOneAndUpdate).not.toHaveBeenCalled();
 });
 
 test.each(['missing', 'foreign', 'presence', 'foreign-admin'])('does not disclose or complete a %s task', async (mode) => {
@@ -105,6 +108,7 @@ test.each([
 ])('rejects forged browser requests: %j', async (options) => {
   expect((await complete(options)).status).toBe(403);
   expect(Task.findOne).not.toHaveBeenCalled();
+  expect(Task.findOneAndUpdate).not.toHaveBeenCalled();
 });
 
 test('accepts a valid token and same-origin request', async () => {
@@ -120,16 +124,18 @@ test.each([
 ])('rejects invalid input before work: %#', async (options) => {
   expect((await complete(options)).status).toBe(400);
   expect(Task.findOne).not.toHaveBeenCalled();
+  expect(Task.findOneAndUpdate).not.toHaveBeenCalled();
 });
 
 test('GET cannot complete a task', async () => {
   expect((await complete({ method: 'GET' })).status).toBe(404);
   expect(Task.findOne).not.toHaveBeenCalled();
+  expect(Task.findOneAndUpdate).not.toHaveBeenCalled();
 });
 
 test.each(['lookup', 'reminders', 'save'])('logs and returns a generic error on %s failure', async (operation) => {
   const error = new Error('private diagnostic payload');
-  if (operation === 'lookup') Task.findOne.mockRejectedValue(error);
+  if (operation === 'lookup') Task.findOneAndUpdate.mockRejectedValue(error);
   if (operation === 'reminders') reminders.deletePendingForTask.mockRejectedValue(error);
   if (operation === 'save') task.save.mockRejectedValue(error);
   const response = await complete();
@@ -138,7 +144,7 @@ test.each(['lookup', 'reminders', 'save'])('logs and returns a generic error on 
   expect(logger.error).toHaveBeenCalledWith('Failed to complete a task from My Page', {
     category: 'schedule_task', metadata: { errorName: 'Error' },
   });
-  if (operation === 'reminders') expect(task.save).not.toHaveBeenCalled();
+  if (operation === 'reminders') expect(task.done).toBe(true); // Retry must finish reminder cleanup without shifting completion time.
 });
 
 test('issues the shared token and disables page analytics and caching', async () => {
@@ -152,6 +158,7 @@ test('capability lookup failure fails closed', async () => {
   Role.findOne.mockRejectedValue(new Error('unavailable'));
   expect((await complete()).status).toBe(503);
   expect(Task.findOne).not.toHaveBeenCalled();
+  expect(Task.findOneAndUpdate).not.toHaveBeenCalled();
 });
 
 test.each([
