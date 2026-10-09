@@ -5,7 +5,7 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
   const VERSION = 1;
-  const CLIENT_REVISION = '1.2.0';
+  const CLIENT_REVISION = '1.2.1';
   const WIDTH = 64;
   const HEIGHT = 48;
   const SPAWN = { x: 32, y: 25, facing: 'down', scene: 'village' };

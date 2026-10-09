@@ -40,6 +40,24 @@ run('Commons real isolated Mongo persistence', () => {
     await expect(staleApp.save(owner, { date, text: 'Must not replace', revision: 1 })).rejects.toHaveProperty('code', 'DAY_CHANGED');
     expect((await Diary.findOne({ ownerId: owner, date })).text).toBe('Historical synthetic fixture');
   });
+  test('autoIndex false refuses unprotected writes, recovers after explicit provisioning and detects index removal', async () => {
+    const connection = await mongoose.createConnection(uri, { autoIndex: false, serverSelectionTimeoutMS: 3000 }).asPromise();
+    try {
+      const NoAutoDiary = connection.model('NoAutoDiary', Diary.schema.clone(), 'commonsdiaries_noautoindex');
+      await NoAutoDiary.init(); await NoAutoDiary.createCollection();
+      const service = createDiary({ model: NoAutoDiary });
+      const input = { date: day, text: 'Synthetic guarded draft', revision: 0 };
+      await expect(service.save(owner, input)).rejects.toHaveProperty('code', 'DIARY_INDEX_UNAVAILABLE');
+      expect(await NoAutoDiary.countDocuments({})).toBe(0);
+      await NoAutoDiary.collection.createIndex({ ownerId: 1, date: -1 }, { unique: true, name: 'ownerId_1_date_-1' });
+      const results = await Promise.allSettled([service.save(owner, input), service.save(owner, input)]);
+      expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+      expect(results.find(r => r.status === 'rejected').reason.code).toBe('REVISION_CONFLICT');
+      expect(await NoAutoDiary.countDocuments({})).toBe(1);
+      await NoAutoDiary.collection.dropIndex('ownerId_1_date_-1');
+      await expect(service.save(owner, { ...input, revision: 1 })).rejects.toHaveProperty('code', 'DIARY_INDEX_UNAVAILABLE');
+    } finally { await connection.close(); }
+  });
   test('plain text stays literal through pipeline, BSON owner casting works and history is bounded', async () => {
     const text = '$$NOW <img src=x onerror=alert(1)> $revision';
     await diary.save(new mongoose.Types.ObjectId(owner), { date: day, text, revision: 0 });

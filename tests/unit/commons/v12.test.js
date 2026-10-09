@@ -116,12 +116,37 @@ test.each([
   await expect(service.save(id(1), input)).rejects.toHaveProperty('code', 'INVALID_INPUT'); expect(model.findOneAndUpdate).not.toHaveBeenCalled();
 });
 test('diary rechecks day after authorization and refuses future/past/guessed owner query', async () => {
-  let now = Date.parse('2026-10-09T14:59:59Z'); const model = { findOneAndUpdate: jest.fn() };
+  let now = Date.parse('2026-10-09T14:59:59Z'); const model = { findOneAndUpdate: jest.fn(),
+    collection: { listIndexes: () => ({ toArray: async () => [{ key: { ownerId: 1, date: -1 }, unique: true }] }) } };
   const diary = createDiary({ model, now: () => now });
   await expect(diary.save(id(1), { date: '2026-10-09', text: 'draft', revision: 0 }, async () => { now += 2000; })).rejects.toHaveProperty('code', 'DAY_CHANGED');
   expect(model.findOneAndUpdate).not.toHaveBeenCalled();
   for (const date of ['2026-10-08', '2026-10-11']) await expect(diary.save(id(1), { date, text: 'draft', revision: 0 })).rejects.toHaveProperty('code', 'DAY_CHANGED');
   for (const input of [{ date: '2026-10-11' }, { ownerId: id(2) }, { date: '2026-02-30' }, { date: '2026-10-09', before: '2026-01-01' }]) await expect(diary.read(id(1), input)).rejects.toHaveProperty('code', 'INVALID_INPUT');
+});
+test.each([
+  [], [{ key: { ownerId: 1, date: -1 } }],
+  [{ key: { ownerId: 1, date: -1 }, unique: true, sparse: true }],
+  [{ key: { ownerId: 1, date: -1 }, unique: true, partialFilterExpression: { revision: { $gt: 0 } } }],
+  [{ key: { ownerId: 1, date: -1, revision: 1 }, unique: true }],
+].map(indexes => [indexes]))('diary refuses missing or incomplete uniqueness before any write %#', async indexes => {
+  const listIndexes = jest.fn(() => ({ toArray: async () => indexes }));
+  const model = { collection: { listIndexes }, findOneAndUpdate: jest.fn(), init: jest.fn(async () => {}) };
+  const diary = createDiary({ model, now: () => Date.parse('2026-10-09T03:00:00Z') });
+  await expect(diary.save(id(1), { date: '2026-10-09', text: 'Private draft', revision: 0 })).rejects.toHaveProperty('code', 'DIARY_INDEX_UNAVAILABLE');
+  expect(model.findOneAndUpdate).not.toHaveBeenCalled();
+  expect(listIndexes).toHaveBeenCalledWith({ maxTimeMS: 2000 });
+});
+test('diary index lookup failures fail closed without logging database errors or draft text', async () => {
+  const logger = require('../../../utils/logger'); logger.warning.mockClear();
+  const model = { collection: { listIndexes() { throw new Error('secret database URI'); } }, findOneAndUpdate: jest.fn() };
+  const diary = createDiary({ model, now: () => Date.parse('2026-10-09T03:00:00Z') });
+  for (let n = 0; n < 2; n++) await expect(diary.save(id(1), { date: '2026-10-09', text: 'Private draft', revision: 0 })).rejects.toHaveProperty('code', 'DIARY_INDEX_UNAVAILABLE');
+  expect(model.findOneAndUpdate).not.toHaveBeenCalled(); expect(logger.warning).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(logger.warning.mock.calls)).not.toMatch(/secret database URI|Private draft/);
+});
+test.each([['2024-02-29', true], ['2025-02-29', false], ['2100-02-29', false], ['2000-02-29', true], ['2026-04-31', false]])('diary calendar validation %s', (date, expected) => {
+  expect(require('../../../services/commons/diary').validDate(date)).toBe(expected);
 });
 test('HTTP connection ticket is session/generation scoped, bounded concurrency and rejects delayed takeover', async () => {
   const access = createPrivateAccess(), ticket = crypto.randomUUID(), connection = { sessionId: 's', userId: id(1), check: jest.fn(async () => user()) };

@@ -11,6 +11,7 @@
     const messages = { FORBIDDEN: 'Your account does not have access to this display.', UNAUTHORIZED: 'Reconnect to open this display.',
       TOO_FAR: 'Approach the display to read it.', BUSY: 'Please wait, then try again.',
       TASK_GONE: 'This task was removed or is no longer available. Refresh the board.',
+      DIARY_INDEX_UNAVAILABLE: 'Diary saving is awaiting database setup. Your draft is retained; please retry after setup is complete.',
       DAY_CHANGED: 'Tokyo’s date changed. Your draft is retained below. Load today to continue; yesterday cannot be saved.',
       REVISION_CONFLICT: 'Another tab saved this date. Your draft is retained. Reload the saved entry before deciding what to keep.' };
     function reset(clearDrafts = false) {

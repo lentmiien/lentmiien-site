@@ -4,7 +4,7 @@ const { createSessionCsrf } = require('../middleware/sessionCsrf');
 const { privateAccess } = require('../services/commons/privateAccess');
 const logger = require('../utils/logger');
 const publicErrors = new Set(['INVALID_INPUT', 'DAY_CHANGED', 'REVISION_CONFLICT', 'TASK_GONE',
-  'UNAUTHORIZED', 'FORBIDDEN', 'TOO_FAR', 'SESSION_EXPIRED', 'BUSY', 'SUMMARY_UNAVAILABLE']);
+  'UNAUTHORIZED', 'FORBIDDEN', 'TOO_FAR', 'SESSION_EXPIRED', 'BUSY', 'SUMMARY_UNAVAILABLE', 'DIARY_INDEX_UNAVAILABLE']);
 function createCommonsPrivateRouter({ access = privateAccess, panels, diary } = {}) {
   const router = express.Router();
   const csrf = createSessionCsrf();

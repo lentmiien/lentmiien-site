@@ -179,6 +179,36 @@ test('private parser bounds multilingual text, rejects excessive and malformed J
   expect(malformed.status).toBe(400); expect(await malformed.json()).toEqual({ error: 'INVALID_INPUT' });
   expect(malformed.headers.get('cache-control')).toContain('no-store');
 });
+test.each([
+  ['quests', { scene: 'village', x: 30, y: 23 }, 'quests'],
+  ['stock', { scene: 'shelter', x: 3, y: 5 }, 'stock'],
+  ['diary', { scene: 'home', x: 8, y: 5 }, 'read'],
+])('delayed %s response is discarded after leaving its display or losing authority', async (surface, position, method) => {
+  const auth = await login(2), client = await connect(auth); await until(() => client.events('joined').length);
+  const source = surface === 'diary' ? preview.fixtures.diary : preview.fixtures.panels;
+  let finish, started = false;
+  source[method] = () => { started = true; return new Promise(resolve => { finish = resolve; }); };
+  for (const reason of ['scene', 'authority']) {
+    Object.assign(preview.room.state.players[0], position); started = false;
+    const pending = privateRequest(auth, client, surface); await until(() => started);
+    if (reason === 'scene') Object.assign(preview.room.state.players[0], { scene: 'village', x: 20, y: 25 });
+    else { preview.users.get('2'.padStart(24, '0')).type_user = 'other'; preview.grants.set('Preview 2', [PLAY]); }
+    finish({ privateMarker: 'Synthetic stale private payload' });
+    const response = await pending;
+    expect(response.status).toBe(403); expect(await response.text()).not.toContain('Synthetic stale private payload');
+  }
+});
+test('missing diary index returns an actionable finite 503 and preserves reads', async () => {
+  const auth = await login(2), client = await connect(auth); await until(() => client.events('joined').length);
+  Object.assign(preview.room.state.players[0], { scene: 'home', x: 8, y: 5 });
+  const day = (await (await privateRequest(auth, client, 'diary')).json()).today;
+  preview.fixtures.model('diary').collection.listIndexes = () => ({ toArray: async () => [] });
+  const response = await privateRequest(auth, client, 'diary', { date: day, revision: 0, text: 'Synthetic retained draft' });
+  expect(response.status).toBe(503); expect(await response.json()).toEqual({ error: 'DIARY_INDEX_UNAVAILABLE' });
+  expect(response.headers.get('cache-control')).toContain('no-store');
+  expect(preview.fixtures.records.diary).toHaveLength(0);
+  expect((await privateRequest(auth, client, 'diary')).status).toBe(200);
+});
 test('specified immutable admin identity enters Shelter but loses access when its current role changes', async () => {
   const id = require('../../../services/commons/policy').SHELTER_ADMIN_ID;
   const principal = { _id: id, name: 'Synthetic specified account', type_user: 'admin' };

@@ -35,6 +35,13 @@ test('disconnect clears visible data; same owner session restores draft; account
   h.panels.reset(); h.panels.identify('owner-session-b'); await h.panels.open('diary');
   expect(h.root.querySelector('textarea').value).toBe(''); expect(h.root.textContent).not.toContain('private synthetic');
 });
+test('missing database index leaves the draft recoverable and explains setup without exposing metadata', async () => {
+  const h = setup(async (_path, body) => body ? { error: 'DIARY_INDEX_UNAVAILABLE' } : entry('2026-10-09'));
+  await h.panels.open('diary'); h.edit('Synthetic unsaved draft'); await h.click('Save today’s page');
+  expect(h.root.textContent).toContain('awaiting database setup');
+  h.panels.reset(); await h.panels.open('diary');
+  expect(h.root.querySelector('[aria-label="Diary text"]').value).toBe('Synthetic unsaved draft');
+});
 test('late private responses cannot reopen after takeover or authorization reset', async () => {
   let finish; const h = setup(() => new Promise(resolve => { finish = resolve; }));
   const pending = h.panels.open('diary'); h.panels.reset(); h.panels.identify('owner-session-b');

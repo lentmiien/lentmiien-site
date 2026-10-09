@@ -4,7 +4,7 @@ const path = require('path');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { createPreview } = require('./preview-commons');
 async function run() {
-  const output = path.resolve('documentation/commons/validation-v1.2'); await fs.mkdir(output, { recursive: true });
+  const output = path.resolve(process.env.COMMONS_SCREENSHOTS || 'documentation/commons/validation-v1.2'); await fs.mkdir(output, { recursive: true });
   const preview = await createPreview({ v12: true });
   const browser = await chromium.launch({ headless: true, executablePath: process.env.COMMONS_CHROMIUM || undefined });
   const results = [], errors = [];

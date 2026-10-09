@@ -413,7 +413,7 @@ app.get('/assets/forms/:revision/:filename', formAssets.serve);
 app.use('/commons', imageSafeStatic(path.join(__dirname, 'public', 'commons'), {
   index: false, redirect: false, maxAge: '1h',
   setHeaders(res, filename) {
-    if (/\.v1\.webp$/.test(filename)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    if (/\.v1(?:\.2)?\.webp$/.test(filename)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
   },
 }));
 app.use(imageSafeStatic(path.join(__dirname, 'public')));

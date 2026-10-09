@@ -35,7 +35,7 @@ function fixture({ roleModel, now = () => new Date(), diagnostics = () => ({ onl
         setOptions: () => chain, lean: () => chain, exec: async () => value(), then: (a, b) => Promise.resolve(value()).then(a, b) };
       return chain;
     }
-    const output = { collection: { name }, find: filter => query(filter), findOne: filter => query(filter, true),
+    const output = { collection: { name, listIndexes: () => ({ toArray: async () => [{ key: { ownerId: 1, date: -1 }, unique: true }] }) }, find: filter => query(filter), findOne: filter => query(filter, true),
       findOneAndUpdate(filter, update, options) {
         const promise = Promise.resolve().then(() => {
           let row = rows.find(r => matches(r, filter));
