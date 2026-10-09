@@ -70,7 +70,13 @@ class CommonsRoom {
         player = { userId, plot, ...World.SPAWN, petals: 0, discoveries: [], watered: [], receipts: [], lantern: false, decorated: false };
         next.players.push(player);
       }
-      if (!World.walkable(player.x, player.y, player.scene)) Object.assign(player, World.SPAWN);
+      const repair = World.repairPosition(player);
+      if (repair) {
+        Object.assign(player, repair);
+        if (repair.scene) this.log.warning('Commons saved position could not be retained; returned to village spawn', {
+          category: 'commons.position', metadata: { repair: 'spawn-fallback' },
+        });
+      }
       await this.persist(next);
       this.connections.set(userId, { ...connection, input: null, emote: null });
       if (previous) previous.close('TAKEN_OVER');
@@ -105,7 +111,7 @@ class CommonsRoom {
       && this.connections.get(p.userId)?.validUntil > this.now());
     const transform = p => ({ id: `villager-${p.plot}`, plot: p.plot, x: p.x, y: p.y, facing: p.facing, lantern: p.lantern,
       emote: this.connections.get(p.userId)?.emote?.until > this.now() ? this.connections.get(p.userId).emote.text : null });
-    return { version: World.VERSION, serverTime: this.now(), savedAt: this.state.savedAt,
+    return { version: World.VERSION, clientRevision: World.CLIENT_REVISION, serverTime: this.now(), savedAt: this.state.savedAt,
       online: this.connections.size, maxOnline: this.maxOnline, blooms: this.state.blooms,
       self: { ...transform(own), scene: own.scene, petals: own.petals, discoveries: own.discoveries, decorated: own.decorated },
       players: presence.map(transform) };

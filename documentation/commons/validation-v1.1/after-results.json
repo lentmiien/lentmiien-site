@@ -1,0 +1,1779 @@
+{
+  "phase": "after",
+  "environment": "Synthetic HTTP/session/socket; in-memory repository; headless Chromium; no real Mongo or physical device",
+  "results": [
+    "pond: (51, 34.8), zoom 1.5, daylight, DPR 1",
+    "fountain: (32, 29.5), zoom 1.5, daylight, DPR 1",
+    "hall: (32, 18), zoom 1.5, daylight, DPR 1",
+    "north-cottages: (13, 10.7), zoom 1.5, daylight, DPR 1",
+    "garden-road: (32, 34.8), zoom 1, daylight, DPR 1",
+    "east-road: (57, 20), zoom 1, daylight, DPR 1",
+    "west-edge: (1, 25), zoom 0.5, daylight, DPR 1",
+    "overview: (32, 25), zoom 0.5, daylight, DPR 1",
+    "contact: (33, 24), zoom 1.5, daylight, DPR 1",
+    {
+      "authoritativeApproaches": [
+        {
+          "name": "fountain",
+          "direction": [
+            0,
+            -1
+          ],
+          "start": [
+            32.15,
+            24.946
+          ],
+          "stopped": [
+            32.15,
+            25.146
+          ]
+        },
+        {
+          "name": "fountain",
+          "direction": [
+            0,
+            1
+          ],
+          "start": [
+            32.15,
+            28.014
+          ],
+          "stopped": [
+            32.15,
+            27.817999999999998
+          ]
+        },
+        {
+          "name": "fountain",
+          "direction": [
+            -1,
+            0
+          ],
+          "start": [
+            30.134999999999998,
+            26.48
+          ],
+          "stopped": [
+            30.531,
+            26.48
+          ]
+        },
+        {
+          "name": "fountain",
+          "direction": [
+            1,
+            0
+          ],
+          "start": [
+            34.165,
+            26.48
+          ],
+          "stopped": [
+            33.76499999999999,
+            26.48
+          ]
+        },
+        {
+          "name": "fountain",
+          "direction": [
+            -1,
+            -1
+          ],
+          "start": [
+            30.725179835909106,
+            25.395298197659837
+          ],
+          "stopped": [
+            31.149443904621034,
+            25.539547981021894
+          ]
+        },
+        {
+          "name": "fountain",
+          "direction": [
+            1,
+            -1
+          ],
+          "start": [
+            33.574820164090895,
+            25.395298197659837
+          ],
+          "stopped": [
+            33.291977451616276,
+            25.678140910134456
+          ]
+        },
+        {
+          "name": "fountain",
+          "direction": [
+            -1,
+            1
+          ],
+          "start": [
+            30.725179835909106,
+            27.564701802340164
+          ],
+          "stopped": [
+            31.008022548383725,
+            27.281859089865545
+          ]
+        },
+        {
+          "name": "fountain",
+          "direction": [
+            1,
+            1
+          ],
+          "start": [
+            33.574820164090895,
+            27.564701802340164
+          ],
+          "stopped": [
+            33.15055609537897,
+            27.420452018978107
+          ]
+        },
+        {
+          "name": "pond",
+          "direction": [
+            0,
+            -1
+          ],
+          "start": [
+            51.35,
+            28.74
+          ],
+          "stopped": [
+            51.35,
+            29.139999999999997
+          ]
+        },
+        {
+          "name": "pond",
+          "direction": [
+            0,
+            1
+          ],
+          "start": [
+            51.35,
+            33.16
+          ],
+          "stopped": [
+            51.35,
+            32.75999999999999
+          ]
+        },
+        {
+          "name": "pond",
+          "direction": [
+            -1,
+            0
+          ],
+          "start": [
+            47.996,
+            30.95
+          ],
+          "stopped": [
+            48.596000000000004,
+            30.95
+          ]
+        },
+        {
+          "name": "pond",
+          "direction": [
+            1,
+            0
+          ],
+          "start": [
+            54.704,
+            30.95
+          ],
+          "stopped": [
+            54.10399999999999,
+            30.95
+          ]
+        },
+        {
+          "name": "pond",
+          "direction": [
+            -1,
+            -1
+          ],
+          "start": [
+            48.97836385590032,
+            29.38729401357773
+          ],
+          "stopped": [
+            49.40262792461225,
+            29.811558082289658
+          ]
+        },
+        {
+          "name": "pond",
+          "direction": [
+            1,
+            -1
+          ],
+          "start": [
+            53.72163614409968,
+            29.38729401357773
+          ],
+          "stopped": [
+            53.29454364826301,
+            29.814386509414405
+          ]
+        },
+        {
+          "name": "pond",
+          "direction": [
+            -1,
+            1
+          ],
+          "start": [
+            48.97836385590032,
+            32.51270598642227
+          ],
+          "stopped": [
+            49.40262792461225,
+            32.08844191771034
+          ]
+        },
+        {
+          "name": "pond",
+          "direction": [
+            1,
+            1
+          ],
+          "start": [
+            53.72163614409968,
+            32.51270598642227
+          ],
+          "stopped": [
+            53.297372075387756,
+            32.08844191771034
+          ]
+        }
+      ]
+    },
+    "Both lantern-made and decorated guidance match persisted progress",
+    "Empty interaction has disabled semantics, explanatory text and Graphite background",
+    {
+      "responsiveMatrix": [
+        {
+          "name": "desktop",
+          "dpr": 1,
+          "zoom": 0.5,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 1147,
+          "height": 918,
+          "expectedWidth": 1147,
+          "expectedHeight": 918,
+          "overflow": false,
+          "camera": [
+            1024,
+            768
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 1,
+          "zoom": 0.5,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 1147,
+          "height": 918,
+          "expectedWidth": 1147,
+          "expectedHeight": 918,
+          "overflow": false,
+          "camera": [
+            1024,
+            768
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 1,
+          "zoom": 0.5,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 1147,
+          "height": 918,
+          "expectedWidth": 1147,
+          "expectedHeight": 918,
+          "overflow": false,
+          "camera": [
+            1024,
+            768
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 1,
+          "zoom": 0.5,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 1147,
+          "height": 918,
+          "expectedWidth": 1147,
+          "expectedHeight": 918,
+          "overflow": false,
+          "camera": [
+            1024,
+            768
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 1,
+          "zoom": 1,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 1147,
+          "height": 918,
+          "expectedWidth": 1147,
+          "expectedHeight": 918,
+          "overflow": false,
+          "camera": [
+            1474.5,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "desktop",
+          "dpr": 1,
+          "zoom": 1,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 1147,
+          "height": 918,
+          "expectedWidth": 1147,
+          "expectedHeight": 918,
+          "overflow": false,
+          "camera": [
+            1474.5,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "desktop",
+          "dpr": 1,
+          "zoom": 1,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 1147,
+          "height": 918,
+          "expectedWidth": 1147,
+          "expectedHeight": 918,
+          "overflow": false,
+          "camera": [
+            1474.5,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "desktop",
+          "dpr": 1,
+          "zoom": 1,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 1147,
+          "height": 918,
+          "expectedWidth": 1147,
+          "expectedHeight": 918,
+          "overflow": false,
+          "camera": [
+            1474.5,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "desktop",
+          "dpr": 1,
+          "zoom": 1.5,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 1147,
+          "height": 918,
+          "expectedWidth": 1147,
+          "expectedHeight": 918,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 1,
+          "zoom": 1.5,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 1147,
+          "height": 918,
+          "expectedWidth": 1147,
+          "expectedHeight": 918,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 1,
+          "zoom": 1.5,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 1147,
+          "height": 918,
+          "expectedWidth": 1147,
+          "expectedHeight": 918,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 1,
+          "zoom": 1.5,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 1147,
+          "height": 918,
+          "expectedWidth": 1147,
+          "expectedHeight": 918,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 2,
+          "zoom": 0.5,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 2294,
+          "height": 1836,
+          "expectedWidth": 2294,
+          "expectedHeight": 1836,
+          "overflow": false,
+          "camera": [
+            1024,
+            768
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 2,
+          "zoom": 0.5,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 2294,
+          "height": 1836,
+          "expectedWidth": 2294,
+          "expectedHeight": 1836,
+          "overflow": false,
+          "camera": [
+            1024,
+            768
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 2,
+          "zoom": 0.5,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 2294,
+          "height": 1836,
+          "expectedWidth": 2294,
+          "expectedHeight": 1836,
+          "overflow": false,
+          "camera": [
+            1024,
+            768
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 2,
+          "zoom": 0.5,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 2294,
+          "height": 1836,
+          "expectedWidth": 2294,
+          "expectedHeight": 1836,
+          "overflow": false,
+          "camera": [
+            1024,
+            768
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 2,
+          "zoom": 1,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 2294,
+          "height": 1836,
+          "expectedWidth": 2294,
+          "expectedHeight": 1836,
+          "overflow": false,
+          "camera": [
+            1474.5,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "desktop",
+          "dpr": 2,
+          "zoom": 1,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 2294,
+          "height": 1836,
+          "expectedWidth": 2294,
+          "expectedHeight": 1836,
+          "overflow": false,
+          "camera": [
+            1474.5,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "desktop",
+          "dpr": 2,
+          "zoom": 1,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 2294,
+          "height": 1836,
+          "expectedWidth": 2294,
+          "expectedHeight": 1836,
+          "overflow": false,
+          "camera": [
+            1474.5,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "desktop",
+          "dpr": 2,
+          "zoom": 1,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 2294,
+          "height": 1836,
+          "expectedWidth": 2294,
+          "expectedHeight": 1836,
+          "overflow": false,
+          "camera": [
+            1474.5,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "desktop",
+          "dpr": 2,
+          "zoom": 1.5,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 2294,
+          "height": 1836,
+          "expectedWidth": 2294,
+          "expectedHeight": 1836,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 2,
+          "zoom": 1.5,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 2294,
+          "height": 1836,
+          "expectedWidth": 2294,
+          "expectedHeight": 1836,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 2,
+          "zoom": 1.5,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 2294,
+          "height": 1836,
+          "expectedWidth": 2294,
+          "expectedHeight": 1836,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "desktop",
+          "dpr": 2,
+          "zoom": 1.5,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 2294,
+          "height": 1836,
+          "expectedWidth": 2294,
+          "expectedHeight": 1836,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 1,
+          "zoom": 0.5,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 390,
+          "height": 640,
+          "expectedWidth": 390,
+          "expectedHeight": 640,
+          "overflow": false,
+          "camera": [
+            1632,
+            896
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 1,
+          "zoom": 0.5,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 390,
+          "height": 640,
+          "expectedWidth": 390,
+          "expectedHeight": 640,
+          "overflow": false,
+          "camera": [
+            1632,
+            896
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 1,
+          "zoom": 0.5,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 390,
+          "height": 640,
+          "expectedWidth": 390,
+          "expectedHeight": 640,
+          "overflow": false,
+          "camera": [
+            1632,
+            896
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 1,
+          "zoom": 0.5,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 390,
+          "height": 640,
+          "expectedWidth": 390,
+          "expectedHeight": 640,
+          "overflow": false,
+          "camera": [
+            1632,
+            896
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 1,
+          "zoom": 1,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 390,
+          "height": 640,
+          "expectedWidth": 390,
+          "expectedHeight": 640,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "portrait",
+          "dpr": 1,
+          "zoom": 1,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 390,
+          "height": 640,
+          "expectedWidth": 390,
+          "expectedHeight": 640,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "portrait",
+          "dpr": 1,
+          "zoom": 1,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 390,
+          "height": 640,
+          "expectedWidth": 390,
+          "expectedHeight": 640,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "portrait",
+          "dpr": 1,
+          "zoom": 1,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 390,
+          "height": 640,
+          "expectedWidth": 390,
+          "expectedHeight": 640,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "portrait",
+          "dpr": 1,
+          "zoom": 1.5,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 390,
+          "height": 640,
+          "expectedWidth": 390,
+          "expectedHeight": 640,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 1,
+          "zoom": 1.5,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 390,
+          "height": 640,
+          "expectedWidth": 390,
+          "expectedHeight": 640,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 1,
+          "zoom": 1.5,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 390,
+          "height": 640,
+          "expectedWidth": 390,
+          "expectedHeight": 640,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 1,
+          "zoom": 1.5,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 390,
+          "height": 640,
+          "expectedWidth": 390,
+          "expectedHeight": 640,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 2,
+          "zoom": 0.5,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 780,
+          "height": 1280,
+          "expectedWidth": 780,
+          "expectedHeight": 1280,
+          "overflow": false,
+          "camera": [
+            1632,
+            896
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 2,
+          "zoom": 0.5,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 780,
+          "height": 1280,
+          "expectedWidth": 780,
+          "expectedHeight": 1280,
+          "overflow": false,
+          "camera": [
+            1632,
+            896
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 2,
+          "zoom": 0.5,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 780,
+          "height": 1280,
+          "expectedWidth": 780,
+          "expectedHeight": 1280,
+          "overflow": false,
+          "camera": [
+            1632,
+            896
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 2,
+          "zoom": 0.5,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 780,
+          "height": 1280,
+          "expectedWidth": 780,
+          "expectedHeight": 1280,
+          "overflow": false,
+          "camera": [
+            1632,
+            896
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 2,
+          "zoom": 1,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 780,
+          "height": 1280,
+          "expectedWidth": 780,
+          "expectedHeight": 1280,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "portrait",
+          "dpr": 2,
+          "zoom": 1,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 780,
+          "height": 1280,
+          "expectedWidth": 780,
+          "expectedHeight": 1280,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "portrait",
+          "dpr": 2,
+          "zoom": 1,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 780,
+          "height": 1280,
+          "expectedWidth": 780,
+          "expectedHeight": 1280,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "portrait",
+          "dpr": 2,
+          "zoom": 1,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 780,
+          "height": 1280,
+          "expectedWidth": 780,
+          "expectedHeight": 1280,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "portrait",
+          "dpr": 2,
+          "zoom": 1.5,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 780,
+          "height": 1280,
+          "expectedWidth": 780,
+          "expectedHeight": 1280,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 2,
+          "zoom": 1.5,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 780,
+          "height": 1280,
+          "expectedWidth": 780,
+          "expectedHeight": 1280,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 2,
+          "zoom": 1.5,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 780,
+          "height": 1280,
+          "expectedWidth": 780,
+          "expectedHeight": 1280,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "portrait",
+          "dpr": 2,
+          "zoom": 1.5,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 780,
+          "height": 1280,
+          "expectedWidth": 780,
+          "expectedHeight": 1280,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 1,
+          "zoom": 0.5,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 603,
+          "height": 334,
+          "expectedWidth": 603,
+          "expectedHeight": 334,
+          "overflow": false,
+          "camera": [
+            1445,
+            1087.81152571412
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 1,
+          "zoom": 0.5,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 603,
+          "height": 334,
+          "expectedWidth": 603,
+          "expectedHeight": 334,
+          "overflow": false,
+          "camera": [
+            1445,
+            1013.5999999999999
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 1,
+          "zoom": 0.5,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 603,
+          "height": 334,
+          "expectedWidth": 603,
+          "expectedHeight": 334,
+          "overflow": false,
+          "camera": [
+            1445,
+            1013.5999999999999
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 1,
+          "zoom": 0.5,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 603,
+          "height": 334,
+          "expectedWidth": 603,
+          "expectedHeight": 334,
+          "overflow": false,
+          "camera": [
+            1445,
+            1013.5999999999999
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 1,
+          "zoom": 1,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 603,
+          "height": 334,
+          "expectedWidth": 603,
+          "expectedHeight": 334,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "landscape",
+          "dpr": 1,
+          "zoom": 1,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 603,
+          "height": 334,
+          "expectedWidth": 603,
+          "expectedHeight": 334,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "landscape",
+          "dpr": 1,
+          "zoom": 1,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 603,
+          "height": 334,
+          "expectedWidth": 603,
+          "expectedHeight": 334,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "landscape",
+          "dpr": 1,
+          "zoom": 1,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 603,
+          "height": 334,
+          "expectedWidth": 603,
+          "expectedHeight": 334,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "landscape",
+          "dpr": 1,
+          "zoom": 1.5,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 603,
+          "height": 334,
+          "expectedWidth": 603,
+          "expectedHeight": 334,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 1,
+          "zoom": 1.5,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 603,
+          "height": 334,
+          "expectedWidth": 603,
+          "expectedHeight": 334,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 1,
+          "zoom": 1.5,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 603,
+          "height": 334,
+          "expectedWidth": 603,
+          "expectedHeight": 334,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 1,
+          "zoom": 1.5,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 603,
+          "height": 334,
+          "expectedWidth": 603,
+          "expectedHeight": 334,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 2,
+          "zoom": 0.5,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 1206,
+          "height": 668,
+          "expectedWidth": 1206,
+          "expectedHeight": 668,
+          "overflow": false,
+          "camera": [
+            1445,
+            1013.5999999999999
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 2,
+          "zoom": 0.5,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 1206,
+          "height": 668,
+          "expectedWidth": 1206,
+          "expectedHeight": 668,
+          "overflow": false,
+          "camera": [
+            1445,
+            1013.5999999999999
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 2,
+          "zoom": 0.5,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 1206,
+          "height": 668,
+          "expectedWidth": 1206,
+          "expectedHeight": 668,
+          "overflow": false,
+          "camera": [
+            1445,
+            1013.5999999999999
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 2,
+          "zoom": 0.5,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 1206,
+          "height": 668,
+          "expectedWidth": 1206,
+          "expectedHeight": 668,
+          "overflow": false,
+          "camera": [
+            1445,
+            1013.5999999999999
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 0.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 2,
+          "zoom": 1,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 1206,
+          "height": 668,
+          "expectedWidth": 1206,
+          "expectedHeight": 668,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "landscape",
+          "dpr": 2,
+          "zoom": 1,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 1206,
+          "height": 668,
+          "expectedWidth": 1206,
+          "expectedHeight": 668,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "landscape",
+          "dpr": 2,
+          "zoom": 1,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 1206,
+          "height": 668,
+          "expectedWidth": 1206,
+          "expectedHeight": 668,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "landscape",
+          "dpr": 2,
+          "zoom": 1,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 1206,
+          "height": 668,
+          "expectedWidth": 1206,
+          "expectedHeight": 668,
+          "overflow": false,
+          "camera": [
+            1632,
+            1063.6
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1
+        },
+        {
+          "name": "landscape",
+          "dpr": 2,
+          "zoom": 1.5,
+          "darkness": 0,
+          "reducedMotion": false,
+          "width": 1206,
+          "height": 668,
+          "expectedWidth": 1206,
+          "expectedHeight": 668,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 2,
+          "zoom": 1.5,
+          "darkness": 0,
+          "reducedMotion": true,
+          "width": 1206,
+          "height": 668,
+          "expectedWidth": 1206,
+          "expectedHeight": 668,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 2,
+          "zoom": 1.5,
+          "darkness": 0.4,
+          "reducedMotion": false,
+          "width": 1206,
+          "height": 668,
+          "expectedWidth": 1206,
+          "expectedHeight": 668,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        },
+        {
+          "name": "landscape",
+          "dpr": 2,
+          "zoom": 1.5,
+          "darkness": 0.4,
+          "reducedMotion": true,
+          "width": 1206,
+          "height": 668,
+          "expectedWidth": 1206,
+          "expectedHeight": 668,
+          "overflow": false,
+          "camera": [
+            1632,
+            1080.2666666666667
+          ],
+          "player": [
+            51,
+            34.8
+          ],
+          "scale": 1.5
+        }
+      ]
+    },
+    "72 camera edge/zoom/context cases bounded or centered"
+  ],
+  "errors": []
+}

@@ -140,3 +140,24 @@ test('overlapping same-account takeovers and an old disconnect leave exactly the
   expect(h.room.snapshot(id(1), 'third').self.plot).toBe(0);
   await h.room.leave(id(1), 'second'); expect(h.room.connections.size).toBe(1);
 });
+test.each([
+  ['pond', { x: 51, y: 30, scene: 'village' }],
+  ['Hall', { x: 29.6, y: 15, scene: 'village' }],
+  ['valid outdoors', { x: 50, y: 35, scene: 'village' }],
+  ['private interior', { x: 6, y: 7, scene: 'home' }],
+  ['bounded fallback', { x: -100, y: -100, scene: 'village' }],
+])('admission repairs %s only as needed and retains all progress, ownership, receipts and facing', async (_name, position) => {
+  const h = harness(); await h.room.join(id(1), h.connection('a'));
+  Object.assign(h.room.state.players[0], position, { facing: 'left', petals: 7, lantern: true, decorated: true,
+    discoveries: ['stone-0', 'stone-1', 'stone-2'], watered: ['2026-10-08:garden-0'], receipts: [{ id: request('garden-0').id, message: 'Saved action' }] });
+  h.room.state.blooms = 43;
+  const prior = structuredClone(h.room.state.players[0]);
+  await h.room.leave(id(1), 'a');
+  const snapshot = await h.room.join(id(1), h.connection('b'));
+  const repair = World.repairPosition(prior);
+  expect(h.persisted().players[0]).toEqual({ ...prior, ...repair });
+  expect(h.persisted().blooms).toBe(43); expect(h.persisted().version).toBe(1);
+  expect(snapshot.self.facing).toBe('left'); expect(snapshot.clientRevision).toBe(World.CLIENT_REVISION);
+  expect(snapshot.self.scene).toBe(position.scene);
+  await expect(h.room.action(id(1), 'b', request('garden-0'))).resolves.toMatchObject({ duplicate: true });
+});

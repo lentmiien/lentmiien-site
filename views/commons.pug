@@ -8,11 +8,11 @@ html(lang='en')
     title Lantern Commons · A little light, a place to return
     link(rel='icon', href='/commons/icon.svg', type='image/svg+xml')
     link(rel='stylesheet', href='/css/color-theme.css')
-    link(rel='stylesheet', href='/commons/style.css')
+    link(rel='stylesheet', href='/commons/style.css?v=1.1.0')
     script(src='/socket.io/socket.io.js', defer)
-    script(src='/commons/world.js', defer)
-    script(src='/commons/renderer.js', defer)
-    script(src='/commons/client.js', defer)
+    script(src='/commons/world.js?v=1.1.0', defer)
+    script(src='/commons/renderer.js?v=1.1.0', defer)
+    script(src='/commons/client.js?v=1.1.0', defer)
   body
     header.topbar
       a.brand(href='/mypage', aria-label='Back to My Account')
@@ -40,7 +40,7 @@ html(lang='en')
           button.down(type='button', data-x='0', data-y='1', aria-label='Walk south') ↓
           button.right(type='button', data-x='1', data-y='0', aria-label='Walk east') →
         .stage-actions
-          button#interact.primary(type='button', disabled) Explore nearby
+          button#interact.primary(type='button', disabled) Nothing in reach
           button#wave(type='button', aria-label='Wave hello to nearby villagers') Wave
         .zoom-controls
           button#zoom-out(type='button', aria-label='Zoom out') −
@@ -63,7 +63,7 @@ html(lang='en')
         .quest
           .quest-number 01 — YOUR FIRST LANTERN
           h3 A light of your own
-          p Follow the western woodland path. Listen to its three stones, gather petals in the garden, then visit the workshop.
+          p#quest-guidance Follow the western woodland path. Listen to its three stones, gather petals in the garden, then visit the workshop.
           ul.progress-list
             li
               span Woodland wisdom

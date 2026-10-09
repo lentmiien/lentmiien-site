@@ -2,7 +2,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const W = window.CommonsWorld;
-  let renderer, socket, state, lastNearby = '', toastTimer, awaiting = false, lastStateAt = 0;
+  let renderer, socket, state, lastNearby = null, toastTimer, awaiting = false, lastStateAt = 0;
   let connectionEpoch = 0;
   const held = new Set();
   let touch = { x: 0, y: 0 }, lastInput = '';
@@ -28,7 +28,7 @@
     if ($('guide').open) $('guide').close();
   }
   function update(snapshot) {
-    if (snapshot.version !== W.VERSION) { socket.disconnect(); showCover('The village has changed. Reload this page for the new version.'); return; }
+    if (snapshot.version !== W.VERSION || snapshot.clientRevision !== W.CLIENT_REVISION) { socket.disconnect(); showCover('The village has changed. Reload this page for the new version.'); return false; }
     state = snapshot; lastStateAt = Date.now(); renderer.update(snapshot);
     const clock = W.clock(snapshot.serverTime), self = snapshot.self;
     $('phase').textContent = clock.phase; $('time').textContent = `${clock.time} · Tokyo`;
@@ -39,6 +39,9 @@
     $('discoveries').textContent = `${self.discoveries.length} / 3`;
     $('petals').textContent = `${self.petals} petals`;
     $('lantern').textContent = self.lantern ? 'Made with care' : 'Not yet made';
+    $('quest-guidance').textContent = self.decorated ? 'Your lantern is at home. Enjoy the village, visit Mori, or tend the garden again tomorrow.'
+      : self.lantern ? 'Your lantern is made. Return to your cottage and arrange it to bring its light home.'
+        : 'Follow the western woodland path. Listen to its three stones, gather petals in the garden, then visit the workshop.';
     $('blooms').textContent = snapshot.blooms;
     const saveAge = Date.now() - new Date(snapshot.savedAt).getTime();
     $('save-status').textContent = saveAge < 10000 ? 'Progress saved · movement saves every 5s' : 'Waiting for the next save…';
@@ -53,7 +56,8 @@
       if (!nearby.length) { const p = document.createElement('p'); p.textContent = 'Walk towards a place to discover it.'; $('nearby-list').append(p); }
     }
     $('interact').disabled = !nearby.length || awaiting;
-    $('interact').textContent = nearby.length ? `Visit ${nearby[0].kind === 'npc' ? 'Mori' : nearby[0].kind === 'home' ? 'cottage' : nearby[0].kind === 'exit' ? 'village' : nearby[0].kind === 'garden' ? 'garden' : 'nearby place'}` : 'Explore nearby';
+    $('interact').textContent = nearby.length ? `Visit ${nearby[0].kind === 'npc' ? 'Mori' : nearby[0].kind === 'home' ? 'cottage' : nearby[0].kind === 'exit' ? 'village' : nearby[0].kind === 'garden' ? 'garden' : 'nearby place'}` : 'Nothing in reach';
+    return true;
   }
   function sendInput(force = false) {
     if (!socket?.connected || !state) return;
@@ -102,7 +106,7 @@
     $('enter').disabled = true; $('status').textContent = 'Finding your place in the village…';
     socket = window.io('/commons', { auth: { csrf: document.querySelector('meta[name="csrf-token"]').content },
       path: '/commons/socket.io', transports: ['websocket'], forceNew: true, reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1500, reconnectionDelayMax: 5000 });
-    socket.on('joined', snapshot => { $('cover').hidden = true; lastNearby = '__new__'; update(snapshot); $('world').focus({ preventScroll: true }); toast(`Welcome home. Cottage ${snapshot.self.plot + 1} is yours.`); });
+    socket.on('joined', snapshot => { $('cover').hidden = true; lastNearby = '__new__'; if (!update(snapshot)) return; $('world').focus({ preventScroll: true }); toast(`Welcome home. Cottage ${snapshot.self.plot + 1} is yours.`); });
     socket.on('state', update);
     socket.on('closed', ({ code }) => { socket.io.reconnection(false); showCover(errors[code] || 'The village connection closed.'); });
     socket.on('connect_error', error => {

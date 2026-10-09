@@ -64,7 +64,8 @@ async function run() {
     await old.close(); await newTab.waitForTimeout(200);
     expect(preview.room.connections.size === 2, 'Delayed old tab close preserves replacement connection');
     // Fixture positioning is explicit: actions still go through real socket authorization and persistence.
-    Object.assign(player(), { x: 29, y: 33, scene: 'village' }); await newTab.waitForTimeout(250);
+    const sage = require('../public/commons/world').locations.find(location => location.id === 'garden-0');
+    Object.assign(player(), { x: sage.x, y: sage.y, scene: 'village' }); await newTab.waitForTimeout(250);
     await newTab.locator('#nearby-list button').filter({ hasText: 'Sage bed' }).click();
     await newTab.waitForFunction(() => document.getElementById('dialog-text').textContent.includes('watered'));
     expect(player().petals === 1, 'Browser garden action persisted before acknowledgement');

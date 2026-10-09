@@ -34,13 +34,7 @@
         c.lineWidth = width; c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = '#9b9676'; c.stroke();
         c.lineWidth = width - 9; c.strokeStyle = '#b6ad8b'; c.stroke();
       };
-      path([[7, 9], [57, 9], [57, 43], [7, 43], [7, 9]], 52);
-      path([[32, 9], [32, 43]], 66);
-      path([[7, 25], [57, 25]], 61);
-      path([[21, 20], [21, 33], [44, 33], [44, 20]], 48);
-      path([[21, 20], [44, 20]], 46);
-      path([[7, 21], [10, 27], [13, 33], [21, 33]], 38);
-      W.homes.forEach(h => path([[h.x, h.y + 1], [h.x, h.y < 10 ? 9 : 43]], 40));
+      W.roads.forEach(road => path(road.points, road.width * TILE));
       c.fillStyle = '#9c9b85'; c.beginPath(); c.ellipse(32 * TILE, 25 * TILE, 165, 125, 0, 0, Math.PI * 2); c.fill();
       c.strokeStyle = '#c7bea0'; c.lineWidth = 3;
       for (const r of [55, 105, 155]) { c.beginPath(); c.ellipse(32 * TILE, 25 * TILE, r, r * .73, 0, 0, Math.PI * 2); c.stroke(); }
@@ -59,16 +53,19 @@
       return canvas;
     }
     sprite(index, x, y, width, height = width, atlas = this.atlas) {
-      const sw = atlas.width / 4, sh = atlas.height / 2;
-      const gutter = atlas === this.sceneryAtlas && index === 3 ? .12 : 0;
-      this.ctx.drawImage(atlas, ((index % 4) + gutter) * sw, Math.floor(index / 4) * sh, sw * (1 - 2 * gutter), sh,
-        x - width / 2 + width * gutter, y - height, width * (1 - 2 * gutter), height);
+      const cell = W.art.cell, [sx, sy, sw, sh] = (atlas === this.sceneryAtlas ? W.art.scenery : W.art.village)[index];
+      const ox = (index % 4) * cell, oy = Math.floor(index / 4) * cell;
+      this.ctx.drawImage(atlas, sx, sy, sw, sh,
+        x - width / 2 + (sx - ox) * width / cell, y - height + (sy - oy) * height / cell,
+        sw * width / cell, sh * height / cell);
     }
     label(text, x, y, accent = false) {
-      const c = this.ctx; c.font = '12px system-ui'; c.textAlign = 'center';
+      const c = this.ctx;
+      c.save(); c.translate(x, y); c.scale(1 / (this.drawScale || 1), 1 / (this.drawScale || 1));
+      c.font = '12px system-ui'; c.textAlign = 'center';
       const width = c.measureText(text).width + 18;
-      c.fillStyle = '#171a20e8'; c.beginPath(); c.roundRect(x - width / 2, y - 13, width, 23, 7); c.fill();
-      c.fillStyle = accent ? '#ffc247' : '#e8ecf2'; c.fillText(text, x, y + 3);
+      c.fillStyle = '#171a20e8'; c.beginPath(); c.roundRect(-width / 2, -13, width, 23, 7); c.fill();
+      c.fillStyle = accent ? '#ffc247' : '#e8ecf2'; c.fillText(text, 0, 3); c.restore();
     }
     glow(x, y, radius, alpha = .4) {
       const c = this.ctx, gradient = c.createRadialGradient(x, y, 1, x, y, radius);
@@ -77,17 +74,27 @@
     }
     person(p, t, own) {
       const c = this.ctx, x = p.x * TILE, y = p.y * TILE;
-      const bob = this.reducedMotion ? 0 : Math.sin(t / 550 + p.plot) * 1.3;
+      // Keep the visible soles on the authoritative point; ambient motion belongs to lights.
+      const contact = W.art.avatarContact, cell = W.art.cell;
+      const footX = (contact.x - 3.5 * cell) * 67 / cell;
+      const footY = (2 * cell - contact.y) * 67 / cell;
       c.fillStyle = '#14241d55'; c.beginPath(); c.ellipse(x, y, 15, 6, 0, 0, Math.PI * 2); c.fill();
       c.strokeStyle = colors[p.plot % colors.length]; c.lineWidth = own ? 2.5 : 1.5;
-      c.beginPath(); c.ellipse(x, y, 17, 8, 0, 0, Math.PI * 2); c.stroke();
-      this.sprite(7, x, y - 2 + bob, 67);
+      if (!own) { c.beginPath(); c.ellipse(x, y, 17, 8, 0, 0, Math.PI * 2); c.stroke(); }
+      this.sprite(7, x - footX, y + footY, 67);
       const dirs = { up: [0, -11], down: [0, 11], left: [-22, 0], right: [22, 0] };
       const [dx, dy] = dirs[p.facing] || dirs.down;
       c.fillStyle = colors[p.plot % colors.length]; c.beginPath(); c.arc(x + dx, y + dy, 2.5, 0, Math.PI * 2); c.fill();
       if (p.lantern) this.glow(x - 12, y - 24, 48, .35);
+    }
+    personLabel(p, own) {
+      const c = this.ctx, x = p.x * TILE, y = p.y * TILE;
+      if (own) {
+        c.strokeStyle = colors[p.plot % colors.length]; c.lineWidth = 2.5;
+        c.beginPath(); c.ellipse(x, y, 17, 8, 0, 0, Math.PI * 2); c.stroke();
+      }
       if (p.emote) this.label(p.emote, x, y - 83, true);
-      else this.label(own ? 'You' : `Villager ${p.plot + 1}`, x, y + 24, own);
+      else this.label(own ? 'You' : `Villager ${p.plot + 1}`, x, y + 24 / (this.drawScale || 1), own);
     }
     home(t) {
       const c = this.ctx, own = this.state.self;
@@ -100,6 +107,7 @@
       }
       this.label('Village', 193, 308, true);
       this.person(own, t, true);
+      this.personLabel(own, true);
     }
     frame(t) {
       requestAnimationFrame(this.frame);
@@ -108,15 +116,24 @@
       const c = this.ctx, s = this.state, own = s.self;
       c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); c.fillStyle = '#344a3d'; c.fillRect(0, 0, this.width, this.height);
       const scale = own.scene === 'home' ? Math.min(this.width / 450, this.height / 390, 1.7) : this.scale;
+      this.drawScale = scale;
       const target = own.scene === 'home' ? { x: 192, y: 180 } : { x: own.x * TILE, y: own.y * TILE - 50 / scale };
+      const clampCamera = (point) => {
+        if (own.scene === 'home') return;
+        const clamp = (value, size, visible) => visible >= size ? size / 2 : Math.max(visible / 2, Math.min(size - visible / 2, value));
+        point.x = clamp(point.x, W.WIDTH * TILE, this.width / scale);
+        point.y = clamp(point.y, W.HEIGHT * TILE, this.height / scale);
+      };
+      clampCamera(target);
       if (!this.camera || this.camera.scene !== own.scene) this.camera = { ...target, scene: own.scene };
       const ease = this.reducedMotion ? 1 : .17;
       this.camera.x += (target.x - this.camera.x) * ease; this.camera.y += (target.y - this.camera.y) * ease;
+      clampCamera(this.camera);
       c.translate(this.width / 2, this.height / 2); c.scale(scale, scale); c.translate(-this.camera.x, -this.camera.y);
       if (own.scene === 'home') this.home(t);
       else {
         c.drawImage(this.ground, 0, 0);
-        const items = [...W.trees.map(tree => ({ ...tree, tree: true })), ...W.scenery.map(prop => ({ ...prop, scenery: true })), ...W.locations, ...s.players.map(p => ({ ...p, person: true }))].sort((a, b) => a.y - b.y);
+        const items = [...W.trees.map(tree => ({ ...tree, tree: true })), ...W.scenery.map(prop => ({ ...prop, scenery: true })), ...W.locations, ...s.players.map(p => ({ ...p, person: true }))].sort((a, b) => W.depth(a) - W.depth(b));
         for (const item of items) {
           const x = item.x * TILE, y = item.y * TILE;
           if (Math.abs(x - this.camera.x) > this.width / scale / 2 + 180 || Math.abs(y - this.camera.y) > this.height / scale / 2 + 200) continue;
@@ -150,9 +167,10 @@
         // Labels and interaction affordances remain legible above the night tint.
         for (const item of W.locations.filter(l => l.sprite != null && l.sprite < 6)) {
           const near = Math.hypot(item.x - own.x, item.y - own.y) < 16;
-          if (near) this.label(item.kind === 'home' && item.plot === own.plot ? `Your cottage · ${own.plot + 1}` : item.name, item.x * TILE, item.y * TILE + 29, item.plot === own.plot);
+          if (near || item.plot === own.plot) this.label(item.kind === 'home' && item.plot === own.plot ? `Your cottage · ${own.plot + 1}` : item.name, item.x * TILE, item.y * TILE + 29, item.plot === own.plot);
         }
         this.label('Mori · lantern keeper', 33 * TILE, 23 * TILE - 77, true);
+        for (const player of s.players) this.personLabel(player, player.id === own.id);
         for (const item of W.nearby(own)) {
           c.strokeStyle = '#ffc247'; c.lineWidth = 2; c.beginPath(); c.ellipse(item.x * TILE, (item.y + (item.sprite < 6 ? 1.2 : 0)) * TILE, 20, 8, 0, 0, Math.PI * 2); c.stroke();
         }

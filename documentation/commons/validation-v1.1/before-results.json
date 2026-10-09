@@ -1,0 +1,16 @@
+{
+  "phase": "before",
+  "environment": "Synthetic HTTP/session/socket; in-memory repository; headless Chromium; no real Mongo or physical device",
+  "results": [
+    "pond: (51, 34.8), zoom 1.5, daylight, DPR 1",
+    "fountain: (32, 29.5), zoom 1.5, daylight, DPR 1",
+    "hall: (32, 18), zoom 1.5, daylight, DPR 1",
+    "north-cottages: (13, 10.7), zoom 1.5, daylight, DPR 1",
+    "garden-road: (32, 34.8), zoom 1, daylight, DPR 1",
+    "east-road: (57, 20), zoom 1, daylight, DPR 1",
+    "west-edge: (1, 25), zoom 0.5, daylight, DPR 1",
+    "overview: (32, 25), zoom 0.5, daylight, DPR 1",
+    "contact: (33, 24), zoom 1.5, daylight, DPR 1"
+  ],
+  "errors": []
+}

@@ -28,7 +28,7 @@ function harness() {
   };
   context.window = context;
   vm.runInNewContext(fs.readFileSync('public/commons/client.js', 'utf8'), context);
-  const snapshot = { version: 1, serverTime: Date.now(), savedAt: new Date(), online: 1, maxOnline: 10, blooms: 0,
+  const snapshot = { version: 1, clientRevision: World.CLIENT_REVISION, serverTime: Date.now(), savedAt: new Date(), online: 1, maxOnline: 10, blooms: 0,
     self: { ...World.SPAWN, id: 'villager-0', plot: 0, petals: 0, discoveries: [] }, players: [] };
   const join = socket => socket.handlers.joined(snapshot);
   return { element, sockets, join };
@@ -58,4 +58,19 @@ test('model markup renders as plain text and late replies cannot overwrite a new
   h.element('npc-answer').textContent = 'New conversation';
   old.calls[1][2](null, { text: 'late private reply', mode: 'llm' }); await second;
   expect(h.element('npc-answer').textContent).toBe('New conversation');
+});
+test('completed quest copy and empty nearby state describe current progress', async () => {
+  const h = harness(); await settle(); h.element('enter').click(); const socket = h.sockets[0];
+  const snapshot = { version: 1, clientRevision: World.CLIENT_REVISION, serverTime: Date.now(), savedAt: new Date(), online: 1, maxOnline: 10, blooms: 3,
+    self: { ...World.SPAWN, x: 50, y: 35, id: 'villager-0', plot: 0, petals: 0, discoveries: ['stone-0', 'stone-1', 'stone-2'], lantern: true, decorated: false }, players: [] };
+  socket.handlers.joined(snapshot);
+  expect(h.element('quest-guidance').textContent).toContain('Return to your cottage');
+  expect(h.element('interact').disabled).toBe(true); expect(h.element('interact').textContent).toBe('Nothing in reach');
+  snapshot.self.decorated = true; socket.handlers.state(snapshot);
+  expect(h.element('quest-guidance').textContent).toContain('Your lantern is at home');
+});
+test('stale corrected client revision closes the socket without changing save version', async () => {
+  const h = harness(); await settle(); h.element('enter').click(); const socket = h.sockets[0];
+  socket.handlers.joined({ version: 1, clientRevision: 'future' });
+  expect(socket.connected).toBe(false); expect(h.element('status').textContent).toContain('Reload');
 });

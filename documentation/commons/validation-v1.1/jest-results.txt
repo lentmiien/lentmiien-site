@@ -1,0 +1,24 @@
+Node 24.20.0; final correction worktree; 2026-10-09
+Command: node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage --runInBand
+
+(node:2275196) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Fri, 09 Oct 2026 01:21:34 GMT router deprecated handlers that are Promise-like are deprecated, use a native Promise instead at node_modules/router/lib/route.js:157:13
+-------------------------|---------|----------|---------|---------|----------------------------------------------------------------------
+File                     | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+-------------------------|---------|----------|---------|---------|----------------------------------------------------------------------
+All files                |   71.78 |       50 |   80.79 |   72.64 |
+ lentmiien-site          |   59.41 |       50 |   74.46 |    58.3 |
+  setup.js               |   59.41 |       50 |   74.46 |    58.3 | 109,249-270,283-307,315-334,417-494,530-602,611-622
+ lentmiien-site/services |   78.74 |    50.96 |   82.79 |   81.52 |
+  budgetService.js       |   74.46 |    45.42 |   77.46 |    77.1 | 61-65,71,167,211-212,280,412,424,480,492-496,502,507,517-737,768,811
+  templateService.js     |   90.44 |    70.88 |     100 |   92.96 | 21,27,30,33,38,123,132-133,172
+ lentmiien-site/utils    |   74.13 |    45.97 |    90.9 |   73.91 |
+  startupChecks.js       |   74.13 |    45.97 |    90.9 |   73.91 | 19-24,47-50,91-95,129-140,158,180-183,203,211-215,228-245,257,270
+-------------------------|---------|----------|---------|---------|----------------------------------------------------------------------
+
+Test Suites: 7 skipped, 372 passed, 372 of 379 total
+Tests:       110 skipped, 4686 passed, 4796 total
+Snapshots:   0 total
+Time:        174.298 s, estimated 192 s
+Ran all test suites.

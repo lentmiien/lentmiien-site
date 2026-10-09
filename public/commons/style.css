@@ -34,7 +34,7 @@ button:hover {
 }
 button:disabled {
   opacity: .55;
-  cursor: wait;
+  cursor: default;
 }
 button:focus-visible,a:focus-visible,canvas:focus-visible,textarea:focus-visible {
   outline: 2px solid var(--focus);
@@ -48,6 +48,13 @@ button:focus-visible,a:focus-visible,canvas:focus-visible,textarea:focus-visible
 .primary:hover {
   background: var(--brand-hover);
 }
+button.primary:disabled,button.primary:disabled:hover {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border-color: var(--border);
+  opacity: 1;
+}
+
 a {
   color: var(--accent);
 }
@@ -169,7 +176,7 @@ small {
   margin: 10px 0;
 }
 .journal p {
-  font-size: .8rem;
+  font-size: .875rem;
   line-height: 1.8;
   color: var(--text-secondary);
 }
@@ -194,7 +201,7 @@ small {
   list-style: none;
   padding: 0;
   margin: 17px 0 0;
-  font-size: .72rem;
+  font-size: .8rem;
 }
 .progress-list li {
   display: flex;
@@ -558,7 +565,7 @@ textarea {
   }
   .progress-list li {
     padding: 5px 0;
-    font-size: .65rem;
+    font-size: .75rem;
   }
   .quest-number {
     font-size: .5rem;
@@ -572,12 +579,12 @@ textarea {
   }
   #nearby-list button {
     min-height: 37px;
-    font-size: .68rem;
+    font-size: .75rem;
     padding: 7px;
     margin: 2px 0;
   }
   #nearby-list p {
-    font-size: .68rem;
+    font-size: .75rem;
   }
   .scene-tag {
     left: 13px;
