@@ -114,6 +114,21 @@ Browser smoke checklist for the eventual deployment:
 
 ## Deliberate v1 limits and extension points
 
+### Live acceptance and reported follow-ups (2026-10-09)
+
+Lennart reports that v1 looks really good and seems to work fine, and explicitly accepts it as-is: “We'll keep the first version, so let's merge it into the main branch.” The accepted implementation is reviewed commit `4f8f2f49a277cd9973800e7fbeeaaec7199c5ca3`; see the [prior final review](/codex/sessions/tool-session-808c30498228cb4601d4e07ca0d02a952f73a41ce7ae9e024302a3f8ad345660). The merge/push task makes no gameplay or visual fixes and performs no deployment.
+
+Preserved for later investigation, these are reported observations, not verified diagnoses or blockers to the accepted v1 release:
+
+- Collision shapes seem displaced downward relative to the art.
+- The pond collider seems too small and near its lower edge; approaching from above allows walking entirely under the pond art before collision.
+- The fountain has a similar apparent offset, though less visually severe.
+- Lantern Hall's collider seems too small for the larger building. Reuse of a smaller house collider is Lennart's unverified hypothesis.
+- Some buildings, trees and flowerbeds overlap roads.
+- Some cropped sprites show stray pixels from adjacent graphics along their left side.
+
+### Deferred capabilities
+
 No offline avatars, guest cottages, household adapter, shared inventory, player text broadcast, terrain editing, ASR/TTS, cross-player memories, scheduled events, real Kitchen Week/Memory Shelf tools, or 3D rendering are presented as working. Offline characters are removed from presence; their durable transform remains paused, with no penalties.
 
 The public location registry and transforms live in `world.js`; `registry.js` owns authorized fixed portal adapters. Future interiors/NPCs need explicit capability and object scopes, and cannot put private metadata into the public facade. The `CommonsRoom` owns rules/persistence; `CommonsRenderer` consumes snapshots. A future 3D renderer can consume the same x/y/facing/scene transforms after a reviewed coordinate/version contract. Time/event hooks can use `World.clock` without involving rendering or AI. A household shelter adapter must first establish a real immutable household membership boundary in its underlying feature; the legacy permission alone is insufficient. Voice and consent-based cross-player memories need separate grants, bounded jobs and retention/delivery rules.
