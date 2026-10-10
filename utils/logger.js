@@ -112,40 +112,79 @@ function isSensitiveKey(key) {
     || normalized.endsWith('token');
 }
 
-function createReplacer() {
-  const seen = new WeakSet();
-  return (key, value) => {
-    if (isSensitiveKey(key)) {
-      return '[redacted secret]';
-    }
-    if (value instanceof Error) {
-      return {
-        name: value.name,
-        message: value.message,
-        stack: value.stack,
-        code: value.code || null,
-        status: value.status || value.statusCode || null,
-      };
-    }
+const PAYLOAD_KEYS = new Set([
+  'config', 'request', 'response', 'headers', 'body', 'data', 'payload',
+  'requestbody', 'responsebody', 'requestdata', 'responsedata',
+  'messages', 'prompt', 'text', 'content', 'images', 'image', 'audio',
+]);
 
-    if (typeof value === 'bigint') {
-      return value.toString();
-    }
-
-    if (typeof value === 'object' && value !== null) {
-      if (seen.has(value)) {
-        return '[Circular]';
-      }
-      seen.add(value);
-    }
-
-    return value;
-  };
+function sanitizeLogText(value) {
+  // Oversized strings can contain whole serialized requests. Do not retain a prefix.
+  if (value.length > 4096) return '[oversized log value omitted]';
+  if (/^\s*[\[{]/.test(value)) return '[serialized payload omitted]';
+  return value.replace(/https?:\/\/[^\s<>"']+/gi, raw => {
+    try {
+      const url = new URL(raw);
+      url.username = ''; url.password = ''; url.search = ''; url.hash = '';
+      return url.toString();
+    } catch (_) { return '[invalid URL omitted]'; }
+  }).replace(/(^|[\s("'])(\/[^\s<>"'?#]*)(?:\?[^\s<>"']*|#[^\s<>"']*)/g, '$1$2')
+    .replace(/data:[^\s;,]+;base64,[a-z\d+/=]+/gi, '[binary data omitted]')
+    .slice(0, 2048);
 }
 
 function sanitizeLogMetadata(value) {
+  const seen = new WeakSet();
+  let nodes = 0;
+  let remainingText = 12000;
+  const text = raw => {
+    const safe = sanitizeLogText(raw);
+    if (safe.length > remainingText) return '[log size limit]';
+    remainingText -= safe.length;
+    return safe;
+  };
+  const visit = (item, depth = 0, key = '') => {
+    if (++nodes > 250 || depth > 6) return '[log size limit]';
+    if (isSensitiveKey(key)) return '[redacted secret]';
+    if (PAYLOAD_KEYS.has(key.toLowerCase().replace(/[^a-z0-9]/g, ''))) return '[payload omitted]';
+    if (typeof item === 'string') return text(item);
+    if (typeof item === 'bigint') return text(String(item));
+    if (item === null || typeof item === 'boolean' || typeof item === 'number') return item;
+    if (typeof item !== 'object') return undefined;
+    if (seen.has(item)) return '[Circular]';
+    seen.add(item);
+    if (Buffer.isBuffer(item) || ArrayBuffer.isView(item)) return '[binary data omitted]';
+    if (util.types.isDate(item)) return Date.prototype.toISOString.call(item);
+    // Walk the original object BEFORE JSON serialization: AxiosError.toJSON() includes
+    // config.data, which can contain credentials and private JSON-string bodies.
+    if (item instanceof Error || util.types.isNativeError(item)) {
+      const status = item.status ?? item.statusCode ?? item.response?.status;
+      return {
+        name: text(String(item.name || 'Error')),
+        message: text(String(item.message || '')),
+        stack: typeof item.stack === 'string' ? text(item.stack) : undefined,
+        code: typeof item.code === 'string' || typeof item.code === 'number' ? visit(item.code, depth + 1) : null,
+        status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
+        ...(item.cause ? { cause: visit(item.cause, depth + 1) } : {}),
+      };
+    }
+    const result = Array.isArray(item) ? [] : Object.create(null);
+    let count = 0;
+    // Never call user-supplied toJSON, inspect hooks or accessors.
+    for (const name in item) {
+      if (!Object.hasOwn(item, name) || name === 'toJSON') continue;
+      if (++count > 40 || nodes >= 250) break;
+      const property = Object.getOwnPropertyDescriptor(item, name);
+      const safe = property && Object.hasOwn(property, 'value')
+        ? visit(property.value, depth + 1, name) : '[accessor omitted]';
+      if (Array.isArray(result)) result.push(safe);
+      else result[text(name).slice(0, 100)] = safe;
+    }
+    return result;
+  };
   try {
-    return JSON.parse(JSON.stringify(value, createReplacer()));
+    const safe = visit(value);
+    return Buffer.byteLength(JSON.stringify(safe) || '') <= 32768 ? safe : '[log size limit]';
   } catch (error) {
     return '[Unable to serialize log metadata safely]';
   }
@@ -153,10 +192,10 @@ function sanitizeLogMetadata(value) {
 
 function formatMessage(message) {
   if (typeof message === 'string') {
-    return message;
+    return sanitizeLogText(message);
   }
   if (message instanceof Error) {
-    return message.message;
+    return sanitizeLogText(String(message.message));
   }
   return util.inspect(sanitizeLogMetadata(message), { depth: 5, breakLength: 80 });
 }
@@ -212,7 +251,7 @@ async function writeLog(level, message, ...args) {
   };
 
   if (options.category) {
-    entry.category = options.category;
+    entry.category = typeof options.category === 'string' ? sanitizeLogText(options.category).slice(0, 100) : 'unspecified';
   }
 
   let metadataSet = false;
@@ -233,14 +272,14 @@ async function writeLog(level, message, ...args) {
   try {
     await ensureLogDir();
     const filePath = getLogFilePath();
-    const serialized = `${JSON.stringify(entry, createReplacer())}\n`;
+    const serialized = `${JSON.stringify(entry)}\n`;
     await fs.promises.appendFile(filePath, serialized, 'utf8');
   } catch (err) {
     const fallbackEntry = {
       timestamp: new Date().toISOString(),
       level: 'error',
       message: 'Failed to write log entry',
-      metadata: { originalError: err },
+      metadata: sanitizeLogMetadata({ originalError: err }),
     };
     console.error('[LOGGER]', fallbackEntry);
   }

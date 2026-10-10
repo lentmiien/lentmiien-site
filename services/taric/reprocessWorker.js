@@ -74,7 +74,7 @@ function createReprocessWorker(service, controls) {
           r.configuration.catalog.codes, r.configuration.maxTokens, { signal: signal(), correlationId: c.correlationId,
             onDiagnostics: v => { diagnostics = v; }, onTransport: v => { transportStatus = errorStatus(v); } });
         } catch (e) {
-          error = report(e, 'local_reprocess.case'); transportStatus = errorStatus(e.transport) || transportStatus;
+          error = report(e, 'local_reprocess.case', { runId: r._id, requestId: c.id, correlationId: c.correlationId }); transportStatus = errorStatus(e.transport) || transportStatus;
           if (!session && ['ADMISSION_UNCERTAIN', 'INFERENCE_UNCERTAIN', 'RECOVERY_REQUIRED'].includes(error)) unsafe = true;
         }
         c = { ...c, state: 'recorded', result, diagnostics, error, errorStatus: transportStatus, finishedAt: date() };
@@ -95,7 +95,7 @@ function createReprocessWorker(service, controls) {
         }
       }
     } catch (e) {
-      const error = report(e, 'local_reprocess');
+      const error = report(e, 'local_reprocess', { runId: r._id });
       unsafe = ['INTERRUPTED', 'INFERENCE_UNCERTAIN', 'ADMISSION_UNCERTAIN', 'RECOVERY_REQUIRED'].includes(error);
       terminal = { state: unsafe ? 'recovery_required' : error === 'CANCELLED' ? 'cancelled' : 'failed', error };
       endReason = error === 'CANCELLED' ? 'cancelled' : 'failed';

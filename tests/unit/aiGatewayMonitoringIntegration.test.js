@@ -1,5 +1,5 @@
 jest.mock('../../database', () => ({ RoleModel: { findOne: jest.fn() } }));
-jest.mock('../../utils/logger', () => ({ warning: jest.fn(), error: jest.fn() }));
+jest.mock('../../utils/logger', () => ({ warning: jest.fn(), error: jest.fn(), notice: jest.fn() }));
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');

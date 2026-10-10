@@ -9,6 +9,18 @@ Management URL: `/admin/taric`. API: `/api/taric/v1` (shipped jobs use `/request
 
 Request/outcome history and explicit human label review: `/admin/taric/history`. See [the history/export operator guide](taric-history.md) for additive bootstrap, private audit collections, candidate eligibility and bounded JSONL selection. Verification cannot enable production or publish a benchmark.
 
+## Application log outcomes
+
+Application log classification: `EVIDENCE_NOT_FOUND`, `CATALOG_REJECTED` and
+unapproved-code diagnostics are notices (tool outcomes), not application warnings.
+Missing evidence still fails before inference; catalog rejection still leaves no
+accepted result. The separate approved-code registry still annotates the result
+or rejected proposal with its approval status and `unapproved_taric_code` warning
+where applicable. It does not replace the generation catalog. Request/run and
+generation correlation IDs connect worker outcomes without logging product data.
+Storage/provider failures, uncertain inference, cleanup failures and recovery
+holds retain their operational warning/error levels.
+
 ## Human production setup (initial installations)
 
 The reported deployment already completed configuration, bootstrap, v0 import and key creation. Do not repeat those steps for recovery; use the additive migration/recovery section below.

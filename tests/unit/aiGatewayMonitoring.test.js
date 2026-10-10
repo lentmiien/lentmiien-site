@@ -1,4 +1,4 @@
-jest.mock('../../utils/logger', () => ({ warning: jest.fn() }));
+jest.mock('../../utils/logger', () => ({ warning: jest.fn(), notice: jest.fn() }));
 const { normalizeMonitoring, createMonitoringService } = require('../../services/aiGatewayMonitoringService');
 const NOW = Date.parse('2026-10-08T09:00:00Z');
 function fixture(container = {}, probe = {}) {
@@ -111,7 +111,7 @@ describe('bounded snapshot fetching', () => {
   beforeEach(() => {
     clock = NOW; raw = fixture();
     http = { get: jest.fn(async url => ({ data: raw[Object.entries({ health: '/health', containers: '/containers', queue: '/gpu/queue', reservation: '/gpu/reservation' }).find(([, suffix]) => url.endsWith(suffix))[0]] })), post: jest.fn() };
-    log = { warning: jest.fn() };
+    log = { warning: jest.fn(), notice: jest.fn() };
     service = createMonitoringService({ baseUrl: 'http://gateway.invalid', headers: () => ({ 'X-Admin-Token': 'secret' }), http, log, now: () => clock });
   });
   test('four fixed GETs, no inference/mutations/fanout; cache and single-flight across callers', async () => {
@@ -140,6 +140,34 @@ describe('bounded snapshot fetching', () => {
     clock += 16000; await service.get();
     expect(log.warning).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(log.warning.mock.calls)).not.toContain('SECRET');
+  });
+  test('logs bounded service identities and recovery once, retaining failures across incomplete snapshots', () => {
+    const failed = fixture({ state: 'exited', running: false }, { ok: false });
+    failed.health.ok = false;
+    failed.health.failures = [{ id: 'voicevox', kind: 'container', detail: 'SECRET' }];
+    service.observe(failed); service.observe(failed);
+    expect(log.warning).toHaveBeenCalledTimes(1);
+    expect(log.warning).toHaveBeenCalledWith(expect.stringContaining('degraded'), expect.objectContaining({ metadata: expect.objectContaining({
+      failedServiceCount: 1, failedServices: [{ id: 'voicevox', category: 'voicevox' }],
+      failures: [{ service: 'voicevox', category: 'container' }],
+    }) }));
+    service.observe({});
+    expect(log.notice).not.toHaveBeenCalled();
+    service.observe(fixture()); service.observe(fixture());
+    expect(log.notice.mock.calls.map(([message]) => message)).toEqual([
+      'AI Gateway service monitoring endpoints recovered', 'AI Gateway service availability recovered',
+    ]);
+    expect(JSON.stringify([log.warning.mock.calls, log.notice.mock.calls])).not.toContain('SECRET');
+  });
+  test('logs global degradation without inventing service identities or leaking reasons', () => {
+    raw.health.ok = false;
+    raw.health.gpu_resource_manager = { degraded: true, degraded_reason: 'SECRET' };
+    raw.health.failures = [{ id: 'unmapped-private-name', kind: 'configuration', detail: 'SECRET' }];
+    service.observe(raw);
+    expect(log.warning).toHaveBeenCalledWith(expect.stringContaining('degraded'), expect.objectContaining({ metadata: expect.objectContaining({
+      failedServices: [], resourceManagerDegraded: true, failures: [{ service: null, category: 'configuration' }],
+    }) }));
+    expect(JSON.stringify(log.warning.mock.calls)).not.toMatch(/SECRET|unmapped-private-name/);
   });
 });
 

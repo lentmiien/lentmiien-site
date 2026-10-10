@@ -10,6 +10,7 @@ beforeEach(async () => {
   app.use(session({ secret: 'synthetic-test-secret-only', resave: false, saveUninitialized: false }));
   app.use((req, res, next) => { req.user = user; req.isAuthenticated = () => authenticated; res.locals.gtag = true; next(); });
   app.use('/commons', createCommonsRouter({ userModel: { findOne: async () => user }, roleModel: { findOne: async () => ({ permissions: grants }) }, configReader: () => ({ enabled: true, maxOnline: 10, checkpointMs: 5000 }) }));
+  app.use(require('../../../middleware/errorHandler')(require('../../../utils/logger')));
   await new Promise(resolve => { server = app.listen(0, '127.0.0.1', resolve); }); base = `http://127.0.0.1:${server.address().port}/commons`;
 });
 afterEach(() => new Promise(resolve => server.close(resolve)));
@@ -20,7 +21,12 @@ test('page is private, escaped, analytics-free and issues shared CSRF token with
   expect(response.headers.get('set-cookie')).toContain('connect.sid');
 });
 test('anonymous and missing-grant pages deny access and analytics', async () => {
-  authenticated = false; let response = await fetch(base); expect(response.status).toBe(401); expect(await response.text()).not.toContain('googletagmanager');
+  authenticated = false; let response = await fetch(base); expect(response.status).toBe(401);
+  const html = await response.text();
+  expect(html).toContain('Sign in to your account first.');
+  expect(html).not.toContain('googletagmanager');
+  expect(html).not.toContain('User:');
+  expect(require('../../../utils/logger').error).not.toHaveBeenCalled();
   authenticated = true; grants = []; response = await fetch(base); expect(response.status).toBe(403);
 });
 test('diagnostics require semantic operations plus admin identity and never list residents', async () => {

@@ -39,9 +39,12 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
     await Request.updateOne({ _id: r._id, state: 'running', fence: holder }, { $set: {
       ...update, active: false, finishedAt: date() } }).exec();
   }
-  function report(error, operation) {
+  function report(error, operation, context = {}) {
     const code = error instanceof TaricError ? error.code : 'STORAGE_FAILED';
-    logger.warning('TARIC background operation requires follow-up', { category: 'taric', metadata: { operation, code, transport: errorStatus(error.transport),
+    const expected = ['EVIDENCE_NOT_FOUND', 'CATALOG_REJECTED'].includes(code);
+    const identifiers = Object.fromEntries(['requestId', 'runId', 'correlationId']
+      .filter(key => /^[a-f0-9]{32}$/.test(context[key] || '')).map(key => [key, context[key]]));
+    logger[expected ? 'notice' : 'warning'](expected ? 'TARIC tool outcome recorded' : 'TARIC background operation requires follow-up', { category: 'taric', metadata: { operation, code, ...identifiers, transport: errorStatus(error.transport),
       stage: require('../../utils/taricDiagnostics').STAGES.has(error.stage) ? error.stage : undefined,
       inferenceDispatched: typeof error.inferenceDispatched === 'boolean' ? error.inferenceDispatched : undefined } });
     return code;
@@ -75,7 +78,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
       result.warnings = [...(result.warnings || []), ...(result.taric_code.startsWith(request.input_hs_code) ? [] : ['input_hs_prefix_mismatch'])];
       await finishRequest(r, holder, { state: 'complete', evidence, diagnostics, result, errorStatus: transportStatus, inferenceDispatched: true, error: null });
     } catch (e) {
-      const error = report(e, 'request');
+      const error = report(e, 'request', { requestId: r._id });
       if (!session && ['INFERENCE_UNCERTAIN', 'ADMISSION_UNCERTAIN'].includes(error)) await hold(holder, error);
       await finishRequest(r, holder, { state: error === 'INTERRUPTED' ? 'interrupted' : 'failed', result: null,
         evidence, diagnostics: r.input.test === true ? diagnostics : null, errorStatus: errorStatus(e.transport) || transportStatus,
@@ -191,7 +194,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
           const codes = (benchmark.version === 0 ? settings.testCatalog : settings.catalog).codes;
           await fence(holder);
           result = await service.warmSessions.generate(session, c.input, codes, settings.maxTokens, options);
-        } catch (e) { error = report(e, 'benchmark.case'); transportStatus = errorStatus(e.transport) || transportStatus; }
+        } catch (e) { error = report(e, 'benchmark.case', { runId: r._id, correlationId: claim.correlationId }); transportStatus = errorStatus(e.transport) || transportStatus; }
         const attempt = { ...claim, state: 'finished', finishedAt: date(), result, diagnostics, error, generationSucceeded: transportStatus?.status === 200 && transportStatus.terminal === true && transportStatus.phase === 'http',
           errorStatus: transportStatus, exact: result?.taric_code === c.target,
           proposalExact: (diagnostics?.proposal?.taric_code || result?.taric_code) === c.target,
@@ -217,7 +220,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
         await runContext(r);
       }
     } catch (e) {
-      const error = report(e, 'benchmark');
+      const error = report(e, 'benchmark', { runId: r._id });
       endReason = error === 'CANCELLED' ? 'cancelled' : error === 'FORBIDDEN' ? 'revoked' : 'failed';
       unsafe = ['INFERENCE_UNCERTAIN', 'ADMISSION_UNCERTAIN', 'INTERRUPTED', 'RECOVERY_REQUIRED'].includes(error);
       await recordEnd();

@@ -292,14 +292,13 @@ class Qwen3LoraGatewayService {
         functionName: `${this.functionPrefix}_container_state`,
       },
       health: { path: this.servicePath('/health'), functionName: `${this.functionPrefix}_health` },
-      model: { path: this.servicePath('/model'), functionName: `${this.functionPrefix}_model` },
       datasets: { path: this.servicePath('/datasets'), functionName: `${this.functionPrefix}_datasets` },
       jobs: { path: this.servicePath('/train/jobs'), functionName: `${this.functionPrefix}_jobs` },
       adapters: { path: this.servicePath('/adapters'), functionName: `${this.functionPrefix}_adapters` },
       limits: { path: '/limits', functionName: `${this.functionPrefix}_limits` },
     };
 
-    const results = await Promise.all(Object.entries(endpoints).map(async ([key, endpoint]) => {
+    const readEndpoint = async (key, endpoint) => {
       try {
         const data = await this.request({
           method: 'get',
@@ -315,13 +314,35 @@ class Qwen3LoraGatewayService {
           status: error?.response?.status || null, code: error?.code || null,
         }];
       }
-    }));
+    };
+    const requests = Object.fromEntries(Object.entries(endpoints).map(([key, endpoint]) => [key, readEndpoint(key, endpoint)]));
+    // /model can acquire runtime resources. Check CPU-side job metadata first so
+    // active-training refreshes do not compete with the training process.
+    const [, jobData] = await requests.jobs;
+    const jobs = Array.isArray(jobData) ? jobData : Array.isArray(jobData?.jobs) ? jobData.jobs : null;
+    const activeStates = ['accepted', 'pending', 'queued', 'running', 'starting'];
+    const terminalStates = ['succeeded', 'completed', 'failed', 'cancelled', 'canceled', 'interrupted'];
+    const states = jobs?.map(job => typeof job?.status === 'string' ? job.status.toLowerCase() : 'unknown');
+    const trainingActive = states?.some(status => activeStates.includes(status));
+    const trainingIdle = states?.every(status => terminalStates.includes(status));
+    const modelPolling = { deferred: !trainingIdle,
+      reason: trainingActive ? 'training_active' : trainingIdle ? null : 'training_state_unavailable' };
+    requests.model = trainingIdle
+      ? readEndpoint('model', { path: this.servicePath('/model'), functionName: `${this.functionPrefix}_model` })
+      : Promise.resolve(['model', null, null]);
+    const results = await Promise.all(Object.values(requests));
+    if (!trainingActive && !trainingIdle && !results.find(([key]) => key === 'jobs')[2]) {
+      results.push(['jobs', jobData, 'Training status is unavailable.', {
+        endpoint: 'jobs', path: this.servicePath('/train/jobs'), status: null, code: 'INVALID_TRAINING_STATE',
+      }]);
+    }
 
     const state = {
       baseUrl: this.gatewayBaseUrl,
       servicePrefix: this.servicePrefix,
       fetchedAt: new Date().toISOString(),
       errors: {},
+      modelPolling,
     };
 
     results.forEach(([key, data, error]) => {

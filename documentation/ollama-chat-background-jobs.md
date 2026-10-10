@@ -29,6 +29,32 @@ Do not put the resulting callback URL in tickets or logs. The application
 redacts its token from API debug records and normal logs, but the reverse proxy
 and AI Gateway should also avoid logging query strings for this endpoint.
 
+### Callback credential revocation (October 2026 log review)
+
+The callback HMAC now uses the `lentmiien-ollama-webhook-v2` context. Deploying
+this change rejects every v1 callback token, including the credential exposed
+by the old Axios error logger, without changing or exposing the underlying
+session secret. Deploy all web instances together; an old instance still accepts
+v1. Do not roll back to v1 or temporarily accept both contexts.
+
+Jobs already submitted with v1 URLs may receive callback 401s. Keep the existing
+pending-response scheduler enabled: it polls the canonical Gateway job and
+completes the existing pending message. Do not resubmit those jobs. New jobs use
+v2 immediately. Confirm old pending messages finish and a new job completes.
+
+Set or rotate a separate random `OLLAMA_WEBHOOK_SECRET` of at least 32 characters
+through the deployment secret manager. Rotation likewise invalidates outstanding
+callback URLs; polling provides recovery. No secret files are modified by this
+code change. Restrict access to existing app/console logs, backups and exported
+reports containing the old entries and remove those copies under the operator's
+retention policy. The logger fix prevents new serialization leaks; it cannot
+erase historical copies. There is no evidence here that `SESSION_SECRET` itself
+was disclosed.
+
+The shared application logger now normalizes original errors before any `toJSON`
+hook, retains bounded error fields, omits payload containers/serialized bodies,
+and strips URL credentials, query strings and fragments before either sink.
+
 ## Safety behavior
 
 - Callback traffic is limited to 120 requests per minute per source IP. JSON is

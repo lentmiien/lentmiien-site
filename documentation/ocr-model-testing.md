@@ -5,6 +5,19 @@ The OCR workspace discovers model parameters and warnings from the configured
 are `hunyuanocr`, `teleocr`, `lightonocr-2`, and `unlimited-ocr`. Discovery failure
 uses the last known catalog, or Hunyuan alone on a cold start, and reports a warning.
 
+The local Gateway checked on October 10, 2026 returns 404 for `/ocr/models` and
+does not advertise that path in `/openapi.json`. Its `/ocr` operation remains
+available. This is a Gateway contract/deployment gap; do not guess another path
+or enable unsupported models from static definitions. Deploy a Gateway exposing
+`GET /ocr/models` with a `models` object keyed by supported canonical selectors,
+each with its `parameters` definitions and optional `warning`. Include Hunyuan.
+Confirm catalog discovery before offering the alternative model choices.
+
+The site retains the one-minute retry/cache interval and visible fallback warning.
+It logs `CATALOG_ENDPOINT_MISSING` once per failure transition, including the
+fixed endpoint and HTTP status; recovery logs a notice. Repeated identical 404s
+do not generate new warnings every minute. No OCR processing defaults change.
+
 Hunyuan remains the default with the existing coordinate prompt and 2048-token
 request. Existing records without a model remain Hunyuan jobs. Alternative models
 use native prompts when blank, and accept only their own documented settings.

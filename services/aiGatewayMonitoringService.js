@@ -128,11 +128,32 @@ function createMonitoringService({ baseUrl, headers = () => ({}), http = axios, 
     cached = normalizeMonitoring(raw, now());
     const problems = cached.sources.filter(source => !source.available).map(source => source.key).join(',');
     if (problems && problems !== lastProblems) log.warning('AI Gateway service monitoring incomplete; check endpoint availability and schema', { category: 'ai_gateway', metadata: { endpoints: problems } });
+    if (!problems && lastProblems) log.notice('AI Gateway service monitoring endpoints recovered', { category: 'ai_gateway', metadata: { endpoints: lastProblems } });
     lastProblems = problems;
-    const degradation = cached.status === 'Gateway reports degradation'
-      ? cached.services.filter(service => service.tone === 'failure').map(service => service.id).join(',') || 'global' : '';
-    if (degradation && degradation !== lastDegradation) log.warning('AI Gateway reports degraded service availability; review monitoring and host logs', { category: 'ai_gateway', metadata: { failedServiceCount: cached.services.filter(service => service.tone === 'failure').length } });
-    lastDegradation = degradation;
+    const failed = cached.services.filter(service => service.tone === 'failure');
+    const knownIds = new Set(cached.services.map(service => service.id));
+    const failures = valid.health(raw.health) ? raw.health.failures.map(failure => ({
+      service: knownIds.has(failure.id) ? failure.id : null,
+      category: choice(failure.kind, ['upstream', 'container', 'inspection', 'configuration', 'gpu_resource_manager']),
+    })) : [];
+    const summary = {
+      failedServiceCount: failed.length,
+      failedServices: failed.slice(0, 40).map(service => ({ id: service.id, category: service.guidance })),
+      failures: failures.slice(0, 40),
+      resourceManagerDegraded: raw.health?.gpu_resource_manager?.degraded === true,
+      reservationReleaseFailed: raw.reservation?.phase === 'release_failed',
+      truncated: failed.length > 40 || failures.length > 40,
+    };
+    const degradation = cached.status === 'Gateway reports degradation' || failed.length
+      ? JSON.stringify(summary) : '';
+    if (degradation && degradation !== lastDegradation) log.warning('AI Gateway reports degraded service availability; review monitoring and host logs', { category: 'ai_gateway', metadata: summary });
+    if (degradation) lastDegradation = degradation;
+    // Missing/partial observations must never be mistaken for recovery.
+    else if (lastDegradation && cached.complete && cached.status === 'Gateway reports healthy'
+      && cached.services.every(service => service.tone === 'normal')) {
+      log.notice('AI Gateway service availability recovered', { category: 'ai_gateway', metadata: { previous: JSON.parse(lastDegradation) } });
+      lastDegradation = '';
+    }
     return cached;
   };
   const get = async () => {

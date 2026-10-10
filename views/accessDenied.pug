@@ -3,4 +3,5 @@ extends layout
 block content
   h2= title
   p= message
-  p= `User: ${user.name}`
+  if user && user.name
+    p= `User: ${user.name}`

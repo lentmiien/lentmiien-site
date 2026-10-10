@@ -1,7 +1,12 @@
 jest.mock('axios');
-jest.mock('../../utils/logger', () => ({ warning: jest.fn() }));
-const axios = require('axios');
-const { MODEL_DEFINITIONS, DEFAULT_PROMPT, validateOptions, getCatalog } = require('../../services/ocrModelService');
+jest.mock('../../utils/logger', () => ({ warning: jest.fn(), notice: jest.fn() }));
+const { MODEL_DEFINITIONS, DEFAULT_PROMPT, validateOptions } = require('../../services/ocrModelService');
+let axios, getCatalog;
+beforeEach(() => {
+  jest.resetModules();
+  axios = require('axios');
+  ({ getCatalog } = require('../../services/ocrModelService'));
+});
 const catalog = { models: MODEL_DEFINITIONS };
 
 test('omitted selector retains the exact Hunyuan prompt and token defaults', () => {
@@ -47,4 +52,36 @@ test('discovers live defaults, merges backend bounds, caches and preserves warni
   expect(offline.models).toBe(first.models);
   expect(offline.warning).toMatch(/unavailable/);
   now.mockRestore();
+});
+
+test('a missing endpoint retains Hunyuan fallback, logs one actionable transition and reports recovery', async () => {
+  const now = jest.spyOn(Date, 'now').mockReturnValue(100000);
+  const logger = require('../../utils/logger');
+  axios.get.mockRejectedValue({ code: 'ERR_BAD_REQUEST', response: { status: 404, data: 'private provider body' } });
+  try {
+    const initial = await getCatalog();
+    expect(Object.keys(initial.models)).toEqual(['hunyuanocr']);
+    expect(validateOptions({}, initial).model).toBe('hunyuanocr');
+    now.mockReturnValue(161000); await getCatalog();
+    expect(axios.get).toHaveBeenCalledTimes(2);
+    expect(logger.warning).toHaveBeenCalledTimes(1);
+    expect(logger.warning).toHaveBeenCalledWith(expect.stringContaining('deploy a Gateway'), {
+      category: 'ocr', metadata: { endpoint: '/ocr/models', code: 'CATALOG_ENDPOINT_MISSING', status: 404 },
+    });
+    expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('private provider body');
+    now.mockReturnValue(222000); axios.get.mockResolvedValue({ data: { models: MODEL_DEFINITIONS } });
+    expect((await getCatalog()).warning).toBeNull();
+    expect(logger.notice).toHaveBeenCalledTimes(1);
+    now.mockReturnValue(283000); await getCatalog();
+    expect(logger.notice).toHaveBeenCalledTimes(1);
+  } finally { now.mockRestore(); }
+});
+
+test('concurrent discovery coalesces and rejects an unsupported catalog schema', async () => {
+  axios.get.mockResolvedValue({ data: { models: ['unexpected'] } });
+  const [one, two] = await Promise.all([getCatalog(), getCatalog()]);
+  expect(one).toBe(two);
+  expect(axios.get).toHaveBeenCalledTimes(1);
+  expect(one.warning).toContain('unavailable');
+  expect(Object.keys(one.models)).toEqual(['hunyuanocr']);
 });

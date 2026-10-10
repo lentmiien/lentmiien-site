@@ -403,4 +403,44 @@ describe('ComfyGatewayService thumbnail contract', () => {
     expect(cancelled).toBe(true);
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
+  test('identifies the deployed Gateway decoded-image refusal without retaining its private envelope', async () => {
+    global.fetch.mockResolvedValue(new Response(JSON.stringify({ detail: 'Input exceeds thumbnail decoded image limits', path: 'private-file.png', token: 'synthetic-secret' }), {
+      status: 413, headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'fixture-refusal' },
+    }));
+    const service = new ComfyGatewayService({ baseUrl: 'http://gateway.test' });
+    let error;
+    try { await service.openInputThumbnail('private-file.png'); } catch (caught) { error = caught; }
+    expect(ComfyGatewayService.gatewayLogMetadata(error)).toMatchObject({
+      status: 413, upstreamStatus: 413, upstreamReasonCode: 'DECODED_IMAGE_LIMIT', requestId: 'fixture-refusal',
+    });
+    expect(ComfyGatewayService.gatewayClientMessage(error)).toContain('pixel limit');
+    expect(JSON.stringify(error)).not.toMatch(/private-file|synthetic-secret/);
+    expect(mockRecordApiDebugLog).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+  test.each([
+    JSON.stringify({ detail: 'private text', code: 'PRIVATE_UNRECOGNIZED_CODE', path: '/private' }),
+    JSON.stringify({ detail: 'x'.repeat(5000), code: 'DECODED_IMAGE_LIMIT' }),
+    '<html>private response</html>',
+  ])('does not retain arbitrary, oversized or malformed error bodies', async body => {
+    global.fetch.mockResolvedValue(new Response(body, { status: 413, headers: { 'Content-Type': 'application/json' } }));
+    const service = new ComfyGatewayService({ baseUrl: 'http://gateway.test' });
+    await expect(service.openInputThumbnail('fixture.png')).rejects.toMatchObject({
+      status: 413, comfyGateway: { upstreamStatus: 413, upstreamReasonCode: null },
+    });
+  });
+  test('bounds error-body reading when upstream never completes', async () => {
+    let cancelled = false;
+    global.fetch.mockResolvedValue(new Response(new ReadableStream({ cancel() { cancelled = true; } }), {
+      status: 413, headers: { 'Content-Type': 'application/json' },
+    }));
+    jest.useFakeTimers();
+    try {
+      const service = new ComfyGatewayService({ baseUrl: 'http://gateway.test' });
+      const result = expect(service.openInputThumbnail('fixture.png')).rejects.toMatchObject({ status: 413 });
+      await jest.advanceTimersByTimeAsync(1000);
+      await result;
+      expect(cancelled).toBe(true);
+    } finally { jest.useRealTimers(); }
+  });
 });

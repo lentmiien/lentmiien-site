@@ -15,7 +15,9 @@ const CHAT_ENDPOINT = '/llm/chat';
 const CHAT_JOBS_ENDPOINT = '/llm/chat/jobs';
 const WEBHOOK_PATH = '/webhook/ollama';
 const WEBHOOK_TOKEN_PARAM = 'token';
-const WEBHOOK_TOKEN_CONTEXT = 'lentmiien-ollama-webhook-v1';
+// Revoke v1 callback credentials exposed by legacy Axios error serialization.
+// Pending jobs still complete through canonical job polling after this rotation.
+const WEBHOOK_TOKEN_CONTEXT = 'lentmiien-ollama-webhook-v2';
 const JOB_REQUEST_TIMEOUT_MS = 30000;
 const JOB_STATUS_TIMEOUT_MS = 30000;
 const JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

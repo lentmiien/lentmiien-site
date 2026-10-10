@@ -47,6 +47,18 @@ Deploy **Gateway first**, verifying its fixed `/comfy/input/thumbnail` contract,
 
 The site-local gallery cache works independently of the Gateway update. Non-admin feature users need the appropriate semantic read capability as well as their existing `image_gen` grant. No production data migration or eager backfill is required. Existing public originals are neither moved nor re-exposed.
 
+October 10, 2026 verification against the available local Gateway: a 159,154-byte
+source returned a 16,520-byte WebP; 9,702,725-byte and 12,465,514-byte sources both
+returned HTTP 413 with `Input exceeds thumbnail decoded image limits`. This is
+a decoded pixel/dimension refusal, not evidence of a fixed 10 MB source limit.
+Keep the limits and the placeholder; **Open** remains an explicit user action.
+The proxy now reads at most 4 KiB of JSON failure data for at most one second,
+retains only allowlisted reason codes (including `DECODED_IMAGE_LIMIT`), and logs
+the actual upstream status and request IDs. Arbitrary error text and paths are
+discarded. Correlate those IDs with Gateway logs to investigate other refusals.
+Interrupted original streams retain byte counts, upstream status and whether
+headers were sent; they cannot turn an already-started HTTP 200 into a 502.
+
 Rollback the site release normally if necessary; the private derivative cache may be left in place or removed while the app is stopped. Source files and database records are unaffected. Future encoder changes should bump the format version to invalidate old derivatives.
 
 ## GPT Image Studio and bulk output previews (October 2026)

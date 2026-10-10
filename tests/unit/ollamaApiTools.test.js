@@ -177,6 +177,17 @@ describe('Ollama_API tool manager integration', () => {
     expect(() => buildWebhookUrl()).toThrow('must use https unless it targets loopback');
   });
 
+  test('rejects exposed v1 tokens and invalidates current tokens when the dedicated secret rotates', () => {
+    const legacy = require('crypto').createHmac('sha256', process.env.OLLAMA_WEBHOOK_SECRET)
+      .update('lentmiien-ollama-webhook-v1').digest('hex');
+    const current = new URL(buildWebhookUrl()).searchParams.get('token');
+    expect(verifyWebhookToken(legacy)).toBe(false);
+    expect(verifyWebhookToken(current)).toBe(true);
+    process.env.OLLAMA_WEBHOOK_SECRET = 'replacement-synthetic-webhook-secret-at-least-32-characters';
+    expect(verifyWebhookToken(current)).toBe(false);
+    expect(verifyWebhookToken(new URL(buildWebhookUrl()).searchParams.get('token'))).toBe(true);
+  });
+
   test('retrieves a background job only from its canonical gateway path', async () => {
     mockGet.mockResolvedValue({
       data: {

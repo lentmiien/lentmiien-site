@@ -13,7 +13,7 @@ const Qwen3QloraGatewayService = require('../../services/qwen3QloraGatewayServic
 describe('Qwen3QloraGatewayService', () => {
   beforeEach(() => {
     axios.mockImplementation(async (options) => ({
-      data: { path: new URL(options.url).pathname },
+      data: options.url.endsWith('/train/jobs') ? { jobs: [] } : { path: new URL(options.url).pathname },
       headers: {},
       status: 200,
     }));
@@ -50,7 +50,7 @@ describe('Qwen3QloraGatewayService', () => {
     axios.mockImplementation(async options => {
       const requestPath = new URL(options.url).pathname;
       if (requestPath === modelPath) throw Object.assign(new Error('timeout'), { code: 'ECONNABORTED' });
-      return { data: { path: requestPath }, headers: {}, status: 200 };
+      return { data: requestPath.endsWith('/train/jobs') ? { jobs: [] } : { path: requestPath }, headers: {}, status: 200 };
     });
     const Service = require(modulePath);
     const service = new Service({ gatewayBaseUrl: 'http://gateway.test:8080' });
@@ -168,7 +168,7 @@ describe('Qwen3QloraGatewayService', () => {
         error.response = { status: 503, data: { detail: 'model unavailable' } };
         throw error;
       }
-      return { data: { path }, headers: {}, status: 200 };
+      return { data: path.endsWith('/train/jobs') ? { jobs: [] } : { path }, headers: {}, status: 200 };
     });
     const service = new Qwen3QloraGatewayService({ gatewayBaseUrl: 'http://gateway.test:8080' });
 
@@ -177,5 +177,40 @@ describe('Qwen3QloraGatewayService', () => {
     expect(state.health).toEqual({ path: '/qwen3-qlora/health' });
     expect(state.model).toBeNull();
     expect(state.errors.model).toBe('Gateway returned 503: model unavailable');
+  });
+
+  test.each(['../../services/qwen3LoraGatewayService', '../../services/qwen3QloraGatewayService'])(
+    '%s defers model polling during training and resumes after completion', async modulePath => {
+      const Service = require(modulePath);
+      const service = new Service({ gatewayBaseUrl: 'http://gateway.test:8080' });
+      let status = 'queued';
+      axios.mockImplementation(async options => ({ status: 200, headers: {},
+        data: options.url.endsWith('/train/jobs') ? { jobs: [{ status }] } : { ready: true } }));
+      for (status of ['accepted', 'pending', 'queued', 'starting', 'running']) {
+        axios.mockClear();
+        const state = await service.getDashboardState();
+        expect(state.modelPolling).toEqual({ deferred: true, reason: 'training_active' });
+        expect(state.model).toBeNull();
+        expect(state.health).toEqual({ ready: true });
+        expect(state.errors).toEqual({});
+        expect(axios.mock.calls.some(([options]) => options.url.endsWith('/model'))).toBe(false);
+      }
+      status = 'succeeded'; axios.mockClear();
+      const state = await service.getDashboardState();
+      expect(state.modelPolling.deferred).toBe(false);
+      expect(state.model).toEqual({ ready: true });
+      expect(axios.mock.calls.filter(([options]) => options.url.endsWith('/model'))).toHaveLength(1);
+    },
+  );
+
+  test.each([null, { jobs: [{}] }, { jobs: [{ status: 'new_unknown_state' }] }])('does not probe the model when training state is unavailable: %p', async jobs => {
+    axios.mockImplementation(async options => {
+      if (options.url.endsWith('/train/jobs') && jobs === null) throw Object.assign(new Error('offline'), { code: 'ECONNRESET' });
+      return { data: options.url.endsWith('/train/jobs') ? jobs : {}, status: 200, headers: {} };
+    });
+    const service = new Qwen3QloraGatewayService({ gatewayBaseUrl: 'http://gateway.test:8080' });
+    const state = await service.getDashboardState();
+    expect(state.modelPolling).toEqual({ deferred: true, reason: 'training_state_unavailable' });
+    expect(axios.mock.calls.some(([options]) => options.url.endsWith('/model'))).toBe(false);
   });
 });

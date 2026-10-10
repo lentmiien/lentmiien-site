@@ -22,6 +22,7 @@ const MODEL_DEFINITIONS = {
 let cachedCatalog;
 let cacheUntil = 0;
 let pendingCatalog;
+let lastDiscoveryFailure = null;
 
 function normalizeCatalog(data) {
   if (!data?.models?.hunyuanocr) throw new Error('Invalid OCR model catalog');
@@ -50,10 +51,21 @@ async function getCatalog() {
     try {
       const { data } = await axios.get(`${API_BASE_URL}/ocr/models`, { timeout: 3000, maxContentLength: 65536, maxRedirects: 0 });
       cachedCatalog = normalizeCatalog(data);
+      if (lastDiscoveryFailure) logger.notice('OCR model discovery recovered', { category: 'ocr', metadata: { endpoint: '/ocr/models' } });
+      lastDiscoveryFailure = null;
     } catch (error) {
-      logger.warning('OCR model discovery unavailable; using cached catalog or Hunyuan defaults', {
-        category: 'ocr', metadata: { code: error.code || 'INVALID_CATALOG', status: error.response?.status },
-      });
+      const status = Number.isInteger(error.response?.status) ? error.response.status : null;
+      const code = status === 404 ? 'CATALOG_ENDPOINT_MISSING'
+        : /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code || '') ? error.code : 'INVALID_CATALOG';
+      const failure = `${status}:${code}`;
+      if (failure !== lastDiscoveryFailure) {
+        logger.warning(status === 404
+          ? 'OCR model catalog endpoint missing; deploy a Gateway supporting GET /ocr/models'
+          : 'OCR model discovery unavailable; using cached catalog or Hunyuan defaults', {
+          category: 'ocr', metadata: { endpoint: '/ocr/models', code, status },
+        });
+      }
+      lastDiscoveryFailure = failure;
       cachedCatalog = {
         models: cachedCatalog?.models || { hunyuanocr: MODEL_DEFINITIONS.hunyuanocr },
         warning: 'Model discovery is unavailable. Using the last known settings; HunyuanOCR remains the default.',

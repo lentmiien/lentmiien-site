@@ -136,6 +136,7 @@ QWEN3_QLORA_GENERATE_TIMEOUT_MS=43800000
 QWEN3_QLORA_CSV_UPLOAD_MAX_MB=200
 QWEN3_QLORA_MAX_COMPARE_TARGETS=4
 OLLAMA_WEBHOOK_BASE_URL=https://my.lentmiien.com/
+# Separate random secret, at least 32 characters. See documentation/ollama-chat-background-jobs.md for rotation/pending-job recovery.
 OLLAMA_WEBHOOK_SECRET=
 OLLAMA_MAX_TOOL_ROUNDS=4
 PUBLIC_APP_BASE_URL=https://my.lentmiien.com

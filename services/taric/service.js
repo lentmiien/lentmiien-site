@@ -529,13 +529,13 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
         result.approved_code = await approvedCodes.check(result.taric_code);
         if (result.approved_code.status !== 'approved') {
           result.warnings = [...(result.warnings || []), 'unapproved_taric_code'];
-          logger.warning('TARIC generated an unapproved code; review the approved-code registry', { category: 'taric', metadata: { operation: 'generation.approval', code: result.taric_code } });
+          logger.notice('TARIC generated an unapproved code; review the approved-code registry', { category: 'taric', metadata: { operation: 'generation.approval', code: result.taric_code } });
         }
         return result;
       } catch (error) {
         if (diagnostics?.proposal?.taric_code) {
           diagnostics.approved_code = await approvedCodes.check(diagnostics.proposal.taric_code);
-          if (diagnostics.approved_code.status !== 'approved') logger.warning('TARIC rejected proposal contains an unapproved code; review the approved-code registry', { category: 'taric', metadata: { operation: 'generation.approval', code: diagnostics.proposal.taric_code } });
+          if (diagnostics.approved_code.status !== 'approved') logger.notice('TARIC rejected proposal contains an unapproved code; review the approved-code registry', { category: 'taric', metadata: { operation: 'generation.approval', code: diagnostics.proposal.taric_code } });
           options.onDiagnostics?.(diagnostics);
         }
         throw error;

@@ -8,6 +8,19 @@ The page reuses initial dashboard snapshots and adds `/gpu/queue`; subsequent se
 
 ## Release and acceptance
 
+Availability transitions log bounded service IDs and failure categories as well
+as the count; raw provider details remain withheld. Endpoint recovery and complete
+healthy availability recovery emit notices once. An incomplete observation never
+clears an earlier degradation or reports recovery.
+
+The separate Qwen LoRA/QLoRA dashboards check `/train/jobs` before `/model`.
+Accepted, pending, queued, starting and running jobs defer model polling; other
+dashboard metadata continues to load. Unknown/unavailable training state also
+defers that runtime request. Model polling resumes when all jobs are terminal.
+Responses include `modelPolling` so deferred metadata is distinguishable from an
+endpoint failure. This avoids the repeated runtime metadata timeouts seen while
+training; it does not change training, GPU ownership, retries or timeouts.
+
 No environment variables, dependencies, DB migrations or Gateway changes. Lennart deploys the site through the usual process; no production changes are made by this work. Private routes must continue bypassing edge caches. Roll back by reverting the monitoring commit and redeploying the site.
 
 After deployment, sign in as admin and open `/admin/ai-gateway`. Verify fresh timestamps, service cards, queue/reservation ownership, copy buttons, narrow/mobile layout and existing controls. A running Voicevox with successful `/version` should show responsive, with model state unknown; retry one intended TTS request and listen separately. Confirm ordinary stopped recoverable GPU services show available on demand, model-unloaded OCR stays normal, and embeddings yielding to owned work are not alarms. Do not stop production services for acceptance: use local mocked fixtures for stopped Voicevox, degraded HTTP 200, missing/unknown inspection, stale monitoring and sensitive payloads. Simulate browser network failure and confirm cards are cleared and marked unavailable; after 60 seconds old data must not remain healthy. Switching back from a hidden tab should refresh. Recovery text must never execute host commands or trigger container/GPU mutations.

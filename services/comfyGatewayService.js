@@ -117,6 +117,39 @@ function isUnreachableFailure(error) {
   return UNREACHABLE_ERROR_CODES.has(safeErrorCode(error));
 }
 
+async function thumbnailFailureReason(response) {
+  // Decode only a small JSON error envelope, never log its text or source path.
+  // The deployed Gateway currently uses this fixed detail for pixel/dimension limits.
+  if (!response.headers.get('content-type')?.startsWith('application/json')
+    || Number(response.headers.get('content-length')) > 4096) {
+    void response.body?.cancel().catch(() => {});
+    return null;
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+  let timer;
+  const read = (async () => {
+    const chunks = []; let bytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 4096) return null;
+      chunks.push(Buffer.from(value));
+    }
+    const payload = JSON.parse(Buffer.concat(chunks, bytes).toString('utf8'));
+    if (payload?.detail === 'Input exceeds thumbnail decoded image limits') return 'DECODED_IMAGE_LIMIT';
+    const code = payload?.code ?? payload?.detail?.code;
+    return ['SOURCE_SIZE_LIMIT', 'DECODED_IMAGE_LIMIT', 'THUMBNAIL_SIZE_LIMIT'].includes(code) ? code : null;
+  })().catch(() => null);
+  try {
+    return await Promise.race([read, new Promise(resolve => { timer = setTimeout(() => resolve(null), 1000); })]);
+  } finally {
+    clearTimeout(timer);
+    void reader.cancel().catch(() => {});
+  }
+}
+
 function gatewayHttpStatus(error, fallback = 502) {
   const upstreamStatus = Number(error?.status ?? error?.statusCode ?? error?.response?.status);
   if (Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599) {
@@ -133,6 +166,7 @@ function attachGatewayDiagnostics(error, {
   responseHeaders,
   responseBody,
   responseStatus,
+  upstreamReasonCode = null,
   durationMs,
   clientAborted = false,
   proxyRequestId = null,
@@ -164,6 +198,8 @@ function attachGatewayDiagnostics(error, {
     operation: String(functionName || 'unknown').slice(0, 100),
     endpoint: safeRequestPath(requestUrl),
     status,
+    upstreamStatus: Number.isInteger(upstreamStatus) && upstreamStatus >= 100 && upstreamStatus <= 599 ? upstreamStatus : null,
+    upstreamReasonCode,
     requestId: gatewayRequestId(responseHeaders) || proxyRequestId,
     proxyRequestId,
     durationMs: Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null,
@@ -175,14 +211,16 @@ function attachGatewayDiagnostics(error, {
 
 function gatewayLogMetadata(error, extra = {}) {
   const diagnostics = error?.comfyGateway || {};
+  const upstreamStatus = Number(extra.upstreamStatus ?? diagnostics.upstreamStatus);
   return {
     operation: extra.operation || diagnostics.operation || 'unknown',
     endpoint: extra.endpoint || diagnostics.endpoint || null,
     phase: extra.phase || null,
     status: diagnostics.status || gatewayHttpStatus(error),
-    upstreamStatus: Number.isInteger(Number(extra.upstreamStatus))
-      ? Number(extra.upstreamStatus)
+    upstreamStatus: Number.isInteger(upstreamStatus) && upstreamStatus >= 100 && upstreamStatus <= 599
+      ? upstreamStatus
       : null,
+    upstreamReasonCode: diagnostics.upstreamReasonCode || null,
     requestId: extra.requestId || diagnostics.requestId || null,
     ...(extra.proxyRequestId || diagnostics.proxyRequestId
       ? { proxyRequestId: extra.proxyRequestId || diagnostics.proxyRequestId } : {}),
@@ -206,6 +244,9 @@ function gatewayClientMessage(error) {
   if (status === 504) return 'The ComfyUI Gateway request timed out.';
   if (status === 503) return 'The ComfyUI Gateway is unavailable.';
   if (status === 429) return 'The ComfyUI Gateway is busy.';
+  if (status === 413 && error?.comfyGateway?.upstreamReasonCode === 'DECODED_IMAGE_LIMIT') {
+    return 'This image exceeds the Gateway preview dimension or pixel limit. Use Open to view the original.';
+  }
   return `The ComfyUI Gateway returned HTTP ${status}.`;
 }
 
@@ -413,6 +454,8 @@ class ComfyGatewayService {
     const recordStreamDebug = thumbnail ? async () => {} : recordApiDebugLog;
     const startedAt = Date.now();
     let responseHeaders = null;
+    let responseStatus = null;
+    let upstreamReasonCode = null;
     let debugRecorded = false;
     const headerController = new AbortController();
     const headerTimer = setTimeout(() => {
@@ -431,9 +474,10 @@ class ComfyGatewayService {
       });
       clearTimeout(headerTimer);
       responseHeaders = headersToObject(response.headers);
+      responseStatus = response.status;
       if (!response.ok && !(thumbnail && response.status === 304)) {
         const responseBody = thumbnail ? '' : await response.text().catch(() => '');
-        if (thumbnail) await response.body?.cancel().catch(() => {});
+        if (thumbnail) upstreamReasonCode = await thumbnailFailureReason(response);
         await recordStreamDebug({
           requestUrl,
           requestHeaders,
@@ -487,6 +531,8 @@ class ComfyGatewayService {
         functionName,
         requestUrl,
         responseHeaders,
+        responseStatus,
+        upstreamReasonCode,
         durationMs: Date.now() - startedAt,
         clientAborted,
         proxyRequestId,
