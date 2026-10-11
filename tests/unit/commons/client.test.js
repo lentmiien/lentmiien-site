@@ -17,10 +17,10 @@ function harness() {
     Image: class { addEventListener() {} set src(_) { queueMicrotask(() => this.onload?.()); } },
     matchMedia: () => ({ matches: false }), setTimeout: () => 0, clearTimeout() {}, setInterval() {}, crypto,
     io() {
-      const handlers = {}, calls = [];
-      const socket = { connected: true, handlers, calls,
+      const handlers = {}, calls = [], timeouts = [];
+      const socket = { connected: true, handlers, calls, timeouts,
         io: { on() {}, reconnection() {} }, on(name, fn) { handlers[name] = fn; },
-        emit() {}, timeout() { return { emit: (...args) => calls.push(args) }; },
+        emit() {}, timeout(ms) { timeouts.push(ms); return { emit: (...args) => calls.push(args) }; },
         disconnect() { this.connected = false; handlers.disconnect?.('io client disconnect'); },
       };
       sockets.push(socket); return socket;
@@ -32,7 +32,7 @@ function harness() {
   const snapshot = { ownerSession: 'owner-session', version: 1, clientRevision: World.CLIENT_REVISION, serverTime: Date.now(), savedAt: new Date(), online: 1, maxOnline: 10, blooms: 0,
     self: { ...World.SPAWN, id: 'villager-0', plot: 0, petals: 0, discoveries: [] }, players: [] };
   const join = socket => socket.handlers.joined(snapshot);
-  return { element, sockets, join };
+  return { element, sockets, join, snapshot };
 }
 const settle = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
 test.each(['replacement', 'reconnect'])('a stale action timeout cannot retry or open a dialog after %s', async mode => {
@@ -74,4 +74,32 @@ test('stale corrected client revision closes the socket without changing save ve
   const h = harness(); await settle(); h.element('enter').click(); const socket = h.sockets[0];
   socket.handlers.joined({ version: 1, clientRevision: 'future' });
   expect(socket.connected).toBe(false); expect(h.element('status').textContent).toContain('Reload');
+});
+
+test('talk deadline follows bounded server config, prevents duplicate sends and never retries', async () => {
+  const h = harness(); await settle(); h.element('enter').click(); const socket = h.sockets[0];
+  socket.handlers.joined({ ...h.snapshot, npcTimeoutMs: 120000 }); h.element('npc-text').value = 'hello';
+  const first = h.element('npc-form').handlers.submit({ preventDefault() {} });
+  await h.element('npc-form').handlers.submit({ preventDefault() {} });
+  expect(socket.calls).toHaveLength(1); expect(socket.timeouts).toEqual([135000]);
+  expect(h.element('npc-send').disabled).toBe(true); expect(h.element('npc-answer').textContent).toContain('two minutes');
+  socket.calls[0][2](new Error('timeout')); await first;
+  expect(socket.calls).toHaveLength(1); expect(h.element('npc-send').disabled).toBe(false);
+  expect(h.element('npc-answer').textContent).toContain('could not reply in time');
+});
+test.each(['scene', 'private-reset'])('late talk replies cannot update history display after %s reset', async reset => {
+  const h = harness(); await settle(); h.element('enter').click(); const socket = h.sockets[0]; h.join(socket);
+  h.element('npc-text').value = 'hello';
+  const reply = h.element('npc-form').handlers.submit({ preventDefault() {} });
+  if (reset === 'scene') socket.handlers.state({ ...h.snapshot, self: { ...h.snapshot.self, scene: 'home' } });
+  else socket.handlers['private-reset']();
+  h.element('npc-answer').textContent = 'New scene';
+  socket.calls[0][2](null, { mode: 'llm', text: 'stale private text' }); await reply;
+  expect(h.element('npc-answer').textContent).toBe('New scene'); expect(h.element('npc-send').disabled).toBe(false);
+});
+test.each([['scripted', 'Local scripted reply'], ['fallback', 'Local reply · AI unavailable']])('truthful %s label remains distinct', async (mode, label) => {
+  const h = harness(); await settle(); h.element('enter').click(); const socket = h.sockets[0]; h.join(socket);
+  h.element('npc-text').value = 'hello'; const reply = h.element('npc-form').handlers.submit({ preventDefault() {} });
+  socket.calls[0][2](null, { mode, text: 'Local note' }); await reply;
+  expect(h.element('npc-answer').textContent).toBe(label + '\nLocal note');
 });

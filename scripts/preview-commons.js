@@ -48,10 +48,11 @@ async function createPreview({ port = 0, provider = null, maxOnline = 10, v12 = 
   // The default server is transport-only here; production chat authorization has separate tests.
   const siteIo = new Server(server);
   const io = createCommonsTransport(server, config);
-  const registration = registerCommons(io, sessionMiddleware, { room, npc: new CommonsNpc({ provider }), config, userModel, roleModel, privateAccess });
+  const npc = new CommonsNpc({ provider });
+  const registration = registerCommons(io, sessionMiddleware, { room, npc, config, userModel, roleModel, privateAccess });
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`; config.origins.push(url);
-  return { url, room, store, revoked, grants, users, fixtures, privateAccess, io, siteIo, failSaves: value => { failSaves = value; },
+  return { url, room, npc, store, revoked, grants, users, fixtures, privateAccess, io, siteIo, failSaves: value => { failSaves = value; },
     stop: async () => { registration.stop(); await new Promise(resolve => io.close(resolve)); await new Promise(resolve => siteIo.close(resolve)); },
   };
 }

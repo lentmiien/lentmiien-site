@@ -1,0 +1,22 @@
+{
+  "synthetic": true,
+  "realInference": false,
+  "slowReplyMs": 17000,
+  "checks": [
+    "Duplicate submit disabled 0",
+    "No horizontal overflow 0",
+    "Duplicate submit disabled 1",
+    "No horizontal overflow 1",
+    "World movement continues while both NPC slots wait",
+    "Two independent pending conversations",
+    "Reopening pending dialogue does not allow duplicate send",
+    "Reply beyond old server and browser deadlines succeeds 0",
+    "Reply beyond old server and browser deadlines succeeds 1",
+    "Enabled failure has truthful fallback label",
+    "Scene cancellation discards late reply",
+    "Scene cancellation resets submit state",
+    "Exactly four requested calls, no retries or duplicates",
+    "No browser page errors"
+  ],
+  "errors": []
+}

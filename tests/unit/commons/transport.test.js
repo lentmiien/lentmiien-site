@@ -234,3 +234,34 @@ test('private adapter failures expose only finite public codes and log actionabl
   expect(warnings).toContainEqual(['Commons private operation failed', { category: 'commons.private', metadata: { operation: 'stock', code: 'SUMMARY_UNAVAILABLE' } }]);
   expect(JSON.stringify(warnings)).not.toMatch(/PRIVATE_SOURCE_DETAIL|Synthetic private source detail/);
 });
+
+test.each(['disconnect', 'takeover', 'revocation', 'scene'])('pending NPC %s releases local work and discards late answers', async mode => {
+  await preview.stop(); const calls = [];
+  preview = await createPreview({ provider: (messages, signal) => new Promise(resolve => calls.push({ messages, signal, resolve })) });
+  const auth = await login(2), first = await connect(auth), other = await connect(await login(3));
+  await until(() => first.events('joined').length && other.events('joined').length);
+  first.ws.send('42/commons,91' + JSON.stringify(['talk', { text: 'synthetic private question' }]));
+  await until(() => calls.length === 1);
+  expect(first.events('joined')[0].npcTimeoutMs).toBe(90000);
+  await pause(550);
+  // The normal lane and other residents keep working while Mori waits.
+  expect(await first.command('emote', 'Hello!')).toEqual({ ok: true });
+  expect(await other.command('emote', 'Hello!')).toEqual({ ok: true });
+  const stateCount = other.events('state').length;
+  if (mode === 'disconnect') first.ws.close();
+  if (mode === 'takeover') { await pause(1550); const replacement = await connect(auth); await until(() => replacement.events('joined').length); }
+  if (mode === 'revocation') preview.grants.set('Preview 2', [PLAY]);
+  if (mode === 'scene') {
+    Object.assign(preview.room.state.players.find(p => p.userId === '2'.padStart(24, '0')), { x: World.homes[0].x, y: World.homes[0].y + 1.2 });
+    await pause(550);
+    expect(await first.command('action', { id: crypto.randomUUID(), target: 'home-0' })).toHaveProperty('message');
+  }
+  await until(() => calls[0].signal.aborted && preview.npc.active.size === 0);
+  const repliesBefore = first.packets.filter(p => p.startsWith('43/commons,91'));
+  calls[0].resolve('stale private answer'); await pause(150);
+  expect(first.packets.filter(p => p.startsWith('43/commons,91'))).toEqual(repliesBefore);
+  expect(repliesBefore.length).toBeLessThanOrEqual(1);
+  expect(JSON.stringify(first.packets)).not.toContain('stale private answer');
+  expect(JSON.stringify(other.packets)).not.toMatch(/synthetic private question|stale private answer/);
+  expect(other.events('state').length).toBeGreaterThan(stateCount);
+}, 10000);

@@ -36,9 +36,9 @@ test('gateway adapter bounds work and rejects tools and redirects', async () => 
   const provider = gatewayProvider({ COMMONS_NPC_ENABLED: 'true', AI_GATEWAY_BASE_URL: 'http://gateway.test:8080', COMMONS_NPC_MODEL: 'local-model' }, client);
   expect(await provider([{ role: 'user', content: 'Hi' }])).toBe('Welcome');
   expect(client.post.mock.calls[0][0]).toBe('http://gateway.test:8080/llm/chat');
-  expect(client.post.mock.calls[0][1]).toMatchObject({ max_tokens: 180, stream: false });
+  expect(client.post.mock.calls[0][1]).toMatchObject({ max_tokens: 512, stream: false });
   expect(client.post.mock.calls[0][1]).not.toHaveProperty('tools');
-  expect(client.post.mock.calls[0][2]).toMatchObject({ maxRedirects: 0, timeout: 12000, maxContentLength: 32768 });
+  expect(client.post.mock.calls[0][2]).toMatchObject({ maxRedirects: 0, timeout: 90000, maxContentLength: 32768 });
   client.post.mockResolvedValue({ data: { message: { content: 'bad', tool_calls: [{}] } } }); await expect(provider([])).rejects.toThrow();
   expect(() => gatewayProvider({ COMMONS_NPC_ENABLED: 'true' })).toThrow();
 });
@@ -48,7 +48,7 @@ test('slow providers cannot exceed two global calls and timeout returns fallback
     const npc = new CommonsNpc({ provider: async () => new Promise(() => {}), log });
     const first = npc.talk('one', 'a', 'Hello', []), second = npc.talk('two', 'b', 'Hello', []);
     expect(await npc.talk('three', 'c', 'Hello', [])).toHaveProperty('error', 'NPC_BUSY');
-    await jest.advanceTimersByTimeAsync(12001);
+    await jest.advanceTimersByTimeAsync(90001);
     expect(await first).toHaveProperty('mode', 'fallback'); expect(await second).toHaveProperty('mode', 'fallback');
     expect(npc.active.size).toBe(0);
   } finally { jest.useRealTimers(); }
@@ -67,7 +67,7 @@ test('real HTTP adapter accepts bounded multilingual history with the Gateway re
     const provider = gatewayProvider({ COMMONS_NPC_ENABLED: 'true', COMMONS_NPC_MODEL: 'catalog-alias', AI_GATEWAY_BASE_URL: `http://127.0.0.1:${server.address().port}` });
     const messages = [{ role: 'system', content: LORE }, ...Array.from({ length: 6 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: '灯'.repeat(i % 2 ? 1200 : 400) })), { role: 'user', content: '灯'.repeat(400) }];
     expect(await provider(messages)).toBe('ようこそ');
-    expect(received.url).toBe('/llm/chat'); expect(received.body).toEqual({ model: 'catalog-alias', messages, stream: false, max_tokens: 180, temperature: .7 });
+    expect(received.url).toBe('/llm/chat'); expect(received.body).toEqual({ model: 'catalog-alias', messages, stream: false, think: false, context_tokens: 16384, max_tokens: 512, temperature: .7 });
     expect(received.bytes).toBeGreaterThan(16384); expect(received.bytes).toBeLessThan(32768);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });

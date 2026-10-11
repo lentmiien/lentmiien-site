@@ -3,7 +3,8 @@
   const $ = id => document.getElementById(id);
   const W = window.CommonsWorld;
   let renderer, socket, state, lastNearby = null, toastTimer, awaiting = false, lastStateAt = 0;
-  let connectionEpoch = 0, connectionTicket = null;
+  let connectionEpoch = 0, connectionTicket = null, talkEpoch = 0, talkPending = false, npcTimeoutMs = 90000;
+  function resetTalk() { talkEpoch++; talkPending = false; $('npc-send').disabled = false; $('npc-answer').textContent = ''; }
   const panels = window.CommonsPanels({ toast, request: async (path, body) => {
     const epoch = connectionEpoch;
     const response = await fetch(`/commons/api/${path}`, { method: body ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store',
@@ -24,13 +25,14 @@
     TAKEN_OVER: 'Your account entered from another tab or device. Enter here to take over again.',
     TOO_FAR: 'Move a little closer to that place.', FORBIDDEN: 'This place is not available for your account.', PRIVATE_HOUSE: 'This cottage belongs to another villager. Your cottage number is in Field notes.',
     NEED_LANTERN: 'Make a lantern at Willow Workshop first.', NPC_BUSY: 'Mori needs a moment. Try again in fifteen seconds.',
+    CANCELLED: 'The conversation ended. Visit Mori to talk again.', NPC_WAIT_ENDED: 'Mori could not reply in time. Please try again in a moment.',
     BUSY: 'One moment, please.', INVALID_INPUT: 'Please use a short message of up to 400 characters.',
   };
   function toast(text) { $('toast').textContent = text; $('toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 5500); }
   function stopMovement() { held.clear(); touch = { x: 0, y: 0 }; sendInput(true); }
   function showCover(text) {
     connectionTicket = null; panels.reset();
-    connectionEpoch++; awaiting = false; $('npc-send').disabled = false;
+    connectionEpoch++; awaiting = false; resetTalk();
     stopMovement(); $('status').textContent = text; $('enter').textContent = 'Enter the Commons'; $('enter').disabled = !renderer;
     $('cover').hidden = false; $('online').textContent = 'Offline';
     if ($('interaction').open) $('interaction').close();
@@ -38,7 +40,13 @@
   }
   function update(snapshot) {
     if (snapshot.version !== W.VERSION || snapshot.clientRevision !== W.CLIENT_REVISION) { socket.disconnect(); showCover('The village has changed. Reload this page for the new version.'); return false; }
-    if (state && state.self.scene !== snapshot.self.scene) { const privateOpen = !$('private-panel').hidden; panels.reset(); if (privateOpen && $('interaction').open) $('interaction').close(); }
+    if (state && state.self.scene !== snapshot.self.scene) {
+      resetTalk();
+      if (!$('npc-form').hidden && $('interaction').open) $('interaction').close();
+      const privateOpen = !$('private-panel').hidden;
+      panels.reset();
+      if (privateOpen && $('interaction').open) $('interaction').close();
+    }
     state = snapshot; lastStateAt = Date.now(); renderer.update(snapshot);
     const clock = W.clock(snapshot.serverTime), self = snapshot.self;
     $('phase').textContent = clock.phase; $('time').textContent = `${clock.time} · Tokyo`;
@@ -80,13 +88,13 @@
   function command(event, data, retry = true, connection = socket, epoch = connectionEpoch) {
     return new Promise(resolve => {
       if (epoch !== connectionEpoch || connection !== socket || !connection?.connected) return resolve({ error: 'UNAUTHORIZED' });
-      connection.timeout(event === 'talk' ? 16000 : 6000).emit(event, data, (error, result) => {
+      connection.timeout(event === 'talk' ? npcTimeoutMs + 15000 : 6000).emit(event, data, (error, result) => {
         if (epoch !== connectionEpoch || connection !== socket || !connection.connected) return resolve({ error: 'UNAUTHORIZED' });
         if (error && event === 'action' && retry) {
           toast('Confirming the saved action…');
           return resolve(command(event, data, false, connection, epoch)); // Retry only on the originating connection, with the same receipt.
         }
-        resolve(error ? { error: 'BUSY', uncertain: true } : result || { error: 'BUSY' });
+        resolve(error ? { error: event === 'talk' ? 'NPC_WAIT_ENDED' : 'BUSY', uncertain: true } : result || { error: 'BUSY' });
       });
     });
   }
@@ -108,19 +116,24 @@
     // Server allowlist, also checked here: model text never creates a destination.
     if (['/chat5/top', '/commons/diagnostics'].includes(result.href)) { $('portal').href = result.href; $('portal').textContent = result.label; }
     else $('portal').hidden = true;
-    $('gallery').hidden = !result.gallery; $('npc-form').hidden = !result.npc; $('npc-answer').textContent = '';
+    $('gallery').hidden = !result.gallery; $('npc-form').hidden = !result.npc; if (!talkPending) $('npc-answer').textContent = '';
     if (['exit'].includes(target)) return toast(result.message);
     $('interaction').showModal();
     if (result.panel) panels.open(result.panel);
   }
   $('enter').addEventListener('click', () => {
     if (!renderer) return;
-    socket?.disconnect(); connectionEpoch++; awaiting = false; $('npc-send').disabled = false;
+    socket?.disconnect(); connectionEpoch++; awaiting = false; resetTalk();
     $('enter').disabled = true; $('status').textContent = 'Finding your place in the village…';
     socket = window.io('/commons', { auth: { csrf: document.querySelector('meta[name="csrf-token"]').content },
       path: '/commons/socket.io', transports: ['websocket'], forceNew: true, reconnection: true, reconnectionAttempts: 5, reconnectionDelay: 1500, reconnectionDelayMax: 5000 });
-    socket.on('private-reset', () => { panels.reset(); if ($('interaction').open) $('interaction').close(); toast('Access changed. This private display has closed.'); });
-    socket.on('joined', snapshot => { connectionTicket = snapshot.connection; panels.identify(snapshot.ownerSession); $('cover').hidden = true; lastNearby = '__new__'; if (!update(snapshot)) return; $('world').focus({ preventScroll: true }); toast(`Welcome home. Cottage ${snapshot.self.plot + 1} is yours.`); });
+    socket.on('private-reset', () => { resetTalk(); panels.reset(); if ($('interaction').open) $('interaction').close(); toast('Access changed. This private display has closed.'); });
+    socket.on('joined', snapshot => {
+      npcTimeoutMs = Number.isInteger(snapshot.npcTimeoutMs) && snapshot.npcTimeoutMs >= 60000 && snapshot.npcTimeoutMs <= 120000 ? snapshot.npcTimeoutMs : 90000;
+      connectionTicket = snapshot.connection; panels.identify(snapshot.ownerSession); $('cover').hidden = true; lastNearby = '__new__';
+      if (!update(snapshot)) return;
+      $('world').focus({ preventScroll: true }); toast(`Welcome home. Cottage ${snapshot.self.plot + 1} is yours.`);
+    });
     socket.on('state', update);
     socket.on('closed', ({ code }) => { socket.io.reconnection(false); showCover(errors[code] || 'The village connection closed.'); });
     socket.on('connect_error', error => {
@@ -140,12 +153,13 @@
   $('reduced-motion').checked = matchMedia('(prefers-reduced-motion: reduce)').matches;
   $('reduced-motion').addEventListener('change', () => { if (renderer) renderer.reducedMotion = $('reduced-motion').checked; });
   $('npc-form').addEventListener('submit', async event => {
-    event.preventDefault(); const text = $('npc-text').value.trim(); if (!text) return;
-    const epoch = connectionEpoch;
-    $('npc-send').disabled = true; $('npc-answer').textContent = 'Mori is listening… You can close this and keep exploring.';
+    event.preventDefault(); const text = $('npc-text').value.trim(); if (!text || talkPending) return;
+    const epoch = connectionEpoch, conversation = talkEpoch;
+    talkPending = true;
+    $('npc-send').disabled = true; $('npc-answer').textContent = 'Mori is preparing a reply. This may take up to two minutes. You can close this and keep exploring; entering another place ends the conversation.';
     const result = await command('talk', { text });
-    if (epoch !== connectionEpoch) return;
-    $('npc-send').disabled = false;
+    if (epoch !== connectionEpoch || conversation !== talkEpoch) return;
+    talkPending = false; $('npc-send').disabled = false;
     $('npc-answer').textContent = result.error ? errors[result.error] || 'Mori is unavailable.' : `${result.mode === 'llm' ? 'AI reply' : result.mode === 'fallback' ? 'Local reply · AI unavailable' : 'Local scripted reply'}\n${result.text}`;
   });
   window.addEventListener('keydown', event => {

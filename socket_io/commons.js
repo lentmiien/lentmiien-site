@@ -74,7 +74,12 @@ function registerCommons(io, sessionMiddleware, dependencies) {
     const memory = [];
     let stopped = false, pending = false, pendingTalk = false, auditing = false;
     let inputWindow = 0, inputCount = 0, lastAction = 0;
-    let auditTimer;
+    let auditTimer, talkScene = null;
+    const cancelChangedScene = () => {
+      if (talkScene !== null && room.snapshot(userId, token).self.scene !== talkScene) {
+        npc.cancel(userId, token); memory.length = 0;
+      }
+    };
     const close = code => { socket.emit('closed', { code }); socket.disconnect(); };
     socket.on('disconnect', () => {
       privateAccess.remove(token);
@@ -86,7 +91,7 @@ function registerCommons(io, sessionMiddleware, dependencies) {
     try {
       const snapshot = await room.join(userId, { token, validUntil: socket.data.validUntil, close });
       if (stopped) { await room.leave(userId, token); return; }
-      socket.emit('joined', { ...snapshot, connection: token, ownerSession: crypto.createHash('sha256').update(`${socket.request.sessionID}:${userId}`).digest('hex'), npcEnabled: config.npcEnabled });
+      socket.emit('joined', { ...snapshot, connection: token, ownerSession: crypto.createHash('sha256').update(`${socket.request.sessionID}:${userId}`).digest('hex'), npcEnabled: config.npcEnabled, npcTimeoutMs: npc.settings.timeoutMs });
     } catch (error) { close(error.code || 'ROOM_UNAVAILABLE'); return; }
     finally { joining--; }
     const check = async capability => {
@@ -100,6 +105,7 @@ function registerCommons(io, sessionMiddleware, dependencies) {
       if (socket.data.surface && !await permitted(auth.principal, socket.data.surface, roleModel)) {
         socket.data.surface = null; socket.emit('private-reset');
       }
+      cancelChangedScene();
       socket.data.eligible = eligible;
       socket.data.principal = auth.principal;
       return auth.principal;
@@ -117,7 +123,7 @@ function registerCommons(io, sessionMiddleware, dependencies) {
     auditTimer = setInterval(async () => {
       if (auditing || stopped) return;
       auditing = true;
-      try { await check(PLAY); } catch (_) { close('UNAUTHORIZED'); }
+      try { await check(pendingTalk ? TALK : PLAY); } catch (_) { close('UNAUTHORIZED'); }
       finally { auditing = false; }
     }, 3000);
     auditTimer.unref?.();
@@ -145,6 +151,7 @@ function registerCommons(io, sessionMiddleware, dependencies) {
     }
     socket.on('action', (payload, ack) => command(payload, ack, async principal => {
       const result = await room.action(userId, token, payload, socket.data.eligible);
+      cancelChangedScene();
       if (result.panel && !await permitted(principal, result.panel, roleModel)) return { error: 'FORBIDDEN' };
       if (['chat'].includes(result.target)) return portal(result.target, principal, roleModel);
       if (result.target === 'gallery') return { gallery: true, message: 'The first collection: a village made of small, warm lights. Original art generated for Lantern Commons.' };
@@ -163,7 +170,13 @@ function registerCommons(io, sessionMiddleware, dependencies) {
       const self = room.snapshot(userId, token).self;
       if (!World.nearby(self).some(l => l.id === 'keeper')) return { error: 'TOO_FAR' };
       if (!payload || Object.keys(payload).length !== 1 || typeof payload.text !== 'string') return { error: 'INVALID_INPUT' };
-      return npc.talk(userId, token, payload.text, memory);
+      talkScene = self.scene;
+      try {
+        return await npc.talk(userId, token, payload.text, memory, async () => {
+          await check(TALK);
+          return !stopped && room.snapshot(userId, token).self.scene === talkScene;
+        });
+      } finally { talkScene = null; }
     }, TALK));
     socket.data.commonsSnapshot = () => room.snapshot(userId, token);
   });
@@ -204,12 +217,12 @@ function installCommons(server, sessionMiddleware) {
     const { config: readConfig } = require('../services/commons/config');
     const config = readConfig();
     if (!config.enabled) return null;
+    const { CommonsNpc, gatewayProvider } = require('../services/commons/npc');
+    const npc = new CommonsNpc({ provider: gatewayProvider() });
     const { CommonsRepository } = require('../services/commons/repository');
     const { CommonsRoom } = require('../services/commons/room');
-    const { CommonsNpc, gatewayProvider } = require('../services/commons/npc');
     const { UseraccountModel, RoleModel } = require('../database');
     const room = new CommonsRoom({ repository: new CommonsRepository({ leaseMs: config.leaseMs }), maxOnline: config.maxOnline });
-    const npc = new CommonsNpc({ provider: gatewayProvider() });
     const io = createCommonsTransport(server, config);
     require('../services/commons/runtime').setRoom(room);
     return registerCommons(io, sessionMiddleware, { room, npc, config, userModel: UseraccountModel, roleModel: RoleModel });

@@ -257,3 +257,8 @@ COMMONS_ALLOWED_ORIGINS=https://home.lentmiien.com
 # No model discovery, GPU provisioning, tools, callbacks, voice or runtime art generation.
 COMMONS_NPC_ENABLED=false
 COMMONS_NPC_MODEL=
+# Mori always sends think:false. Optional budgets: decimal integers only.
+# Invalid enabled NPC configuration disables Commons (not the rest of the Site).
+COMMONS_NPC_TIMEOUT_MS=90000      # 60000-120000; local deadline, no retries
+COMMONS_NPC_CONTEXT_TOKENS=16384  # 8192-65536; model must support chosen context
+COMMONS_NPC_MAX_TOKENS=512        # 256-1024; visible text still capped at 1200 chars
