@@ -702,7 +702,7 @@ const serveGames = () => {
         }
       };
       app.use(`/${gameFolder}`, imageSafeStaticGzip(gamePath, staticOptions));
-      if (gameFolder === 'lentmanc_game') {
+      if (['lentmanc_game', 'friendly-monsters'].includes(gameFolder)) {
         app.use(`/games/${gameFolder}`, imageSafeStaticGzip(gamePath, staticOptions));
       }
     }
@@ -720,8 +720,8 @@ const getAvailableGames = () => fs.readdirSync(gamesDirectory, { withFileTypes: 
   .map(entry => ({
     name: entry.name === 'lentmanc_game'
       ? 'The great adventure'
-      : formatGameName(entry.name),
-    href: entry.name === 'lentmanc_game'
+      : entry.name === 'friendly-monsters' ? 'ともだちと、とんでもない幸運 · Friendly Monsters' : formatGameName(entry.name),
+    href: ['lentmanc_game', 'friendly-monsters'].includes(entry.name)
       ? `/games/${encodeURIComponent(entry.name)}/`
       : `/${encodeURIComponent(entry.name)}`,
   }))

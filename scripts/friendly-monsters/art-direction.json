@@ -1,0 +1,336 @@
+{
+  "style": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. ",
+  "cast": "Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. ",
+  "assets": [
+    {
+      "id": "bg02",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Muddy reed marsh after a rain, deep mud pool, willow roots, solid rocky bank, no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg03",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Lantern-lit timber town market square, apple cart, inviting burger tavern, late afternoon, no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg04",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Ancient forest treasure shrine at brook with empty open wooden treasure chest, fern and crystal pebble, no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg05",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Wise ancient dragon's mountain cave terrace overlooking forest and far town, straw nest, sunrise, no people or dragons.",
+      "transparent": false
+    },
+    {
+      "id": "bg06",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Ancient dungeon passage with mechanical stone traps, vines, a luminous tiny elixir bottle on pedestal at far end, no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg07",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Misty ridge oracle arch, winding stepping stones and comically immense stone riddle gate, no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg08",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Abandoned magical mill ruins with golden grain, old butter churns and crystalline sugar storeroom, sunbeams, no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg09",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Cozy medieval post office with pigeon alcoves, string-tied letters, wooden sorting cubbies and counter, no writing and no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg10",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Ancient underground waterworks with puzzle wheels, aqueduct channel, bridge and small treasure alcove, no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg11",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Moonlit forest glade, enormous reflective crystals, hollow oak and soft silver mist, inviting mysterious, no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg12",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Enchanted gorge rope bridge near purple cave with wool caught on branch, warm lantern pools, no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg13",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Forest festival clearing beside three cozy woodland homes, long wooden tables, leaf bunting and glowing lanterns, no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg14",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Vegetable farm and wide meadow path near a village, intact cabbage rows and a stream ford, no people or creatures.",
+      "transparent": false
+    },
+    {
+      "id": "bg15",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Ancient cushion temple interior with feather motifs, hanging soft cloth, stone balance platforms and a magical pillow, no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg16",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Kind great-grandmother's cottage kitchen with copper pans, wooden table, flour, apples and pie dough, no people.",
+      "transparent": false
+    },
+    {
+      "id": "bg17",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9 landscape, readable uncluttered lower foreground. Dramatic mountain pass border with closed old stone trade gate, distant orderly demon army tents, storm clouds and a ray of dawn, no visible people.",
+      "transparent": false
+    },
+    {
+      "id": "cg01",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Forest brook rescue: Jane crosses fallen branches while Garon holds a bridge steady, Sam's detached hand points from branch, Zord offers berries from bank. Warm first friendship.",
+      "transparent": false
+    },
+    {
+      "id": "cg02",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide 16:9 scene, marsh sunset, fully reassembled Sam sitting on Garon shoulder, Zord barefoot on safe shore pointing at white twig in Sam pot. Finished path of flat stepping stones behind them. No detached bones or raft.",
+      "transparent": false
+    },
+    {
+      "id": "cg03",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Town tavern cheeseburger dinner, Sam still in pot helmet proudly holding burger, Zord with blanket disguise around shoulders and barefoot, Garon seated outside open window at custom huge table, Jane laughing with friendly guard and apple seller.",
+      "transparent": false
+    },
+    {
+      "id": "cg04",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Empty treasure chest picnic at forest shrine: trio with tiny translucent friendly slime carrying golden pebble, small copper dragon with its copper mother (NOT Franza), lonely rock giant ringing musical stones, friends smiling.",
+      "transparent": false
+    },
+    {
+      "id": "cg05",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Egg safely returned on blanket to enormous ancient teal-bronze mountain dragon Franza, Jane startled behind Sam, Zord holding protective basket, Garon gently placing intact pearly egg in straw nest, golden cave light.",
+      "transparent": false
+    },
+    {
+      "id": "cg06",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. After dungeon adventure Jane sits up suddenly well in cozy bedroom with empty tiny elixir cup, muddy exhausted trio with bent pot helmet and battered harmless gear, Jane half amused half worried, warm caring.",
+      "transparent": false
+    },
+    {
+      "id": "cg07",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide 16:9 scene at misty oracle arch. Zord examines his two bare feet astonished, Sam shows a PAPER tracing of a boot sole pattern, Garon looks deadpan, elderly owl on stone smiles. No fitting board, no boots worn by Zord.",
+      "transparent": false
+    },
+    {
+      "id": "cg08",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Jane's birthday at forest table, strange beautiful cake radiating harmless small rainbow ribbons and tiny blooming sugar flowers, trio astonished, Jane delighted, Franza peeking far behind tree line.",
+      "transparent": false
+    },
+    {
+      "id": "cg09",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Trio repairing post office and installing a forest-route mailbox shaped like small timber house at crossroads; friendly postal worker hands Sam his first letter, Jane waves, pigeon perched on pot helmet.",
+      "transparent": false
+    },
+    {
+      "id": "cg10",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Garon tenderly discovering tiny pet pebble Mina in overlooked double fold of shoulder cloth, villagers celebrating rescued waterworks in background, Zord smiling, Sam magnifying glass and dramatic detective pose.",
+      "transparent": false
+    },
+    {
+      "id": "cg11",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Tiny baby owl perched safely on Garon's hand before giant moonlight shadow magnified by crystals, Sam with tangled harmless rope trap, Zord holding lantern turned away from owl, sweet revelation.",
+      "transparent": false
+    },
+    {
+      "id": "cg12",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Sam gently offers decorative striped sock as warm owl nest lining, baby owl and mother safely on low branch, Jane smiles, Garon and Zord untying repaired bridge rope behind them.",
+      "transparent": false
+    },
+    {
+      "id": "cg13",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Grand warm forest friendship festival group tableau, trio and Jane, teal-bronze Franza with her hatched teal child, copper dragon family, slime with gold pebble, musical rock giant, postal worker, owl family and townsfolk, lanterns and shared food.",
+      "transparent": false
+    },
+    {
+      "id": "cg14",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Patient giant friendly snail with mossy spiral shell gently holds Sam on its eyestalk beside soft leaf pile while Zord slides harmlessly down shell and Garon braces overturned empty vegetable cart, intact farm, apologetic friends.",
+      "transparent": false
+    },
+    {
+      "id": "cg15",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Cozy forest home night, Garon with thoughtful open expressive eyes places legendary embroidered pillow beneath pet pebble Mina; Sam collapsed laughing with pot helmet in lap, sleepy Zord in chair, warm fireplace.",
+      "transparent": false
+    },
+    {
+      "id": "cg16",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Jane and smiling elderly great-grandmother teaching trio to crimp a real golden apple pie in cottage kitchen, Sam has flour on skull and pot helmet, Garon one careful stone fingertip on dough, Zord resisting eating filling.",
+      "transparent": false
+    },
+    {
+      "id": "cg17",
+      "kind": "cg",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Wide cinematic 16:9 bespoke full-scene illustration, dynamic composition. Expanded finale great peace banquet in rebuilt mountain pass: imposing dignified horned demon lord in dark armor signs plain parchment treaty beside human mayor and Jane with consenting forest representatives, trio serving pie; friendly demons and townspeople share tables, Franza overhead, giant snail carrying produce on approved wide path, stone giant musical bells, lanterns, sunrise hopeful panorama.",
+      "transparent": false
+    },
+    {
+      "id": "sam-joy",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Single character Sam ONLY, full body from head to feet, centered, facing slightly toward viewer, joy expressive face and clear matching body language. Transparent background with real alpha, no ground, no scene, no other characters, no contact sheet. Keep entire silhouette inside image with breathing room. Character sprite for visual novel.",
+      "transparent": true
+    },
+    {
+      "id": "sam-worried",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Single character Sam ONLY, full body from head to feet, centered, facing slightly toward viewer, worried expressive face and clear matching body language. Transparent background with real alpha, no ground, no scene, no other characters, no contact sheet. Keep entire silhouette inside image with breathing room. Character sprite for visual novel.",
+      "transparent": true
+    },
+    {
+      "id": "sam-determined",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Single character Sam ONLY, full body from head to feet, centered, facing slightly toward viewer, determined expressive face and clear matching body language. Transparent background with real alpha, no ground, no scene, no other characters, no contact sheet. Keep entire silhouette inside image with breathing room. Character sprite for visual novel.",
+      "transparent": true
+    },
+    {
+      "id": "zord-joy",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Single character Zord ONLY, full body from head to feet, centered, facing slightly toward viewer, joy expressive face and clear matching body language. Transparent background with real alpha, no ground, no scene, no other characters, no contact sheet. Keep entire silhouette inside image with breathing room. Character sprite for visual novel.",
+      "transparent": true
+    },
+    {
+      "id": "zord-puzzled",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Single character Zord ONLY, full body from head to feet, centered, facing slightly toward viewer, puzzled expressive face and clear matching body language. Transparent background with real alpha, no ground, no scene, no other characters, no contact sheet. Keep entire silhouette inside image with breathing room. Character sprite for visual novel.",
+      "transparent": true
+    },
+    {
+      "id": "zord-relieved",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Single character Zord ONLY, full body from head to feet, centered, facing slightly toward viewer, relieved expressive face and clear matching body language. Transparent background with real alpha, no ground, no scene, no other characters, no contact sheet. Keep entire silhouette inside image with breathing room. Character sprite for visual novel.",
+      "transparent": true
+    },
+    {
+      "id": "garon-gentle",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Single character Garon ONLY, full body from head to feet, centered, facing slightly toward viewer, gentle expressive face and clear matching body language. Transparent background with real alpha, no ground, no scene, no other characters, no contact sheet. Keep entire silhouette inside image with breathing room. Character sprite for visual novel.",
+      "transparent": true
+    },
+    {
+      "id": "garon-worried",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Single character Garon ONLY, full body from head to feet, centered, facing slightly toward viewer, worried expressive face and clear matching body language. Transparent background with real alpha, no ground, no scene, no other characters, no contact sheet. Keep entire silhouette inside image with breathing room. Character sprite for visual novel.",
+      "transparent": true
+    },
+    {
+      "id": "garon-delighted",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Single character Garon ONLY, full body from head to feet, centered, facing slightly toward viewer, delighted expressive face and clear matching body language. Transparent background with real alpha, no ground, no scene, no other characters, no contact sheet. Keep entire silhouette inside image with breathing room. Character sprite for visual novel.",
+      "transparent": true
+    },
+    {
+      "id": "jane-warm",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Single character Jane ONLY, full body from head to feet, centered, facing slightly toward viewer, warm expressive face and clear matching body language. Transparent background with real alpha, no ground, no scene, no other characters, no contact sheet. Keep entire silhouette inside image with breathing room. Character sprite for visual novel.",
+      "transparent": true
+    },
+    {
+      "id": "jane-stern",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Single character Jane ONLY, full body from head to feet, centered, facing slightly toward viewer, stern expressive face and clear matching body language. Transparent background with real alpha, no ground, no scene, no other characters, no contact sheet. Keep entire silhouette inside image with breathing room. Character sprite for visual novel.",
+      "transparent": true
+    },
+    {
+      "id": "jane-surprised",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Character design invariants: Sam is a smiling ivory skeleton with pot helmet and wooden spoon, actual skeletal feet. Zord is a scruffy green friendly zombie with two consistent normal eyes, patched brown/olive tunic, barefoot. Garon is a giant rounded gray-brown stone golem with visible expressive stone eyes, gentle serious brow, two tiny stone horn ridges and a cloth shoulder covering. Jane is a human adventurer with brown hair, green/brown practical leather outfit, boots and orange scarf. Single character Jane ONLY, full body from head to feet, centered, facing slightly toward viewer, surprised expressive face and clear matching body language. Transparent background with real alpha, no ground, no scene, no other characters, no contact sheet. Keep entire silhouette inside image with breathing room. Character sprite for visual novel.",
+      "transparent": true
+    },
+    {
+      "id": "franza",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Single full body character only, entire silhouette inside frame, transparent background with real alpha, no other characters, no scene. Enormous wise ancient teal-bronze female mountain dragon, kind skeptical brow, folded wings, standing alone, no egg.",
+      "transparent": true
+    },
+    {
+      "id": "slime",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Single full body character only, entire silhouette inside frame, transparent background with real alpha, no other characters, no scene. Small friendly translucent mint slime with two tiny kind eyes cradling one gold pebble.",
+      "transparent": true
+    },
+    {
+      "id": "owl",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Single full body character only, entire silhouette inside frame, transparent background with real alpha, no other characters, no scene. Tiny fluffy baby tawny owl with large curious eyes, perched on a small twig.",
+      "transparent": true
+    },
+    {
+      "id": "snail",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Single full body character only, entire silhouette inside frame, transparent background with real alpha, no other characters, no scene. Patient giant friendly snail, mossy spiral shell, kindly eyestalks, gentle smile.",
+      "transparent": true
+    },
+    {
+      "id": "demon",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Single full body character only, entire silhouette inside frame, transparent background with real alpha, no other characters, no scene. Imposing dignified horned demon king in dark plum plate armor, deep reddish skin, thoughtful stern expression, no weapon drawn.",
+      "transparent": true
+    },
+    {
+      "id": "sage",
+      "kind": "sprite",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Single full body character only, entire silhouette inside frame, transparent background with real alpha, no other characters, no scene. Warm very old human great-grandmother with gray braid, practical apron and shawl, holding handwritten recipe with no legible text.",
+      "transparent": true
+    },
+    {
+      "id": "bg01",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9, no characters, uncluttered foreground. Forest path by three tall cedars and small brook, distant timber homes.",
+      "transparent": false
+    },
+    {
+      "id": "bg18",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9, no characters, uncluttered foreground. Ordinary peaceful woodland home clearing with three cozy homes, everyday table and chairs. NO decorations, bunting, festival or party.",
+      "transparent": false
+    },
+    {
+      "id": "bg19",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9, no characters, uncluttered foreground. Cozy guest bedroom in medieval town inn, simple bed with blanket, water pitcher and fruit basket, window overlooking rooftops.",
+      "transparent": false
+    },
+    {
+      "id": "bg20",
+      "kind": "background",
+      "prompt": "Use case: illustration-story. Final production original visual novel asset. Warm whimsical textured gouache storybook fantasy, rich painterly detail, soft golden light and moss green/amber palette, coherent handmade medieval world, friendly expressive characters, no horror, gore, text, logo or watermark. Wide cinematic 16:9, no characters, uncluttered foreground. Forest home birthday table in clearing, simple three-tier fruit cake, candles, four rustic chairs and sunny trees.",
+      "transparent": false
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0E0F13">
+  <meta name="description" content="心やさしい三人のモンスターと、17章のとんでもない冒険。日本語の物語と朗読で楽しむ絵本ビジュアルノベル。">
+  <title>ともだちと、とんでもない幸運</title>
+  <link rel="stylesheet" href="/css/color-theme.css">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="core.js"></script>
+  <script defer src="player.js"></script>
+</head>
+<body>
+  <header class="topbar"><a href="/games">← Games</a><span>ひだまりの森の物語</span><button id="menu" disabled>目次・設定</button></header>
+  <main>
+    <section id="welcome" class="welcome">
+      <div class="cover"><img src="assets/images/cg01.webp" alt="小川でジェーンを助けるサム、ゾード、ガロン" fetchpriority="high"></div>
+      <div class="welcome-copy"><p class="eyebrow">A STORY OF KINDNESS &amp; EXTRAORDINARY LUCK</p><h1>ともだちと、<br>とんでもない幸運</h1><p>鍋をかぶった骸骨。食いしん坊のゾンビ。<br>眠らない石の巨人。<br>三人の遠回りが、世界にひとつずつ席を作る。</p><p class="muted">全17章 · 日本語朗読つき · いつでも続きから</p><div class="actions"><button id="start" class="primary" disabled>はじめから読む</button><button id="resume" hidden>続きから</button></div><p id="load-status" role="status">物語を読み込んでいます…</p><button id="reload" hidden>読み込みを再試行</button></div>
+    </section>
+    <section id="reader" hidden aria-label="物語">
+      <div class="chapter-line"><span id="chapter-label"></span><span id="position"></span></div>
+      <div id="stage" class="stage"><img id="background" alt=""><div id="sprites" aria-hidden="true"></div><div id="art-error" class="art-error" hidden>絵を読み込めませんでした。本文は続けて読めます。<button id="retry-art">絵を再読込</button></div></div>
+      <article class="narrative"><div class="narrative-heading"><span class="eyebrow">ひだまりの森の語り手</span><span id="audio-status" role="status"></span></div><p id="subtitle" tabindex="-1" aria-live="off"></p><progress id="audio-progress" max="1" value="0" aria-label="この文章の朗読の進み具合"></progress><div id="audio-error" hidden role="status">朗読を再生できませんでした。再試行するか、音声なしで読めます。<button id="retry-audio">朗読を再試行</button><button id="text-only">音声なしで読む</button></div><div id="ending" hidden>おしまい。明日の食卓で、また会いましょう。</div></article>
+      <nav class="controls" aria-label="読み進める"><button id="previous">← 戻る</button><button id="play">朗読を再生</button><button id="auto" aria-pressed="false">自動送り：切</button><button id="next" class="primary">次へ →</button></nav>
+      <p class="hint">← →：前後へ　Space：朗読の再生・停止　M：目次　／　進み具合はこの端末に保存されます。</p>
+    </section>
+    <p id="save-status" class="muted" role="status"></p>
+  </main>
+  <dialog id="settings" aria-labelledby="settings-title"><div class="dialog-heading"><h2 id="settings-title">旅のしおり</h2><button id="close-menu" aria-label="目次と設定を閉じる">閉じる ×</button></div><div class="preferences"><label><input id="voice" type="checkbox" checked> 日本語の朗読</label><label>音量 <input id="volume" type="range" min="0" max="1" step="0.1" value="0.8"></label><label>朗読速度 <select id="rate"><option value="0.75">ゆっくり · 0.75×</option><option value="1" selected>ふつう · 1×</option><option value="1.25">少し速く · 1.25×</option><option value="1.5">速く · 1.5×</option></select></label><label>文字の大きさ <input id="font" type="range" min="0.9" max="1.5" step="0.1" value="1"></label></div><p class="muted">自動送りは朗読が終わってから進みます。音声なしでは文章の長さに合わせて進みます。目次や別のタブを開くと停止します。</p><ol id="chapters" class="chapters"></ol><details><summary>作品について・操作</summary><p>物語・イラスト：本作のためのオリジナル制作（AI生成を含む）。朗読：VOICEVOX:四国めたん。音楽や効果音はありません。</p><p>全章を自由に選べます。本文は一つずつ全文表示され、朗読の実時間で進行を示します。自動再生を使わず、ご自身のペースでも読めます。画面の拡大、キーボード操作、動きを減らす端末設定に対応しています。</p><p>保存内容は章・文章の位置と設定のみです。サーバーに送信しません。</p></details><button id="clear-save">この端末のしおりを消す</button></dialog>
+  <noscript>この物語の再生にはJavaScriptが必要です。</noscript>
+</body>
+</html>

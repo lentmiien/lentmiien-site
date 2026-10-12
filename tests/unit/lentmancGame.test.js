@@ -670,7 +670,7 @@ describe('The great adventure standalone RPG', () => {
     runtimeFiles.forEach((file) => expect(readGameFile(file)).not.toMatch(/https?:\/\//i));
 
     const appSource = fs.readFileSync(path.join(repositoryRoot, 'app.js'), 'utf8');
-    expect(appSource).toContain("if (gameFolder === 'lentmanc_game')");
+    expect(appSource).toContain("if (['lentmanc_game', 'friendly-monsters'].includes(gameFolder))");
     expect(appSource).toContain('app.use(`/games/${gameFolder}`');
     expect(appSource).toContain("? 'The great adventure'");
     expect(appSource).toContain('? `/games/${encodeURIComponent(entry.name)}/`');

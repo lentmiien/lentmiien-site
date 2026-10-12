@@ -1,0 +1,27 @@
+[
+  {
+    "id": "cg02",
+    "method": "built-in image_gen edit",
+    "prompt": "Remove the brown-haired human woman with orange scarf from the center. Fill her area naturally with reeds and the marsh shore. Keep exactly Sam the fully reassembled skeleton riding Garon, the stone golem, and barefoot green Zord. Preserve their designs, the white twig in the pot and the finished stepping-stone path. No human woman is present in this chapter."
+  },
+  {
+    "id": "cg07",
+    "method": "built-in image_gen edit",
+    "prompt": "Remove the brown-haired human woman with orange scarf. Fill her space with ancient oracle-arch stones. Replace the distant castle and bridge with a misty mountain ridge and monumental riddle arch, no city. Preserve Sam showing the PAPER boot-sole tracing, thoughtful Garon, barefoot Zord examining both feet, and the wise elderly owl. No humans, no fitting board."
+  },
+  {
+    "id": "cg04",
+    "method": "built-in image_gen edit",
+    "prompt": "Remove the human woman on left; replace her with Garon, the friendly rounded gray-brown stone golem with little horn ridges, cloth shoulder covering, sitting by the treasure chest. Keep the OTHER taller rock giant playing stone bells in background distinct from rounded Garon. Preserve Sam, barefoot Zord, the empty chest, slime with gold pebble, copper dragon mother and child and warm scene. No human present."
+  },
+  {
+    "id": "cg10",
+    "method": "built-in image_gen edit",
+    "prompt": "Remove only the human woman with orange scarf in center. Fill naturally with the waterworks celebration scenery. Preserve Garon discovering his pet pebble in folded shoulder cloth, Sam with magnifying glass, Zord, and distant celebrating villagers. Jane is not on this search."
+  },
+  {
+    "id": "cg15",
+    "method": "built-in image_gen edit",
+    "prompt": "Remove the human woman with orange scarf and the sleeping cat. Fill those areas naturally with warm fireplace room and rug. Remove the duplicate pot on skeleton's head, keeping the ONE pot in his lap. Preserve laughing Sam, thoughtful awake Garon placing Mina on embroidered pillow, and sleepy barefoot Zord. Only these three friends and Mina are present."
+  }
+]
