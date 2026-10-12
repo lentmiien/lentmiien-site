@@ -1,8 +1,8 @@
 [
   {
-    "path": "assets/audio/c01-b001-3635ea770967.mp3",
-    "bytes": 141453,
-    "sha256": "6a749a15b48465b59d080bd14a9ed1a35190a2968e34f8a9466849b9f045a2f9"
+    "path": "assets/audio/c01-b001-27a0bf6c73db.mp3",
+    "bytes": 163461,
+    "sha256": "c00dfaa8216d5dc678a5c55a7a35a28a2d21af6a72ab7eb4bd9ed8a61d109571"
   },
   {
     "path": "assets/audio/c01-b002-fb682e913402.mp3",
@@ -1935,6 +1935,11 @@
     "sha256": "3b6ff342a348e3902d6411ef7b63c4e73343ab9c9fb8dad729872daefbb30c82"
   },
   {
+    "path": "assets/audio/c17-b067-0bfc29f8676f.mp3",
+    "bytes": 29949,
+    "sha256": "d4bf8d4a58e5402565b769957e65665141e6e52295177d310056c683f0f6ea8f"
+  },
+  {
     "path": "assets/images/bg01.webp",
     "bytes": 477236,
     "sha256": "2e70a1751439ef8dffca2e7d56ee916bad3b54aeead84a08ace007ce8144bba5",
@@ -2200,8 +2205,8 @@
   },
   {
     "path": "assets/images/cg14.webp",
-    "bytes": 535764,
-    "sha256": "270ced0bc2096300f4e59da9da615361018d1e951795048facf5b5b68454bcca",
+    "bytes": 543198,
+    "sha256": "373eb5128fe9d289e14aa1d6fb66bb42f7ee50a2bfaf483fca4c4c440e506de1",
     "width": 1600,
     "height": 900,
     "alpha": false

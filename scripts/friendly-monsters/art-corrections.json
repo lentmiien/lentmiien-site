@@ -23,5 +23,10 @@
     "id": "cg15",
     "method": "built-in image_gen edit",
     "prompt": "Remove the human woman with orange scarf and the sleeping cat. Fill those areas naturally with warm fireplace room and rug. Remove the duplicate pot on skeleton's head, keeping the ONE pot in his lap. Preserve laughing Sam, thoughtful awake Garon placing Mina on embroidered pillow, and sleepy barefoot Zord. Only these three friends and Mina are present."
+  },
+  {
+    "id": "cg14",
+    "method": "built-in image_gen edit via imagegen skill, independent review 2",
+    "prompt": "Use case: precise-object-edit. Asset type: final original storybook visual novel event illustration, wide 16:9. Input image is the edit target. Correct continuity at the END of this snail encounter: the misunderstanding is over, everyone cooperates politely, the cart has been recovered beside the shallow river ford. Preserve the exact textured gouache style, warm woodland/farm palette, faces and clothing of the five existing characters: Sam ivory skeleton with pot helmet and wooden spoon, barefoot green zombie Zord with two normal eyes and patched brown tunic, rounded horn-ridged stone golem Garon with shoulder cloth, brown-haired human Jane in leather outfit and orange scarf, enormous kind moss-shelled snail Noro. Keep Jane and Garon near the now UPRIGHT wooden cart. Move Sam and Zord OFF the snail shell and onto the ground alongside Jane, standing calmly and gratefully facing Noro; Sam lowers his spoon, Zord has a relieved smile. Noro is unharmed, quietly smiling, with small baskets of vegetable seedlings securely tied atop the shell. Replace all scattered vegetables on the ground with intact growing vegetable rows at the side and a clear earth path. No trampling, no combat, no falling, no hanging, no riding on Noro, no duplicates, no added characters. Keep the friendly medieval pastoral background and full character silhouettes, with a shallow ford beside the path. No text or watermark."
   }
 ]

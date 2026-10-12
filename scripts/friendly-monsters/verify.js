@@ -35,7 +35,7 @@ async function verify() {
   }
   if (referenced.size !== files.length) throw new Error('Referenced asset missing');
   const source = fs.readFileSync(path.join(__dirname, 'story.txt'), 'utf8').split(/\r?\n/).filter(line => line && !line.startsWith('#')).join('');
-  const spoken = book.chapters.map((c, i) => c.beats.map(b => b.text).join('').replace(`第${i + 1}章。${c.title}。`, '')).join('');
+  const spoken = book.chapters.map((c, i) => c.beats.map(b => b.text).join('').replace(`${i === 0 ? book.title + '。' : ''}第${i + 1}章。${c.title}。`, '')).join('');
   if (source !== spoken) throw new Error('Narration does not exactly cover the script');
   if (process.argv.includes('--write')) fs.writeFileSync(integrityFile, JSON.stringify(files, null, 2) + '\n');
   else if (JSON.stringify(files) !== JSON.stringify(JSON.parse(fs.readFileSync(integrityFile, 'utf8')))) throw new Error('Asset integrity mismatch');

@@ -61,6 +61,43 @@ describe('Friendly Monsters audio lifecycle', () => {
     await player.play(beat(), core.defaults); reject(new Error('stale')); await old;
     expect(callbacks.error).not.toHaveBeenCalled(); expect(player.audio).toBe(instances[1]);
   });
+  test('pause/resume retains position, cancels pending play and stale events', async () => {
+    let reject;
+    const original = player.createAudio;
+    player.createAudio = () => { const a = original(); a.play.mockImplementationOnce(() => new Promise((_, no) => { reject = no; })); return a; };
+    const pending = player.play(beat(), core.defaults);
+    const audio = instances[0], staleEnd = audio.onended;
+    player.pause(); reject(new Error('AbortError')); await pending;
+    expect(player.paused).toBe(true); expect(player.audio).toBe(audio);
+    expect(audio.removeAttribute).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(30000); expect(callbacks.error).not.toHaveBeenCalled();
+    await player.resume({ ...core.defaults, volume: 0.3, rate: 1.5, muted: true });
+    expect(instances).toHaveLength(1); expect(audio.currentTime).toBe(2);
+    expect(audio).toMatchObject({ volume: 0.3, playbackRate: 1.5, muted: true });
+    staleEnd(); expect(callbacks.ended).not.toHaveBeenCalled();
+    audio.onended(); expect(callbacks.ended).toHaveBeenCalledTimes(1);
+  });
+  test('browser interruption pauses and cannot leave autoplay waiting indefinitely', async () => {
+    callbacks.paused = jest.fn();
+    await player.play(beat(), core.defaults);
+    instances[0].onplaying(); instances[0].onpause();
+    expect(player.paused).toBe(true); expect(callbacks.paused).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(30000); expect(callbacks.error).not.toHaveBeenCalled();
+  });
+  test('repeated waiting and unchanged time cannot keep stalled playback alive', async () => {
+    await player.play(beat(), core.defaults); const audio = instances[0]; audio.onplaying();
+    for (let i = 0; i < 4; i++) { jest.advanceTimersByTime(4500); audio.onwaiting(); audio.onplaying(); audio.ontimeupdate(); }
+    jest.advanceTimersByTime(2001);
+    expect(callbacks.error).toHaveBeenCalledTimes(1); expect(player.audio).toBeNull();
+  });
+  test('short clips may end before play resolves and still advance exactly once', async () => {
+    let resolve;
+    const original = player.createAudio;
+    player.createAudio = () => { const a = original(); a.play = () => new Promise(yes => { resolve = yes; }); return a; };
+    const pending = player.play(beat(), core.defaults), ended = instances[0].onended;
+    ended(); resolve(); await pending; ended();
+    expect(callbacks.ended).toHaveBeenCalledTimes(1); expect(callbacks.error).not.toHaveBeenCalled();
+  });
   test('blocked, failed, and stalled audio expose recovery without ending', async () => {
     const original = player.createAudio;
     player.createAudio = () => { const a = original(); a.play.mockRejectedValue(new Error('blocked')); return a; };
@@ -73,6 +110,29 @@ describe('Friendly Monsters audio lifecycle', () => {
 
 describe('release assets', () => {
   const root = path.resolve(__dirname, '../../games/friendly-monsters');
+  test('title, closing prose and chapter headings are part of the narrated manifest', () => {
+    const story = JSON.parse(fs.readFileSync(path.join(root, 'story.json'), 'utf8'));
+    expect(story.chapters[0].beats[0].text.startsWith(story.title + '。')).toBe(true);
+    story.chapters.forEach((c, i) => expect(c.beats[0].text).toContain(`第${i + 1}章。${c.title}。`));
+    expect(story.chapters.at(-1).beats.at(-1).text).toBe('おしまい。明日の食卓で、また会いましょう。');
+  });
+  test('reunion and snail illustrations wait for arrivals; returns home change location', () => {
+    const story = JSON.parse(fs.readFileSync(path.join(root, 'story.json'), 'utf8'));
+    const find = (chapter, text) => story.chapters[chapter - 1].beats.find(b => b.text.includes(text));
+    expect(find(4, '祠の石段').background).not.toContain('cg04');
+    expect(find(4, 'ゾードは座り込んだ').sprites).not.toContain('assets/images/slime.webp');
+    expect(find(4, '少しして、ルル').background).toBe('assets/images/cg04.webp');
+    expect(find(14, 'サムは今度こそ').background).toBe('assets/images/bg14.webp');
+    expect(find(14, '農夫が礼を言う間').background).toBe('assets/images/cg14.webp');
+    expect(find(10, '帰宅して').background).toBe('assets/images/bg18.webp');
+    expect(find(17, '三人が町へ着くと').background).toBe('assets/images/bg03.webp');
+    expect(find(17, '翌朝、三者の代表').background).toBe('assets/images/cg17.webp');
+    expect(find(17, '一年後、友情祭').background).toBe('assets/images/cg13.webp');
+    expect(find(2, 'サムは体を横に').sprites.some(p => p.includes('/sam-'))).toBe(false);
+    expect(find(6, '小瓶を取ると').sprites.some(p => p.includes('/sam-'))).toBe(false);
+    expect(find(7, '雨の日に町へ').sprites.some(p => p.includes('/jane-'))).toBe(false);
+    expect(find(17, '会談の席で').sprites.some(p => p.includes('/sam-'))).toBe(false);
+  });
   test('all 17 substantive chapters and referenced audio/images exist without symlinks', () => {
     const story = core.validateBook(JSON.parse(fs.readFileSync(path.join(root, 'story.json'), 'utf8')));
     const paths = new Set();

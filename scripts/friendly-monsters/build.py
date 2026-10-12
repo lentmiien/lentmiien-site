@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 GAME = ROOT / 'games/friendly-monsters'
 WORK = ROOT / 'tmp_data/friendly-monsters'
 VOICE = 'ja_shikoku_metan_normal'
+TITLE = 'ともだちと、とんでもない幸運'
 
 
 def compile_story():
@@ -51,10 +52,10 @@ def compile_story():
                     audio=f'assets/audio/{name}.mp3', duration=0))
     for number, chapter in enumerate(chapters, 1):
         first = chapter['beats'][0]
-        first['text'] = f'第{number}章。{chapter["title"]}。' + first['text']
+        first['text'] = (TITLE + '。' if number == 1 else '') + f'第{number}章。{chapter["title"]}。' + first['text']
         digest = hashlib.sha256((VOICE + '\n' + first['text']).encode()).hexdigest()[:12]
         first['audio'] = f'assets/audio/c{number:02}-b001-{digest}.mp3'
-    return {'version': 1, 'title': 'ともだちと、とんでもない幸運', 'voice': 'VOICEVOX:四国めたん', 'chapters': chapters}
+    return {'version': 1, 'title': TITLE, 'voice': 'VOICEVOX:四国めたん', 'chapters': chapters}
 
 
 def run(args):

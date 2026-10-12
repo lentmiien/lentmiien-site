@@ -404,3 +404,16 @@ summary {
 #sprites img:only-child {
   width:70%;
 }
+
+/* Keep controls clear of notches and home indicators in both orientations. */
+body {
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.preferences > label, .chapter-line > span {
+  min-width:0;
+}
+@media(max-width:700px) {
+  .controls #next {
+    grid-column:1 / -1;
+  }
+}

@@ -5,7 +5,7 @@
   else root.MonsterVN = api;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
-  const defaults = { chapter: 0, beat: 0, volume: 0.8, rate: 1, font: 1, voice: true, auto: false };
+  const defaults = { chapter: 0, beat: 0, volume: 0.8, rate: 1, font: 1, voice: true, muted: false, auto: false };
   function assetPath(value, kind) {
     const pattern = kind === 'image' ? /^assets\/images\/[a-z][a-z0-9-]{0,50}\.webp$/ : /^assets\/audio\/c\d{2}-b\d{3}-[a-f0-9]{12}\.mp3$/;
     if (typeof value !== 'string' || !pattern.test(value)) throw new Error('Invalid local asset');
@@ -43,7 +43,7 @@
         if (typeof value[key] === 'number' && Number.isFinite(value[key]) && value[key] >= min && value[key] <= max) state[key] = value[key];
       }
       if (![0.75, 1, 1.25, 1.5].includes(state.rate)) state.rate = defaults.rate;
-      if (typeof value.voice === 'boolean') state.voice = value.voice;
+      for (const key of ['voice', 'muted']) if (typeof value[key] === 'boolean') state[key] = value[key];
       // Automatic playback always requires a fresh reader gesture.
     } catch (_) { /* Invalid/old saves restart safely. */ }
     return state;
@@ -52,26 +52,55 @@
     return [...new Set(book.chapters[chapter].beats.slice(beat, beat + 2).flatMap(b => [b.background, ...b.sprites]))].slice(0, 8);
   }
   class Playback {
-    constructor(createAudio, callbacks) { this.createAudio = createAudio; this.callbacks = callbacks; this.token = 0; this.audio = null; this.timer = null; }
-    stop() {
+    constructor(createAudio, callbacks) {
+      this.createAudio = createAudio; this.callbacks = callbacks; this.token = 0;
+      this.audio = null; this.timer = null; this.paused = false;
+    }
+    detach() {
       this.token++;
       clearTimeout(this.timer);
       if (this.audio) {
-        this.audio.onended = this.audio.onerror = this.audio.ontimeupdate = this.audio.onplaying = this.audio.onwaiting = null;
+        for (const event of ['ended', 'error', 'timeupdate', 'playing', 'waiting', 'pause']) this.audio[`on${event}`] = null;
+      }
+    }
+    stop() {
+      this.detach(); this.paused = false;
+      if (this.audio) {
         this.audio.pause(); this.audio.removeAttribute('src'); this.audio.load(); this.audio = null;
       }
     }
+    pause() {
+      if (!this.audio || this.paused) return;
+      this.detach(); this.paused = true; this.audio.pause();
+      this.callbacks.paused?.();
+    }
+    async resume(state) {
+      if (!this.audio || !this.paused) return;
+      return this.start(this.beat, state);
+    }
     async play(beat, state) {
-      this.stop();
-      const token = this.token;
+      this.stop(); this.beat = beat;
+      this.audio = this.createAudio();
+      this.audio.preload = 'auto'; this.audio.src = assetPath(beat.audio, 'audio');
+      return this.start(beat, state);
+    }
+    async start(beat, state) {
+      this.detach(); this.paused = false;
+      const token = this.token, audio = this.audio;
       const current = () => this.token === token;
-      const audio = this.createAudio(); this.audio = audio;
-      audio.preload = 'auto'; audio.src = assetPath(beat.audio, 'audio'); audio.volume = state.volume; audio.playbackRate = state.rate;
+      audio.volume = state.volume; audio.muted = state.muted; audio.playbackRate = state.rate;
       const failure = () => { if (current()) { this.stop(); this.callbacks.error(); } };
       const watchdog = () => { clearTimeout(this.timer); this.timer = setTimeout(failure, 20000); };
-      audio.onwaiting = () => { if (current()) { this.callbacks.loading(); watchdog(); } };
-      audio.onplaying = () => { if (current()) { clearTimeout(this.timer); this.callbacks.playing(); } };
-      audio.ontimeupdate = () => { if (current()) this.callbacks.progress(audio.currentTime / (audio.duration || beat.duration)); };
+      let lastTime = audio.currentTime;
+      audio.onwaiting = () => { if (current()) this.callbacks.loading(); };
+      audio.onplaying = () => { if (current()) this.callbacks.playing(); };
+      audio.ontimeupdate = () => {
+        if (!current()) return;
+        // Repeated waiting/timeupdate events without progress must not postpone recovery forever.
+        if (audio.currentTime > lastTime) { lastTime = audio.currentTime; watchdog(); }
+        this.callbacks.progress(audio.currentTime / (audio.duration || beat.duration));
+      };
+      audio.onpause = () => { if (current() && !audio.ended) this.pause(); };
       audio.onerror = failure;
       audio.onended = () => { if (current()) { this.stop(); this.callbacks.progress(1); this.callbacks.ended(); } };
       this.callbacks.loading(); watchdog();

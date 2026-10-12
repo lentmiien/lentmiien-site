@@ -2,6 +2,8 @@ const express = require('express');
 const expressStaticGzip = require('express-static-gzip');
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
+const vm = require('vm');
 const { guardStaticMedia } = require('../../services/gptImageStorageService');
 
 // Exercise the same public static middleware as app.js without starting its DB,
@@ -10,8 +12,17 @@ describe('Friendly Monsters public static delivery', () => {
   let server, port;
   beforeAll(async () => {
     const app = express();
-    const root = path.resolve(__dirname, '../../games/friendly-monsters');
-    for (const mount of ['/friendly-monsters', '/games/friendly-monsters']) app.use(mount, guardStaticMedia(root, expressStaticGzip(root, { enableBrotli: true })));
+    const root = path.resolve(__dirname, '../..');
+    app.set('views', path.join(root, 'views')); app.set('view engine', 'pug'); app.locals.loggedIn = false;
+    // Execute the actual discovery/mount/Games route block, without app startup or DB imports.
+    const source = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+    const start = source.indexOf('const gamesDirectory =');
+    const end = source.indexOf('// -----------------', start);
+    if (start < 0 || end < start) throw new Error('Games route block not found');
+    vm.runInNewContext(source.slice(start, end), {
+      fs, path, __dirname: root, app,
+      imageSafeStaticGzip: (directory, options) => guardStaticMedia(directory, expressStaticGzip(directory, options)),
+    });
     app.use((req, res) => res.status(404).send('Not found'));
     server = await new Promise(resolve => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
     port = server.address().port;
@@ -24,6 +35,16 @@ describe('Friendly Monsters public static delivery', () => {
       }); req.on('error', reject); req.end();
     });
   }
+  test('actual app discovery renders the Japanese Games entry and canonical link', async () => {
+    const response = await request('/games');
+    expect(response.status).toBe(200);
+    expect(response.body).toContain('href="/games/friendly-monsters/"');
+    expect(response.body).toContain('ともだちと、とんでもない幸運 · Friendly Monsters');
+  });
+  test.each(['/friendly-monsters', '/games/friendly-monsters'])('redirects %s to the slash required by relative assets', async url => {
+    const response = await request(url);
+    expect(response.status).toBe(301); expect(response.headers.location).toBe(url + '/');
+  });
   test.each(['/friendly-monsters/', '/games/friendly-monsters/'])('anonymous read works at %s', async url => {
     const response = await request(url);
     expect(response.status).toBe(200); expect(response.headers['content-type']).toContain('text/html');
