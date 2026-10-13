@@ -10,18 +10,22 @@ const mappings = {
   video: { duration_seconds: 1, frames: 1, sample_fps: 1, sample_grid_seconds: [0], sampling: 'ffmpeg fps start_time=0 round=near; grid times, not original frame PTS', width: 32, height: 32, rotation_applied: false, soundtrack: 'ignored', vision_soft_tokens_per_frame_max: 140, processor_resampling: false, model_timestamp_tokens: false },
 };
 const payload = (kind = 'text', role = 'document', title = false) => ({ model: MODEL, revision: REVISION, space_id: SPACE, dimensions: 768, normalized: true, precision: 'bfloat16', vectors: [v()], chunks: [{ index: 0, input_index: 0, kind, role, title_supplied: title, tokens: 100, ...mappings[kind] }], preprocessing: { version: 'pilot-v1', batch_size: 1, truncation: false, text_prefixes: 'role-specific; text only' } });
-test('isolated configuration validates explicit bounds, origin and private root', () => {
-  expect(config({}).enabled).toBe(false);
-  expect(config({}).dbName).toBe('embeddinggemma2_pilot');
-  for (const env of [{ EMBEDDINGGEMMA2_DB_NAME: 'production' }, { EMBEDDINGGEMMA2_TIMEOUT_MS: '15000' }, { EMBEDDINGGEMMA2_USER_ITEMS: 'Infinity' }, { AI_GATEWAY_BASE_URL: 'http://user:pass@host' }, { AI_GATEWAY_BASE_URL: 'file:///tmp' }, { AI_GATEWAY_BASE_URL: 'http://host/embed' }, { EMBEDDINGGEMMA2_STORAGE_DIR: `${process.cwd()}/public/media` }]) expect(() => config(env)).toThrow();
+test('defaults require no setup and validate optional bounds and origin', () => {
+  expect(config({}).enabled).toBe(true);
+  expect(config({ EMBEDDINGGEMMA2_ENABLED: '' }).enabled).toBe(true);
+  expect(config({ EMBEDDINGGEMMA2_ENABLED: 'false' }).enabled).toBe(false);
+  expect(config({}).root).toBe(require('path').resolve(__dirname, '../../private_data/embeddinggemma2_test'));
+  expect(config({ EMBEDDINGGEMMA2_DB_NAME: 'obsolete', EMBEDDINGGEMMA2_STORAGE_DIR: 'obsolete' })).toEqual(config({}));
+  for (const env of [{ EMBEDDINGGEMMA2_ENABLED: 'yes' }, { EMBEDDINGGEMMA2_TIMEOUT_MS: '15000' }, { EMBEDDINGGEMMA2_USER_ITEMS: 'Infinity' }, { AI_GATEWAY_BASE_URL: 'http://user:pass@host' }, { AI_GATEWAY_BASE_URL: 'file:///tmp' }, { AI_GATEWAY_BASE_URL: 'http://host/embed' }]) expect(() => config(env)).toThrow();
 });
-test('useDb preserves the existing Mongo client and never accepts the primary database', () => {
-  const db = { models: {}, model: jest.fn(name => name) };
-  const connection = { readyState: 1, name: 'site', useDb: jest.fn(() => db) };
-  models(connection, 'embeddinggemma2_pilot');
-  expect(connection.useDb).toHaveBeenCalledWith('embeddinggemma2_pilot', { useCache: true });
-  expect(() => models({ ...connection, name: 'embeddinggemma2_pilot' }, 'embeddinggemma2_pilot')).toThrow();
-  expect(() => models({ ...connection, readyState: 0 }, 'embeddinggemma2_pilot')).toThrow();
+test('both models register only the dedicated collection on the primary connection', () => {
+  const connection = { readyState: 1, models: {}, model: jest.fn((name, definition) => ({ name, definition })), useDb: jest.fn() };
+  const result = models(connection);
+  expect(connection.useDb).not.toHaveBeenCalled();
+  expect(connection.model).toHaveBeenCalledTimes(2);
+  for (const model of Object.values(result)) expect(model.definition.options.collection).toBe('embeddinggemma2_test');
+  expect(() => models({ ...connection, readyState: 0 })).toThrow('unavailable');
+  expect(schema.indexes()).toEqual([[expect.objectContaining({ owner: 1, state: 1, space_id: 1 }), expect.objectContaining({ partialFilterExpression: { recordType: 'entry' } })]]);
 });
 test('document/query mapping uses raw items and fixed paths with bounded no-redirect cold requests', async () => {
   const client = { post: jest.fn().mockResolvedValue({ data: payload('text', 'document', true) }) };
@@ -59,7 +63,7 @@ test('schema requires identity and normalized vector in feature-owned collection
   const model = new Model({ owner: new mongoose.Types.ObjectId(), state: 'ready', kind: 'text', text: 'x', bytes: 1, ...response(payload(), { kind: 'text' }, 'document') });
   await expect(model.validate()).resolves.toBeUndefined();
   model.vector = Array(768).fill(0); await expect(model.validate()).rejects.toThrow();
-  expect(schema.options.collection).toBe('eg2_records');
+  expect(schema.options.collection).toBe('embeddinggemma2_test');
 });
 
 test.each(['text', 'image', 'audio', 'video'])('requires every documented %s preprocessing field and discards extras', kind => {

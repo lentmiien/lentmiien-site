@@ -43,5 +43,7 @@ private_data/comfy-output/
 __pycache__/
 *.pyc
 
-# Isolated private EmbeddingGemma2 pilot assets
-private_data/embeddinggemma2/
+# Private admin-only EmbeddingGemma2 test dataset (including staging)
+/private_data/embeddinggemma2_test/
+# Preserve ignores for any unused pre-release assets; never migrate automatically.
+/private_data/embeddinggemma2/

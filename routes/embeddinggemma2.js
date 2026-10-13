@@ -22,7 +22,7 @@ function createRouter({ service, settings, reauthorize = refreshAuthorization } 
   const router = express.Router();
   let configurationError = false;
   try { settings = settings || config(); service = service || new PilotService(settings); }
-  catch (_) { configurationError = true; logger.error('EmbeddingGemma2 configuration invalid; playground disabled', { category: 'embeddinggemma2' }); }
+  catch (_) { configurationError = true; logger.error('EmbeddingGemma2 configuration invalid; test dataset disabled', { category: 'embeddinggemma2' }); }
   router.use((req, res, next) => {
     res.set({ 'Cache-Control': 'private, no-store, max-age=0', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow' });
     res.locals.gtag = false;
@@ -34,10 +34,10 @@ function createRouter({ service, settings, reauthorize = refreshAuthorization } 
   const csrf = createSessionCsrf();
   router.use(csrf.issueToken);
   router.use((req, res, next) => {
-    if (configurationError || !settings.enabled) return res.status(503).json({ error: 'EmbeddingGemma2 playground is disabled or misconfigured.' });
+    if (configurationError || !settings.enabled) return res.status(503).json({ error: 'EmbeddingGemma2 test dataset is disabled or misconfigured.' });
     next();
   });
-  router.get('/', (req, res) => res.render('admin_embeddinggemma2', { pageTitle: 'EmbeddingGemma2 playground', user: req.user, limits: settings }));
+  router.get('/', (req, res) => res.render('admin_embeddinggemma2', { pageTitle: 'EmbeddingGemma2 test dataset', user: req.user, limits: settings }));
   router.use('/api', rateLimit({ windowMs: 60000, limit: 120, keyGenerator: req => String(req.user._id), standardHeaders: 'draft-8', legacyHeaders: false }));
   router.get('/api/records', async (req, res) => {
     if (Object.keys(req.query).some(k => k !== 'before') || (req.query.before !== undefined && !ID.test(req.query.before))) fail('Invalid page cursor.');
@@ -113,7 +113,8 @@ function createRouter({ service, settings, reauthorize = refreshAuthorization } 
   router.delete('/api/records/:id', csrf.requireToken, mutations, (req, res) => operation(req, res, false, true));
   router.use((error, req, res, next) => {
     const status = error instanceof PilotError ? error.status : error instanceof multer.MulterError || error.type === 'entity.too.large' ? 413 : error.type === 'entity.parse.failed' ? 422 : 503;
-    if (status >= 500) logger.error('EmbeddingGemma2 operation failed', { category: 'embeddinggemma2', metadata: { status, errorName: error.name } });
+    const failureCode = ['EACCES', 'EPERM', 'ENOSPC', 'EROFS', 13, 18].includes(error.code) ? error.code : undefined;
+    if (status >= 500) logger.error('EmbeddingGemma2 operation failed', { category: 'embeddinggemma2', metadata: { status, errorName: error.name, ...(failureCode !== undefined ? { failureCode } : {}) } });
     else if ([408, 413, 429].includes(status)) logger.warning('EmbeddingGemma2 operation rejected by resource limits', { category: 'embeddinggemma2', metadata: { status } });
     if (res.headersSent) { res.destroy(); return; }
     if (!res.destroyed) res.status(status).json({ error: error instanceof PilotError ? error.message : status === 413 ? 'Upload or request exceeds limits.' : status === 422 ? 'Invalid JSON input.' : 'Pilot operation unavailable. Check application diagnostics; reload before retrying.' });

@@ -133,10 +133,16 @@ class Files {
       try {
         const entry = await this.io.lstat(ancestor);
         if (entry.isSymbolicLink() || !entry.isDirectory()) throw new Error('Symlinked or unsafe pilot storage ancestor');
-      } catch (error) { if (error.code !== 'ENOENT' || this.platform === 'win32') throw error; }
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        try { await this.io.mkdir(ancestor, { mode: 0o700 }); }
+        catch (createError) { if (createError.code !== 'EEXIST') throw createError; }
+        const entry = await this.io.lstat(ancestor);
+        if (entry.isSymbolicLink() || !entry.isDirectory()) throw new Error('Symlinked or unsafe pilot storage ancestor');
+      }
+      if (!samePath(await this.io.realpath(ancestor), ancestor, this.platform)) throw new Error('Symlinked pilot storage ancestor');
     }
-    // Windows requires human-created protected ACLs; mkdir/chmod cannot supply them.
-    if (this.platform !== 'win32') await this.io.mkdir(this.root, { recursive: true, mode: 0o700 });
+    // Windows inherits the checkout's ACLs; mode restricts new POSIX directories.
     if (!samePath(await this.io.realpath(this.root), this.root, this.platform)) throw new Error('Symlinked pilot storage root');
     const stat = await this.io.lstat(this.root, { bigint: true });
     if (!stat.isDirectory() || stat.isSymbolicLink() || (this.rootIdentity && !identity(stat, this.rootIdentity))) throw new Error('Unsafe or replaced pilot storage root');

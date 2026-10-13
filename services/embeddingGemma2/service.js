@@ -23,8 +23,8 @@ class PilotService {
     this.busy = false;
   }
   async ready() {
-    if (!this.config.enabled) fail('EmbeddingGemma2 playground is disabled.', 503);
-    this.models = this.getModels(this.connection, this.config.dbName);
+    if (!this.config.enabled) fail('EmbeddingGemma2 test dataset is disabled.', 503);
+    this.models = this.getModels(this.connection);
     if (!this.initialized) {
       await this.models.Record.createIndexes({ maxTimeMS: 10000 });
       this.initialized = true;
@@ -37,19 +37,19 @@ class PilotService {
     let lease;
     try {
       const { Lease } = await this.ready();
-      try { await Lease.updateOne({ _id: 'operation' }, { $setOnInsert: { until: new Date(0), token: '' } }, { upsert: true, maxTimeMS: 5000 }); }
+      try { await Lease.updateOne({ recordType: 'control', _id: 'operation' }, { $setOnInsert: { recordType: 'control', until: new Date(0), token: '' } }, { upsert: true, maxTimeMS: 5000 }); }
       catch (error) { if (error.code !== 11000) throw error; }
       const token = randomUUID();
       const until = new Date(Date.now() + this.config.timeout + 180000);
-      lease = await Lease.findOneAndUpdate({ _id: 'operation', until: { $lt: new Date() } }, { $set: { token, until } }, { new: true, maxTimeMS: 5000 }).lean();
+      lease = await Lease.findOneAndUpdate({ recordType: 'control', _id: 'operation', until: { $lt: new Date() } }, { $set: { token, until } }, { returnDocument: 'after', maxTimeMS: 5000 }).lean();
       if (!lease) fail('Another pilot operation is in progress or reclaiming. Wait before retrying.', 429);
       const assert = async () => {
-        if (!await Lease.exists({ _id: 'operation', token, until: { $gt: new Date() } }).maxTimeMS(5000)) fail('Pilot operation lease expired. Reload the dataset before retrying.', 503);
+        if (!await Lease.exists({ recordType: 'control', _id: 'operation', token, until: { $gt: new Date() } }).maxTimeMS(5000)) fail('Pilot operation lease expired. Reload the dataset before retrying.', 503);
       };
       return { assert, release: async (uncertain = false) => {
         try {
           // An uncertain Gateway failure keeps admission closed until the original cold budget expires.
-          if (!uncertain) await Lease.updateOne({ _id: 'operation', token }, { $set: { until: new Date(0) } }, { maxTimeMS: 5000 });
+          if (!uncertain) await Lease.updateOne({ recordType: 'control', _id: 'operation', token }, { $set: { until: new Date(0) } }, { maxTimeMS: 5000 });
         } catch (error) { logger.error('EmbeddingGemma2 lease release failed', { category: 'embeddinggemma2', metadata: { errorName: error.name } }); }
         finally { this.busy = false; }
       } };
@@ -58,32 +58,32 @@ class PilotService {
   async reconcile(lease) {
     await lease.assert();
     await this.files.clearStaging();
-    const cursor = this.models.Record.find({ state: { $in: ['pending', 'deleting'] } }).maxTimeMS(10000).lean().cursor({ batchSize: 32 });
+    const cursor = this.models.Record.find({ recordType: 'entry', state: { $in: ['pending', 'deleting'] } }).maxTimeMS(10000).lean().cursor({ batchSize: 32 });
     let count = 0;
     try {
       for await (const record of cursor) {
         if (++count > this.config.globalItems) fail('Pilot recovery exceeds configured capacity; operator intervention required.', 503);
         await lease.assert();
         if (record.asset) await this.files.remove(record.asset);
-        await this.models.Record.deleteOne({ _id: record._id, state: record.state }).maxTimeMS(5000);
+        await this.models.Record.deleteOne({ recordType: 'entry', _id: record._id, state: record.state }).maxTimeMS(5000);
       }
     } finally { await cursor.close(); }
     if (count) logger.warning('EmbeddingGemma2 recovered incomplete record operations', { category: 'embeddinggemma2', metadata: { count } });
   }
   async stats(owner) {
     const { Record } = await this.ready();
-    const [result] = await Record.aggregate([{ $group: { _id: null, total: { $sum: 1 }, bytes: { $sum: '$bytes' },
+    const [result] = await Record.aggregate([{ $match: { recordType: 'entry' } }, { $group: { _id: null, total: { $sum: 1 }, bytes: { $sum: '$bytes' },
       mineCount: { $sum: { $cond: [{ $eq: ['$owner', new mongoose.Types.ObjectId(String(owner))] }, 1, 0] } },
       mineBytes: { $sum: { $cond: [{ $eq: ['$owner', new mongoose.Types.ObjectId(String(owner))] }, '$bytes', 0] } },
     } }]).option({ maxTimeMS: 10000 });
     const total = result?.total || 0; const bytes = result?.bytes || 0;
     const mine = { count: result?.mineCount || 0, bytes: result?.mineBytes || 0 };
-    const compatible = await Record.countDocuments({ owner, state: 'ready', ...identity }).maxTimeMS(5000);
+    const compatible = await Record.countDocuments({ recordType: 'entry', owner, state: 'ready', ...identity }).maxTimeMS(5000);
     return { mine, total, bytes, compatible };
   }
   async list(owner, before) {
     const { Record } = await this.ready();
-    const records = await Record.find({ owner, state: 'ready', ...(before ? { _id: { $lt: before } } : {}) })
+    const records = await Record.find({ recordType: 'entry', owner, state: 'ready', ...(before ? { _id: { $lt: before } } : {}) })
       .select('-vector').sort({ _id: -1 }).limit(21).maxTimeMS(5000).lean();
     const stats = await this.stats(owner);
     return { records: records.slice(0, 20).map(publicRecord), next: records.length > 20 ? String(records[19]._id) : null,
@@ -104,16 +104,16 @@ class PilotService {
     if (!active()) fail('Request disconnected; nothing was added.', 499);
     const asset = file ? this.files.name() : undefined;
     // Durable intent precedes filesystem write. Ambiguous DB failures retain intent for recovery.
-    const record = await Record.create({ owner, state: 'pending', kind: source.kind, text: source.text, title: source.title, ...media, bytes, asset, ...embedding });
+    const record = await Record.create({ recordType: 'entry', owner, state: 'pending', kind: source.kind, text: source.text, title: source.title, ...media, bytes, asset, ...embedding });
     try {
       if (asset) await this.files.write(asset, file.buffer);
       await lease.assert();
-      const committed = await Record.updateOne({ _id: record._id, owner, state: 'pending' }, { $set: { state: 'ready' } }, { runValidators: true, maxTimeMS: 5000 });
+      const committed = await Record.updateOne({ recordType: 'entry', _id: record._id, owner, state: 'pending' }, { $set: { state: 'ready' } }, { runValidators: true, maxTimeMS: 5000 });
       if (committed.matchedCount !== 1) throw new Error('Pilot commit lost its pending record');
       return publicRecord(record);
     } catch (error) {
       // Keep intent if cleanup fails. Next lease holder retries safely.
-      try { if (asset) await this.files.remove(asset); await Record.deleteOne({ _id: record._id, owner }).maxTimeMS(5000); }
+      try { if (asset) await this.files.remove(asset); await Record.deleteOne({ recordType: 'entry', _id: record._id, owner }).maxTimeMS(5000); }
       catch (cleanup) { logger.error('EmbeddingGemma2 ingest rollback requires recovery', { category: 'embeddinggemma2', metadata: { errorName: cleanup.name } }); }
       throw error;
     }
@@ -124,7 +124,7 @@ class PilotService {
     const { Record } = this.models;
     const stats = await this.stats(owner);
     if (stats.total > this.config.globalItems) fail('Dataset exceeds scan capacity. Raise the configured bound or delete records.', 409);
-    const filter = { owner, state: 'ready', ...identity, ...(source.filter === 'all' ? {} : { kind: source.filter }) };
+    const filter = { recordType: 'entry', owner, state: 'ready', ...identity, ...(source.filter === 'all' ? {} : { kind: source.filter }) };
     const expected = await Record.countDocuments(filter).maxTimeMS(5000);
     if (!expected) return { records: [], scanned: 0, eligible: 0, total: stats.mine.count, excluded: stats.mine.count, space_id: SPACE };
     await authorize();
@@ -151,14 +151,14 @@ class PilotService {
   }
   async remove(owner, id, lease) {
     await lease.assert();
-    const record = await this.models.Record.findOneAndUpdate({ _id: id, owner, state: 'ready' }, { $set: { state: 'deleting' } }, { new: true, maxTimeMS: 5000 }).lean();
+    const record = await this.models.Record.findOneAndUpdate({ recordType: 'entry', _id: id, owner, state: 'ready' }, { $set: { state: 'deleting' } }, { returnDocument: 'after', maxTimeMS: 5000 }).lean();
     if (!record) fail('Record not found.', 404);
     if (record.asset) await this.files.remove(record.asset);
-    await this.models.Record.deleteOne({ _id: id, owner, state: 'deleting' }).maxTimeMS(5000);
+    await this.models.Record.deleteOne({ recordType: 'entry', _id: id, owner, state: 'deleting' }).maxTimeMS(5000);
   }
   async media(owner, id) {
     const { Record } = await this.ready();
-    const record = await Record.findOne({ _id: id, owner, state: 'ready', kind: { $in: ['image', 'audio', 'video'] } }).select('asset mime bytes').maxTimeMS(5000).lean();
+    const record = await Record.findOne({ recordType: 'entry', _id: id, owner, state: 'ready', kind: { $in: ['image', 'audio', 'video'] } }).select('asset mime bytes').maxTimeMS(5000).lean();
     if (!record) fail('Record not found.', 404);
     const opened = await this.files.open(record.asset);
     if (opened.stat.size !== record.bytes) { await opened.handle.close(); throw new Error('Pilot asset size mismatch'); }

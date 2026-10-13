@@ -145,3 +145,24 @@ test('fixture generator creates only synthetic files and refuses overwrite', asy
     await expect(files.validate(upload(bytes, name, mime), kind)).resolves.toBeDefined();
   }
 });
+
+test('private project folder is lazy and query validation creates no directories', async () => {
+  const { config } = require('../../services/embeddingGemma2/config');
+  const settings = config({}, { checkout: root });
+  const storage = new Files(settings.root);
+  await expect(fs.stat(settings.root)).rejects.toHaveProperty('code', 'ENOENT');
+  await storage.validate(upload(wav(), 'tone.wav', 'audio/wav'), 'audio');
+  await expect(fs.stat(settings.root)).rejects.toHaveProperty('code', 'ENOENT');
+  const name = storage.name(); await storage.write(name, Buffer.from('synthetic'));
+  const opened = await storage.open(name); await opened.handle.close();
+  expect(await fs.readdir(settings.root)).toEqual([name]);
+  await storage.remove(name); expect(await fs.readdir(settings.root)).toEqual([]);
+});
+test('exact dataset folder and all staging/dotfiles are gitignored and untracked', () => {
+  const { execFileSync } = require('child_process');
+  const cwd = path.resolve(__dirname, '../..');
+  const names = ['private_data/embeddinggemma2_test/original', 'private_data/embeddinggemma2_test/staging/query', 'private_data/embeddinggemma2_test/.placeholder'];
+  const ignored = execFileSync('git', ['check-ignore', '--stdin'], { cwd, input: names.join('\n') + '\n', encoding: 'utf8' });
+  expect(ignored.trim().split(/\r?\n/)).toEqual(names);
+  expect(execFileSync('git', ['ls-files', '--', 'private_data/embeddinggemma2_test'], { cwd, encoding: 'utf8' })).toBe('');
+});

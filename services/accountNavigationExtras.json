@@ -807,7 +807,7 @@
   },
   {
     "href": "/admin/embeddinggemma2",
-    "label": "EmbeddingGemma2 playground",
+    "label": "EmbeddingGemma2 test dataset",
     "permissions": [],
     "adminOnly": true,
     "public": false,

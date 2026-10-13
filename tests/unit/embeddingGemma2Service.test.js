@@ -5,7 +5,7 @@ const { MODEL, REVISION, SPACE } = require('../../services/embeddingGemma2/contr
 const owner = '111111111111111111111111'; const foreign = '222222222222222222222222';
 const v = (a = 1, b = 0) => [a, b, ...Array(766).fill(0)];
 const embedding = { model: MODEL, revision: REVISION, space_id: SPACE, dimensions: 768, normalized: true, precision: 'bfloat16', preprocessing: { version: 'pilot-v1' }, mapping: { input_index: 0 }, vector: v() };
-const record = (i, extra = {}) => ({ _id: i.toString(16).padStart(24, '0'), owner, state: 'ready', kind: 'text', text: `synthetic ${i}`, bytes: 10, capturedAt: new Date(0), ...embedding, ...extra });
+const record = (i, extra = {}) => ({ _id: i.toString(16).padStart(24, '0'), recordType: 'entry', owner, state: 'ready', kind: 'text', text: `synthetic ${i}`, bytes: 10, capturedAt: new Date(0), ...embedding, ...extra });
 function matches(row, query) {
   return Object.entries(query).every(([key, value]) => {
     const actual = key.split('.').reduce((o, k) => o?.[k], row);
@@ -17,13 +17,27 @@ function matches(row, query) {
   });
 }
 function query(value) {
-  const q = { maxTimeMS: () => q, select: () => q, sort: () => q, limit: n => { value = value.slice(0, n); return q; }, lean: () => q,
+  const q = { option: () => q, maxTimeMS: () => q, select: () => q, sort: () => q, limit: n => { value = value.slice(0, n); return q; }, lean: () => q,
     then: (resolve, reject) => Promise.resolve(value).then(resolve, reject), cursor: jest.fn(() => ({ async *[Symbol.asyncIterator]() { yield* value; }, close: jest.fn() })) };
   return q;
 }
 function setup(rows = [], overrides = {}) {
   const Record = {
     createIndexes: jest.fn(),
+    aggregate: jest.fn(pipeline => {
+      const selected = rows.filter(r => matches(r, pipeline[0].$match));
+      const result = { _id: null };
+      const evaluate = (value, row) => {
+        if (typeof value === 'string' && value.startsWith('$')) return row[value.slice(1)];
+        if (value?.$eq) return String(evaluate(value.$eq[0], row)) === String(evaluate(value.$eq[1], row));
+        if (value?.$cond) return evaluate(value.$cond[evaluate(value.$cond[0], row) ? 1 : 2], row);
+        return value;
+      };
+      for (const [key, expression] of Object.entries(pipeline[1].$group)) {
+        if (key !== '_id') result[key] = selected.reduce((sum, row) => sum + evaluate(expression.$sum, row), 0);
+      }
+      return query(selected.length ? [result] : []);
+    }),
     find: jest.fn(filter => query(rows.filter(r => matches(r, filter)))),
     countDocuments: jest.fn(filter => query(rows.filter(r => matches(r, filter)).length)),
     findOne: jest.fn(filter => query(rows.find(r => matches(r, filter)))),
@@ -34,9 +48,8 @@ function setup(rows = [], overrides = {}) {
   };
   const files = { validate: jest.fn(async () => ({ filename: 'fixture.png', mime: 'image/png' })), name: () => 'a'.repeat(48), write: jest.fn(), remove: jest.fn(), clearStaging: jest.fn() };
   const embed = jest.fn(async () => embedding);
-  const service = new PilotService({ ...config({ EMBEDDINGGEMMA2_ENABLED: 'true', EMBEDDINGGEMMA2_STORAGE_DIR: require('path').join(require('os').tmpdir(), 'eg2-test-storage') }), ...overrides }, { getModels: () => ({ Record }), files, embed });
+  const service = new PilotService({ ...config({}), ...overrides }, { getModels: () => ({ Record }), files, embed });
   service.models = { Record };
-  service.stats = jest.fn(async () => ({ mine: { count: rows.filter(r => r.owner === owner).length, bytes: rows.filter(r => r.owner === owner).reduce((s, r) => s + r.bytes, 0) }, total: rows.length, bytes: rows.reduce((s, r) => s + r.bytes, 0), compatible: rows.filter(r => matches(r, { owner, ...identity })).length }));
   const lease = { assert: jest.fn() };
   return { service, Record, files, embed, lease, rows };
 }
@@ -48,7 +61,7 @@ test('complete cosine scan ranks old records across modalities and excludes fore
   expect(result.records.map(r => r.similarity)).toEqual([1, 0.8]);
   expect(result.scanned).toBe(3); expect(result.excluded).toBe(1);
   expect(result.records[0].vector).toBeUndefined(); expect(result.records[0].asset).toBeUndefined();
-  expect(Record.find).toHaveBeenCalledWith({ owner, state: 'ready', ...identity });
+  expect(Record.find).toHaveBeenCalledWith({ recordType: 'entry', owner, state: 'ready', ...identity });
 });
 test('modality filter is explicit and empty search avoids inference', async () => {
   const { service, lease, embed } = setup([record(1)]);
@@ -101,7 +114,7 @@ test('media ownership is checked before touching disk', async () => {
   files.open = jest.fn(); await expect(service.media(owner, record(1)._id)).rejects.toThrow('not found'); expect(files.open).not.toHaveBeenCalled();
 });
 test('distributed lease refuses contenders and uncertain failures retain cooldown', async () => {
-  const service = new PilotService(config({ EMBEDDINGGEMMA2_ENABLED: 'true', EMBEDDINGGEMMA2_STORAGE_DIR: require('path').join(require('os').tmpdir(), 'eg2-test-storage') }));
+  const service = new PilotService(config({}));
   const Lease = { updateOne: jest.fn(async () => ({})), findOneAndUpdate: jest.fn(() => query({ token: 'token' })), exists: jest.fn(() => query(true)) };
   service.ready = async () => ({ Lease });
   const lease = await service.acquire(); await expect(service.acquire()).rejects.toThrow('progress');
@@ -133,4 +146,32 @@ test('lease expiration after successful inference prevents creating durable inte
   lease.assert.mockResolvedValueOnce().mockRejectedValueOnce(new Error('expired'));
   await expect(service.add(owner, source, null, lease, () => true)).rejects.toThrow('expired');
   expect(Record.create).not.toHaveBeenCalled(); expect(files.write).not.toHaveBeenCalled();
+});
+
+test('control records never affect counts, ranking, list, ownership or recovery', async () => {
+  // Even a malformed control carrying entry-like fields must remain excluded.
+  const control = record(9, { recordType: 'control', bytes: 999999, kind: 'image', asset: 'b'.repeat(48) });
+  const { service, lease, rows, files } = setup([record(1), record(2, { owner: foreign }), control]);
+  expect(await service.stats(owner)).toEqual({ mine: { count: 1, bytes: 10 }, total: 2, bytes: 20, compatible: 1 });
+  expect((await service.list(owner)).records.map(r => r.id)).toEqual([record(1)._id]);
+  const results = await service.search(owner, source, null, lease, () => true);
+  expect(results.scanned).toBe(1); expect(results.total).toBe(1); expect(results.excluded).toBe(0);
+  await expect(service.remove(owner, control._id, lease)).rejects.toThrow('not found');
+  await expect(service.media(owner, control._id)).rejects.toThrow('not found');
+  control.state = 'pending';
+  rows.push(record(3, { state: 'pending' }));
+  await service.reconcile(lease);
+  expect(rows).toContain(control); expect(rows).toHaveLength(3); expect(files.remove).not.toHaveBeenCalled();
+});
+test.each(['text', 'image', 'audio', 'video'])('%s add and search keep entry/control state separate and query content ephemeral', async kind => {
+  const { service, lease, files, rows, embed } = setup();
+  const input = kind === 'text' ? { kind, text: 'synthetic' } : { kind };
+  const file = kind === 'text' ? null : { buffer: Buffer.from('synthetic') };
+  await service.add(owner, input, file, lease, () => true);
+  expect(rows).toHaveLength(1); expect(rows[0]).toMatchObject({ recordType: 'entry', kind, owner, state: 'ready' });
+  files.write.mockClear();
+  const result = await service.search(owner, { ...input, filter: 'all', topK: 10 }, file, lease, () => true);
+  expect(result.scanned).toBe(1); expect(result.records[0].similarity).toBe(1);
+  expect(rows).toHaveLength(1); expect(files.write).not.toHaveBeenCalled();
+  expect(embed.mock.calls.map(call => call[2])).toEqual([false, true]);
 });

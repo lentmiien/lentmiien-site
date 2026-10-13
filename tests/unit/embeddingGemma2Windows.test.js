@@ -3,13 +3,13 @@ const { storageRoot, contains, samePath } = require('../../services/embeddingGem
 const { Files } = require('../../services/embeddingGemma2/files');
 const path = require('path');
 const publicRoot = 'C:\\Projects\\lentmiien-site\\public';
-const root = 'C:\\ProgramData\\Lentmiien\\embeddinggemma2';
+const root = 'C:\\Projects\\lentmiien-site\\private_data\\embeddinggemma2_test';
 test.each(['C:relative', '\\relative', '\\\\host\\share', '\\\\?\\C:\\pilot', '\\\\.\\C:\\pilot', 'C:\\pilot:stream', 'C:\\pilot\\..\\other', 'C:\\pilot\\.', 'C:\\pilot.\\data', 'C:\\pilot \\data', 'C:\\NUL.txt', 'C:\\COM1\\data', 'C:\\PROGRA~1\\pilot', 'C:\\', 'c:\\PROJECTS\\LENTMIIEN-SITE\\PUBLIC\\media', 'C:\\Projects'])('rejects unsafe Windows root %s', value => {
   expect(() => storageRoot(value, publicRoot, 'win32')).toThrow();
 });
 test('Windows containment respects drives, separators, case and component boundaries', () => {
   expect(storageRoot(root, publicRoot, 'win32')).toBe(root);
-  expect(storageRoot('C:/ProgramData/Lentmiien/embeddinggemma2', publicRoot, 'win32')).toBe(root);
+  expect(storageRoot('C:/Projects/lentmiien-site/private_data/embeddinggemma2_test', publicRoot, 'win32')).toBe(root);
   expect(samePath(root, root.toLowerCase(), 'win32')).toBe(true);
   expect(contains(publicRoot, 'C:\\Projects\\lentmiien-site\\publicity', 'win32')).toBe(false);
   expect(contains(publicRoot, 'D:\\Projects\\lentmiien-site\\public', 'win32')).toBe(false);
@@ -21,12 +21,24 @@ function setup() {
   const io = { lstat: jest.fn(async value => stat(value === target)), realpath: jest.fn(async value => value.toLowerCase()), mkdir: jest.fn(), open: jest.fn(async () => handle), unlink: jest.fn() };
   return { files: new Files(root, { platform: 'win32', io }), io, handle, name, target, stat };
 }
-test('simulated win32 opens read-only without O_NOFOLLOW and requires precreated root', async () => {
+test('simulated win32 opens read-only without O_NOFOLLOW and lazily creates missing directories', async () => {
   const { files, io, handle, name } = setup();
   await files.open(name); expect(io.mkdir).not.toHaveBeenCalled(); expect(io.open.mock.calls[0][1]).toBe(require('fs').constants.O_RDONLY);
   await handle.close();
   io.lstat.mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'ENOENT' }));
-  await expect(files.init()).rejects.toHaveProperty('code', 'ENOENT'); expect(io.mkdir).not.toHaveBeenCalled();
+  await expect(files.init()).resolves.toBeUndefined(); expect(io.mkdir).toHaveBeenCalledTimes(1);
+});
+test('native Windows default config needs no environment or precreated directory', () => {
+  const { config } = require('../../services/embeddingGemma2/config');
+  const settings = config({}, { platform: 'win32', checkout: 'C:\\Projects\\lentmiien-site' });
+  expect(settings.enabled).toBe(true); expect(settings.root).toBe(root);
+});
+test('Windows mkdir permission failure stays local and does not change ACLs', async () => {
+  const { files, io } = setup();
+  io.lstat.mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'ENOENT' }));
+  io.mkdir.mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'EACCES' }));
+  await expect(files.init()).rejects.toHaveProperty('code', 'EACCES');
+  expect(io.open).not.toHaveBeenCalled();
 });
 test.each(['C:\\other', '\\\\host\\share', 'a'.repeat(48) + ':stream', '../' + 'a'.repeat(48), 'A'.repeat(48), 'NUL'])('asset references cannot introduce Windows paths: %s', name => {
   expect(() => setup().files.resolve(name)).toThrow();

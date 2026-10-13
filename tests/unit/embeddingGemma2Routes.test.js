@@ -15,7 +15,8 @@ beforeEach(async () => {
   reauthorize = jest.fn();
   const app = express(); app.set('views', path.join(__dirname, '../../views')); app.set('view engine', 'pug');
   app.use((req, res, next) => { const role = req.get('x-test-role'); req.user = role ? { _id: owner, name: 'synthetic', type_user: role } : undefined; req.isAuthenticated = () => Boolean(role); req.session = { csrfToken: token }; res.locals.loggedIn = Boolean(role); next(); });
-  app.use('/admin/embeddinggemma2', createRouter({ service, settings: config({ EMBEDDINGGEMMA2_ENABLED: 'true', EMBEDDINGGEMMA2_STORAGE_DIR: path.join(os.tmpdir(), 'eg2-test-storage') }), reauthorize }));
+  app.get('/unrelated', (_req, res) => res.send('available'));
+  app.use('/admin/embeddinggemma2', createRouter({ service, settings: config({}), reauthorize }));
   server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve)); base = `http://127.0.0.1:${server.address().port}/admin/embeddinggemma2`;
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'eg2-route-'));
 });
@@ -36,7 +37,7 @@ test.each([{}, { 'x-csrf-token': 'invalid' }, { 'x-csrf-token': token, origin: '
 });
 test('admin page, list and correctly role-mapped text operations succeed', async () => {
   const headers = { 'x-test-role': 'admin', 'x-csrf-token': token, 'Content-Type': 'application/json' };
-  const page = await fetch(base, { headers }); expect(page.status).toBe(200); expect(await page.text()).toContain('EmbeddingGemma2 playground');
+  const page = await fetch(base, { headers }); expect(page.status).toBe(200); expect(await page.text()).toContain('EmbeddingGemma2 test dataset');
   const list = await fetch(base + '/api/records', { headers }); expect(list.status).toBe(200); expect(service.list).toHaveBeenCalledWith(owner, undefined);
   const add = await fetch(base + '/api/records', { method: 'POST', headers, body: JSON.stringify({ kind: 'text', text: '<script>synthetic</script>', title: 'test' }) }); expect(add.status).toBe(201);
   expect(service.add).toHaveBeenCalledWith(owner, expect.objectContaining({ text: '<script>synthetic</script>', title: 'test' }), undefined, expect.anything(), expect.any(Function), expect.any(Function));
@@ -120,4 +121,14 @@ test('unsafe stored MIME never streams and HEAD closes its read handle', async (
   const response = await fetch(base + `/api/records/${id}/media`, { method: 'HEAD', headers });
   expect(response.status).toBe(200); expect(response.headers.get('content-length')).toBe('10'); expect(handle.close).toHaveBeenCalledTimes(2);
   expect((await fetch(base + `/api/records/${id}/media`, { headers: { ...headers, range: 'bytes=-9007199254740993' } })).status).toBe(416);
+});
+
+test('an actual filesystem permission failure is feature-local, logged safely and releases admission', async () => {
+  service.reconcile.mockRejectedValue(Object.assign(new Error('private path and data'), { code: 'EACCES' }));
+  const response = await fetch(base + '/api/records', { method: 'POST', headers: { 'x-test-role': 'admin', 'x-csrf-token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'text', text: 'synthetic' }) });
+  expect(response.status).toBe(503); expect(await response.text()).not.toContain('private path');
+  expect(logger.error).toHaveBeenCalledWith('EmbeddingGemma2 operation failed', expect.objectContaining({ metadata: expect.objectContaining({ failureCode: 'EACCES' }) }));
+  expect(service.add).not.toHaveBeenCalled();
+  const lease = await service.acquire.mock.results[0].value; expect(lease.release).toHaveBeenCalledWith(false);
+  expect((await fetch(new URL('/unrelated', base))).status).toBe(200);
 });
