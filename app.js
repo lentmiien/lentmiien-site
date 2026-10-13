@@ -193,9 +193,10 @@ const legacyFormParser = bodyParser.urlencoded({ extended: false, limit: DEFAULT
 const legacyJsonParser = express.json({ limit: DEFAULT_BODY_LIMIT });
 const isMusicPath = req => /^\/(?:music|admin\/music-test)(?:\/|$)/i.test(req.path);
 const isCommonsPrivatePath = req => /^\/commons\/api(?:\/|$)/i.test(req.path);
+const isEmbeddingGemma2Path = req => /^\/admin\/embeddinggemma2(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
-app.use((req, res, next) => (isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
-app.use((req, res, next) => (isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
+app.use((req, res, next) => (isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
+app.use((req, res, next) => (isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -565,6 +566,7 @@ app.use('/admin/database-viewer', (_req, res, next) => {
 });
 app.use('/admin/taric', require('./routes/taricAdmin').createTaricAdminRouter(taricTool.service));
 app.use('/admin/amiami-items/upload', require('./routes/amiamiUpload').createAmiAmiUploadRouter(amiamiUpload));
+app.use('/admin/embeddinggemma2', require('./routes/embeddinggemma2').createRouter());
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
 app.post(

@@ -262,3 +262,16 @@ COMMONS_NPC_MODEL=
 COMMONS_NPC_TIMEOUT_MS=90000      # 60000-120000; local deadline, no retries
 COMMONS_NPC_CONTEXT_TOKENS=16384  # 8192-65536; model must support chosen context
 COMMONS_NPC_MAX_TOKENS=512        # 256-1024; visible text still capped at 1200 chars
+
+# Isolated ADMIN EmbeddingGemma2 playground; shares the managed Mongo client/authSource.
+# Operator must grant the existing Mongo principal access to this separate database.
+# Uses existing AI_GATEWAY_BASE_URL (trusted HTTP(S) origin only), no new inference key.
+EMBEDDINGGEMMA2_ENABLED=false
+EMBEDDINGGEMMA2_DB_NAME=embeddinggemma2_pilot
+# Absolute path outside public; no symlinks. Default: private_data/embeddinggemma2 in app checkout.
+EMBEDDINGGEMMA2_STORAGE_DIR=
+EMBEDDINGGEMMA2_TIMEOUT_MS=1800000
+EMBEDDINGGEMMA2_USER_ITEMS=200
+EMBEDDINGGEMMA2_GLOBAL_ITEMS=500
+EMBEDDINGGEMMA2_USER_BYTES=268435456
+EMBEDDINGGEMMA2_GLOBAL_BYTES=536870912

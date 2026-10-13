@@ -1,0 +1,54 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/embeddinggemma2.css')
+
+block content
+  main.eg2(data-csrf=csrfToken)
+    h1 EmbeddingGemma2 playground
+    p Private ADMIN experiment. Your dataset is separate from all Site content and other administrators’ records.
+    p.eg2-warning Cold startup and queueing can take 30 minutes. Keep this page open. Submit once; a disconnect does not guarantee GPU cancellation. Check Gateway monitoring before retrying a failed request.
+    p Text, images, native audio and visual video share one pinned model space. Video ignores the soundtrack; submit its audio separately. Cosine similarity is not a probability or proof of retrieval quality.
+    a(href='/admin/ai-gateway') Gateway monitoring
+    .eg2-panels
+      each mode in ['add', 'search']
+        form.eg2-form(data-mode=mode)
+          h2= mode === 'add' ? 'Add content' : 'Search'
+          label(for=`${mode}-kind`) Input modality
+          select(id=`${mode}-kind`, name='kind')
+            each kind in ['text', 'image', 'audio', 'video']
+              option(value=kind)= kind
+          .eg2-text
+            label(for=`${mode}-text`)= mode === 'add' ? 'Original document text' : 'Query text'
+            textarea(id=`${mode}-text`, name='text', rows='6', maxlength='16000', required)
+            if mode === 'add'
+              label(for='add-title') Optional document title
+              input#add-title(name='title', maxlength='256')
+          .eg2-file(hidden)
+            label(for=`${mode}-file`) Media file (maximum 8 MiB)
+            input(id=`${mode}-file`, type='file', name='file', disabled)
+            p PNG/JPEG/WebP: one image, ≤4 million pixels, longest edge ≤4096. Audio: WAV/MP3/FLAC/Ogg or container audio, ≤10 seconds. Video: MP4/MOV/MKV/WebM, ≤8 seconds, ≤1920×1080 pixels, longest edge ≤2048, ≤4 streams. Animated images are rejected.
+            p Selected files are validated on the server. Search files are temporary and never added to the dataset. Some containers/codecs may require downloading to play locally.
+            .eg2-preview
+          if mode === 'search'
+            label(for='search-filter') Search stored modalities
+            select#search-filter(name='filter')
+              option(value='all') All modalities (cross-modal)
+              each kind in ['text', 'image', 'audio', 'video']
+                option(value=kind)= kind
+            label(for='search-topK') Maximum results
+            input#search-topK(type='number', name='topK', min='1', max='50', value='10', required)
+          button(type='submit')= mode === 'add' ? 'Add to my test dataset' : 'Search my test dataset'
+    p#eg2-status(role='status', aria-live='polite') Loading your dataset…
+    progress#eg2-progress(hidden, aria-label='Operation in progress')
+    section(aria-labelledby='eg2-results-title')
+      h2#eg2-results-title Search results
+      p#eg2-coverage No search yet.
+      #eg2-results.eg2-records
+    section(aria-labelledby='eg2-dataset-title')
+      h2#eg2-dataset-title My test dataset
+      p#eg2-counts
+      button#eg2-refresh(type='button') Refresh dataset
+      #eg2-records.eg2-records
+      button#eg2-more(type='button', hidden) Next 20 records
+  script(src='/js/embeddinggemma2.js', defer)

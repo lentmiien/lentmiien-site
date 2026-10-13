@@ -806,6 +806,14 @@
     "subgroup": "AI Admin"
   },
   {
+    "href": "/admin/embeddinggemma2",
+    "label": "EmbeddingGemma2 playground",
+    "permissions": [],
+    "adminOnly": true,
+    "public": false,
+    "subgroup": "AI Admin"
+  },
+  {
     "href": "/admin/embedding-test",
     "label": "Embedding Management",
     "permissions": [],

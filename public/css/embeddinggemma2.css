@@ -1,0 +1,17 @@
+.eg2 { max-width: 1200px; margin: 2rem auto; padding: 1rem; color: var(--text); }
+.eg2-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 1rem; margin-block: 1.5rem; }
+.eg2-form, .eg2-record { background: var(--surface-1); border: 1px solid var(--border); border-radius: .6rem; padding: 1rem; }
+.eg2 label { display: block; margin-top: .75rem; font-weight: 600; }
+.eg2 input, .eg2 select, .eg2 textarea { width: 100%; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: .3rem; padding: .6rem; }
+.eg2 button { margin-block: .8rem; padding: .6rem 1rem; border: 1px solid var(--brand); border-radius: .3rem; background: var(--brand); color: var(--text-inverse); }
+.eg2 button:disabled { opacity: .55; cursor: wait; }
+.eg2 :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.eg2 a { color: var(--accent); }
+.eg2-warning { border-left: 4px solid var(--warning); padding: .8rem; background: var(--surface-2); }
+.eg2-records { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1rem; margin-block: 1rem; }
+.eg2 img, .eg2 video, .eg2 audio { max-width: 100%; max-height: 320px; display: block; margin-block: .8rem; }
+.eg2 pre { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); max-height: 22rem; overflow: auto; }
+.eg2 details { overflow-wrap: anywhere; color: var(--text-secondary); }
+.eg2 .eg2-error { color: var(--danger); }
+.eg2 [hidden] { display: none !important; }
+#eg2-progress { width: 100%; accent-color: var(--accent); }
