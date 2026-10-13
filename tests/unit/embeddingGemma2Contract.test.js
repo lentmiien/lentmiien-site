@@ -4,7 +4,12 @@ const { gateway } = require('../../services/embeddingGemma2/gateway');
 const { models, schema } = require('../../models/embeddinggemma2_pilot');
 const mongoose = require('mongoose');
 const v = () => [1, ...Array(767).fill(0)];
-const payload = (kind = 'text', role = 'document', title = false) => ({ model: MODEL, revision: REVISION, space_id: SPACE, dimensions: 768, normalized: true, precision: 'bfloat16', vectors: [v()], chunks: [{ index: 0, input_index: 0, kind, role, title_supplied: title }], preprocessing: { version: 'pilot-v1', batch_size: 1, truncation: false } });
+const mappings = {
+  image: { width: 64, height: 64, exif_orientation_applied: true, vision_soft_tokens_max: 280 },
+  audio: { duration_seconds: 1, sampling_rate: 16000, channels: 1, samples: 16000 },
+  video: { duration_seconds: 1, frames: 1, sample_fps: 1, sample_grid_seconds: [0], sampling: 'ffmpeg fps start_time=0 round=near; grid times, not original frame PTS', width: 32, height: 32, rotation_applied: false, soundtrack: 'ignored', vision_soft_tokens_per_frame_max: 140, processor_resampling: false, model_timestamp_tokens: false },
+};
+const payload = (kind = 'text', role = 'document', title = false) => ({ model: MODEL, revision: REVISION, space_id: SPACE, dimensions: 768, normalized: true, precision: 'bfloat16', vectors: [v()], chunks: [{ index: 0, input_index: 0, kind, role, title_supplied: title, tokens: 100, ...mappings[kind] }], preprocessing: { version: 'pilot-v1', batch_size: 1, truncation: false, text_prefixes: 'role-specific; text only' } });
 test('isolated configuration validates explicit bounds, origin and private root', () => {
   expect(config({}).enabled).toBe(false);
   expect(config({}).dbName).toBe('embeddinggemma2_pilot');
@@ -55,4 +60,29 @@ test('schema requires identity and normalized vector in feature-owned collection
   await expect(model.validate()).resolves.toBeUndefined();
   model.vector = Array(768).fill(0); await expect(model.validate()).rejects.toThrow();
   expect(schema.options.collection).toBe('eg2_records');
+});
+
+test.each(['text', 'image', 'audio', 'video'])('requires every documented %s preprocessing field and discards extras', kind => {
+  const valid = payload(kind);
+  expect(response(valid, { kind }, 'document').mapping.tokens).toBe(100);
+  for (const key of ['tokens', ...Object.keys(mappings[kind] || {})]) {
+    const bad = payload(kind); delete bad.chunks[0][key];
+    expect(() => response(bad, { kind }, 'document')).toThrow();
+  }
+  valid.chunks[0].url = 'https://private.invalid'; valid.preprocessing.prompt = 'private';
+  const result = response(valid, { kind }, 'document');
+  expect(JSON.stringify(result)).not.toContain('private');
+});
+test.each([
+  ['audio', { duration_seconds: 10.1, samples: 161600 }], ['audio', { samples: 10 }], ['audio', { sampling_rate: 48000 }], ['audio', { duration_seconds: 2 }], ['audio', { channels: 2 }],
+  ['video', { frames: 9 }], ['video', { sample_grid_seconds: [1] }], ['video', { width: 769 }], ['video', { soundtrack: 'included' }], ['video', { duration_seconds: NaN }],
+  ['image', { width: 4097 }], ['image', { width: 3000, height: 3000 }], ['text', { tokens: 8193 }], ['text', { tokens: '100' }],
+])('rejects invalid %s preprocessing %j', (kind, mapping) => {
+  const data = payload(kind); Object.assign(data.chunks[0], mapping);
+  expect(() => response(data, { kind }, 'document')).toThrow('metadata');
+});
+test.each([408, 413, 422, 429, 503, 504])('handles Gateway rejection %s without payload disclosure or retry', async status => {
+  const client = { post: jest.fn().mockRejectedValue({ isAxiosError: true, response: { status, data: 'PRIVATE' } }) };
+  await expect(gateway(config({}), client)({ kind: 'audio' }, Buffer.alloc(12), false)).rejects.toMatchObject({ status: status < 500 ? status : 502 });
+  expect(client.post).toHaveBeenCalledTimes(1);
 });

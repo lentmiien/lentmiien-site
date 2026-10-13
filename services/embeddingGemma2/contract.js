@@ -26,30 +26,38 @@ function input(body, file, search) {
   if (body.filter !== undefined && !['all', ...KINDS].includes(body.filter)) fail('Invalid modality filter.');
   return { kind, ...(kind === 'text' ? { text, ...(title === undefined ? {} : { title }) } : {}), topK, filter: body.filter || 'all' };
 }
-// Retain only bounded preprocessing/mapping fields from the authoritative contract.
-function metadata(value, depth = 0) {
-  if (depth > 4) fail('Invalid Gateway metadata.', 502);
-  if (typeof value === 'boolean' || value === null) return value;
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.length <= 256) return value;
-  if (Array.isArray(value) && value.length <= 32) return value.map(v => metadata(v, depth + 1));
-  if (value && typeof value === 'object' && Object.keys(value).length <= 40) {
-    const out = {};
-    for (const [key, v] of Object.entries(value)) {
-      if (!/^[a-z][a-z0-9_]{0,50}$/i.test(key) || /text$|title$|path|url|secret|prompt|token(?!s$)/i.test(key)) continue;
-      out[key] = metadata(v, depth + 1);
-    }
-    return out;
-  }
-  fail('Invalid Gateway metadata.', 502);
+// Exact fields from Gateway embeddinggemma2/{app,media}.py at b5df9d2.
+// Source stream count/dimensions are checked by that decoder, not reported by this API.
+function preprocessingMapping(chunk, kind) {
+  const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
+  const duration = (value, max) => typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= max;
+  const dimensions = (edge, pixels) => integer(chunk.width, 1, edge) && integer(chunk.height, 1, edge) && chunk.width * chunk.height <= pixels;
+  let fields;
+  let valid = integer(chunk.tokens, 1, 8192);
+  if (kind === 'text') fields = ['role', 'title_supplied'];
+  else if (kind === 'image') {
+    valid &&= dimensions(4096, 4000000) && chunk.exif_orientation_applied === true && chunk.vision_soft_tokens_max === 280;
+    fields = ['width', 'height', 'exif_orientation_applied', 'vision_soft_tokens_max'];
+  } else if (kind === 'audio') {
+    valid &&= duration(chunk.duration_seconds, 10) && integer(chunk.samples, 160, 160000) && chunk.sampling_rate === 16000 && chunk.channels === 1 && Math.abs(chunk.duration_seconds - chunk.samples / 16000) < 1e-9;
+    fields = ['duration_seconds', 'samples', 'sampling_rate', 'channels'];
+  } else if (kind === 'video') {
+    valid &&= duration(chunk.duration_seconds, 8) && dimensions(768, 768 * 768) && integer(chunk.frames, 1, 8) && chunk.sample_fps === 1
+      && Array.isArray(chunk.sample_grid_seconds) && chunk.sample_grid_seconds.length === chunk.frames && chunk.sample_grid_seconds.every((n, i) => n === i)
+      && chunk.sampling === 'ffmpeg fps start_time=0 round=near; grid times, not original frame PTS'
+      && chunk.rotation_applied === false && chunk.soundtrack === 'ignored' && chunk.vision_soft_tokens_per_frame_max === 140 && chunk.processor_resampling === false && chunk.model_timestamp_tokens === false;
+    fields = ['duration_seconds', 'width', 'height', 'frames', 'sample_fps', 'sample_grid_seconds', 'sampling', 'rotation_applied', 'soundtrack', 'vision_soft_tokens_per_frame_max', 'processor_resampling', 'model_timestamp_tokens'];
+  } else valid = false;
+  if (!valid) fail('Gateway returned missing or invalid preprocessing metadata. Nothing was stored; operator must check the Gateway contract.', 502);
+  return Object.fromEntries(['index', 'input_index', 'kind', 'tokens', ...fields].map(key => [key, chunk[key]]));
 }
 function response(data, source, role) {
-  if (!data || data.model !== MODEL || data.revision !== REVISION || data.space_id !== SPACE || data.dimensions !== 768 || data.normalized !== true || data.preprocessing?.version !== 'pilot-v1' || !['bfloat16', 'float32'].includes(data.precision)
-    || data.vectors?.length !== 1 || data.chunks?.length !== 1) fail('Gateway returned an incompatible model space or response.', 502);
+  if (!data || data.model !== MODEL || data.revision !== REVISION || data.space_id !== SPACE || data.dimensions !== 768 || data.normalized !== true || data.preprocessing?.version !== 'pilot-v1' || data.preprocessing.batch_size !== 1 || data.preprocessing.truncation !== false || data.preprocessing.text_prefixes !== 'role-specific; text only' || !['bfloat16', 'float32'].includes(data.precision)
+    || !Array.isArray(data.vectors) || data.vectors.length !== 1 || !Array.isArray(data.chunks) || data.chunks.length !== 1) fail('Gateway returned an incompatible model space or response.', 502);
   const chunk = data.chunks[0];
-  if (chunk.index !== 0 || chunk.input_index !== 0 || chunk.kind !== source.kind || (source.kind === 'text' && (chunk.role !== role || chunk.title_supplied !== Boolean(source.title)))) fail('Gateway returned an invalid input mapping.', 502);
+  if (!chunk || chunk.index !== 0 || chunk.input_index !== 0 || chunk.kind !== source.kind || (source.kind === 'text' && (chunk.role !== role || chunk.title_supplied !== Boolean(source.title)))) fail('Gateway returned an invalid input mapping.', 502);
   const normalized = vector(data.vectors[0]);
   if (Math.abs(Math.hypot(...data.vectors[0]) - 1) > 0.02) fail('Gateway returned an unnormalized vector.', 502);
-  return { model: MODEL, revision: REVISION, space_id: SPACE, dimensions: 768, normalized: true, precision: data.precision, preprocessing: metadata(data.preprocessing), mapping: metadata(chunk), vector: normalized };
+  return { model: MODEL, revision: REVISION, space_id: SPACE, dimensions: 768, normalized: true, precision: data.precision, preprocessing: { version: 'pilot-v1', batch_size: 1, truncation: false, text_prefixes: 'role-specific; text only' }, mapping: preprocessingMapping(chunk, source.kind), vector: normalized };
 }
 module.exports = { MODEL, REVISION, SPACE, KINDS, PilotError, fail, vector, input, response };

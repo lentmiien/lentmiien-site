@@ -15,7 +15,7 @@ beforeEach(async () => {
   reauthorize = jest.fn();
   const app = express(); app.set('views', path.join(__dirname, '../../views')); app.set('view engine', 'pug');
   app.use((req, res, next) => { const role = req.get('x-test-role'); req.user = role ? { _id: owner, name: 'synthetic', type_user: role } : undefined; req.isAuthenticated = () => Boolean(role); req.session = { csrfToken: token }; res.locals.loggedIn = Boolean(role); next(); });
-  app.use('/admin/embeddinggemma2', createRouter({ service, settings: config({ EMBEDDINGGEMMA2_ENABLED: 'true' }), reauthorize }));
+  app.use('/admin/embeddinggemma2', createRouter({ service, settings: config({ EMBEDDINGGEMMA2_ENABLED: 'true', EMBEDDINGGEMMA2_STORAGE_DIR: path.join(os.tmpdir(), 'eg2-test-storage') }), reauthorize }));
   server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve)); base = `http://127.0.0.1:${server.address().port}/admin/embeddinggemma2`;
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'eg2-route-'));
 });
@@ -102,4 +102,22 @@ test('long-request authorization rejects a current account with a revoked admin 
   jest.doMock('../../database', () => ({ UseraccountModel: { findById: () => modelQuery } }));
   const { refreshAuthorization } = require('../../routes/embeddinggemma2');
   await expect(refreshAuthorization({ user: { _id: owner }, sessionID: 'synthetic', sessionStore: { get: (_id, callback) => callback(null, { passport: { user: owner } }) } })).rejects.toThrow('revoked');
+});
+test.each([502, 413, 422])('Gateway failure %s clears query bytes and preserves uncertainty cooldown correctly', async status => {
+  const { PilotError } = require('../../services/embeddingGemma2/contract');
+  service.search.mockRejectedValue(new PilotError('Synthetic Gateway failure', status));
+  const form = new FormData(); form.set('kind', 'audio'); form.set('file', new Blob(['synthetic']), 'tone.wav');
+  const response = await fetch(base + '/api/search', { method: 'POST', headers: { 'x-test-role': 'admin', 'x-csrf-token': token }, body: form });
+  expect(response.status).toBe(status); expect(service.search.mock.calls[0][2].buffer).toBeUndefined();
+  const lease = await service.acquire.mock.results[0].value; expect(lease.release).toHaveBeenCalledWith(status === 502);
+  expect(service.add).not.toHaveBeenCalled();
+});
+test('unsafe stored MIME never streams and HEAD closes its read handle', async () => {
+  const handle = { close: jest.fn() }; service.media.mockResolvedValue({ handle, stat: { size: 10 }, mime: 'text/html' });
+  const headers = { 'x-test-role': 'admin' };
+  expect((await fetch(base + `/api/records/${id}/media`, { headers })).status).toBe(503); expect(handle.close).toHaveBeenCalled();
+  service.media.mockResolvedValue({ handle, stat: { size: 10 }, mime: 'video/mp4' });
+  const response = await fetch(base + `/api/records/${id}/media`, { method: 'HEAD', headers });
+  expect(response.status).toBe(200); expect(response.headers.get('content-length')).toBe('10'); expect(handle.close).toHaveBeenCalledTimes(2);
+  expect((await fetch(base + `/api/records/${id}/media`, { headers: { ...headers, range: 'bytes=-9007199254740993' } })).status).toBe(416);
 });

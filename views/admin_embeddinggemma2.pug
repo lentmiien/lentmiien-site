@@ -28,7 +28,7 @@ block content
             label(for=`${mode}-file`) Media file (maximum 8 MiB)
             input(id=`${mode}-file`, type='file', name='file', disabled)
             p PNG/JPEG/WebP: one image, ≤4 million pixels, longest edge ≤4096. Audio: WAV/MP3/FLAC/Ogg or container audio, ≤10 seconds. Video: MP4/MOV/MKV/WebM, ≤8 seconds, ≤1920×1080 pixels, longest edge ≤2048, ≤4 streams. Animated images are rejected.
-            p Selected files are validated on the server. Search files are temporary and never added to the dataset. Some containers/codecs may require downloading to play locally.
+            p Site checks file signatures and images. Gateway validates audio/video decoding and duration after queue admission, so invalid media can still take time. Search files stay in request memory and are never added to the dataset. Some containers/codecs may require downloading to play locally.
             .eg2-preview
           if mode === 'search'
             label(for='search-filter') Search stored modalities

@@ -16,7 +16,7 @@ function gateway(config, client = axios) {
     } catch (error) {
       if (error.status && !error.isAxiosError) throw error;
       const status = error.response?.status;
-      if ([408, 413, 422, 429].includes(status)) fail(`Gateway rejected the input or admission (HTTP ${status}). Check input limits; do not automatically retry.`, status);
+      if ([408, 413, 422, 429].includes(status)) fail(`Gateway rejected the input or admission (HTTP ${status}). Audio/video decoding and duration are checked by Gateway after admission. Check input limits; do not automatically retry.`, status);
       fail('Gateway unavailable or timed out. The job may still be reclaiming; check Gateway monitoring before retrying.', 502);
     }
   };

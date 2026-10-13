@@ -34,7 +34,7 @@ function setup(rows = [], overrides = {}) {
   };
   const files = { validate: jest.fn(async () => ({ filename: 'fixture.png', mime: 'image/png' })), name: () => 'a'.repeat(48), write: jest.fn(), remove: jest.fn(), clearStaging: jest.fn() };
   const embed = jest.fn(async () => embedding);
-  const service = new PilotService({ ...config({ EMBEDDINGGEMMA2_ENABLED: 'true' }), ...overrides }, { getModels: () => ({ Record }), files, embed });
+  const service = new PilotService({ ...config({ EMBEDDINGGEMMA2_ENABLED: 'true', EMBEDDINGGEMMA2_STORAGE_DIR: require('path').join(require('os').tmpdir(), 'eg2-test-storage') }), ...overrides }, { getModels: () => ({ Record }), files, embed });
   service.models = { Record };
   service.stats = jest.fn(async () => ({ mine: { count: rows.filter(r => r.owner === owner).length, bytes: rows.filter(r => r.owner === owner).reduce((s, r) => s + r.bytes, 0) }, total: rows.length, bytes: rows.reduce((s, r) => s + r.bytes, 0), compatible: rows.filter(r => matches(r, { owner, ...identity })).length }));
   const lease = { assert: jest.fn() };
@@ -101,7 +101,7 @@ test('media ownership is checked before touching disk', async () => {
   files.open = jest.fn(); await expect(service.media(owner, record(1)._id)).rejects.toThrow('not found'); expect(files.open).not.toHaveBeenCalled();
 });
 test('distributed lease refuses contenders and uncertain failures retain cooldown', async () => {
-  const service = new PilotService(config({ EMBEDDINGGEMMA2_ENABLED: 'true' }));
+  const service = new PilotService(config({ EMBEDDINGGEMMA2_ENABLED: 'true', EMBEDDINGGEMMA2_STORAGE_DIR: require('path').join(require('os').tmpdir(), 'eg2-test-storage') }));
   const Lease = { updateOne: jest.fn(async () => ({})), findOneAndUpdate: jest.fn(() => query({ token: 'token' })), exists: jest.fn(() => query(true)) };
   service.ready = async () => ({ Lease });
   const lease = await service.acquire(); await expect(service.acquire()).rejects.toThrow('progress');
@@ -119,4 +119,18 @@ test('database commit failure rolls back the original media and pending record',
   Record.updateOne.mockImplementationOnce(() => { throw new Error('database unavailable'); });
   await expect(service.add(owner, { kind: 'image' }, { buffer: Buffer.from('fixture') }, lease, () => true)).rejects.toThrow('database unavailable');
   expect(files.write).toHaveBeenCalled(); expect(files.remove).toHaveBeenCalledWith('a'.repeat(48)); expect(rows).toHaveLength(0);
+});
+test.each(['add', 'search'])('invalid authoritative Gateway metadata prevents %s persistence', async operation => {
+  const { service, lease, files, Record } = setup(operation === 'search' ? [record(1)] : []);
+  const { gateway } = require('../../services/embeddingGemma2/gateway');
+  const client = { post: jest.fn(async () => ({ data: { ...embedding, vectors: [v()], chunks: [{ index: 0, input_index: 0, kind: 'audio' }], preprocessing: { version: 'pilot-v1', batch_size: 1, truncation: false, text_prefixes: 'role-specific; text only' } } })) };
+  service.embed = gateway(service.config, client);
+  await expect(service[operation](owner, { ...source, kind: 'audio' }, { buffer: Buffer.from('synthetic') }, lease, () => true)).rejects.toMatchObject({ status: 502 });
+  expect(Record.create).not.toHaveBeenCalled(); expect(files.write).not.toHaveBeenCalled();
+});
+test('lease expiration after successful inference prevents creating durable intent', async () => {
+  const { service, lease, Record, files } = setup();
+  lease.assert.mockResolvedValueOnce().mockRejectedValueOnce(new Error('expired'));
+  await expect(service.add(owner, source, null, lease, () => true)).rejects.toThrow('expired');
+  expect(Record.create).not.toHaveBeenCalled(); expect(files.write).not.toHaveBeenCalled();
 });

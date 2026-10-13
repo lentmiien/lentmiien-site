@@ -268,7 +268,9 @@ COMMONS_NPC_MAX_TOKENS=512        # 256-1024; visible text still capped at 1200 
 # Uses existing AI_GATEWAY_BASE_URL (trusted HTTP(S) origin only), no new inference key.
 EMBEDDINGGEMMA2_ENABLED=false
 EMBEDDINGGEMMA2_DB_NAME=embeddinggemma2_pilot
-# Absolute path outside public; no symlinks. Default: private_data/embeddinggemma2 in app checkout.
+# Absolute path outside public; no symlinks. POSIX default: private_data/embeddinggemma2 in app checkout.
+# Windows: required when enabled; pre-create a protected SYSTEM/Administrators-only root.
+# Example: C:\ProgramData\Lentmiien-embeddinggemma2 (see deployment guide).
 EMBEDDINGGEMMA2_STORAGE_DIR=
 EMBEDDINGGEMMA2_TIMEOUT_MS=1800000
 EMBEDDINGGEMMA2_USER_ITEMS=200

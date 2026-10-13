@@ -53,7 +53,7 @@ function createRouter({ service, settings, reauthorize = refreshAuthorization } 
       const range = req.get('range');
       if (range) {
         const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-        if (!match || (!match[1] && !match[2])) { await handle.close(); return res.status(416).set('Content-Range', `bytes */${stat.size}`).end(); }
+        if (!match || (!match[1] && !match[2]) || match.slice(1).some(value => value && !Number.isSafeInteger(Number(value)))) { await handle.close(); return res.status(416).set('Content-Range', `bytes */${stat.size}`).end(); }
         start = match[1] ? Number(match[1]) : Math.max(0, stat.size - Number(match[2]));
         end = match[1] && match[2] ? Math.min(Number(match[2]), end) : end;
         if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= stat.size || (!match[1] && Number(match[2]) === 0)) { await handle.close(); return res.status(416).set('Content-Range', `bytes */${stat.size}`).end(); }
