@@ -3,6 +3,63 @@ const path = require('path');
 const pug = require('pug');
 const domain = require('../../services/taric/historyDomain');
 const { verified } = require('../helpers/taricHistoryFixture');
+test('bulk approval uses all loaded filters and snapshot across pages, needs no per-item input and refreshes results', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric_history.pug'), { csrfToken: 'synthetic-csrf' }),
+    { url: 'http://localhost/admin/taric/history?feedback=present&review=unreviewed&missing=no&mode=test', runScripts: 'outside-only' });
+  const row = verified(1); let approved = false; let finish;
+  dom.window.fetch = jest.fn(async (url, opts) => {
+    if (url.endsWith('/approve-bulk')) {
+      await new Promise(resolve => { finish = resolve; }); approved = true;
+      return { ok: true, json: async () => ({ matched: 120, approved: 119, skipped: [{ id: row.id, reason: 'source_or_review_changed' }], remaining: 0, error: null }) };
+    }
+    return { ok: true, json: async () => ({ rows: [row], stats: { ...domain.stats([row]), total: approved ? 1 : 120 },
+      snapshot: 'a'.repeat(64), next: approved ? null : `${row.createdAt}|${row.id}` }) };
+  });
+  const settle = () => new Promise(setImmediate);
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-history.js'), 'utf8')); await settle();
+  const doc = dom.window.document; const button = doc.querySelector('#approve-bulk');
+  expect(dom.window.fetch).toHaveBeenCalledTimes(1);
+  expect(button.disabled).toBe(false); expect(button.textContent).toContain('120');
+  doc.querySelector('#next').click(); await settle();
+  button.click(); button.click(); await settle();
+  expect(button.disabled).toBe(true);
+  const calls = dom.window.fetch.mock.calls.filter(([url]) => url.endsWith('/approve-bulk'));
+  expect(calls).toHaveLength(1);
+  expect(calls[0][1].headers['X-CSRF-Token']).toBe('synthetic-csrf');
+  expect(JSON.parse(calls[0][1].body)).toEqual({ filters: { mode: 'test', feedback: 'present', review: 'unreviewed', missing: 'no' },
+    expectedSnapshotHash: 'a'.repeat(64), confirm: true });
+  finish(); await settle(); await settle();
+  expect(doc.querySelector('#bulk-result').textContent).toContain('119 approved; 1 skipped; 0 unresolved out of 120 matches');
+  expect(doc.querySelector('#bulk-result').textContent).toContain('source_or_review_changed');
+  expect(button.textContent).toContain('1 matches');
+  doc.querySelector('[name=mode]').value = 'normal';
+  doc.querySelector('[name=mode]').dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  expect(button.disabled).toBe(true);
+  dom.window.close();
+});
+
+test('bulk approval disables unsupported filters and requires reload after stale or interrupted saves', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric_history.pug'), { csrfToken: 'synthetic-csrf' }),
+    { url: 'http://localhost/admin/taric/history', runScripts: 'outside-only' });
+  const row = verified(1);
+  dom.window.fetch = jest.fn(async url => url.endsWith('/approve-bulk')
+    ? { ok: false, status: 409, json: async () => ({ error: 'STALE' }) }
+    : { ok: true, json: async () => ({ rows: [row], stats: domain.stats([row]), snapshot: 'a'.repeat(64) }) });
+  const settle = () => new Promise(setImmediate);
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-history.js'), 'utf8')); await settle();
+  const doc = dom.window.document; const button = doc.querySelector('#approve-bulk');
+  expect(button.disabled).toBe(true);
+  for (const [name, value] of Object.entries({ feedback: 'present', review: 'unreviewed', missing: 'no' })) doc.querySelector(`[name=${name}]`).value = value;
+  doc.querySelector('#filters').dispatchEvent(new dom.window.Event('submit', { cancelable: true })); await settle();
+  expect(button.disabled).toBe(false); button.click(); await settle();
+  expect(doc.querySelector('#bulk-result').textContent).toContain('Snapshot changed');
+  expect(doc.querySelector('#bulk-result').textContent).toContain('Apply filters again');
+  expect(button.disabled).toBe(true);
+  dom.window.close();
+});
+
 test('history DOM safely labels outcomes, review form, filter URL and CSRF preview; stale save is actionable', async () => {
   const { JSDOM } = await import('jsdom');
   const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric_history.pug'), { csrfToken: 'synthetic-csrf' }), { url: 'http://localhost/admin/taric/history?mode=test', runScripts: 'outside-only' });

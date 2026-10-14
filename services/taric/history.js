@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { object, string, fail } = require('../../utils/taricContracts');
 const { hash, sha } = require('../../utils/taricProtocol');
 const domain = require('./historyDomain');
+const logger = require('../../utils/logger');
 const MAX_SCAN = 2000;
 const MAX_BYTES = 32 * 1024 * 1024;
 const query = q => q.maxTimeMS(2000).lean().exec();
@@ -174,6 +175,51 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
     const { rows, populationHash } = await population(owner, filters);
     return { owner, filters, populationHash, rows: rows.filter(r => domain.matches(r, filters)) };
   }
+  async function approveBulk(actor, value) {
+    object(value, ['filters', 'expectedSnapshotHash', 'confirm'], 'INVALID_REQUEST');
+    string(value.expectedSnapshotHash, 64, 'INVALID_REQUEST', /^[a-f0-9]{64}$/);
+    const filters = domain.filters(value.filters);
+    if (value.confirm !== true || filters.feedback !== 'present' || filters.review !== 'unreviewed' || filters.missing !== 'no'
+      || filters.cursor || filters.snapshot) fail('INVALID_REQUEST');
+    const { rows, populationHash } = await selection(actor, filters);
+    if (populationHash !== value.expectedSnapshotHash) fail('STALE');
+    const result = { matched: rows.length, approved: 0, skipped: [], remaining: 0, error: null };
+    const deadline = Date.now() + 30000;
+    for (const row of rows) {
+      if (Date.now() >= deadline) { result.error = 'TIME_LIMIT'; break; }
+      let reason = !domain.codeValid(row.feedback?.code) ? 'invalid_final_code'
+        : row.localClaim || ['queued', 'running'].includes(row.state) ? 'request_busy'
+          : row.revision >= 100 ? 'review_revision_limit'
+            : Buffer.byteLength(JSON.stringify(row.source)) > 128 * 1024 ? 'review_source_too_large' : null;
+      if (!reason) {
+        try {
+          // Reuse the per-case authorization, source binding and append-only CAS.
+          await review(actor, row.id, { expectedRevision: row.revision, expectedSourceHash: row.sourceHash,
+            status: 'verified', target: row.feedback.code, confirmTarget: true, correction: true, approvedDescription: null,
+            note: 'Bulk approval based on prior human verification when selecting the final feedback TARIC code. Training label copies that final choice; original feedback is unchanged. Use stable approved-code registry descriptions.' });
+          result.approved++;
+        } catch (error) {
+          if (['STALE', 'NOT_FOUND'].includes(error.code)) reason = 'source_or_review_changed';
+          else {
+            result.error = error.code === 'FORBIDDEN' ? 'FORBIDDEN' : 'STORAGE_FAILED';
+            // A failed acknowledgement can have an uncertain write outcome.
+            // Stop here; a fresh filtered list resolves what is left to approve.
+            logger.error('TARIC bulk approval interrupted; reload history before retrying remaining entries', {
+              category: 'taric', metadata: { reason: result.error, approved: result.approved, matched: result.matched },
+            });
+            break;
+          }
+        }
+      }
+      if (reason) result.skipped.push({ id: row.id, reason });
+    }
+    result.remaining = result.matched - result.approved - result.skipped.length;
+    if (result.skipped.length || result.error === 'TIME_LIMIT') logger.warning('TARIC bulk approval left entries unresolved; inspect skipped reasons or reload remaining history', {
+      category: 'taric', metadata: { approved: result.approved, skipped: result.skipped.length, remaining: result.remaining,
+        reasons: [...new Set(result.skipped.map(row => row.reason))], timeLimit: result.error === 'TIME_LIMIT' },
+    });
+    return result;
+  }
   async function janPreview(actor, value) {
     object(value, ['filters'], 'INVALID_REQUEST');
     const { filters, rows, populationHash } = await selection(actor, value.filters || {});
@@ -241,6 +287,6 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
     active++;
     try { return await fn(...args); } finally { active--; }
   };
-  return Object.fromEntries(Object.entries({ list, detail, review, preview, download, selection, janPreview, janDownload, currentSource }).map(([name, fn]) => [name, bounded(fn)]));
+  return Object.fromEntries(Object.entries({ list, detail, review, approveBulk, preview, download, selection, janPreview, janDownload, currentSource }).map(([name, fn]) => [name, bounded(fn)]));
 }
 module.exports = { createHistory, MAX_SCAN };

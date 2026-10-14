@@ -1,5 +1,11 @@
 const d = require('../../services/taric/historyDomain');
 const { request, verified, id } = require('../helpers/taricHistoryFixture');
+test('TARIC targets require exactly ten ASCII digits, preserving leading zeros', () => {
+  expect(d.codeValid('0000000002')).toBe(true);
+  for (const code of ['123456789', '12345678901', '1234567890\n', ' 1234567890', '１２３４５６７８９０', 1234567890, null]) {
+    expect(d.codeValid(code)).toBe(false);
+  }
+});
 test('human choice, valid proposal and rejected candidate stay distinct; export allowlist strips secret extras', () => {
   const raw = request(1, { result: null, error: 'CATALOG_REJECTED', diagnostics: { proposal: { taric_code: '9999999999', description: '<img src=x onerror=alert(1)>' }, reasoning: 'SECRET', visibleText: 'SECRET' }, headers: 'SECRET', sessionId: 'SECRET' });
   const row = d.derive(raw);

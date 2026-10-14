@@ -39,6 +39,13 @@ html(lang='en')
         h2#stats-heading Usage in filtered population
         p Feedback decision shares use final feedback as denominator; they are not model accuracy. Verified-but-ineligible includes stale verified revisions.
         #stats.cards
+      section(aria-labelledby='bulk-heading')
+        h2#bulk-heading Approve previously verified final choices
+        p Use Final feedback = present, Review status = unreviewed, and Has missing item data = no. Apply filters first. Bulk approval covers every matching page.
+        p By clicking Approve bulk, I confirm that I already verified these final human TARIC choices when selecting them. Save them as verified training labels with a standard note documenting that prior verification. Original feedback stays unchanged; optional descriptions stay blank for use with stable registry descriptions.
+        button#approve-bulk(type='button' disabled) Approve bulk
+        p#bulk-help Apply the required filters to enable bulk approval.
+        #bulk-result(role='status' aria-live='polite')
       section(aria-labelledby='local-heading')
         h2#local-heading Filtered JAN export & local enrichment
         p Both actions use all matching pages (up to 2,000 filtered cases), not the 50 shown. JAN export does not require verification or candidate eligibility.

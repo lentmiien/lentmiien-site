@@ -36,6 +36,101 @@ run('TARIC human history on standalone Mongo', () => {
       confirmTarget: true, correction: false, note: 'Synthetic human-reviewed source', approvedDescription: null, ...extra };
   }
   async function verify(requestId, extra = {}) { return history.review(actor, requestId, await body(requestId, extra)); }
+  const bulkFilters = { feedback: 'present', review: 'unreviewed', missing: 'no' };
+  async function bulkBody(filters = bulkFilters) {
+    return { filters, expectedSnapshotHash: (await history.list(actor, filters)).snapshot, confirm: true };
+  }
+  test('bulk approves all 120 filtered cases across pages, preserves feedback and sources, and cannot repeat approvals', async () => {
+    for (let n = 1; n <= 120; n++) await seed(n);
+    await seed(121, { feedback: [] }); await seed(122, { evidence: null }); await seed(123, { owner: 'foreign-owner' });
+    for (const [n, status] of [[124, 'verified'], [125, 'needs_review'], [126, 'excluded']]) {
+      await seed(n); await verify(id(n), { status });
+    }
+    await seed(127, { input: { ...request(127).input, test: false } });
+    const filters = { ...bulkFilters, mode: 'test' };
+    const page = await history.list(actor, filters);
+    expect(page.rows).toHaveLength(50); expect(page.stats.total).toBe(120);
+    const second = await history.list(actor, { ...filters, cursor: page.next, snapshot: page.snapshot });
+    const input = { filters, expectedSnapshotHash: second.snapshot, confirm: true };
+    const feedback = await models.Feedback.find({}).sort({ _id: 1 }).lean();
+    const requests = await models.Request.find({}).sort({ _id: 1 }).lean();
+    expect(await history.approveBulk(actor, input)).toEqual({ matched: 120, approved: 120, skipped: [], remaining: 0, error: null });
+    expect(await models.Feedback.find({}).sort({ _id: 1 }).lean()).toEqual(feedback);
+    expect(await models.Request.find({}).sort({ _id: 1 }).lean()).toEqual(requests);
+    const row = await history.detail(actor, id(1));
+    expect(row).toMatchObject({ revision: 1, reviewStatus: 'verified', review: { target: '0000000002', correction: true, actor,
+      approvedDescription: null, sourceHash: row.sourceHash, feedbackId: row.feedback.id, feedbackHash: hash(row.feedback) } });
+    expect(row.audit).toHaveLength(1); expect(row.review.note).toContain('prior human verification');
+    expect(row.review.source).toEqual(row.source);
+    expect(await models.Review.countDocuments()).toBe(123);
+    expect((await history.list(actor, filters)).stats.total).toBe(0);
+    await expect(history.approveBulk(actor, input)).rejects.toThrow('STALE');
+    expect(await history.approveBulk(actor, await bulkBody(filters))).toMatchObject({ approved: 0, matched: 0 });
+  });
+  test('bulk rejects unsafe filters, actor/target injection, missing confirmation and stale populations before writes', async () => {
+    await seed(); const input = await bulkBody();
+    for (const filters of [{}, { ...bulkFilters, review: 'verified' }, { ...bulkFilters, feedback: 'absent' },
+      { ...bulkFilters, missing: 'yes' }, { ...bulkFilters, search: { $ne: '' } }, { ...bulkFilters, owner: 'foreign-owner' },
+      { ...bulkFilters, snapshot: input.expectedSnapshotHash }]) {
+      await expect(history.approveBulk(actor, { ...input, filters })).rejects.toThrow('INVALID_REQUEST');
+    }
+    for (const extra of [{ confirm: false }, { confirm: 'true' }, { actor }, { target: '9999999999' }, { expectedSnapshotHash: 'bad' }]) {
+      await expect(history.approveBulk(actor, { ...input, ...extra })).rejects.toThrow('INVALID_REQUEST');
+    }
+    await expect(history.approveBulk('b'.repeat(24), input)).rejects.toThrow('FORBIDDEN');
+    await seed(2);
+    await expect(history.approveBulk(actor, input)).rejects.toThrow('STALE');
+    expect(await models.Review.countDocuments()).toBe(0);
+  });
+  test('bulk skips invalid final codes and busy cases and includes bound archived local sources', async () => {
+    for (let n = 1; n <= 6; n++) await seed(n, n === 4 ? { state: 'running' } : {});
+    // Legacy corrupt data is deliberately inserted below model validation.
+    for (const [n, code] of [[1, '123456789'], [2, '12345678901'], [3, '1234567890\n']]) {
+      await models.Feedback.collection.updateOne({ request: id(n) }, { $set: { selected_code: code } });
+    }
+    const source = (await history.detail(actor, id(6))).source;
+    await models.Review.create({ _id: id(5), owner: 'synthetic-owner', request: id(5), revision: 0, localRevision: 0, localClaim: id(999) });
+    await models.Review.create({ _id: id(6), owner: 'synthetic-owner', request: id(6), revision: 0, localRevision: 1,
+      originalSource: source, localSource: source });
+    await models.Request.deleteOne({ _id: id(6) }); await models.Feedback.deleteOne({ request: id(6) });
+    const result = await history.approveBulk(actor, await bulkBody());
+    expect(result).toMatchObject({ matched: 6, approved: 1, remaining: 0, error: null });
+    expect(result.skipped.filter(r => r.reason === 'invalid_final_code')).toHaveLength(3);
+    expect(result.skipped.filter(r => r.reason === 'request_busy')).toHaveLength(2);
+    expect(await history.detail(actor, id(6))).toMatchObject({ reviewStatus: 'verified', sourceStorage: 'archived_review', stale: false });
+  });
+  test('bulk skips concurrent reviews and source changes without overwriting them', async () => {
+    await seed(1); await seed(2); await seed(3); const input = await bulkBody();
+    let calls = 0;
+    const racing = createHistory({ models, adminPrincipal: async who => {
+      if (++calls === 2) {
+        await verify(id(3), { status: 'excluded', note: 'Concurrent review' });
+        await models.Request.collection.updateOne({ _id: id(2) }, { $set: { 'evidence.facts.name': 'Changed source' } });
+      }
+      return service.adminPrincipal(who);
+    } });
+    const result = await racing.approveBulk(actor, input);
+    expect(result).toMatchObject({ approved: 1, remaining: 0 });
+    expect(result.skipped).toEqual([3, 2].map(n => ({ id: id(n), reason: 'source_or_review_changed' })));
+    expect(await history.detail(actor, id(3))).toMatchObject({ revision: 1, reviewStatus: 'excluded', review: { note: 'Concurrent review' } });
+    expect(await models.Review.findById(id(2))).toBeNull();
+  });
+  test('bulk storage failure reports partial progress, logs safe metadata and supports retrying remaining entries', async () => {
+    await seed(1); await seed(2); const input = await bulkBody();
+    const update = models.Review.updateOne.bind(models.Review); let calls = 0;
+    const spy = jest.spyOn(models.Review, 'updateOne').mockImplementation((...args) => {
+      if (++calls === 2) throw new Error('Synthetic private failure SECRET');
+      return update(...args);
+    });
+    try {
+      const result = await history.approveBulk(actor, input);
+      expect(result).toEqual({ matched: 2, approved: 1, skipped: [], remaining: 1, error: 'STORAGE_FAILED' });
+      expect(require('../../utils/logger').error).toHaveBeenCalledWith(expect.stringContaining('bulk approval interrupted'),
+        { category: 'taric', metadata: { reason: 'STORAGE_FAILED', approved: 1, matched: 2 } });
+    } finally { spy.mockRestore(); }
+    expect(await history.approveBulk(actor, await bulkBody())).toMatchObject({ matched: 1, approved: 1, remaining: 0 });
+    expect(await models.Review.countDocuments({ revision: 1 })).toBe(2);
+  });
   test('verified final source survives raw deletion, reproduces both hashes, and revocation preserves frozen exports', async () => {
     const rid = await seed(); await verify(rid, { approvedDescription: 'Independently approved synthetic description' });
     const before = await history.detail(actor, rid);
@@ -270,6 +365,20 @@ run('TARIC human history on standalone Mongo', () => {
     const url = `http://127.0.0.1:${server.address().port}/admin/taric/history`;
     const post = (path, value, headers = {}) => fetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf, ...headers }, body: JSON.stringify(value) });
     try {
+      const bulkInput = await bulkBody();
+      expect((await post('/approve-bulk', bulkInput)).status).toBe(403);
+      role = 'family'; expect((await post('/approve-bulk', bulkInput)).status).toBe(403);
+      role = 'admin'; authenticated = false;
+      expect((await post('/approve-bulk', bulkInput)).status).toBe(401);
+      authenticated = true;
+      expect((await post('/approve-bulk', bulkInput, { 'X-CSRF-Token': '' })).status).toBe(403);
+      expect((await post('/approve-bulk', bulkInput, { 'X-CSRF-Token': 'invalid' })).status).toBe(403);
+      expect((await post('/approve-bulk', bulkInput, { Origin: 'https://evil.test' })).status).toBe(403);
+      expect((await fetch(url + '/approve-bulk')).status).toBe(404);
+      expect((await post('/approve-bulk', { ...bulkInput, actor })).status).toBe(400);
+      expect((await post('/approve-bulk', { ...bulkInput, padding: 'x'.repeat(4096) })).status).toBe(413);
+      expect(await models.Review.countDocuments()).toBe(0);
+      role = 'user';
       expect((await fetch(url + '/data')).status).toBe(403); role = 'family'; expect((await fetch(url)).status).toBe(403);
       role = 'admin'; authenticated = false;
       expect((await post(`/${rid}/review`, {}, { Authorization: `Bearer ttk_${'s'.repeat(43)}` })).status).toBe(401);
@@ -288,6 +397,11 @@ run('TARIC human history on standalone Mongo', () => {
       expect(download.status).toBe(200); expect(download.headers.get('content-disposition')).toMatch(/^attachment; filename="taric-candidates-[a-f0-9]{32}\.jsonl"$/);
       expect(download.headers.get('cache-control')).toContain('no-store');
       expect((await fetch(url + '/' + rid + '/review')).status).toBe(404);
+      await seed(3);
+      const bulkResponse = await post('/approve-bulk', await bulkBody());
+      expect(bulkResponse.status).toBe(200); expect(bulkResponse.headers.get('cache-control')).toContain('no-store');
+      expect(await bulkResponse.json()).toMatchObject({ matched: 1, approved: 1 });
+      expect(await models.Review.findById(id(2))).toBeNull();
       const spy = jest.spyOn(models.Request, 'aggregate').mockImplementationOnce(() => { throw new Error('synthetic storage failure SECRET'); });
       const failure = await fetch(url + '/data'); expect(failure.status).toBe(503); expect(await failure.text()).not.toContain('SECRET'); spy.mockRestore();
     } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

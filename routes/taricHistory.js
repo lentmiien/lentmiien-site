@@ -9,6 +9,7 @@ function createHistoryRouter(service, history = createHistory({ models: require(
   router.get('/', (_req, res) => res.render('admin_taric_history'));
   router.get('/guide', require('../controllers/taricHistoryGuideController').render);
   router.get('/data', async (req, res) => res.json(await history.list(actor(req), req.query)));
+  router.post('/approve-bulk', jsonBody('4kb'), async (req, res) => res.json(await history.approveBulk(actor(req), req.body)));
   router.post('/jan/preview', jsonBody('4kb'), async (req, res) => res.json(await history.janPreview(actor(req), req.body)));
   router.post('/jan/download', jsonBody('4kb'), async (req, res) => {
     const result = await history.janDownload(actor(req), req.body);

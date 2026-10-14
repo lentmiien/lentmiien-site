@@ -3,6 +3,7 @@
   const $ = id => document.getElementById(id);
   const base = '/admin/taric/history';
   let current = null; let preview = null; let next = null; let listSnapshot = null; let previewEpoch = 0; let listEpoch = 0;
+  let bulkSelection = null; let bulkBusy = false;
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
   const showStatus = text => { $('status').textContent = text; };
   let janPreview = null; let redoPreview = null; let batch = null; let pollTimer; let detailEpoch = 0;
@@ -15,18 +16,31 @@
   function pairs(container, values) { const dl = el('dl'); for (const [key, value] of Object.entries(values)) { dl.append(el('dt', key), el('dd', value ?? 'Not captured')); } container.append(dl); }
   function details(container, title, text) { const d = el('details'); d.append(el('summary', title), el('pre', text || 'Not captured')); container.append(d); }
   function activeFilters() { return Object.fromEntries([...new FormData($('filters'))].filter(([, v]) => v !== '')); }
+  function invalidateBulk() {
+    bulkSelection = null; $('approve-bulk').disabled = true; $('approve-bulk').textContent = 'Approve bulk';
+    $('bulk-help').textContent = 'Apply the required filters to enable bulk approval.';
+  }
   function selection() { return { descriptionSource: $('description-source').value, mode: $('selection-mode').value, limit: Number($('selection-limit').value), perCode: Number($('selection-cap').value) }; }
   async function load(cursor) {
+    invalidateBulk();
     const epoch = ++listEpoch; $('stats').replaceChildren(); $('requests').replaceChildren(); $('next').hidden = true;
     $('detail').hidden = true; current = null; detailEpoch++;
     invalidate(); showStatus('Loading scoped request history…');
-    const filters = activeFilters(); if (cursor) { filters.cursor = cursor; if (listSnapshot) filters.snapshot = listSnapshot; }
+    const appliedFilters = activeFilters();
+    const filters = { ...appliedFilters }; if (cursor) { filters.cursor = cursor; if (listSnapshot) filters.snapshot = listSnapshot; }
     const query = new URLSearchParams(filters);
     const address = new URLSearchParams(query); if (batch) address.set('job', batch.id);
     history.replaceState(null, '', base + (address.size ? `?${address}` : ''));
     const data = await (await api(`/data?${query}`)).json(); if (epoch !== listEpoch) return; next = data.next; listSnapshot = data.snapshot;
     $('stats').replaceChildren();
     const s = data.stats;
+    if (appliedFilters.feedback === 'present' && appliedFilters.review === 'unreviewed' && appliedFilters.missing === 'no'
+      && JSON.stringify(appliedFilters) === JSON.stringify(activeFilters()) && data.snapshot) {
+      bulkSelection = { filters: appliedFilters, expectedSnapshotHash: data.snapshot, confirm: true };
+      $('approve-bulk').disabled = bulkBusy || s.total === 0;
+      $('approve-bulk').textContent = `Approve bulk (${s.total} matches)`;
+      $('bulk-help').textContent = `${s.total} matching entries across all pages. Only exact 10-digit final codes can be approved; busy or changed entries are skipped.`;
+    }
     const cards = { 'Cases (live + archived)': s.total, 'Live requests': s.live, 'Archived sources (review / local)': s.archived, 'Missing item data': s.missingItemData, 'Local enriched / valid prediction': s.localEnriched, 'Local enriched / model failed': s.localModelFailed, 'Local cases running': s.localPending, Pending: s.pending, Terminal: s.terminal, 'Final feedback (live/captured)': s.feedback, 'Verified labels (live/archived)': s.verified, 'Verified but ineligible': s.verifiedIneligible, 'Candidate eligible': s.eligible, 'Eligible distinct codes': s.codeCoverage };
     for (const [key, value] of Object.entries(cards)) { const card = el('div', undefined, 'card'); card.append(el('strong', String(value)), el('span', key)); $('stats').append(card); }
     for (const [decision, v] of Object.entries(s.decisions)) $('stats').append(el('div', `${decision}: ${v.count} / ${v.denominator} final feedback`, 'card'));
@@ -98,7 +112,26 @@
   const initial = new URLSearchParams(location.search);
   for (const [key, value] of initial) { const control = $('filters').elements.namedItem(key); if (control) control.value = value; }
   $('filters').addEventListener('submit', event => { event.preventDefault(); run(() => load()); });
-  $('filters').addEventListener('input', invalidate);
+  $('filters').addEventListener('input', () => { invalidate(); invalidateBulk(); });
+  $('approve-bulk').addEventListener('click', () => run(async () => {
+    if (!bulkSelection || bulkBusy) return;
+    const input = bulkSelection; bulkBusy = true; invalidateBulk(); invalidate();
+    $('bulk-result').replaceChildren(el('p', 'Approving all matching entries…'));
+    showStatus('Bulk approval in progress…');
+    try {
+      const result = await (await api('/approve-bulk', input)).json();
+      const summary = `${result.approved} approved; ${result.skipped.length} skipped; ${result.remaining} unresolved out of ${result.matched} matches.`;
+      $('bulk-result').replaceChildren(el('p', summary));
+      if (result.skipped.length) details($('bulk-result'), 'Skipped entries', result.skipped.map(row => `${row.id}: ${row.reason}`).join('\n'));
+      if (result.error) $('bulk-result').append(el('p', `Approval stopped (${result.error}). Reloaded filters show the remaining entries; saved approvals are retained.`));
+      bulkBusy = false;
+      await load(); showStatus(summary);
+    } catch (error) {
+      invalidateBulk();
+      $('bulk-result').append(el('p', `${error.message} Apply filters again before retrying. If the response was interrupted, some approvals may already be saved.`));
+      throw error;
+    } finally { bulkBusy = false; }
+  }));
   $('next').addEventListener('click', () => run(() => load(next)));
   $('review-form').addEventListener('submit', event => {
     event.preventDefault(); if (!current) return;

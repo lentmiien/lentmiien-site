@@ -4,7 +4,7 @@ const PROFILE = 'reviewed-code-candidates/1';
 const ALGORITHM = 'reviewed-selector/1';
 const REVIEW_STATES = ['unreviewed', 'verified', 'needs_review', 'excluded'];
 const STATES = ['queued', 'running', 'complete', 'failed', 'interrupted', 'cancelled'];
-const codeValid = v => typeof v === 'string' && /^\d{10}$/.test(v);
+const codeValid = v => typeof v === 'string' && v.length === 10 && /^\d{10}$/.test(v);
 const text = (v, max = 12000) => typeof v === 'string' && v.length <= max ? v : null;
 const iso = v => v && Number.isFinite(new Date(v).getTime()) ? new Date(v).toISOString() : null;
 const normalize = v => (v || '').normalize('NFKC').toLowerCase().replace(/\s+/gu, ' ').trim();
