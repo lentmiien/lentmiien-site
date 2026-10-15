@@ -1,0 +1,104 @@
+{
+  "checks": [
+    "opens as a paused seed with real WebGL output",
+    "play germinates the seed",
+    "pause freezes tree age",
+    "continuous speed slider reaches 200 years per second while paused",
+    "speed changes while playing without pausing",
+    "timeline shortcuts seek and pause",
+    "3,000-year tree completes and stays inspectable",
+    "mouse drag rotates around the tree",
+    "vertical keyboard control updates the elevation slider",
+    "elevation slider moves the camera focus",
+    "zoom responds to keyboard",
+    "reset view restores framing and focus",
+    "vertical buttons remain usable when growth is complete",
+    "automatic orbit moves without advancing completed age",
+    "playback naturally reaches the maximum age and stops",
+    "new beginning returns to seed and preserves selected speed",
+    "Space on scene starts playback",
+    "field notes pause simulation",
+    "Space does not play through the modal",
+    "closing notes resumes previously playing tree",
+    "hidden tabs freeze rather than accumulating offline growth",
+    "visible tab resumes normally",
+    "laptop has no horizontal overflow",
+    "laptop statistics and estimate note fit inside their panel",
+    "mobile layout has no horizontal overflow",
+    "mobile offers touch-accessible playback and property panel",
+    "single-finger orbit works",
+    "two-finger gesture zooms and raises focus",
+    "touch cancellation releases all pointers",
+    "landscape retains access to controls without horizontal overflow",
+    "reduced motion disables decorative orbit and wind",
+    "reduced motion still permits timeline growth",
+    "WebGL denial gives visible recovery guidance and disabled growth controls",
+    "missing local renderer module fails visibly",
+    "context loss stops time and shows reload guidance",
+    "geometry and textures remain bounded across repeated scrubbing",
+    "render uses fewer than 50 calls and 200,000 triangles",
+    "runtime only requests local assets",
+    "no uncaught runtime errors during normal use"
+  ],
+  "renders": [
+    {
+      "calls": 11,
+      "triangles": 155124,
+      "geometries": 11,
+      "textures": 7,
+      "leafCapacity": 20160,
+      "age": 50
+    },
+    {
+      "calls": 11,
+      "triangles": 135060,
+      "geometries": 11,
+      "textures": 7,
+      "leafCapacity": 20160,
+      "age": 500
+    },
+    {
+      "calls": 11,
+      "triangles": 105492,
+      "geometries": 11,
+      "textures": 7,
+      "leafCapacity": 20160,
+      "age": 3000
+    },
+    {
+      "calls": 10,
+      "triangles": 11332,
+      "geometries": 11,
+      "textures": 7,
+      "leafCapacity": 20160,
+      "age": 0
+    },
+    {
+      "calls": 11,
+      "triangles": 135060,
+      "geometries": 11,
+      "textures": 7,
+      "leafCapacity": 20160,
+      "age": 500
+    },
+    {
+      "calls": 11,
+      "triangles": 155124,
+      "geometries": 11,
+      "textures": 7,
+      "leafCapacity": 20160,
+      "age": 50
+    },
+    {
+      "calls": 11,
+      "triangles": 105492,
+      "geometries": 11,
+      "textures": 7,
+      "leafCapacity": 20160,
+      "age": 3000
+    }
+  ],
+  "errors": [],
+  "browser": "153.0.8010.12",
+  "renderer": "Headless Chromium with SwiftShader; physical GPU and touch hardware unverified"
+}

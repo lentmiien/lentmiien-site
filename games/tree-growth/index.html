@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0E0F13">
+  <meta name="description" content="From a tiny seed to an ancient giant. Grow a 3D sequoia, explore its branches, and watch three thousand years unfold.">
+  <title>Seed to Sky · A tree growing simulation</title>
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/color-theme.css">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/model.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+  <svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <symbol id="i-tree" viewBox="0 0 24 24"><path d="M12 2 6 10h3l-5 7h6v5h4v-5h6l-5-7h3L12 2Z"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="m9 5 11 7-11 7V5Z"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+      <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 11a9 9 0 1 1 2 7M3 4v7h7"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="i-orbit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="11" ry="6" transform="rotate(-35 12 12)"/></symbol>
+      <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 14 6-6 6 6"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 10 6 6 6-6"/></symbol>
+      <symbol id="i-fit" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    </defs>
+  </svg>
+  <main class="app" id="app" aria-busy="true">
+    <header class="topbar">
+      <a class="wordmark" href="./" aria-label="Seed to Sky home"><img src="assets/mark.svg" width="33" height="33" alt=""><span>SEED <span class="wordmark-to">to</span> SKY</span></a>
+      <span class="topbar-caption">A LITTLE PERSPECTIVE. A LOT OF TIME.</span>
+      <button class="quiet-button" id="aboutButton"><svg><use href="#i-info"/></svg><span>Field notes</span></button>
+    </header>
+
+    <section class="world" aria-label="Interactive 3D tree">
+      <canvas id="scene" tabindex="0" aria-label="3D tree. Drag to orbit, scroll to zoom. Arrow keys rotate; W and S move the view up and down; plus and minus zoom."></canvas>
+      <div class="scene-vignette" aria-hidden="true"></div>
+      <div class="scene-title">
+        <p class="eyebrow"><span class="small-line"></span> THE ART OF TAKING YOUR TIME</p>
+        <h1>Small beginnings.<br><em>Extraordinary heights.</em></h1>
+        <p id="sceneCaption">A single seed. A whole lifetime ahead.</p>
+      </div>
+      <div class="world-tag"><span class="status-dot"></span><span>SIERRA NEVADA</span><span class="tag-separator">/</span><span>GOLDEN HOUR</span></div>
+      <div class="scale-marker" aria-hidden="true"><span id="scaleLabel">6 mm</span><div></div><small>VIEW SCALE</small></div>
+      <div class="camera-controls" aria-label="Camera controls">
+        <button class="icon-button" id="orbitButton" aria-label="Automatic orbit" aria-pressed="false" title="Automatic orbit"><svg><use href="#i-orbit"/></svg></button>
+        <span class="control-divider"></span>
+        <button class="icon-button" id="raiseButton" aria-label="Move camera focus up" title="Move up (W)"><svg><use href="#i-up"/></svg></button>
+        <label class="sr-only" for="elevation">Camera focus height</label><input id="elevation" type="range" min="0" max="100" value="45" aria-valuetext="45 percent of tree height">
+        <button class="icon-button" id="lowerButton" aria-label="Move camera focus down" title="Move down (S)"><svg><use href="#i-down"/></svg></button>
+        <span class="control-divider"></span>
+        <button class="icon-button" id="zoomInButton" aria-label="Zoom in" title="Zoom in (+)">+</button>
+        <button class="icon-button" id="zoomOutButton" aria-label="Zoom out" title="Zoom out (−)">−</button>
+        <button class="icon-button" id="fitButton" aria-label="Reset camera view" title="Reset view (F)"><svg><use href="#i-fit"/></svg></button>
+      </div>
+      <p class="camera-hint"><svg><use href="#i-orbit"/></svg><span>Drag to orbit</span><span class="hint-dot">·</span><span>Scroll to explore</span></p>
+      <div class="loading" id="loading" role="status"><img src="assets/mark.svg" alt="" width="42" height="42"><p>Preparing a little piece of nature…</p></div>
+      <div class="failure" id="failure" role="alert" hidden><svg><use href="#i-tree"/></svg><h2>A little help getting started.</h2><p id="failureText">The 3D view needs WebGL 2. Enable hardware acceleration in your browser and reload.</p><button class="primary-button" id="reloadButton">Reload the view</button></div>
+    </section>
+
+    <aside class="properties" aria-labelledby="speciesName">
+      <div class="panel-heading"><p class="eyebrow">YOUR LIVING GIANT</p><svg><use href="#i-tree"/></svg></div>
+      <h2 id="speciesName">Giant sequoia</h2>
+      <p class="latin">Sequoiadendron giganteum</p>
+      <div class="stage-label"><span class="status-dot"></span><span id="stage">Seed</span></div>
+      <div class="height-stat"><span class="stat-label">REACHING FOR THE SKY</span><div><strong id="heightValue">0</strong><span id="heightUnit">m</span></div><span class="height-description" id="heightDescription">Every giant starts here.</span></div>
+      <dl class="stat-grid">
+        <div><dt>Tree age</dt><dd id="ageValue">0 <small>years</small></dd></div>
+        <div><dt>Trunk diameter</dt><dd id="diameterValue">—</dd></div>
+        <div><dt>Crown spread</dt><dd id="crownValue">—</dd></div>
+        <div><dt>Carbon stored <span title="An illustrative estimate of carbon in dry trunk wood, excluding roots and branches.">ⓘ</span></dt><dd id="carbonValue">0 <small>kg</small></dd></div>
+      </dl>
+      <div class="rings-stat"><svg viewBox="0 0 58 58" aria-hidden="true"><ellipse cx="29" cy="29" rx="24" ry="22" transform="rotate(-12 29 29)"/><ellipse cx="29" cy="29" rx="18" ry="16" transform="rotate(18 29 29)"/><ellipse cx="29" cy="29" rx="12" ry="10" transform="rotate(-10 29 29)"/><circle cx="29" cy="29" r="4"/></svg><div><strong id="ringsValue">0</strong><span>years written in wood</span></div></div>
+      <div class="field-note"><p class="eyebrow">A MOMENT IN ITS LIFE</p><p id="stageNote">An oatmeal-sized seed holds the possibility of one of the largest living things on Earth.</p></div>
+      <p class="model-note">One tree, imagined over time.<br>Growth and carbon are illustrative estimates.</p>
+    </aside>
+
+    <section class="time-controls" aria-label="Growth controls">
+      <div class="time-heading"><div><p class="eyebrow">LET TIME DO ITS THING</p><p class="time-state" id="timeState">From seed to ancient giant.</p></div><button class="quiet-button" id="restartButton" disabled title="Return to seed"><svg><use href="#i-reset"/></svg><span>New beginning</span></button></div>
+      <div class="playback-row">
+        <button class="primary-button play-button" id="playButton" disabled><svg id="playIcon"><use href="#i-play"/></svg><span id="playLabel">Grow tree</span></button>
+        <div class="speed-control"><div><label for="speed">Passage of time</label><output id="speedValue" for="speed">1 year / sec</output></div><input id="speed" type="range" min="0" max="1000" step="1" value="303" aria-valuetext="1 year per second" disabled><div class="speed-extents"><span>Slow &amp; steady</span><span>Centuries in seconds</span></div></div>
+      </div>
+      <div class="timeline"><label class="sr-only" for="timeline">Tree age</label><input id="timeline" type="range" min="0" max="10000" step="1" value="0" aria-valuetext="0 years" disabled><div class="timeline-labels"><button data-age="0" disabled>Seed</button><button data-age="5" disabled>5 years</button><button data-age="50" disabled>50 years</button><button data-age="500" disabled>500 years</button><button data-age="3000" disabled>3,000 years</button></div></div>
+    </section>
+    <p class="sr-only" id="announcement" role="status" aria-live="polite"></p>
+  </main>
+
+  <dialog id="aboutDialog" aria-labelledby="aboutTitle">
+    <button class="icon-button dialog-close" id="closeAboutButton" aria-label="Close field notes"><svg><use href="#i-close"/></svg></button>
+    <p class="eyebrow">FIELD NOTES / 001</p><h2 id="aboutTitle">A few thousand years<br>in your own time.</h2>
+    <p>Meet the giant sequoia, an evergreen native to California’s Sierra Nevada. Its fibrous red bark, enormous trunk, and high crown make it an extraordinary record of time.</p>
+    <h3>Make yourself at home</h3><ul><li><strong>Grow or pause:</strong> use the play button, or press Space while exploring the scene.</li><li><strong>Change time:</strong> move the speed slider at any time. Scrub the lifetime or tap a year to visit it; seeking pauses growth.</li><li><strong>Explore:</strong> drag to orbit; scroll or pinch to zoom. Shift-drag, right-drag, or two-finger drag to move up and down. The height slider and arrow buttons do the same.</li><li><strong>Keyboard:</strong> focus the scene, then use arrow keys to orbit, W / S to move vertically, + / − to zoom, and F to fit the tree.</li></ul>
+    <h3>A portrait, not a prediction</h3><p>This is an idealized 3,000-year lifetime in favorable conditions. Height, base diameter, canopy, and carbon follow a simplified model. Carbon estimates only the dry trunk’s stored carbon. Real trees respond to weather, competition, fire, and much more.</p>
+    <p>Inspired by the <a href="https://www.nps.gov/seki/learn/nature/bigtrees.htm" target="_blank" rel="noopener noreferrer">National Park Service’s giant sequoia field notes</a>.</p>
+    <button class="primary-button" id="backToTreeButton">Back to the tree</button>
+  </dialog>
+  <noscript><div class="noscript">Enable JavaScript to grow and explore your 3D tree.</div></noscript>
+</body>
+</html>
