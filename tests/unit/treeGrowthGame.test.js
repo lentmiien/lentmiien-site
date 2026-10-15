@@ -4,7 +4,7 @@ const vm = require('vm');
 const crypto = require('crypto');
 const {
   Simulation, properties, ageFromTimeline, timelineFromAge, speedFromSlider, sliderFromSpeed,
-  MAX_AGE, MIN_SPEED, MAX_SPEED, random,
+  MAX_AGE, MIN_SPEED, MAX_SPEED, random, branchBirth, branchGrowth, GrowthFraming,
 } = require('../../games/tree-growth/js/model');
 
 const gameRoot = path.join(__dirname, '../../games/tree-growth');
@@ -97,6 +97,61 @@ describe('Seed to Sky growth model', () => {
     expect(ageFromTimeline(100)).toBeCloseTo(MAX_AGE);
     expect(speedFromSlider(Infinity)).toBe(MIN_SPEED);
     expect(speedFromSlider(100)).toBe(MAX_SPEED);
+  });
+
+  test('old trees still add meaningful height and girth across the remaining lifetime', () => {
+    const mature = properties(500), ancient = properties(1500), final = properties(MAX_AGE);
+    expect(ancient.height).toBeGreaterThan(mature.height * 1.3);
+    expect(final.height).toBeGreaterThan(ancient.height * 1.15);
+    expect(final.diameter).toBeGreaterThan(ancient.diameter * 1.2);
+  });
+
+  test('new branches emerge throughout life from fixed points below the growing leader', () => {
+    const births = Array.from({ length: 120 }, (_, i) => branchBirth(i, 120));
+    for (const [from, to] of [[0, 5], [5, 50], [50, 500], [500, 1500], [1500, MAX_AGE]]) {
+      expect(births.some(birth => birth.age > from && birth.age < to)).toBe(true);
+    }
+    births.forEach(birth => {
+      expect(birth.height).toBeLessThan(properties(birth.age).height);
+      const attachmentHeight = birth.height;
+      expect(branchGrowth(birth, birth.age - .01)).toBe(0);
+      expect(branchGrowth(birth, birth.age)).toBe(0);
+      const shoot = branchGrowth(birth, birth.age + 1);
+      expect(shoot).toBeGreaterThan(0);
+      expect(shoot).toBeLessThan(branchGrowth(birth, birth.age + 20));
+      expect(branchGrowth(birth, MAX_AGE)).toBeLessThanOrEqual(1);
+      expect(birth.height).toBe(attachmentHeight);
+    });
+  });
+
+  test('camera holds its position while the tree grows, and only reframes at its boundary', () => {
+    const camera = new GrowthFraming();
+    camera.update(properties(50).height);
+    const before = { span: camera.span, focus: camera.focus };
+    for (let age = 51; age <= 100; age++) camera.update(properties(age).height);
+    expect({ span: camera.span, focus: camera.focus }).toEqual(before);
+    camera.update(properties(300).height);
+    expect(camera.span).toBeGreaterThan(before.span);
+    const matureSpan = camera.span;
+    camera.update(properties(5).height);
+    expect(camera.span).toBeLessThan(matureSpan);
+    camera.fit(0);
+    expect(camera.span).toBeLessThan(.02);
+    expect(camera.focus).toBeLessThan(.003);
+  });
+
+  test('locked framing survives growth and scrubbing until Fit releases it', () => {
+    const camera = new GrowthFraming();
+    camera.update(properties(500).height);
+    camera.locked = true;
+    const held = { span: camera.span, focus: camera.focus };
+    for (const age of [3000, 0, 1500]) {
+      camera.update(properties(age).height);
+      expect({ span: camera.span, focus: camera.focus }).toEqual(held);
+    }
+    camera.fit(properties(3000).height);
+    expect(camera.locked).toBe(false);
+    expect(camera.span).toBeGreaterThan(properties(3000).height);
   });
 
   test('procedural randomness is reproducible and bounded', () => {

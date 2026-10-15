@@ -69,7 +69,7 @@
       previousStage = tree.stage;
       get('stage').textContent = tree.stage;
       get('stageNote').textContent = notes[tree.stage];
-      get('sceneCaption').textContent = tree.stage === 'Seed' ? 'A single seed. A whole lifetime ahead.' : tree.stage === 'Ancient giant' ? 'Centuries in its branches. A living history.' : 'Every branch a little higher. Every year a little stronger.';
+      get('sceneCaption').textContent = tree.stage === 'Seed' ? 'A single seed. A whole lifetime ahead.' : tree.stage === 'Ancient giant' ? 'Centuries in its branches. Still reaching higher.' : 'New shoots reach out. Another layer of wood takes hold.';
       get('announcement').textContent = `Your tree is now a ${tree.stage.toLowerCase()}.`;
     }
     updatePlayback();
@@ -97,13 +97,14 @@
   get('speed').addEventListener('input', event => { sim.setSpeed(speedFromSlider(Number(event.target.value) / 1000)); updatePlayback(); });
   get('timeline').addEventListener('input', event => seek(ageFromTimeline(Number(event.target.value) / 10000)));
   for (const button of document.querySelectorAll('[data-age]')) button.addEventListener('click', () => seek(Number(button.dataset.age)));
-  get('restartButton').addEventListener('click', () => { sim.reset(); view.resetCamera(); setOrbit(false); snapCamera = true; updateUi(); get('announcement').textContent = 'A new beginning. Your seed is ready to grow.'; });
-  get('elevation').addEventListener('input', event => { view?.setElevation(Number(event.target.value) / 100); get('elevation').setAttribute('aria-valuetext', `${event.target.value} percent of tree height`); });
+  get('restartButton').addEventListener('click', () => { sim.reset(); view.resetCamera(0); setOrbit(false); snapCamera = true; updateUi(); get('announcement').textContent = 'A new beginning. Your seed is ready to grow.'; });
+  get('elevation').addEventListener('input', event => { view?.setElevation(Number(event.target.value) / 100); get('elevation').setAttribute('aria-valuetext', `${event.target.value} percent of view height`); });
   get('raiseButton').addEventListener('click', () => view?.moveElevation(.08));
   get('lowerButton').addEventListener('click', () => view?.moveElevation(-.08));
   get('zoomInButton').addEventListener('click', () => view?.changeZoom(.82));
   get('zoomOutButton').addEventListener('click', () => view?.changeZoom(1.22));
   get('fitButton').addEventListener('click', () => { view?.resetCamera(); setOrbit(false); });
+  get('lockButton').addEventListener('click', () => view?.setFramingLocked(!view.framing.locked));
   get('orbitButton').addEventListener('click', () => setOrbit(!view?.autoOrbit));
   get('reloadButton').addEventListener('click', () => window.location.reload());
   get('aboutButton').addEventListener('click', () => {
@@ -146,9 +147,12 @@
   async function boot() {
     try {
       const { TreeView } = await import('./renderer.mjs');
-      view = new TreeView(get('scene'), reducedMotion, value => {
+      view = new TreeView(get('scene'), reducedMotion, (value, locked = view?.framing.locked || false) => {
         get('elevation').value = String(Math.round(value * 100));
-        get('elevation').setAttribute('aria-valuetext', `${Math.round(value * 100)} percent of tree height`);
+        get('elevation').setAttribute('aria-valuetext', `${Math.round(value * 100)} percent of view height`);
+        get('lockButton').setAttribute('aria-pressed', String(locked));
+        get('lockButton').title = locked ? 'Camera framing held. Click to allow automatic pullbacks.' : 'Hold camera framing to watch growth';
+        get('framingLabel').textContent = locked ? 'FRAMING HELD' : 'ROOM TO GROW';
       });
       view.updateTree(sim.tree); view.render(0, 0, true);
       ready = true;

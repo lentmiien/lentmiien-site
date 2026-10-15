@@ -5,7 +5,7 @@ const path = require('node:path');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const base = process.env.TREE_GROWTH_URL || 'http://127.0.0.1:8768/';
 const output = process.env.TREE_GROWTH_OUTPUT || '/tmp/tree-growth-validation';
-const checks = [], errors = [], requests = [], renders = [];
+const checks = [], errors = [], requests = [], renders = [], growth = [];
 const check = (name, condition) => {
   assert.ok(condition, name); checks.push(name);
   if (checks.length % 10 === 0) console.log(`${checks.length} checks passed: ${name}`);
@@ -24,7 +24,12 @@ async function instrument(page) {
   await page.route('**/renderer.mjs', async route => {
     const response = await route.fetch();
     const source = await response.text();
-    await route.fulfill({ response, body: source.replace('this.canvas = canvas;', 'this.canvas = canvas; window.__view = this;') });
+    const branchMarker = 'for (let part = 0; part < 4; part++) {';
+    assert.ok(source.includes(branchMarker), 'branch attachment instrumentation is present');
+    await route.fulfill({ response, body: source
+      .replace('this.canvas = canvas;', 'this.canvas = canvas; window.__view = this;')
+      .replace('let woodIndex = 0, leafIndex = 0;', 'let woodIndex = 0, leafIndex = 0; window.__branchRoots = {};')
+      .replace(branchMarker, `window.__branchRoots[branch.birth.age] = point(0).y; ${branchMarker}`) });
   });
 }
 
@@ -42,6 +47,58 @@ async function inspectRender(page) {
     const view = window.__view;
     return { calls: view.renderer.info.render.calls, triangles: view.renderer.info.render.triangles, geometries: view.renderer.info.memory.geometries, textures: view.renderer.info.memory.textures, leafCapacity: view.leaves.instanceMatrix.count, age: window.__simulation.age };
   });
+}
+
+async function inspectGrowth(page) {
+  return page.evaluate(() => {
+    const view = window.__view, positions = view.trunk.geometry.attributes.position;
+    const { width, height } = view.canvas.getBoundingClientRect();
+    const project = point => {
+      point.project(view.camera);
+      return { x: (point.x + 1) * width / 2, y: (1 - point.y) * height / 2 };
+    };
+    const base = project(view.target.clone().set(0, 0, 0));
+    const tip = project(view.target.clone().fromBufferAttribute(positions, 64 * 81));
+    const baseRing = Array.from({ length: 81 }, (_, i) => project(view.target.clone().fromBufferAttribute(positions, i)).x);
+    return {
+      age: view.lastAge,
+      heightPixels: Math.hypot(tip.x - base.x, tip.y - base.y),
+      trunkPixels: Math.max(...baseRing) - Math.min(...baseRing),
+      camera: view.camera.position.toArray(), target: view.target.toArray(),
+      branches: { ...window.__branchRoots },
+    };
+  });
+}
+
+async function growUntil(page, age) {
+  await page.locator('#playButton').click();
+  // Pause through the actual control in the first frame that crosses the age.
+  await page.waitForFunction(age => {
+    if (window.__simulation.age < age) return false;
+    document.getElementById('playButton').click();
+    return true;
+  }, age, { timeout: 60000 });
+  await page.waitForFunction(() => window.__view.lastAge === window.__simulation.age);
+}
+
+async function checkVisibleGrowth(page, label, from, to, minimumHeight, minimumGirth) {
+  await range(page, 'timeline', Math.log1p(from) / Math.log1p(3000) * 10000);
+  await page.waitForFunction(age => Math.abs(window.__view.lastAge - age) < 1, from);
+  await page.locator('#fitButton').click();
+  await page.waitForFunction(() => window.__view.cameraHeight === window.__view.framing.span);
+  const before = await inspectGrowth(page);
+  await page.screenshot({ path: path.join(output, `${label}-before.png`) });
+  await range(page, 'speed', from < 100 ? Math.log(20 / .1) / Math.log(200 / .1) * 1000 : 1000);
+  await growUntil(page, to);
+  const after = await inspectGrowth(page);
+  await page.screenshot({ path: path.join(output, `${label}-after.png`) });
+  check(`${label}: tree grows taller on screen during playback`, after.heightPixels > before.heightPixels * minimumHeight);
+  check(`${label}: trunk grows wider on screen during playback`, after.trunkPixels > before.trunkPixels * minimumGirth);
+  check(`${label}: camera remains stationary during the measured growth`, before.camera.every((n, i) => Math.abs(n - after.camera[i]) < 1e-8) && before.target.every((n, i) => Math.abs(n - after.target[i]) < 1e-8));
+  const commonRoots = Object.keys(before.branches).filter(key => key in after.branches);
+  check(`${label}: existing branches stay at their attachment height`, commonRoots.length > 10 && commonRoots.every(key => Math.abs(before.branches[key] - after.branches[key]) < 1e-8));
+  check(`${label}: additional branches emerge during playback`, Object.keys(after.branches).some(key => !(key in before.branches)));
+  growth.push({ label, before, after, heightIncreasePercent: (after.heightPixels / before.heightPixels - 1) * 100, girthIncreasePercent: (after.trunkPixels / before.trunkPixels - 1) * 100 });
 }
 
 (async () => {
@@ -69,6 +126,33 @@ async function inspectRender(page) {
     check('timeline shortcuts seek and pause', await page.evaluate(() => window.__simulation.age === 5 && !window.__simulation.playing));
     await page.waitForTimeout(200);
     await page.screenshot({ path: path.join(output, '02-sapling-desktop.png') });
+    await page.evaluate(() => {
+      const view = window.__view;
+      window.__landmarks = JSON.stringify({ stones: [...view.pebbles.instanceMatrix.array], ground: [...view.ground.geometry.attributes.position.array], groundScale: view.ground.scale.toArray(), soil: view.soil.repeat.toArray(), figure: view.scaleFigure.matrixWorld.toArray() });
+    });
+    await checkVisibleGrowth(page, 'young-growth', 50, 100, 1.45, 1.65);
+    const previousSpan = await page.evaluate(() => window.__view.framing.span);
+    await growUntil(page, 150);
+    await page.waitForFunction(() => window.__view.cameraHeight === window.__view.framing.span);
+    check('automatic pullback makes room only after the tree outgrows its framing', await page.evaluate(span => window.__view.framing.span > span && window.__view.cameraHeight === window.__view.framing.span, previousSpan));
+    check('pullback leaves the trunk and growing leader inside the view', await page.evaluate(() => {
+      const view = window.__view;
+      const tip = view.target.clone().fromBufferAttribute(view.trunk.geometry.attributes.position, 64 * 81).project(view.camera);
+      const base = view.target.clone().set(0, 0, 0).project(view.camera);
+      return Math.abs(tip.y) < .9 && Math.abs(base.y) < .9;
+    }));
+    await checkVisibleGrowth(page, 'ancient-growth', 1500, 2500, 1.1, 1.15);
+    check('ground, stones, soil texture, and scale figure stay fixed across growth', await page.evaluate(() => {
+      const view = window.__view;
+      return window.__landmarks === JSON.stringify({ stones: [...view.pebbles.instanceMatrix.array], ground: [...view.ground.geometry.attributes.position.array], groundScale: view.ground.scale.toArray(), soil: view.soil.repeat.toArray(), figure: view.scaleFigure.matrixWorld.toArray() });
+    }));
+    await page.locator('#lockButton').click();
+    const held = await page.evaluate(() => ({ camera: window.__view.camera.position.toArray(), target: window.__view.target.toArray() }));
+    await page.locator('[data-age="50"]').click();
+    await page.waitForFunction(() => window.__view.lastAge === 50);
+    check('camera lock holds framing through timeline changes', await page.evaluate(held => window.__view.framing.locked && window.__view.camera.position.toArray().every((n, i) => n === held.camera[i]) && window.__view.target.toArray().every((n, i) => n === held.target[i]), held));
+    await page.locator('#fitButton').click();
+    check('Fit releases camera lock and restores room for the current tree', await page.locator('#lockButton').getAttribute('aria-pressed') === 'false' && await page.evaluate(() => !window.__view.framing.locked && window.__view.framing.span < 40));
     for (const age of [50, 500, 3000, 0, 500, 50, 3000]) {
       await page.locator(`[data-age="${age}"]`).click();
       await page.waitForFunction(value => window.__view.lastAge === value, age);
@@ -182,11 +266,11 @@ async function inspectRender(page) {
     check('context loss stops time and shows reload guidance', await lost.locator('#failure').isVisible() && await lost.evaluate(() => !window.__simulation.playing));
     await lost.close();
     console.log('Render budgets:', JSON.stringify(renders));
-    check('geometry and textures remain bounded across repeated scrubbing', renders.every(r => r.geometries === renders[0].geometries && r.textures === renders[0].textures && r.leafCapacity === 20160));
+    check('geometry and textures remain bounded across repeated scrubbing', renders.every(r => r.geometries === renders[0].geometries && r.textures === renders[0].textures && r.leafCapacity === 30240));
     check('render uses fewer than 50 calls and 200,000 triangles', renders.every(r => r.calls < 50 && r.triangles < 200000));
     check('runtime only requests local assets', requests.every(url => url.startsWith(base)));
     check('no uncaught runtime errors during normal use', errors.length === 0);
-    fs.writeFileSync(path.join(output, 'browser-results.json'), JSON.stringify({ checks, renders, errors, browser: await browser.version(), renderer: 'Headless Chromium with SwiftShader; physical GPU and touch hardware unverified' }, null, 2) + '\n');
+    fs.writeFileSync(path.join(output, 'browser-results.json'), JSON.stringify({ checks, renders, growth, errors, browser: await browser.version(), renderer: 'Headless Chromium with SwiftShader; physical GPU and touch hardware unverified' }, null, 2) + '\n');
     console.log(`${checks.length} browser checks passed; ${errors.length} uncaught errors.`);
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

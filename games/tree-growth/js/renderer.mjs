@@ -1,8 +1,8 @@
 import * as THREE from '../vendor/three.module.min.js';
 
-const { clamp, smooth, random } = window.TreeGrowth;
+const { clamp, smooth, random, branchBirth, branchGrowth, GrowthFraming } = window.TreeGrowth;
 const UP = new THREE.Vector3(0, 1, 0);
-const BRANCH_COUNT = 120;
+const BRANCH_COUNT = 180;
 const TWIG_COUNT = 12;
 const SPRAYS_PER_TWIG = 7;
 const LEAF_COUNT = BRANCH_COUNT * TWIG_COUNT * SPRAYS_PER_TWIG * 2;
@@ -118,7 +118,7 @@ export class TreeView {
     this.canvas = canvas;
     this.reducedMotion = reducedMotion;
     this.onCameraChange = onCameraChange;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -128,11 +128,11 @@ export class TreeView {
     this.renderer.toneMappingExposure = 1.15;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#89958c');
-    this.scene.fog = new THREE.FogExp2('#939b8d', .01);
+    this.scene.fog = new THREE.FogExp2('#939b8d', .0006);
     this.scene.fog.color.setRGB(.53, .57, .51);
     this.camera = new THREE.PerspectiveCamera(38, 1, .00001, 10000);
     this.camera.position.set(.02, .013, .025);
-    this.frameHeight = .018;
+    this.framing = new GrowthFraming();
     this.cameraHeight = .018;
     this.focusHeight = .002;
     this.theta = .55;
@@ -158,6 +158,7 @@ export class TreeView {
     this.makeSky();
     this.makeTree();
     this.makeGround();
+    this.makeScaleFigure();
     this.bindCamera();
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
@@ -175,7 +176,7 @@ export class TreeView {
           vec3 zenith = vec3(.12, .22, .25);
           vec3 c = mix(horizon, zenith, pow(max(d.y, 0.0), .48));
           float sun = pow(max(dot(d, normalize(vec3(-.6, .65, -.4))), 0.0), 12.0);
-          c += vec3(.32, .22, .09) * sun;
+          c += vec3(.32, .22, .09) * sun * smoothstep(0.0, .3, d.y);
           gl_FragColor = vec4(c, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
@@ -242,11 +243,11 @@ export class TreeView {
     if (!this.reducedMotion) this.leaves.customDepthMaterial.onBeforeCompile = windShader;
     this.scene.add(this.leaves);
     this.branches = Array.from({ length: BRANCH_COUNT }, (_, index) => ({
-      t: .095 + index / BRANCH_COUNT * .89,
+      birth: branchBirth(index, BRANCH_COUNT),
       angle: index * 2.399963 + rng() * .7,
       size: .7 + rng() * .3,
       lift: .5 + rng() * .7,
-      sprays: Array.from({ length: TWIG_COUNT * SPRAYS_PER_TWIG }, () => ({ x: rng() - .5, y: rng() - .5, z: rng() - .5, size: .7 + rng() * .6, rotation: rng() * Math.PI * 2 })),
+      sprays: Array.from({ length: TWIG_COUNT * SPRAYS_PER_TWIG }, () => ({ x: rng() - .5, y: rng() - .5, z: rng() - .5, size: .7 + rng() * .6, rotation: rng() * Math.PI * 2, shade: rng() })),
     }));
     for (let i = 0; i < LEAF_COUNT; i++) {
       color.setHSL(.23 + rng() * .035, .15 + rng() * .16, .75 + rng() * .18);
@@ -274,23 +275,40 @@ export class TreeView {
   makeGround() {
     this.soil = soilTexture(); this.soil.wrapS = this.soil.wrapT = THREE.RepeatWrapping;
     this.soil.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
-    this.ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial({ map: this.soil, bumpMap: this.soil, bumpScale: .006, roughness: 1 }));
-    this.groundScale = { value: 1 };
+    // Small central faces keep millimetre-scale texture coordinates precise;
+    // wider concentric faces extend the same, stationary soil to the horizon.
+    const groundPositions = [], groundUvs = [], groundIndices = [];
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    let inner = 0;
+    for (const outer of [.025, .25, 2.5, 25, 250, 10000]) {
+      for (let side = 0; side < 4; side++) {
+        const a = corners[side], b = corners[(side + 1) % 4], offset = groundPositions.length / 3;
+        for (const [corner, radius] of [[a, inner], [a, outer], [b, outer], [b, inner]]) {
+          const x = corner[0] * radius, z = corner[1] * radius;
+          groundPositions.push(x, 0, z); groundUvs.push(x * 40, z * 40);
+        }
+        groundIndices.push(offset, offset + 2, offset + 1, offset, offset + 3, offset + 2);
+      }
+      inner = outer;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(groundPositions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(groundUvs, 2));
+    geometry.setIndex(groundIndices); geometry.computeVertexNormals();
+    this.ground = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ map: this.soil, bumpMap: this.soil, bumpScale: .0002, roughness: 1 }));
     this.ground.material.onBeforeCompile = shader => {
-      shader.uniforms.uGroundScale = this.groundScale;
       shader.vertexShader = 'varying vec3 vGroundPosition;\n' + shader.vertexShader;
       shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundPosition = (modelMatrix * vec4(position, 1.0)).xyz;');
-      shader.fragmentShader = `uniform float uGroundScale; varying vec3 vGroundPosition;
+      shader.fragmentShader = `varying vec3 vGroundPosition;
         float soilHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float soilNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(soilHash(i), soilHash(i+vec2(1,0)),f.x),mix(soilHash(i+vec2(0,1)),soilHash(i+vec2(1,1)),f.x),f.y); }
         ` + shader.fragmentShader;
       shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-        vec2 p = vGroundPosition.xz / uGroundScale;
-        float soil = soilNoise(p*7.0)*.45 + soilNoise(p*33.0)*.3 + soilNoise(p*150.0)*.25;
+        vec2 p = vGroundPosition.xz;
+        float soil = soilNoise(p*.7)*.45 + soilNoise(p*5.0)*.3 + soilNoise(p*90.0)*.25;
         diffuseColor.rgb *= mix(vec3(.55,.57,.48), vec3(1.2,1.1,.91), soil);
       `);
     };
-    this.ground.rotation.x = -Math.PI / 2;
     this.ground.receiveShadow = true; this.scene.add(this.ground);
     const contactMap = canvasTexture(128, 128, (ctx) => {
       const gradient = ctx.createRadialGradient(64, 64, 5, 64, 64, 62);
@@ -299,19 +317,62 @@ export class TreeView {
     });
     this.contact = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: contactMap, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 }));
     this.contact.rotation.x = -Math.PI / 2; this.scene.add(this.contact);
-    this.pebbles = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ roughness: 1 }), 180);
+    this.pebbles = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ roughness: 1 }), 360);
     this.pebbles.receiveShadow = true; this.pebbles.castShadow = true; this.pebbles.frustumCulled = false;
     this.scene.add(this.pebbles);
+    // All landmarks are in metres and stay put for the entire lifetime.
+    const rng = random(78912);
+    for (let i = 0; i < 360; i++) {
+      const range = i < 120 ? .04 : i < 240 ? 1.6 : 40;
+      const a = rng() * Math.PI * 2, distance = (Math.sqrt(rng()) + .05) * range;
+      const size = range * .004 * (.3 + rng());
+      dummy.position.set(Math.cos(a) * distance, size * .16, Math.sin(a) * distance);
+      dummy.rotation.set(rng() * 5, rng() * 6, rng() * 5);
+      dummy.scale.set(size, size * .45, size * .8); dummy.updateMatrix(); this.pebbles.setMatrixAt(i, dummy.matrix);
+      color.setHSL(.1, .12 + rng() * .18, .15 + rng() * .13); this.pebbles.setColorAt(i, color);
+    }
+    const ringMaterial = new THREE.MeshBasicMaterial({ color: '#d2bb81', transparent: true, opacity: .12, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    for (const radius of [.01, .05, .2, 1, 2, 5, 10, 20]) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(radius, radius * 1.0035, 128), ringMaterial);
+      ring.rotation.x = -Math.PI / 2; this.scene.add(ring);
+    }
+  }
+
+  makeScaleFigure() {
+    // A quiet, life-size reference. It never follows or scales with the tree.
+    const parts = [
+      { position: [0, 1.67, 0], scale: [.105, .13, .10], color: '#b8a08a' },
+      { position: [0, 1.31, 0], scale: [.22, .28, .13], color: '#b59b63' },
+      { position: [0, 1.03, 0], scale: [.17, .13, .12], color: '#464a43' },
+      { position: [-.11, .56, 0], scale: [.075, .45, .08], color: '#464a43', lean: -.035 },
+      { position: [.11, .56, 0], scale: [.075, .45, .08], color: '#464a43', lean: .035 },
+      { position: [-.13, .055, .045], scale: [.09, .055, .15], color: '#363932' },
+      { position: [.13, .055, .045], scale: [.09, .055, .15], color: '#363932' },
+      { position: [-.26, 1.16, 0], scale: [.065, .30, .065], color: '#b59b63', lean: -.14 },
+      { position: [.26, 1.16, 0], scale: [.065, .30, .065], color: '#b59b63', lean: .14 },
+      { position: [-.30, .84, 0], scale: [.05, .07, .045], color: '#b8a08a' },
+      { position: [.30, .84, 0], scale: [.05, .07, .045], color: '#b8a08a' },
+    ];
+    this.scaleFigure = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshStandardMaterial({ roughness: .95 }), parts.length);
+    parts.forEach((part, i) => {
+      dummy.position.fromArray(part.position);
+      dummy.rotation.set(0, 0, part.lean || 0);
+      dummy.scale.fromArray(part.scale); dummy.updateMatrix();
+      this.scaleFigure.setMatrixAt(i, dummy.matrix);
+      this.scaleFigure.setColorAt(i, color.set(part.color));
+    });
+    this.scaleFigure.position.set(-7, 0, 4);
+    this.scaleFigure.castShadow = this.scaleFigure.receiveShadow = true;
+    this.scene.add(this.scaleFigure);
   }
 
   updateTree(tree) {
     if (tree.age === this.lastAge) return;
     this.lastAge = tree.age;
     const h = Math.max(tree.height, .00001), r = tree.diameter / 2;
-    this.frameHeight = Math.max(.016, h);
-    this.focusHeight = Math.max(.002, h);
+    this.framing.update(tree.height);
     this.trunk.visible = tree.age > .04;
-    this.wood.visible = this.leaves.visible = tree.age > .35;
+    this.wood.visible = this.leaves.visible = tree.age > .18;
     this.seed.visible = tree.age < .8;
     this.seed.children[0].position.x = -.0004 - smooth(.02, .18, tree.age) * .001;
     this.seed.children[1].position.x = .0004 + smooth(.02, .18, tree.age) * .001;
@@ -335,8 +396,9 @@ export class TreeView {
     this.bark.repeat.set(3, 1 + tree.maturity * 2);
     let woodIndex = 0, leafIndex = 0;
     for (const branch of this.branches) {
-      const { t, angle } = branch;
-      const growth = smooth(.2 + t * .6, 1.8 + t * 3, tree.age);
+      const { angle, birth } = branch;
+      const t = clamp(birth.height / h, 0, 1);
+      const growth = branchGrowth(birth, tree.age);
       const retention = smooth(tree.crownBase - .035, tree.crownBase + .055, t);
       const q = clamp((t - tree.crownBase) / (1 - tree.crownBase), 0, 1);
       const conical = Math.pow(Math.max(0, (1 - t) / (1 - tree.crownBase)), .82);
@@ -350,7 +412,7 @@ export class TreeView {
       const baseZ = h * .004 * Math.sin(t * 7);
       const point = u => ({
         x: baseX + ax * (rootRadius + length * u),
-        y: h * t + length * (-.13 * Math.sin(u * Math.PI) + u * u * (.2 + t * .27)) * branch.lift,
+        y: birth.height + length * (-.13 * Math.sin(u * Math.PI) + u * u * (.2 + t * .27)) * branch.lift,
         z: baseZ + az * (rootRadius + length * u),
       });
       for (let part = 0; part < 4; part++) {
@@ -359,29 +421,36 @@ export class TreeView {
       }
       for (let twig = 0; twig < TWIG_COUNT; twig++) {
         const u = .2 + twig / TWIG_COUNT * .78;
+        const twigGrowth = smooth(.01 + u * .12, .13 + u * .5, growth);
+        if (twigGrowth < .001) continue;
         const p = point(u);
         const sign = twig % 2 ? 1 : -1;
         const twigAngle = angle + sign * (.65 + (1 - u) * .55);
-        const twigLength = length * (.36 - u * .18);
+        const twigLength = length * (.36 - u * .18) * twigGrowth;
         const dx = Math.cos(twigAngle), dz = Math.sin(twigAngle);
         start.set(p.x, p.y, p.z);
         end.set(p.x + dx * twigLength, p.y + twigLength * .38, p.z + dz * twigLength);
-        placeSegment(this.wood, woodIndex++, start, end, Math.max(1e-9, r * .033 * (1 - t) * growth * retention));
+        placeSegment(this.wood, woodIndex++, start, end, Math.max(1e-9, r * .033 * (1 - t) * growth * retention * twigGrowth));
         for (let spray = 0; spray < SPRAYS_PER_TWIG; spray++) {
           const a = branch.sprays[twig * SPRAYS_PER_TWIG + spray];
           const s = .18 + spray / SPRAYS_PER_TWIG * .9;
-          const size = Math.max(1e-9, length * .20 * a.size * (1 - u * .26));
+          const unfolding = smooth(s * .35, .42 + s * .5, twigGrowth);
+          if (unfolding < .001) continue;
+          const size = Math.max(1e-9, length * .20 * a.size * (1 - u * .26) * unfolding);
+          color.setHSL(.23 + a.shade * .035, .22 + (1 - unfolding) * .25, .75 + a.shade * .15 + (1 - unfolding) * .08);
           dummy.position.set(p.x + dx * twigLength * s + a.x * size * .6, p.y + twigLength * .38 * s + a.y * size * .7, p.z + dz * twigLength * s + a.z * size * .6);
           for (let cross = 0; cross < 2; cross++) {
             dummy.rotation.set(.35 + a.x * .9 + cross * 1.5, -twigAngle + a.rotation, sign * .45 + a.z);
             dummy.scale.set(size * .83, size * 1.15, size);
-            dummy.updateMatrix(); this.leaves.setMatrixAt(leafIndex++, dummy.matrix);
+            dummy.updateMatrix(); this.leaves.setMatrixAt(leafIndex, dummy.matrix);
+            this.leaves.setColorAt(leafIndex++, color);
           }
         }
       }
     }
     this.wood.instanceMatrix.needsUpdate = true;
     this.leaves.instanceMatrix.needsUpdate = true;
+    this.leaves.instanceColor.needsUpdate = true;
     this.wood.count = woodIndex;
     this.leaves.count = leafIndex;
     this.cotyledons.visible = tree.age > .04 && tree.age < 1.2;
@@ -394,25 +463,9 @@ export class TreeView {
       dummy.updateMatrix(); this.cotyledons.setMatrixAt(i, dummy.matrix);
     }
     this.cotyledons.instanceMatrix.needsUpdate = true;
-    const frame = this.frameHeight;
-    this.groundScale.value = frame;
-    this.ground.scale.setScalar(frame * 180);
-    this.ground.material.bumpScale = frame * .0006;
-    this.soil.repeat.set(1600, 1600);
+    const frame = Math.max(.018, h);
     const contactSize = Math.max(.01, r * 6, tree.crownRadius * .65);
     this.contact.scale.setScalar(contactSize);
-    this.contact.position.y = frame * .00005;
-    const rng = random(78912);
-    for (let i = 0; i < 180; i++) {
-      const a = rng() * Math.PI * 2, distance = (Math.sqrt(rng()) * 1.6 + .03) * frame;
-      const size = Math.min(.12, frame * .009) * (.3 + rng());
-      dummy.position.set(Math.cos(a) * distance, size * .16, Math.sin(a) * distance);
-      dummy.rotation.set(rng() * 5, rng() * 6, rng() * 5);
-      dummy.scale.set(size, size * .45, size * .8); dummy.updateMatrix(); this.pebbles.setMatrixAt(i, dummy.matrix);
-      color.setHSL(.1, .12 + rng() * .18, .15 + rng() * .13); this.pebbles.setColorAt(i, color);
-    }
-    this.pebbles.instanceMatrix.needsUpdate = true;
-    this.pebbles.instanceColor.needsUpdate = true;
     this.sun.position.set(-frame * 2, frame * 3.4, frame * 1.5);
     this.sun.target.position.set(0, frame * .3, 0);
     const shadow = this.sun.shadow.camera;
@@ -446,9 +499,19 @@ export class TreeView {
     this.zoom = clamp(this.zoom * factor, .18, 3.3);
   }
 
-  resetCamera() {
+  setFramingLocked(locked) {
+    this.framing.locked = Boolean(locked);
+    if (locked) {
+      this.framing.span = this.cameraHeight;
+      this.framing.focus = this.focusHeight;
+    } else this.framing.update(this.framing.height);
+    this.onCameraChange(this.elevation, this.framing.locked);
+  }
+
+  resetCamera(height = this.framing.height) {
     this.theta = .55; this.phi = 1.37; this.elevation = .45; this.zoom = 1;
-    this.onCameraChange(this.elevation);
+    this.framing.fit(height);
+    this.onCameraChange(this.elevation, false);
   }
 
   bindCamera() {
@@ -503,22 +566,24 @@ export class TreeView {
   }
 
   render(seconds, elapsed, snap = false) {
-    const lerp = snap || this.reducedMotion ? 1 : 1 - Math.exp(-seconds * 7);
-    this.cameraHeight = THREE.MathUtils.lerp(this.cameraHeight, this.frameHeight, lerp);
+    const lerp = snap || this.reducedMotion ? 1 : 1 - Math.exp(-seconds * 4);
+    this.cameraHeight = THREE.MathUtils.lerp(this.cameraHeight, this.framing.span, lerp);
+    this.focusHeight = THREE.MathUtils.lerp(this.focusHeight, this.framing.focus, lerp);
+    if (Math.abs(this.cameraHeight - this.framing.span) < this.framing.span * .0001) this.cameraHeight = this.framing.span;
+    if (Math.abs(this.focusHeight - this.framing.focus) < this.framing.span * .0001) this.focusHeight = this.framing.focus;
     if (this.autoOrbit && !this.reducedMotion && this.pointers.size === 0) this.theta += seconds * .1;
     this.wind.value = this.reducedMotion ? 0 : elapsed;
     const h = this.cameraHeight;
     // Add extra portrait room so the crown never hides behind camera buttons.
     const portrait = this.camera.aspect < 1;
-    const distance = h * (portrait ? 2.35 : 1.9) * this.zoom;
+    const distance = h * (portrait ? 2.15 : 1.7) * this.zoom;
     this.target.set(0, Math.min(h, this.focusHeight) * this.elevation + (portrait ? h * .2 : 0), 0);
     this.camera.position.set(Math.sin(this.theta) * Math.sin(this.phi) * distance, Math.max(h * .025, this.target.y + Math.cos(this.phi) * distance), Math.cos(this.theta) * Math.sin(this.phi) * distance);
     this.camera.lookAt(this.target);
     this.camera.near = Math.max(.000001, h * .0001);
-    this.camera.far = h * 140;
+    this.camera.far = 4000;
     this.camera.updateProjectionMatrix();
-    this.scene.fog.density = .045 / h;
-    this.sky.position.copy(this.camera.position); this.sky.scale.setScalar(h * 90);
+    this.sky.position.copy(this.camera.position); this.sky.scale.setScalar(2000);
     this.renderer.render(this.scene, this.camera);
   }
 
