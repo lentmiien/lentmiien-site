@@ -1,0 +1,12 @@
+PASS actual Load UI migrates v1 camp, inventory, crops and chest without deleting old save
+PASS full chart names both new islands
+PASS first v2 write retains byte-identical v1 backup
+PASS empty-pack browser scenario earns new resources, craft effects and restoration progress
+PASS reload retains earned expansion edits and project progress
+PASS combat view obtains real pointer lock
+PASS held mouse defeats a weak mite without a weapon and yields fossil
+PASS full chart invalidates cached terrain after building and removing an ocean island
+PASS live mini-map updates after the same terrain removal
+PASS all nine new furnishing designs contribute comfort variety
+PASS no browser exceptions
+PASS no off-device requests

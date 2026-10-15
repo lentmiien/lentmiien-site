@@ -32,7 +32,7 @@ export class Renderer {
     this.far.background = new THREE.Color('#87b8bc');
     this.scene.fog = new THREE.Fog('#87b8bc', 46, 86);
     this.far.fog = new THREE.Fog('#87b8bc', 125, 600);
-    this.camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .06, 850);
+    this.camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .06, D.C.extent * 2);
     this.camera.rotation.order = 'YXZ';
     this.ambient = new THREE.HemisphereLight('#fff1cf', '#829da2', 2);
     this.scene.add(this.ambient);
@@ -41,19 +41,9 @@ export class Renderer {
     this.scene.add(this.sun);
     this.headlight = new THREE.PointLight('#ffe4b2', 16, 16, 1.1);
     this.scene.add(this.headlight);
-    const water = [];
-    for (let z = -800; z < 800; z += 32) for (let x = -800; x < 800; x += 32) {
-      const coast = D.islands.some(i => Math.abs(x + 16 - i.x) < i.rx + 28 && Math.abs(z + 16 - i.z) < i.rz + 28)
-        || D.islets.some(i => Math.hypot(x + 16 - i.x, z + 16 - i.z) < i.r + 32);
-      const step = coast ? 8 : 32;
-      for (let zz = z; zz < z + 32; zz += step) for (let xx = x; xx < x + 32; xx += step) {
-        if (coast && [[xx, zz], [xx + step, zz], [xx, zz + step], [xx + step, zz + step]].every(([px, pz]) => W.column(px, pz, game.state.seed).h >= D.C.sea)) continue;
-        water.push(xx, 0, zz + step, xx + step, 0, zz + step, xx + step, 0, zz, xx, 0, zz + step, xx + step, 0, zz, xx, 0, zz);
-      }
-    }
+    this.waterRevision = -1;
+    this.waterNext = 0;
     const oceanGeometry = new THREE.BufferGeometry();
-    oceanGeometry.setAttribute('position', new THREE.Float32BufferAttribute(water, 3));
-    oceanGeometry.computeVertexNormals();
     this.ocean = new THREE.Mesh(oceanGeometry, new THREE.MeshPhongMaterial({
       color: '#338f99',
       transparent: true,
@@ -64,7 +54,7 @@ export class Renderer {
     }));
     this.ocean.position.y = D.C.sea - .1;
     this.scene.add(this.ocean);
-    const horizonGeometry = new THREE.PlaneGeometry(1600, 1600);
+    const horizonGeometry = new THREE.PlaneGeometry(D.C.extent * 2 + 512, D.C.extent * 2 + 512);
     horizonGeometry.rotateX(-Math.PI / 2);
     const farOcean = new THREE.Mesh(horizonGeometry, new THREE.MeshBasicMaterial({
       color: '#559ba5'
@@ -111,6 +101,71 @@ export class Renderer {
       this.renderer.setSize(innerWidth, innerHeight);
     };
     addEventListener('resize', this.resize);
+  }
+  updateWater() {
+    const world = this.game.world, p = this.game.state.player;
+    const region = `${Math.floor(p.x / 32)},${Math.floor(p.z / 32)}`;
+    if (this.waterRevision === world.revision && this.waterRegion === region || performance.now() < this.waterNext) return;
+    this.waterRegion = region;
+    this.waterRevision = world.revision;
+    this.waterNext = performance.now() + 400;
+    const fine = new Set(), coarse = new Set(), water = [];
+    for (const key of world.editedColumns) {
+      const [x, z] = key.split(',').map(Number);
+      if (Math.abs(x - p.x) > 112 || Math.abs(z - p.z) > 112) continue;
+      fine.add(`${Math.floor(x / 8)},${Math.floor(z / 8)}`);
+      coarse.add(`${Math.floor(x / 32)},${Math.floor(z / 32)}`);
+    }
+    const quad = (x, z, step) => water.push(x, 0, z + step, x + step, 0, z + step, x + step, 0, z, x, 0, z + step, x + step, 0, z, x, 0, z);
+    for (let z = -D.C.extent - 128; z < D.C.extent + 128; z += 32) for (let x = -D.C.extent - 128; x < D.C.extent + 128; x += 32) {
+      const coast = D.islands.some(i => Math.abs(x + 16 - i.x) < i.rx + 28 && Math.abs(z + 16 - i.z) < i.rz + 28) || D.islets.some(i => Math.hypot(x + 16 - i.x, z + 16 - i.z) < i.r + 32);
+      const step = coast || coarse.has(`${x / 32},${z / 32}`) ? 8 : 32;
+      for (let zz = z; zz < z + 32; zz += step) for (let xx = x; xx < x + 32; xx += step) {
+        if (fine.has(`${Math.floor(xx / 8)},${Math.floor(zz / 8)}`)) {
+          for (let fz = zz; fz < zz + step; fz++) for (let fx = xx; fx < xx + step; fx++) if (world.waterAt(fx, D.C.sea - .1, fz)) quad(fx, fz, 1);
+        } else if (!coast || ![[xx, zz], [xx + step, zz], [xx, zz + step], [xx + step, zz + step]].every(([px, pz]) => W.column(px, pz, world.seed).h >= D.C.sea)) quad(xx, zz, step);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(water, 3));
+    geometry.computeVertexNormals();
+    this.ocean.geometry.dispose();
+    this.ocean.geometry = geometry;
+    for (const { mesh } of this.distant) {
+      const position = mesh.geometry.attributes.position;
+      for (let n = 0; n < position.count; n++) position.setY(n, Math.max(11.7, world.mapColumn(position.getX(n), position.getZ(n)).h + .1));
+      position.needsUpdate = true;
+      mesh.geometry.computeBoundingSphere();
+    }
+  }
+  updateActors() {
+    if (!this.actorMeshes) {
+      this.actorMeshes = new Map();
+      this.actorGeometry = new THREE.BoxGeometry(1, 1, 1);
+      this.actorMaterials = ['#bd9862', '#efd08a', '#263942'].map(color => new THREE.MeshLambertMaterial({ color }));
+    }
+    for (const mesh of this.actorMeshes.values()) mesh.visible = false;
+    for (const actor of this.game.encounters.actors) {
+      let group = this.actorMeshes.get(actor.id);
+      if (!group) {
+        group = new THREE.Group();
+        const box = (x, y, z, sx, sy, sz, material) => {
+          const mesh = new THREE.Mesh(this.actorGeometry, this.actorMaterials[material]);
+          mesh.position.set(x, y, z); mesh.scale.set(sx, sy, sz); group.add(mesh);
+        };
+        box(0, .43, 0, .9, .6, .8, 0);
+        box(0, .78, 0, .65, .25, .6, 1);
+        for (const sign of [-1, 1]) {
+          box(sign * .22, .62, -.42, .12, .16, .08, 2);
+          box(sign * .49, .16, -.22, .24, .18, .18, 1);
+          box(sign * .49, .16, .22, .24, .18, .18, 1);
+        }
+        this.actorMeshes.set(actor.id, group); this.scene.add(group);
+      }
+      group.visible = actor.alive;
+      group.position.set(actor.x, actor.y + Math.sin(this.game.state.time * 5 + actor.home.x) * .035, actor.z);
+      group.rotation.y = Math.atan2(this.game.state.player.x - actor.x, this.game.state.player.z - actor.z) + Math.PI;
+    }
   }
   makeDistant() {
     for (const island of D.islands) {
@@ -312,6 +367,8 @@ export class Renderer {
     this.updateChunks();
     this.updateBoats();
     this.updateCrops();
+    this.updateWater();
+    this.updateActors();
     const angle = s.time / 1200 * Math.PI * 2,
       day = .72 + Math.sin(angle) * .28,
       sky = new THREE.Color('#87b8bc').multiplyScalar(day);
@@ -338,9 +395,11 @@ export class Renderer {
       this.scene.fog.far = 75;
       this.ocean.position.y = D.C.sea + amount * 4 + Math.sin(s.disaster) * .4;
     }
-    const hit = this.game.target();
-    this.target.visible = !!hit && !storm;
-    if (hit) this.target.position.set(hit.x + .5, hit.y + .5, hit.z + .5);
+    const hit = this.game.target(), actor = this.game.encounters.target();
+    this.target.visible = !!(hit || actor) && !storm;
+    this.target.material.color.set(actor ? '#ffd18a' : '#ffdc83');
+    if (actor) this.target.position.set(actor.x, actor.y + .5, actor.z);
+    else if (hit) this.target.position.set(hit.x + .5, hit.y + .5, hit.z + .5);
     for (const {
       island,
       mesh

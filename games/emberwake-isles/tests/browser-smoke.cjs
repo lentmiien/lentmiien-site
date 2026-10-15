@@ -9,11 +9,13 @@ const {
 const {
   runProgression
 } = require('./progression.cjs');
-const out = path.join(__dirname, '../docs/validation'),
+const out = process.env.EVIDENCE_DIR || path.join(__dirname, '../docs/validation'),
   checks = [],
   errors = [],
   requests = [],
   stats = [];
+fs.mkdirSync(out, { recursive: true });
+const { C } = require('../js/data.js');
 const check = (name, value) => {
   assert(value, name);
   checks.push(name);
@@ -380,11 +382,11 @@ const check = (name, value) => {
     });
     await page.locator('#resume').click();
     await stage({
-      x: 452,
+      x: C.danger + 2,
       y: 11.5,
       z: 0
     }, {
-      x: 490,
+      x: C.border,
       y: 12,
       z: 0
     }, 'outer warning waters');
@@ -392,7 +394,7 @@ const check = (name, value) => {
     check('danger warning visible before crossing', await page.locator('#boundary').isVisible());
     await page.evaluate(() => {
       const g = __test.game;
-      g.state.player.x = 489.9;
+      g.state.player.x = EWData.C.border - .1;
       g.state.player.yaw = -Math.PI / 2;
       g.paused = false;
       g.step({

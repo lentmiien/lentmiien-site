@@ -679,3 +679,9 @@ dialog footer {
     align-items: end;
   }
 }
+
+/* A local, block-resolution chart; the full atlas remains available with M. */
+#miniChart { position: absolute; right: 22px; top: 98px; width: 142px; padding: 6px; background: var(--surface-1, #252932); border: 1px solid var(--border, #464951); border-radius: 8px; pointer-events: none; }
+#miniMap { width: 128px; height: 128px; display: block; image-rendering: pixelated; }
+#miniChart small { display: block; text-align: center; margin-top: 4px; color: var(--text-secondary, #c8cbd0); font-size: 10px; }
+@media (max-width: 800px), (max-height: 560px) { #miniChart { display: none; } }

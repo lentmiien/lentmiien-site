@@ -1,22 +1,22 @@
 /* Original catalog. Shared by browser and model tests; no runtime dependencies. */
 (function (root, factory) {
-  const api = factory();
+  const api = factory(typeof module === 'object' ? require('./expansions.js') : root.EWExpansions);
   if (typeof module === 'object') module.exports = api;else root.EWData = api;
-})(typeof window !== 'undefined' ? window : globalThis, function () {
+})(typeof window !== 'undefined' ? window : globalThis, function (expansions) {
   'use strict';
 
   const C = {
     chunk: 16,
     height: 80,
     sea: 12,
-    extent: 512,
-    warning: 405,
-    danger: 450,
-    border: 490,
+    extent: 1024,
+    warning: 850,
+    danger: 920,
+    border: 980,
     reach: 5.5,
     pack: 1800,
     maxEdits: 45000,
-    version: 1
+    version: 2
   };
   const items = {},
     blocks = [{
@@ -523,9 +523,29 @@
     r: 17
   }];
   const lore = ['A shell large enough to hear tomorrow. Inside: the sound of somebody making tea. The first tidekeeper clearly had priorities.', 'A brass mailbox addressed to “Whoever gets here eventually”. The letter reads: A home is an expedition that learned to stay.', 'The astronomer charted every star, then discovered that the instrument was a very expensive teapot. It still points north.', 'This bell rings only for falling snow. Its inscription says: Quiet is a kind of treasure. Your journal preserves its tiny melody.', 'These moths navigate by a moon nobody else can see. A final note: Build something worth coming home to. The archipelago is yours.'];
+  // The original catalog above is immutable: persisted voxel IDs are append-only.
+  const legacy = { extent: 512, border: 490, warning: 405, blocks: blocks.length, items: Object.keys(items), recipes: recipes.map(r => r.id), islands: islands.map(i => i.id) };
+  const projects = {};
+  for (const pack of expansions) {
+    if (blocks.length !== pack.firstBlock) throw new Error('Expansion block IDs changed');
+    pack.blocks.forEach(args => block(...args));
+    pack.items.forEach(args => item(...args));
+    pack.recipes.forEach(args => recipe(...args));
+    for (const island of pack.islands) {
+      islands.push(island);
+      lore.push(island.lore);
+    }
+    Object.assign(projects, pack.projects);
+  }
+  if (blocks.length > 256) throw new Error('Upgrade chunk storage before adding voxel ID 256');
+  const atlas = { width: 128, height: Math.ceil(blocks.length / 8) * 16 };
   const ids = Object.fromEntries(blocks.map(b => [b.key, b.id]));
   return {
     C,
+    legacy,
+    expansions,
+    projects,
+    atlas,
     items,
     blocks,
     recipes,

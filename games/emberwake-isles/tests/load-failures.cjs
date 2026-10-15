@@ -24,7 +24,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(await context.evaluate(() => !!document.pointerLockElement), false);
     checks.push('WebGL context loss pauses play, releases pointer and displays recovery UI');
     await context.close();
-    fs.writeFileSync(path.join(__dirname, '../docs/validation/load-failures.json'), JSON.stringify({ checks }, null, 2));
+    fs.writeFileSync(path.join(process.env.EVIDENCE_DIR || path.join(__dirname, '../docs/validation'), 'load-failures.json'), JSON.stringify({ checks }, null, 2));
     console.log(checks.join('\n'));
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

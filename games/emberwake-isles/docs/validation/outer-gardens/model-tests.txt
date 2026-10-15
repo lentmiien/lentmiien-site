@@ -1,0 +1,604 @@
+TAP version 13
+# Subtest: all 63 original voxel identities are immutable
+ok 1 - all 63 original voxel identities are immutable
+  ---
+  duration_ms: 0.981059
+  type: 'test'
+  ...
+# Subtest: 507 frozen v1 chunks across three seeds are byte-identical after expansion
+ok 2 - 507 frozen v1 chunks across three seeds are byte-identical after expansion
+  ---
+  duration_ms: 112.498778
+  type: 'test'
+  ...
+# Subtest: full old-map height and biome fingerprints are unchanged for three seeds
+ok 3 - full old-map height and biome fingerprints are unchanged for three seeds
+  ---
+  duration_ms: 107.519235
+  type: 'test'
+  ...
+# Subtest: new islands plus noise margins lie outside the entire old square and inside safe sea
+ok 4 - new islands plus noise margins lie outside the entire old square and inside safe sea
+  ---
+  duration_ms: 0.308045
+  type: 'test'
+  ...
+# Subtest: both new caves expose their required ore, with safe open entrances for ten seeds
+ok 5 - both new caves expose their required ore, with safe open entrances for ten seeds
+  ---
+  duration_ms: 111.259828
+  type: 'test'
+  ...
+# Subtest: v1 migration preserves every existing field and adds only schema and expedition defaults
+ok 6 - v1 migration preserves every existing field and adds only schema and expedition defaults
+  ---
+  duration_ms: 2.710492
+  type: 'test'
+  ...
+# Subtest: same storage keys load v1 without writing; first v2 save keeps exact v1 backup
+ok 7 - same storage keys load v1 without writing; first v2 save keeps exact v1 backup
+  ---
+  duration_ms: 0.628892
+  type: 'test'
+  ...
+# Subtest: migration write quota failures preserve original primary and backup
+ok 8 - migration write quota failures preserve original primary and backup
+  ---
+  duration_ms: 0.40722
+  type: 'test'
+  ...
+# Subtest: old terminal marker still ends voyage after boundary expansion; explicit recovery works
+ok 9 - old terminal marker still ends voyage after boundary expansion; explicit recovery works
+  ---
+  duration_ms: 0.39689
+  type: 'test'
+  ...
+# Subtest: v1 data is validated under old coordinates, IDs and items before migration
+ok 10 - v1 data is validated under old coordinates, IDs and items before migration
+  ---
+  duration_ms: 0.519177
+  type: 'test'
+  ...
+# Subtest: expanded travel, buildings, encounters, nursery timers and restoration round trip
+ok 11 - expanded travel, buildings, encounters, nursery timers and restoration round trip
+  ---
+  duration_ms: 4.793445
+  type: 'test'
+  ...
+# Subtest: local and full charts include off-grid player islands and remove them after mining
+ok 12 - local and full charts include off-grid player islands and remove them after mining
+  ---
+  duration_ms: 1.572431
+  type: 'test'
+  ...
+# Subtest: mining natural island down to the sea changes chart and water across unload/reload
+ok 13 - mining natural island down to the sea changes chart and water across unload/reload
+  ---
+  duration_ms: 6.639757
+  type: 'test'
+  ...
+# Subtest: original islands spawn no enemies; Honeycomb has exactly six bounded actors
+ok 14 - original islands spawn no enemies; Honeycomb has exactly six bounded actors
+  ---
+  duration_ms: 6.615061
+  type: 'test'
+  ...
+# Subtest: three barehanded hits defeat a mite atomically, reward once and persist cooldown
+ok 15 - three barehanded hits defeat a mite atomically, reward once and persist cooldown
+  ---
+  duration_ms: 8.499084
+  type: 'test'
+  ...
+# Subtest: staff defeats in one hit; empty hotbar weapon gives no unowned bonus
+ok 16 - staff defeats in one hit; empty hotbar weapon gives no unowned bonus
+  ---
+  duration_ms: 9.009174
+  type: 'test'
+  ...
+# Subtest: melee reach and solid walls stop attacks; pack-full kill consumes no reward or claim
+ok 17 - melee reach and solid walls stop attacks; pack-full kill consumes no reward or claim
+  ---
+  duration_ms: 4.266583
+  type: 'test'
+  ...
+# Subtest: actors cannot follow into ocean, through walls, beyond home leash or onto other islands
+ok 18 - actors cannot follow into ocean, through walls, beyond home leash or onto other islands
+  ---
+  duration_ms: 13.47567
+  type: 'test'
+  ...
+# Subtest: mites cannot kill, attack paused games, or interfere with terminal storm
+ok 19 - mites cannot kill, attack paused games, or interfere with terminal storm
+  ---
+  duration_ms: 2.978132
+  type: 'test'
+  ...
+# Subtest: restoration gates consume supplies once and unlock useful furnishing recipes
+ok 20 - restoration gates consume supplies once and unlock useful furnishing recipes
+  ---
+  duration_ms: 0.980468
+  type: 'test'
+  ...
+# Subtest: apiary requires three defeats before accepting materials; project progression survives load
+ok 21 - apiary requires three defeats before accepting materials; project progression survives load
+  ---
+  duration_ms: 0.563871
+  type: 'test'
+  ...
+# Subtest: nursery is renewable, paused timers do not progress, and harvest drives new cooking
+ok 22 - nursery is renewable, paused timers do not progress, and harvest drives new cooking
+  ---
+  duration_ms: 11.975784
+  type: 'test'
+  ...
+# Subtest: atlas grows past 64 slots and all new furnishing shapes have valid mesh UVs
+ok 23 - atlas grows past 64 slots and all new furnishing shapes have valid mesh UVs
+  ---
+  duration_ms: 0.0861
+  type: 'test'
+  ...
+# Subtest: empty-pack route sails the expansion, mines jade, builds nursery and restores organ stage
+ok 24 - empty-pack route sails the expansion, mines jade, builds nursery and restores organ stage
+  ---
+  duration_ms: 144.83747
+  type: 'test'
+  ...
+# Subtest: newly placed or relocated nurseries must grow before harvesting, preventing instant duplication
+ok 25 - newly placed or relocated nurseries must grow before harvesting, preventing instant duplication
+  ---
+  duration_ms: 0.54696
+  type: 'test'
+  ...
+# Subtest: map surface rebuild batches edited columns per chunk without retaining terrain memory
+ok 26 - map surface rebuild batches edited columns per chunk without retaining terrain memory
+  ---
+  duration_ms: 0.940202
+  type: 'test'
+  ...
+# Subtest: ocean bridges retain swimming water and cannot conceal an obstructed boat launch
+ok 27 - ocean bridges retain swimming water and cannot conceal an obstructed boat launch
+  ---
+  duration_ms: 1.305324
+  type: 'test'
+  ...
+# Subtest: import and new-voyage replacement abort on any backup write error, not only quota errors
+ok 28 - import and new-voyage replacement abort on any backup write error, not only quota errors
+  ---
+  duration_ms: 0.671442
+  type: 'test'
+  ...
+# Subtest: catalog has 7 substantial unique biomes, 4 islets and 88 implemented recipes
+ok 29 - catalog has 7 substantial unique biomes, 4 islets and 88 implemented recipes
+  ---
+  duration_ms: 0.758324
+  type: 'test'
+  ...
+# Subtest: same seed gives identical terrain and alternate seeds change relief
+ok 30 - same seed gives identical terrain and alternate seeds change relief
+  ---
+  duration_ms: 8.211377
+  type: 'test'
+  ...
+# Subtest: all island centers stand above sea and channels separate neighbors
+ok 31 - all island centers stand above sea and channels separate neighbors
+  ---
+  duration_ms: 0.176679
+  type: 'test'
+  ...
+# Subtest: spawn is grounded, body-clear and adjacent to food and driftwood for 20 seeds
+ok 32 - spawn is grounded, body-clear and adjacent to food and driftwood for 20 seeds
+  ---
+  duration_ms: 19.088353
+  type: 'test'
+  ...
+# Subtest: seven entrance trails connect all three cave branches and chambers with walkable ramps
+ok 33 - seven entrance trails connect all three cave branches and chambers with walkable ramps
+  ---
+  duration_ms: 112.610095
+  type: 'test'
+  ...
+# Subtest: cave walls expose coal, copper, iron and volcanic prism resources
+ok 34 - cave walls expose coal, copper, iron and volcanic prism resources
+  ---
+  duration_ms: 62.367749
+  type: 'test'
+  ...
+# Subtest: bounded world prevents bedrock edit and rejects outside coordinates
+ok 35 - bounded world prevents bedrock edit and rejects outside coordinates
+  ---
+  duration_ms: 0.242972
+  type: 'test'
+  ...
+# Subtest: modified chunks survive unloading and reconstruct identically
+ok 36 - modified chunks survive unloading and reconstruct identically
+  ---
+  duration_ms: 2.824896
+  type: 'test'
+  ...
+# Subtest: recipe graph reaches every output from actual natural resources without gate cycles
+ok 37 - recipe graph reaches every output from actual natural resources without gate cycles
+  ---
+  duration_ms: 1.125048
+  type: 'test'
+  ...
+# Subtest: atomic craft consumes ingredients, yields correct batch output and records progression
+ok 38 - atomic craft consumes ingredients, yields correct batch output and records progression
+  ---
+  duration_ms: 1.165593
+  type: 'test'
+  ...
+# Subtest: craft requires nearby station and discovery independently
+ok 39 - craft requires nearby station and discovery independently
+  ---
+  duration_ms: 1.516687
+  type: 'test'
+  ...
+# Subtest: all 88 recipes change inventory correctly when their requirements are met
+ok 40 - all 88 recipes change inventory correctly when their requirements are met
+  ---
+  duration_ms: 79.348322
+  type: 'test'
+  ...
+# Subtest: inventory rejects overflow, negative, unknown and fractional deltas without mutation
+ok 41 - inventory rejects overflow, negative, unknown and fractional deltas without mutation
+  ---
+  duration_ms: 0.163324
+  type: 'test'
+  ...
+# Subtest: stone cannot be mined with hands; correct pick works and wall occludes blocks behind
+ok 42 - stone cannot be mined with hands; correct pick works and wall occludes blocks behind
+  ---
+  duration_ms: 1.090513
+  type: 'test'
+  ...
+# Subtest: ray reach is bounded and first occupied cell controls placement
+ok 43 - ray reach is bounded and first occupied cell controls placement
+  ---
+  duration_ms: 0.596743
+  type: 'test'
+  ...
+# Subtest: placement consumes block exactly once and rejects own body
+ok 44 - placement consumes block exactly once and rejects own body
+  ---
+  duration_ms: 0.977723
+  type: 'test'
+  ...
+# Subtest: shaped furniture colliders match slab, table legs and air around torch
+ok 45 - shaped furniture colliders match slab, table legs and air around torch
+  ---
+  duration_ms: 0.727647
+  type: 'test'
+  ...
+# Subtest: chunk mesher culls interior faces and emits no per-voxel meshes
+ok 46 - chunk mesher culls interior faces and emits no per-voxel meshes
+  ---
+  duration_ms: 1.934116
+  type: 'test'
+  ...
+# Subtest: walking collides with terrain, jumping rises and settles
+ok 47 - walking collides with terrain, jumping rises and settles
+  ---
+  duration_ms: 1.402815
+  type: 'test'
+  ...
+# Subtest: swimming buoyancy prevents drowning and never has an oxygen timer
+ok 48 - swimming buoyancy prevents drowning and never has an oxygen timer
+  ---
+  duration_ms: 4.815005
+  type: 'test'
+  ...
+# Subtest: raft uses actual inventory, moves faster than swim, moors and boards
+ok 49 - raft uses actual inventory, moves faster than swim, moors and boards
+  ---
+  duration_ms: 1.53399
+  type: 'test'
+  ...
+# Subtest: boat cannot drive through a solid shore
+ok 50 - boat cannot drive through a solid shore
+  ---
+  duration_ms: 1.634166
+  type: 'test'
+  ...
+# Subtest: hunger and cold are forgiving and cannot cause ordinary game over
+ok 51 - hunger and cold are forgiving and cannot cause ordinary game over
+  ---
+  duration_ms: 1.714917
+  type: 'test'
+  ...
+# Subtest: food and tea improve status and apply bounded warmth buff
+ok 52 - food and tea improve status and apply bounded warmth buff
+  ---
+  duration_ms: 0.467872
+  type: 'test'
+  ...
+# Subtest: renewable bushes harvest without destroying terrain and enforce game-time regrowth
+ok 53 - renewable bushes harvest without destroying terrain and enforce game-time regrowth
+  ---
+  duration_ms: 0.818436
+  type: 'test'
+  ...
+# Subtest: farming plants, waters, matures and yields renewable seed plus useful food
+ok 54 - farming plants, waters, matures and yields renewable seed plus useful food
+  ---
+  duration_ms: 1.042704
+  type: 'test'
+  ...
+# Subtest: fishing requires low water sight and staying still; fourth catch yields pearl
+ok 55 - fishing requires low water sight and staying still; fourth catch yields pearl
+  ---
+  duration_ms: 10.941156
+  type: 'test'
+  ...
+# Subtest: chest transfers are atomic, nearby-only, persistent and cannot lose items on mining
+ok 56 - chest transfers are atomic, nearby-only, persistent and cannot lose items on mining
+  ---
+  duration_ms: 1.012557
+  type: 'test'
+  ...
+# Subtest: luxury rewards variety and bounded layout/architecture, never cheap duplicates
+ok 57 - luxury rewards variety and bounded layout/architecture, never cheap duplicates
+  ---
+  duration_ms: 2.21537
+  type: 'test'
+  ...
+# Subtest: discovery unlocks island recipes and secrets reward only once
+ok 58 - discovery unlocks island recipes and secrets reward only once
+  ---
+  duration_ms: 0.936956
+  type: 'test'
+  ...
+# Subtest: outer boundary is terminal for swimmer despite pause, UI, returning and reload
+ok 59 - outer boundary is terminal for swimmer despite pause, UI, returning and reload
+  ---
+  duration_ms: 1.702644
+  type: 'test'
+  ...
+# Subtest: outer boundary is terminal for boat despite pause, UI, returning and reload
+ok 60 - outer boundary is terminal for boat despite pause, UI, returning and reload
+  ---
+  duration_ms: 1.277131
+  type: 'test'
+  ...
+# Subtest: crossing fails visibly before transition if terminal journal cannot persist
+ok 61 - crossing fails visibly before transition if terminal journal cannot persist
+  ---
+  duration_ms: 1.001447
+  type: 'test'
+  ...
+# Subtest: no currents push an idle novice toward the storm
+ok 62 - no currents push an idle novice toward the storm
+  ---
+  duration_ms: 8.221235
+  type: 'test'
+  ...
+# Subtest: pause freezes farming, fishing, food and time; load has no offline catch-up
+ok 63 - pause freezes farming, fishing, food and time; load has no offline catch-up
+  ---
+  duration_ms: 0.725983
+  type: 'test'
+  ...
+# Subtest: save round trip retains mining, buildings, farm, vessel, progress and settings
+ok 64 - save round trip retains mining, buildings, farm, vessel, progress and settings
+  ---
+  duration_ms: 3.526994
+  type: 'test'
+  ...
+# Subtest: three slots and backups are isolated; unrelated storage is untouched
+ok 65 - three slots and backups are isolated; unrelated storage is untouched
+  ---
+  duration_ms: 0.471008
+  type: 'test'
+  ...
+# Subtest: quota during primary write preserves both prior primary and valid backup
+ok 66 - quota during primary write preserves both prior primary and valid backup
+  ---
+  duration_ms: 0.286374
+  type: 'test'
+  ...
+# Subtest: quota during backup write never replaces primary
+ok 67 - quota during backup write never replaces primary
+  ---
+  duration_ms: 0.18738
+  type: 'test'
+  ...
+# Subtest: denied storage produces errors without silent reset
+ok 68 - denied storage produces errors without silent reset
+  ---
+  duration_ms: 0.152174
+  type: 'test'
+  ...
+# Subtest: corrupt primary does not overwrite previous valid backup when saving
+ok 69 - corrupt primary does not overwrite previous valid backup when saving
+  ---
+  duration_ms: 0.318243
+  type: 'test'
+  ...
+# Subtest: save validation rejects schema
+ok 70 - save validation rejects schema
+  ---
+  duration_ms: 0.242382
+  type: 'test'
+  ...
+# Subtest: save validation rejects unknown field
+ok 71 - save validation rejects unknown field
+  ---
+  duration_ms: 0.121547
+  type: 'test'
+  ...
+# Subtest: save validation rejects unknown item
+ok 72 - save validation rejects unknown item
+  ---
+  duration_ms: 0.123401
+  type: 'test'
+  ...
+# Subtest: save validation rejects negative count
+ok 73 - save validation rejects negative count
+  ---
+  duration_ms: 0.117068
+  type: 'test'
+  ...
+# Subtest: save validation rejects fractional count
+ok 74 - save validation rejects fractional count
+  ---
+  duration_ms: 0.122428
+  type: 'test'
+  ...
+# Subtest: save validation rejects infinite player
+ok 75 - save validation rejects infinite player
+  ---
+  duration_ms: 0.103663
+  type: 'test'
+  ...
+# Subtest: save validation rejects outside coordinate
+ok 76 - save validation rejects outside coordinate
+  ---
+  duration_ms: 0.100157
+  type: 'test'
+  ...
+# Subtest: save validation rejects terminal location as living
+ok 77 - save validation rejects terminal location as living
+  ---
+  duration_ms: 0.079328
+  type: 'test'
+  ...
+# Subtest: save validation rejects unbounded name
+ok 78 - save validation rejects unbounded name
+  ---
+  duration_ms: 0.116777
+  type: 'test'
+  ...
+# Subtest: save validation rejects bad voxel ID
+ok 79 - save validation rejects bad voxel ID
+  ---
+  duration_ms: 0.13943
+  type: 'test'
+  ...
+# Subtest: save validation rejects bedrock editing
+ok 80 - save validation rejects bedrock editing
+  ---
+  duration_ms: 0.103773
+  type: 'test'
+  ...
+# Subtest: save validation rejects duplicate edit
+ok 81 - save validation rejects duplicate edit
+  ---
+  duration_ms: 0.089877
+  type: 'test'
+  ...
+# Subtest: save validation rejects orphan garden
+ok 82 - save validation rejects orphan garden
+  ---
+  duration_ms: 0.103393
+  type: 'test'
+  ...
+# Subtest: save validation rejects orphan chest
+ok 83 - save validation rejects orphan chest
+  ---
+  duration_ms: 0.113842
+  type: 'test'
+  ...
+# Subtest: save validation rejects orphan boat
+ok 84 - save validation rejects orphan boat
+  ---
+  duration_ms: 0.077875
+  type: 'test'
+  ...
+# Subtest: save validation rejects script item
+ok 85 - save validation rejects script item
+  ---
+  duration_ms: 0.088575
+  type: 'test'
+  ...
+# Subtest: save validation rejects unknown progress
+ok 86 - save validation rejects unknown progress
+  ---
+  duration_ms: 0.082443
+  type: 'test'
+  ...
+# Subtest: save validation rejects unbounded timer
+ok 87 - save validation rejects unbounded timer
+  ---
+  duration_ms: 0.068668
+  type: 'test'
+  ...
+# Subtest: malformed, null, primitive and oversized imports preserve slot and backup
+ok 88 - malformed, null, primitive and oversized imports preserve slot and backup
+  ---
+  duration_ms: 0.220621
+  type: 'test'
+  ...
+# Subtest: saved names containing markup remain data, never a rendering context
+ok 89 - saved names containing markup remain data, never a rendering context
+  ---
+  duration_ms: 0.353188
+  type: 'test'
+  ...
+# Subtest: explicit checkpoint restore does not erase the saved world
+ok 90 - explicit checkpoint restore does not erase the saved world
+  ---
+  duration_ms: 0.137376
+  type: 'test'
+  ...
+# Subtest: underground caves below sea level are dry; ocean remains buoyant
+ok 91 - underground caves below sea level are dry; ocean remains buoyant
+  ---
+  duration_ms: 2.017221
+  type: 'test'
+  ...
+# Subtest: fresh-start normal-action progression gathers, crafts, mines, sails, farms and cooks
+ok 92 - fresh-start normal-action progression gathers, crafts, mines, sails, farms and cooks
+  ---
+  duration_ms: 78.152463
+  type: 'test'
+  ...
+# Subtest: all authored cave paths are physically walkable both directions across 10 seeds
+ok 93 - all authored cave paths are physically walkable both directions across 10 seeds
+  ---
+  duration_ms: 1846.196225
+  type: 'test'
+  ...
+# Subtest: underground caches are discoverable, persistent and pay only once
+ok 94 - underground caches are discoverable, persistent and pay only once
+  ---
+  duration_ms: 1.14835
+  type: 'test'
+  ...
+# Subtest: save bounds include legitimate jumps above maximum building height
+ok 95 - save bounds include legitimate jumps above maximum building height
+  ---
+  duration_ms: 0.146353
+  type: 'test'
+  ...
+# Subtest: expired renewable resource timers are pruned during play, keeping saves bounded
+ok 96 - expired renewable resource timers are pruned during play, keeping saves bounded
+  ---
+  duration_ms: 0.58482
+  type: 'test'
+  ...
+# Subtest: visible warning waters slow vessels, allowing time to turn back before the final line
+ok 97 - visible warning waters slow vessels, allowing time to turn back before the final line
+  ---
+  duration_ms: 1.332183
+  type: 'test'
+  ...
+# Subtest: full packs do not consume unique treasure claims or falsely report successful fishing
+ok 98 - full packs do not consume unique treasure claims or falsely report successful fishing
+  ---
+  duration_ms: 4.142281
+  type: 'test'
+  ...
+# Subtest: a 12,000-block estate survives bounded JSON storage and world reconstruction
+ok 99 - a 12,000-block estate survives bounded JSON storage and world reconstruction
+  ---
+  duration_ms: 99.879425
+  type: 'test'
+  ...
+1..99
+# tests 99
+# suites 0
+# pass 99
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2435.699771

@@ -6,6 +6,8 @@
 
   // Box silhouettes are merged into chunk geometry, including every furnishing.
   const shapes = {
+    bamboo: [[.32, 0, .32, .68, 1, .68], [.27, .7, .27, .73, .82, .73]],
+    organ: [[0, 0, 0, 1, .2, 1], [.1, .2, .4, .25, .65, .6], [.4, .2, .4, .55, 1, .6], [.7, .2, .4, .85, .8, .6]],
     glass: [[0, 0, .45, .1, 1, .55], [.9, 0, .45, 1, 1, .55], [0, .9, .45, 1, 1, .55], [0, 0, .45, 1, .1, .55], [.45, 0, .47, .55, 1, .53]],
     slab: [[0, 0, 0, 1, .5, 1]],
     stair: [[0, 0, 0, 1, .5, 1], [0, .5, .5, 1, 1, 1]],
@@ -87,10 +89,10 @@
         const index = positions.length / 3,
           tx = id % 8,
           ty = Math.floor(id / 8),
-          u0 = (tx * 16 + .5) / 128,
-          u1 = (tx * 16 + 15.5) / 128,
-          v0 = 1 - (ty * 16 + 15.5) / 128,
-          v1 = 1 - (ty * 16 + .5) / 128;
+          u0 = (tx * 16 + .5) / D.atlas.width,
+          u1 = (tx * 16 + 15.5) / D.atlas.width,
+          v0 = 1 - (ty * 16 + 15.5) / D.atlas.height,
+          v1 = 1 - (ty * 16 + .5) / D.atlas.height;
         const uv = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
         for (let k = 0; k < 4; k++) {
           const v = face.v[k];

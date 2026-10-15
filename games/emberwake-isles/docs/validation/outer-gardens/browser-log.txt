@@ -1,0 +1,28 @@
+PASS WebGL initializes with no visible fallback
+PASS Resume obtains actual pointer lock
+PASS actual W keyboard moves the colliding player
+PASS actual Space jumps
+PASS Tab pauses in native modal
+PASS open panels freeze game time
+PASS sound toggle changes persisted preference
+PASS normal-action browser progression upgraded tools and visited second island
+PASS normal-action sailing, fishing, growing and cooking all changed gameplay
+PASS actual held left mouse mines reachable terrain
+PASS actual right mouse places a carried building block
+PASS actual recipe button consumes input and outputs planks
+PASS UI reports successful safe checkpoint
+PASS reload restores actual camp edits, crops, boat, inventory and progress
+PASS cave interior is dry and body-clear in browser
+PASS seeded luxury camp scores variety and architecture
+PASS streamed data cache stays bounded
+PASS edits survive browser renderer unloading and reloading
+PASS danger warning visible before crossing
+PASS storm ignores pause state
+PASS reload during storm returns to unmistakable game over
+PASS explicit safe restore preserves original normal-action camp
+PASS small-screen panel fits viewport width
+PASS window blur clears held input and opens pause
+PASS WebGL failure shows visible fallback
+PASS unavailable storage shows a visible recoverable error
+PASS all runtime requests stay on local origin
+PASS no browser page errors

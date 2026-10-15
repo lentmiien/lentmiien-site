@@ -41,7 +41,7 @@ function runProgression(g, D, W, options = {}) {
       }
       g.step({
         forward: true,
-        jump: stuck > 30 && stuck < 60,
+        jump: stuck > 30,
         mine: stuck > 60 && p.boat === null
       }, 1 / 60);
       if (n % 30 === 0) {
@@ -116,6 +116,7 @@ function runProgression(g, D, W, options = {}) {
     }
     throw new Error('Cannot place ' + id);
   }
+  if (options.controller) Object.assign(options.controller, { walk, aim, equip, mine, natural, craft, place, advance, hit, note });
   advance(.2);
   note('fresh empty pack on Sunwake Cay');
   const logs = g.world.starterProps().filter(q => q[3] === D.ids.log).sort((a, b) => Math.hypot(a[0] - p.x, a[2] - p.z) - Math.hypot(b[0] - p.x, b[2] - p.z));

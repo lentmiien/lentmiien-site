@@ -104,10 +104,14 @@
       this.networks = caves(seed);
       this.revision = 0;
       this.editCount = 0;
+      this.editedColumns = new Set();
+      this.mapSurfaces = new Map();
       for (const [ck, entries] of Object.entries(edits)) {
         const map = new Map(entries);
         this.edits.set(ck, map);
         this.editCount += map.size;
+        const [cx, cz] = ck.split(',').map(Number);
+        for (const index of map.keys()) this.editedColumns.add(`${cx * 16 + index % 16},${cz * 16 + Math.floor(index / 16) % 16}`);
       }
     }
     chunkKey(x, z) {
@@ -129,8 +133,33 @@
       return chunk[this.index(x, y, z)];
     }
     waterAt(x, y, z) {
-      return y < C.sea && column(x, z, this.seed).h < C.sea;
+      // Existing ocean stays wet under bridges; mined land can open new water columns.
+      return y < C.sea && (column(Math.floor(x), Math.floor(z), this.seed).h < C.sea || this.mapColumn(Math.floor(x), Math.floor(z)).h < C.sea);
     }
+    // Derived chart data never retains generated chunks. Only edited columns need a scan.
+    mapColumn(x, z) {
+      x = Math.floor(x); z = Math.floor(z);
+      const k = `${x},${z}`;
+      if (!this.editedColumns.has(k)) return column(x, z, this.seed);
+      if (this.mapSurfaces.has(k)) return this.mapSurfaces.get(k);
+      const ck = this.chunkKey(x, z), resident = this.chunks.has(ck);
+      const chunk = this.chunks.get(ck) || this.generate(Math.floor(x / 16), Math.floor(z / 16));
+      // Resolve all modified columns of this chunk in one pass, then release it.
+      const edits = this.edits.get(ck), columns = new Set([...edits.keys()].map(index => index % 256));
+      for (const local of columns) {
+        const px = Math.floor(x / 16) * 16 + local % 16, pz = Math.floor(z / 16) * 16 + Math.floor(local / 16), columnKey = `${px},${pz}`;
+        if (this.mapSurfaces.has(columnKey)) continue;
+        let h = 0, id = B.bedrock;
+        for (let y = C.height - 1; y >= 0; y--) {
+          const index = y * 256 + local, b = blocks[chunk[index]];
+          if (b.solid && (edits.get(index) || !['relic', 'leaves', 'bamboo', 'log', 'cactus'].includes(b.key))) { h = y; id = b.id; break; }
+        }
+        this.mapSurfaces.set(columnKey, { h, island: column(px, pz, this.seed).island, color: blocks[id].color });
+      }
+      if (!resident) this.chunks.delete(ck);
+      return this.mapSurfaces.get(k);
+    }
+
     solid(x, y, z) {
       return !!blocks[this.get(x, y, z)].solid;
     }
@@ -145,18 +174,22 @@
             island: i
           } = column(x, z, this.seed),
           [lo, hi] = caveColumn(x, z, this.networks);
-        const surface = h <= 14 ? B.sand : i?.id === 'dunes' ? B.sandstone : i?.id === 'frost' && h > 24 ? B.snow : i?.id === 'cinder' ? B.basalt : B.grass;
+        const surface = h <= 14 ? B.sand : i?.id === 'dunes' ? B.sandstone : i?.id === 'frost' && h > 24 ? B.snow : i?.id === 'cinder' ? B.basalt : i?.surface ? B[i.surface] : B.grass;
         for (let y = 0; y <= h; y++) {
           let id = y === 0 ? B.bedrock : y === h ? surface : y > h - 3 ? surface === B.sand || surface === B.sandstone ? B.sand : B.dirt : B.stone;
           const n = hash(x + y * 5, z - y * 7, this.seed);
           if (y > 0 && y < h - 3) {
             if (n % 59 < 3) id = B.coalOre;else if (n % 61 < 3) id = B.copperOre;else if (n % 67 < 3 && y < 20) id = B.ironOre;else if (i?.id === 'cinder' && n % 43 < 4 && y < 18) id = B.crystalOre;
           }
+          if (i?.ore && y > 0 && y < h - 3 && n % 37 < 5) id = B[i.ore];
           if (y === h && h > 13 && h < 20 && n % 5 === 0) id = B.clay;
           if (y >= lo && y < hi) id = 0;
           arr[y * 256 + lz * 16 + lx] = id;
         }
         if (h <= 14 || !i || lo < h + 6) continue;
+        if (i.plant && hash(x, z, this.seed + 77) % 29 === 0) {
+          for (let y = h + 1; y <= Math.min(C.height - 1, h + 4); y++) arr[y * 256 + lz * 16 + lx] = B[i.plant];
+        }
         const gx = Math.floor(x / 10),
           gz = Math.floor(z / 10),
           tx = gx * 10 + 4 + hash(gx, gz, this.seed) % 2,
@@ -231,6 +264,18 @@
           for (let dx = -1; dx <= 1; dx++) for (let dy = 4; dy < 7; dy++) add(dx, dy, 0, B.copperOre);
           add(0, 3, 0, B.ironOre);
         }
+        if (i.id === 'reed') {
+          for (let dx = -4; dx <= 4; dx++) {
+            add(dx, 0, 0, B.limestoneBrick);
+            for (let dy = 1; dy <= 6 - Math.abs(dx); dy++) add(dx, dy, 0, B.bamboo);
+          }
+          add(-5, 1, 0, B.jadeOre);
+        }
+        if (i.id === 'amber') {
+          for (let dx = -4; dx <= 4; dx++) for (let dz = -3; dz <= 3; dz++) if (Math.abs(dx) === 4 || Math.abs(dz) === 3) add(dx, 0, dz, B.ochreBrick);
+          for (let dy = 0; dy < 5; dy++) { add(-4, dy, -3, B.amberOre); add(4, dy, -3, B.amberOre); }
+          for (let dx = -4; dx <= 4; dx++) add(dx, 5, -3, B.ochreBrick);
+        }
         if (n === 4) {
           for (let dy = 0; dy < 7; dy++) add(0, dy, 0, B.basalt);
           for (let dx = -5; dx <= 5; dx++) for (let dy = 2; dy < 7; dy++) if (Math.abs(dx) > 1 && Math.abs(dx) + Math.abs(dy - 4) < 6) add(dx, dy, 0, B.crystalOre);
@@ -274,6 +319,8 @@
       if ((x + 1) % 16 === 0) this.dirty.add(this.chunkKey(x + 1, z));
       if (z % 16 === 0) this.dirty.add(this.chunkKey(x, z - 1));
       if ((z + 1) % 16 === 0) this.dirty.add(this.chunkKey(x, z + 1));
+      this.editedColumns.add(`${x},${z}`);
+      this.mapSurfaces.delete(`${x},${z}`);
       this.revision++;
       return true;
     }

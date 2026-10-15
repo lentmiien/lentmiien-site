@@ -40,7 +40,8 @@
     const w = new World(seed),
       p = w.spawn();
     return {
-      version: 1,
+      version: C.version,
+      expedition: { projects: { reed: 0, amber: 0 }, defeated: 0, creatures: {} },
       seed,
       time: 0,
       player: {
@@ -89,6 +90,7 @@
     constructor(state = fresh(), journal = () => true) {
       this.state = state;
       this.world = new World(state.seed, state.edits);
+      this.encounters = new (typeof module === 'object' ? require('./actors.js') : window.EWActors).Encounters(this);
       this.journal = journal;
       this.velocity = 0;
       this.grounded = false;
@@ -183,6 +185,10 @@
         ok: false,
         reason: `Visit ${islands.find(i => i.id === recipe.discovery).name}`
       };
+      for (const [island, stages] of Object.entries(D.projects)) {
+        const required = stages.findIndex(stage => stage.unlock === recipe.id);
+        if (required >= 0 && this.state.expedition.projects[island] <= required) return { ok: false, reason: `Restore ${islands.find(i => i.id === island).landmark} (Journal → Outer gardens)` };
+      }
       const delta = {};
       for (const [id, n] of Object.entries(recipe.cost)) delta[id] = -n * count;
       delta[recipe.out] = (delta[recipe.out] || 0) + recipe.count * count;
@@ -211,6 +217,7 @@
     }
     mine(dt) {
       if (this.state.status !== 'alive') return false;
+      if (this.encounters.hit()) { this.mineProgress = 0; return true; }
       const hit = this.target();
       if (!hit) {
         this.mineProgress = 0;
@@ -260,6 +267,7 @@
       if (!this.state.inventory[id]) return this.notify('Select an item you own in your pack.');
       if (item?.food) return this.eat(id);
       if (item?.boat) return this.launchBoat(id);
+      if (item?.weapon) return this.notify('Hold left click while aiming at a nearby pebble mite. This tool shoos one in a single hit.');
       if (!item?.block) return this.notify('This item is used through crafting or E interactions.');
       const hit = this.target();
       if (!hit) return this.notify('Aim at a nearby surface (within 5½ blocks).');
@@ -270,11 +278,13 @@
       if (Math.hypot(x, z) > C.warning) return this.notify('Build inside the sheltered archipelago.');
       if (Object.keys(this.state.placed).length >= 12000) return this.notify('Camp block limit reached (12,000).');
       if (item.category === 'storage' && Object.values(this.state.placed).filter(v => v === B.chest).length >= 16) return this.notify('A world supports 16 storage chests.');
+      if (id === 'bambooPlanter' && !Object.hasOwn(this.state.harvests, key(x, y, z)) && Object.keys(this.state.harvests).length >= 4096) return this.notify('Active garden timer limit reached. Harvest existing nurseries first.');
       if (!this.world.set(x, y, z, item.block)) return this.notify('World edit limit reached.');
       this.give({
         [id]: -1
       });
       this.state.placed[key(x, y, z)] = item.block;
+      if (id === 'bambooPlanter') this.state.harvests[key(x, y, z)] = this.state.time + 90;
       this.state.stats.placed++;
       this.notify(`Placed ${item.name}`);
       return true;
@@ -294,7 +304,7 @@
       const p = this.state.player;
       if (p.boat !== null) return this.notify('Moor your current vessel first (E).');
       if (this.state.boats.length >= 8) return this.notify('Mooring limit: eight vessels.');
-      if (p.y > C.sea + .7 || !this.world.waterAt(p.x, C.sea - .5, p.z) || this.world.solid(p.x, C.sea - 1, p.z)) return this.notify('Wade into water, then use the selected raft or cutter.');
+      if (p.y > C.sea + .7 || !this.world.waterAt(p.x, C.sea - .5, p.z) || this.world.solid(p.x, C.sea - 1, p.z) || this.world.solid(p.x, C.sea, p.z) || this.world.solid(p.x, C.sea + 1, p.z)) return this.notify('Wade into water, then use the selected raft or cutter.');
       const boat = {
         id: this.state.boats.reduce((m, b) => Math.max(m, b.id), 0) + 1,
         type: id,
@@ -310,6 +320,24 @@
         [id]: -1
       });
       this.notify('Under sail · W/S ahead/astern · A/D strafe · mouse steers · E moors');
+      return true;
+    }
+    restoreProject(island) {
+      const progress = this.state.expedition.projects[island.id], stage = D.projects[island.id]?.[progress];
+      if (!stage) {
+        this.state.player.health = 100;
+        this.state.player.food = Math.max(80, this.state.player.food);
+        this.state.buff = 300;
+        return this.notify(`${island.landmark} restored. Rest, refreshment and five minutes of warmth await every visit.`);
+      }
+      if ((stage.defeats || 0) > this.state.expedition.defeated) return this.notify(`${stage.name}: shoo ${stage.defeats} pebble mites (${this.state.expedition.defeated}/${stage.defeats}). Hold left click; they cannot leave Honeycomb Isle.`);
+      const delta = { ...stage.reward };
+      for (const [id, n] of Object.entries(stage.cost)) delta[id] = (delta[id] || 0) - n;
+      const next = change(this.state.inventory, delta);
+      if (!next) return this.notify(`${stage.name}: bring ${Object.entries(stage.cost).map(([id, n]) => `${n} ${items[id].name}`).join(', ')}; leave pack space for the reward.`);
+      this.state.inventory = next;
+      this.state.expedition.projects[island.id]++;
+      this.notify(`${stage.name} complete! ${stage.unlock ? `${items[stage.unlock].name} blueprint unlocked.` : 'Press E for the next restoration step.'}`);
       return true;
     }
     interact() {
@@ -338,7 +366,7 @@
             })) return false;
             this.state.caveFinds.push(cave.island);
           }
-          this.notify(`${names[islands.findIndex(i => i.id === cave.island)]} · A sealed tidekeeper cache waits among mineral echoes. Its chart is now recorded in your collection.`);
+          this.notify(`${islands.find(i => i.id === cave.island).caveName || names[islands.findIndex(i => i.id === cave.island)]} · A sealed tidekeeper cache waits among mineral echoes. Its chart is now recorded in your collection.`);
           return true;
         }
         const i = islands.find(i => Math.hypot(i.x + 12 - hit.x, i.z - 10 - hit.z) < 2);
@@ -346,6 +374,7 @@
           if (!this.give({ pearl: 2, shell: 4 })) return false;
           this.state.secrets.push(i.id);
         }
+        if (i && D.projects[i.id]) return this.restoreProject(i);
         this.notify(i ? D.lore[islands.indexOf(i)] : 'A tidekeeper passed this way.');
         return true;
       }
@@ -358,6 +387,15 @@
         })) {
           this.state.harvests[k] = this.state.time + 100;
           this.notify('Picked sunberries. The bush will regrow.');
+        }
+        return true;
+      }
+      if (id === 'bambooPlanter') {
+        if ((this.state.harvests[k] || 0) > this.state.time) return this.notify(`Nursery regrows in ${Math.ceil(this.state.harvests[k] - this.state.time)} seconds.`);
+        if (this.give({ bamboo: 2, bambooShoot: 2 })) {
+          this.state.harvests[k] = this.state.time + 90;
+          this.state.stats.harvest++;
+          this.notify('Gathered bamboo and tender shoots. This nursery regrows every 90 seconds of play.');
         }
         return true;
       }
@@ -414,12 +452,12 @@
         return true;
       }
       if (id && items[id].category) {
-        if (['bath', 'fountain'].includes(id)) {
+        if (['bath', 'fountain', 'jadeBath'].includes(id)) {
           p.health = 100;
           p.warmth = 100;
         }
-        if (['picnic', 'galley'].includes(id)) p.food = Math.max(70, p.food);
-        this.notify(`${items[id].name} · ${items[id].category} · quality ${items[id].quality}. ${id === 'telescope' ? 'Survey distant islands on the chart.' : id === 'gramophone' ? 'A music-box melody drifts over your camp.' : 'Contributes to a varied, thoughtfully arranged camp.'}`);
+        if (['picnic', 'galley', 'teaTable'].includes(id)) p.food = Math.max(70, p.food);
+        this.notify(`${items[id].name} · ${items[id].category} · quality ${items[id].quality}. ${id === 'telescope' ? 'Survey distant islands on the chart.' : ['gramophone', 'reedOrgan'].includes(id) ? 'A music-box melody drifts over your camp.' : 'Contributes to a varied, thoughtfully arranged camp.'}`);
         return true;
       }
       if (this.selected() === 'rod' && this.state.inventory.rod) {
@@ -637,6 +675,7 @@
       const cold = bi?.id === 'frost' && !s.inventory.coat && s.buff === 0;
       p.warmth = clamp(p.warmth + dt * (cold ? -.5 : .9), 0, 100);
       if (p.food < 10 || p.warmth < 10) p.health = Math.max(25, p.health - dt * .1);else p.health = Math.min(100, p.health + dt * .2);
+      if (s.status === 'alive') this.encounters.step(dt);
       if (input.mine) this.mine(dt);else this.mineProgress = 0;
       if (this.fishing) {
         if (distance(p, this.fishAt) > 2) {

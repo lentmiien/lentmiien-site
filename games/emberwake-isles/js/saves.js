@@ -37,24 +37,27 @@
     }
     if (sum > limit) fail();
   }
-  function coordKey(k) {
+  function coordKey(k, extent = C.extent) {
     if (typeof k !== 'string' || !/^(-?\d+),(\d+),(-?\d+)$/.test(k) || k.length > 18) fail();
     const [x, y, z] = k.split(',').map(Number);
-    number(x, -512, 511, true);
+    number(x, -extent, extent - 1, true);
     number(y, 1, 79, true);
-    number(z, -512, 511, true);
+    number(z, -extent, extent - 1, true);
     if (`${x},${y},${z}` !== k) fail();
     return [x, y, z];
   }
-  function point(v, allowed = ['x', 'y', 'z']) {
+  function point(v, extent = C.extent, allowed = ['x', 'y', 'z']) {
     keys(v, allowed);
-    number(v.x, -511, 511);
+    number(v.x, -extent + 1, extent - 1);
     number(v.y, 1, C.height + 4);
-    number(v.z, -511, 511);
+    number(v.z, -extent + 1, extent - 1);
   }
   function validate(s) {
-    keys(s, ['version', 'seed', 'time', 'player', 'inventory', 'hotbar', 'selected', 'edits', 'placed', 'crops', 'harvests', 'boats', 'discoveries', 'secrets', 'caveFinds', 'crafted', 'stats', 'camp', 'status', 'disaster', 'buff', 'settings', 'name']);
-    if (s.version !== 1) fail('Unsupported save version. Keep the original export.');
+    const old = s?.version === 1;
+    const extent = old ? D.legacy.extent : C.extent;
+    const blockCount = old ? D.legacy.blocks : blocks.length;
+    keys(s, ['version', 'seed', 'time', 'player', 'inventory', 'hotbar', 'selected', 'edits', 'placed', 'crops', 'harvests', 'boats', 'discoveries', 'secrets', 'caveFinds', 'crafted', 'stats', 'camp', 'status', 'disaster', 'buff', 'settings', 'name', ...(old ? [] : ['expedition'])]);
+    if (![1, C.version].includes(s.version)) fail('Unsupported save version. Keep the original export.');
     number(s.seed, 0, 2147483647, true);
     number(s.time, 0, 1e9);
     number(s.buff, 0, 300);
@@ -62,13 +65,13 @@
     if (!['alive', 'disaster', 'dead'].includes(s.status)) fail();
     if (typeof s.name !== 'string' || s.name.length < 1 || s.name.length > 48 || /[\u0000-\u001f]/.test(s.name)) fail();
     const p = s.player;
-    point(p, ['x', 'y', 'z', 'yaw', 'pitch', 'health', 'food', 'warmth', 'boat']);
+    point(p, extent, ['x', 'y', 'z', 'yaw', 'pitch', 'health', 'food', 'warmth', 'boat']);
     number(p.yaw, -Math.PI * 2, Math.PI * 2);
     number(p.pitch, -1.5, 1.5);
     for (const k of ['health', 'food', 'warmth']) number(p[k], 0, 100);
-    if (s.status === 'alive' && Math.hypot(p.x, p.z) >= C.border) fail('A living voyage cannot start beyond the storm boundary.');
-    point(s.camp);
-    if (Math.hypot(s.camp.x, s.camp.z) > C.warning) fail();
+    if (s.status === 'alive' && Math.hypot(p.x, p.z) >= (old ? D.legacy.border : C.border)) fail('A living voyage cannot start beyond the storm boundary.');
+    point(s.camp, extent);
+    if (Math.hypot(s.camp.x, s.camp.z) > (old ? D.legacy.warning : C.warning)) fail();
     inventory(s.inventory);
     list(s.hotbar, 8, id => {
       if (!Object.hasOwn(items, id)) fail();
@@ -80,8 +83,8 @@
     number(s.settings.sensitivity, .25, 3);
     number(s.settings.view, 3, 5, true);
     for (const k of ['discoveries', 'secrets', 'caveFinds']) {
-      list(s[k], 5, id => {
-        if (!islands.some(i => i.id === id)) fail();
+      list(s[k], old ? D.legacy.islands.length : islands.length, id => {
+        if (!(old ? D.legacy.islands : islands.map(i => i.id)).includes(id)) fail();
       });
       if (new Set(s[k]).size !== s[k].length) fail();
     }
@@ -96,8 +99,8 @@
       keys(b, ['id', 'type', 'x', 'z', 'yaw']);
       number(b.id, 1, 1e6, true);
       if (!['raft', 'cutter'].includes(b.type)) fail();
-      number(b.x, -511, 511);
-      number(b.z, -511, 511);
+      number(b.x, -extent + 1, extent - 1);
+      number(b.z, -extent + 1, extent - 1);
       number(b.yaw, -Math.PI * 2, Math.PI * 2);
     });
     if (new Set(s.boats.map(b => b.id)).size !== s.boats.length) fail();
@@ -106,19 +109,19 @@
       const boat = s.boats.find(b => b.id === p.boat);
       if (!boat || Math.hypot(boat.x - p.x, boat.z - p.z) > .1) fail();
     }
-    if (!object(s.edits) || Object.keys(s.edits).length > 4096) fail();
+    if (!object(s.edits) || Object.keys(s.edits).length > (extent / 8) ** 2) fail();
     let count = 0;
     for (const [ck, entries] of Object.entries(s.edits)) {
       if (!/^-?\d+,-?\d+$/.test(ck)) fail();
       const [x, z] = ck.split(',').map(Number);
-      number(x, -32, 31, true);
-      number(z, -32, 31, true);
+      number(x, -extent / 16, extent / 16 - 1, true);
+      number(z, -extent / 16, extent / 16 - 1, true);
       if (`${x},${z}` !== ck) fail();
       const seen = new Set();
       list(entries, 20480, e => {
         if (!Array.isArray(e) || e.length !== 2) fail();
         number(e[0], 256, 20479, true);
-        number(e[1], 0, blocks.length - 1, true);
+        number(e[1], 0, blockCount - 1, true);
         if ([D.ids.bedrock, D.ids.relic].includes(e[1]) || seen.has(e[0])) fail();
         seen.add(e[0]);
       });
@@ -126,7 +129,7 @@
       if (count > C.maxEdits) fail();
     }
     function edited(k, id) {
-      const [x, y, z] = coordKey(k),
+      const [x, y, z] = coordKey(k, extent),
         ck = `${Math.floor(x / 16)},${Math.floor(z / 16)}`,
         index = y * 256 + (z % 16 + 16) % 16 * 16 + (x % 16 + 16) % 16;
       if (!s.edits[ck]?.some(e => e[0] === index && e[1] === id)) fail('Object and terrain data disagree.');
@@ -134,8 +137,8 @@
     if (!object(s.placed) || Object.keys(s.placed).length > 12000) fail();
     let chests = 0;
     for (const [k, id] of Object.entries(s.placed)) {
-      coordKey(k);
-      number(id, 1, blocks.length - 1, true);
+      coordKey(k, extent);
+      number(id, 1, blockCount - 1, true);
       if ([D.ids.bedrock, D.ids.relic].includes(id)) fail();
       edited(k, id);
       if (id === D.ids.chest) chests++;
@@ -143,7 +146,7 @@
     if (chests > 16) fail();
     if (!object(s.crops) || Object.keys(s.crops).length > 512) fail();
     for (const [k, c] of Object.entries(s.crops)) {
-      coordKey(k);
+      coordKey(k, extent);
       if (s.placed[k] !== D.ids.farmland) fail();
       keys(c, ['type', 'ready', 'watered']);
       if (!['carrot', 'grain'].includes(c.type) || typeof c.watered !== 'boolean') fail();
@@ -152,20 +155,40 @@
     if (!object(s.harvests) || Object.keys(s.harvests).length > 4096) fail();
     for (const [k, v] of Object.entries(s.harvests)) {
       if (k.startsWith('chest:')) {
-        coordKey(k.slice(6));
+        coordKey(k.slice(6), extent);
         if (s.placed[k.slice(6)] !== D.ids.chest) fail();
         inventory(v, 4000);
       } else {
         if (!/^-?\d+,\d+,-?\d+$/.test(k) || k.length > 18) fail();
         const [x, y, z] = k.split(',').map(Number);
-        number(x, -512, 511, true);
+        number(x, -extent, extent - 1, true);
         number(y, 0, 79, true);
-        number(z, -512, 511, true);
+        number(z, -extent, extent - 1, true);
         number(v, 0, s.time + 180);
       }
     }
+    if (old) {
+      const inventories = [s.inventory, ...Object.entries(s.harvests).filter(([k]) => k.startsWith('chest:')).map(([, v]) => v)];
+      if (inventories.some(v => Object.keys(v).some(id => !D.legacy.items.includes(id))) || s.hotbar.some(id => !D.legacy.items.includes(id)) || s.crafted.some(id => !D.legacy.recipes.includes(id))) fail('Invalid legacy catalog entry.');
+      return migrations[1](s);
+    }
+    keys(s.expedition, ['projects', 'defeated', 'creatures']);
+    keys(s.expedition.projects, Object.keys(D.projects));
+    for (const id of Object.keys(D.projects)) number(s.expedition.projects[id], 0, D.projects[id].length, true);
+    number(s.expedition.defeated, 0, 1e9, true);
+    keys(s.expedition.creatures, Array.from({ length: 6 }, (_, n) => `amber:${n}`));
+    for (const entry of Object.values(s.expedition.creatures)) {
+      keys(entry, ['health', 'respawn']);
+      number(entry.health, 0, 3, true);
+      number(entry.respawn, 0, s.time + 300);
+      if (entry.health > 0 && entry.respawn !== 0) fail();
+    }
     return s;
   }
+  // Migrations add state, never rewrite seeded terrain, voxel IDs or existing edits.
+  const migrations = {
+    1: s => ({ ...s, version: 2, expedition: { projects: { reed: 0, amber: 0 }, defeated: 0, creatures: {} } })
+  };
   function decode(raw) {
     if (typeof raw !== 'string' || raw.length > MAX) fail('Save exceeds the 2 MB import limit.');
     let value;
@@ -210,7 +233,7 @@
       try {
         if (state.status !== 'alive' || Math.hypot(state.player.x, state.player.z) >= C.warning) return {
           ok: false,
-          error: 'Checkpoint kept: save only while alive inside sheltered waters (radius 405).'
+          error: `Checkpoint kept: save only while alive inside sheltered waters (radius ${C.warning}).`
         };
         if (this.raw(slot, 'terminal')) return {
           ok: false,
@@ -277,17 +300,17 @@
     }
     create(slot, state) {
       try {
-        validate(state);
+        state = validate(state);
+        const raw = JSON.stringify(state);
+        if (raw.length > MAX) fail('Save is too large. Keep the original export.');
         const old = this.raw(slot);
+        let valid = false;
         if (old) {
-          try {
-            decode(old);
-            this.storage.setItem(this.key(slot, 'backup'), old);
-          } catch (e) {
-            if (e.name === 'QuotaExceededError') throw e;
-          }
+          try { decode(old); valid = true; } catch {}
         }
-        this.storage.setItem(this.key(slot), JSON.stringify(state));
+        // Only corrupt input is ignored; every storage write failure must abort replacement.
+        if (valid) this.storage.setItem(this.key(slot, 'backup'), old);
+        this.storage.setItem(this.key(slot), raw);
         this.storage.removeItem(this.key(slot, 'terminal'));
         return {
           ok: true

@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "seed": 741092,
+  "time": 340,
+  "player": {
+    "x": -208.5,
+    "y": 13.01,
+    "z": 102.5,
+    "yaw": -0.5,
+    "pitch": -0.12,
+    "health": 100,
+    "food": 100,
+    "warmth": 100,
+    "boat": null
+  },
+  "inventory": {
+    "ironPick": 1,
+    "plank": 45,
+    "seed": 8,
+    "pearl": 3
+  },
+  "hotbar": [
+    "log",
+    "plank",
+    "woodPick",
+    "torch",
+    "berry",
+    "raft",
+    "stone",
+    "bench"
+  ],
+  "selected": 0,
+  "edits": {
+    "-13,6": [
+      [
+        3649,
+        61
+      ]
+    ],
+    "-14,6": [
+      [
+        3919,
+        48
+      ]
+    ],
+    "0,0": [
+      [
+        3072,
+        25
+      ]
+    ],
+    "-9,3": [
+      [
+        2756,
+        0
+      ]
+    ]
+  },
+  "placed": {
+    "-207,14,100": 61,
+    "-209,15,100": 48,
+    "0,12,0": 25
+  },
+  "crops": {
+    "-207,14,100": {
+      "type": "grain",
+      "ready": 400,
+      "watered": true
+    }
+  },
+  "harvests": {
+    "chest:-209,15,100": {
+      "crystal": 8
+    }
+  },
+  "boats": [
+    {
+      "id": 1,
+      "type": "raft",
+      "x": -250,
+      "z": 100,
+      "yaw": 0
+    }
+  ],
+  "discoveries": [
+    "tropic",
+    "forest"
+  ],
+  "secrets": [],
+  "caveFinds": [],
+  "crafted": [
+    "bench",
+    "plank",
+    "ironPick"
+  ],
+  "stats": {
+    "mined": 0,
+    "placed": 0,
+    "fish": 0,
+    "harvest": 0,
+    "sailed": 0
+  },
+  "camp": {
+    "x": -208.5,
+    "y": 13.01,
+    "z": 102.5
+  },
+  "status": "alive",
+  "disaster": 0,
+  "buff": 0,
+  "settings": {
+    "sound": false,
+    "sensitivity": 1,
+    "view": 4
+  },
+  "name": "My island retreat"
+}

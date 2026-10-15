@@ -52,13 +52,13 @@ function put(g, id, x = -207, y = 14, z = 100) {
 function step(g, t, input = {}) {
   for (let j = 0; j < Math.ceil(t * 60); j++) g.step(input, 1 / 60);
 }
-test('catalog has 5 substantial unique biomes, 4 islets and 66 implemented recipes', () => {
-  assert.equal(D.islands.length, 5);
-  assert.equal(new Set(D.islands.map(i => i.biome)).size, 5);
+test('catalog has 7 substantial unique biomes, 4 islets and 88 implemented recipes', () => {
+  assert.equal(D.islands.length, 7);
+  assert.equal(new Set(D.islands.map(i => i.biome)).size, 7);
   assert.equal(D.islets.length, 4);
-  assert.equal(D.recipes.length, 66);
+  assert.equal(D.recipes.length, 88);
   assert(D.islands.every(i => i.rx >= 80 && i.rz >= 75));
-  assert.equal(new Set(D.recipes.map(r => r.id)).size, 66);
+  assert.equal(new Set(D.recipes.map(r => r.id)).size, 88);
 });
 test('same seed gives identical terrain and alternate seeds change relief', () => {
   const a = new W.World(12),
@@ -85,7 +85,7 @@ test('spawn is grounded, body-clear and adjacent to food and driftwood for 20 se
     assert(g.world.starterProps().some(q => Math.hypot(q[0] - p.x, q[2] - p.z) < 8));
   }
 });
-test('five entrance trails connect all three cave branches and chambers with walkable ramps', () => {
+test('seven entrance trails connect all three cave branches and chambers with walkable ramps', () => {
   const world = new W.World(741092);
   for (const cave of world.networks) {
     const all = cave.paths.flat();
@@ -138,7 +138,7 @@ test('cave walls expose coal, copper, iron and volcanic prism resources', () => 
 test('bounded world prevents bedrock edit and rejects outside coordinates', () => {
   const w = new W.World();
   assert.equal(w.set(0, 0, 0, 0), false);
-  assert.equal(w.set(512, 2, 0, B.stone), false);
+  assert.equal(w.set(C.extent, 2, 0, B.stone), false);
   assert.equal(w.set(0, 80, 0, B.stone), false);
   assert.equal(w.set(0, 2, 0, 999), false);
   assert.equal(w.set(.1, 2, 0, 0), false);
@@ -156,20 +156,27 @@ test('modified chunks survive unloading and reconstruct identically', () => {
   assert.equal(copy.get(-201, 20, 86), B.plank);
 });
 test('recipe graph reaches every output from actual natural resources without gate cycles', () => {
-  const available = new Set(['log', 'fiber', 'resin', 'seed', 'berry', 'dirt', 'sand', 'clay', 'shell', 'fish', 'pearl', 'carrot', 'grain']),
+  const available = new Set(['log', 'fiber', 'resin', 'seed', 'berry', 'dirt', 'sand', 'clay', 'shell', 'fish', 'pearl', 'carrot', 'grain', 'fossil']),
     stations = new Set(),
-    crafts = new Set();
+    crafts = new Set(),
+    projects = Object.fromEntries(Object.keys(D.projects).map(id => [id, 0]));
   let tier = 0;
   for (let pass = 0; pass < 12; pass++) {
     for (const b of D.blocks) {
-      if (b.tier <= tier && b.tier !== 99 && ['stone', 'copperOre', 'ironOre', 'coalOre', 'crystalOre', 'basalt'].includes(b.key)) available.add(b.drop || b.key);
+      if (b.tier <= tier && b.tier !== 99 && ['stone', 'copperOre', 'ironOre', 'coalOre', 'crystalOre', 'basalt', 'bamboo', 'limestone', 'jadeOre', 'ochre', 'amberOre'].includes(b.key)) available.add(b.drop || b.key);
+    }
+    if (crafts.has('bambooPlanter')) available.add('bambooShoot');
+    for (const [id, stages] of Object.entries(D.projects)) {
+      const stage = stages[projects[id]];
+      if (stage && Object.keys(stage.cost).every(key => available.has(key))) projects[id]++;
     }
     for (const r of D.recipes) {
       assert(D.items[r.out]);
       assert(r.count > 0);
       assert(!r.station || D.items[r.station]?.block);
       for (const id of Object.keys(r.cost)) assert(D.items[id]);
-      if (Object.keys(r.cost).every(k => available.has(k)) && (!r.station || stations.has(r.station))) {
+      const projectReady = Object.entries(D.projects).every(([id, stages]) => stages.every((stage, index) => stage.unlock !== r.id || projects[id] > index));
+      if (projectReady && Object.keys(r.cost).every(k => available.has(k)) && (!r.station || stations.has(r.station))) {
         available.add(r.out);
         crafts.add(r.id);
         if (D.items[r.out].block) stations.add(r.out);
@@ -210,13 +217,14 @@ test('craft requires nearby station and discovery independently', () => {
   assert(!g.craft('tile'));
   assert(k);
 });
-test('all 66 recipes change inventory correctly when their requirements are met', () => {
+test('all 88 recipes change inventory correctly when their requirements are met', () => {
   for (const r of D.recipes) {
     const g = fixture();
     g.state.inventory = {
       ...r.cost
     };
     g.state.discoveries = D.islands.map(i => i.id);
+    g.state.expedition.projects = { reed: 2, amber: 2 };
     if (r.station) put(g, r.station);
     const before = G.total(g.state.inventory);
     assert(g.craft(r.id), r.id);
@@ -529,7 +537,7 @@ for (const boat of [false, true]) test(`outer boundary is terminal for ${boat ? 
   assert(saves.create(1, g.snapshot()).ok);
   g.journal = () => saves.terminal(1);
   Object.assign(g.state.player, {
-    x: 489.9,
+    x: C.border - .1,
     z: 0,
     y: 11.5,
     yaw: -Math.PI / 2
@@ -559,7 +567,7 @@ test('crossing fails visibly before transition if terminal journal cannot persis
   const g = fixture();
   g.journal = () => false;
   Object.assign(g.state.player, {
-    x: 489.9,
+    x: C.border - .1,
     z: 0,
     y: 11.5,
     yaw: -Math.PI / 2
@@ -568,7 +576,7 @@ test('crossing fails visibly before transition if terminal journal cannot persis
     forward: true
   });
   assert.equal(g.state.status, 'alive');
-  assert(g.state.player.x < 490);
+  assert(g.state.player.x < C.border);
   assert(g.saveBlocked);
   assert.match(g.message, /storage/);
 });
@@ -687,7 +695,7 @@ test('corrupt primary does not overwrite previous valid backup when saving', () 
   assert(saves.save(1, s).ok);
   assert.equal(saves.load(1, true).state.time, 0);
 });
-for (const [name, mutate] of [['schema', s => s.version = 99], ['unknown field', s => s.admin = true], ['unknown item', s => s.inventory.fake = 4], ['negative count', s => s.inventory.log = -1], ['fractional count', s => s.inventory.log = 1.5], ['infinite player', s => s.player.x = Infinity], ['outside coordinate', s => s.player.x = 900], ['terminal location as living', s => s.player.x = 500], ['unbounded name', s => s.name = 'x'.repeat(1000)], ['bad voxel ID', s => s.edits = {
+for (const [name, mutate] of [['schema', s => s.version = 99], ['unknown field', s => s.admin = true], ['unknown item', s => s.inventory.fake = 4], ['negative count', s => s.inventory.log = -1], ['fractional count', s => s.inventory.log = 1.5], ['infinite player', s => s.player.x = Infinity], ['outside coordinate', s => s.player.x = C.extent + 1], ['terminal location as living', s => s.player.x = C.border + 1], ['unbounded name', s => s.name = 'x'.repeat(1000)], ['bad voxel ID', s => s.edits = {
   '0,0': [[999, 255]]
 }], ['bedrock editing', s => s.edits = {
   '0,0': [[0, 5]]
@@ -835,10 +843,10 @@ test('expired renewable resource timers are pruned during play, keeping saves bo
   step(g, .1); assert.equal(g.state.harvests['-208,13,99'], undefined);
 });
 test('visible warning waters slow vessels, allowing time to turn back before the final line', () => {
-  const g = fixture(); Object.assign(g.state.player, { x: 410, y: 11.5, z: 0, yaw: -Math.PI / 2 });
+  const g = fixture(); Object.assign(g.state.player, { x: C.warning + 5, y: 11.5, z: 0, yaw: -Math.PI / 2 });
   g.state.inventory.cutter = 1; g.state.hotbar[0] = 'cutter'; assert(g.place());
-  step(g, 1, { forward: true }); assert(g.state.player.x < 419);
-  g.state.player.yaw = Math.PI / 2; step(g, 2, { forward: true }); assert(g.state.player.x < 405);
+  step(g, 1, { forward: true }); assert(g.state.player.x < C.warning + 14);
+  g.state.player.yaw = Math.PI / 2; step(g, 2, { forward: true }); assert(g.state.player.x < C.warning);
   assert.equal(g.state.status, 'alive');
 });
 test('full packs do not consume unique treasure claims or falsely report successful fishing', () => {

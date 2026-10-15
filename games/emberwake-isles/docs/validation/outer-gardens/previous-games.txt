@@ -1,0 +1,694 @@
+TAP version 13
+# Subtest: substantial authored world with distinct districts and many town crossroads
+ok 1 - substantial authored world with distinct districts and many town crossroads
+  ---
+  duration_ms: 5.988868
+  type: 'test'
+  ...
+# Subtest: deterministic world placement and asset reproduction seed
+ok 2 - deterministic world placement and asset reproduction seed
+  ---
+  duration_ms: 83.231026
+  type: 'test'
+  ...
+# Subtest: every solid visual footprint clears every road and intersection by at least four metres
+ok 3 - every solid visual footprint clears every road and intersection by at least four metres
+  ---
+  duration_ms: 83.518002
+  type: 'test'
+  ...
+# Subtest: solid decorations never intersect each other
+ok 4 - solid decorations never intersect each other
+  ---
+  duration_ms: 23.441054
+  type: 'test'
+  ...
+# Subtest: spatial road lookup agrees with exhaustive geometry near all drivable surfaces
+ok 5 - spatial road lookup agrees with exhaustive geometry near all drivable surfaces
+  ---
+  duration_ms: 119.197069
+  type: 'test'
+  ...
+# Subtest: all roads connect, have no unconnected dead ends, and cross at matching terrain heights
+ok 6 - all roads connect, have no unconnected dead ends, and cross at matching terrain heights
+  ---
+  duration_ms: 32.473364
+  type: 'test'
+  ...
+# Subtest: road widths remain dry and grades are passable across dense samples
+ok 7 - road widths remain dry and grades are passable across dense samples
+  ---
+  duration_ms: 28.347793
+  type: 'test'
+  ...
+# Subtest: road texture shares exact terrain triangles: no independent elevated road mesh
+ok 8 - road texture shares exact terrain triangles: no independent elevated road mesh
+  ---
+  duration_ms: 10.638347
+  type: 'test'
+  ...
+# Subtest: checkpoint candidates are reachable clear road centres on dry terrain
+ok 9 - checkpoint candidates are reachable clear road centres on dry terrain
+  ---
+  duration_ms: 13.91329
+  type: 'test'
+  ...
+# Subtest: random checkpoints relocate to distant distinct reachable sites
+ok 10 - random checkpoints relocate to distant distinct reachable sites
+  ---
+  duration_ms: 16.096505
+  type: 'test'
+  ...
+# Subtest: checkpoint collection gives no score, acceleration, grip, resource or speed benefit
+ok 11 - checkpoint collection gives no score, acceleration, grip, resource or speed benefit
+  ---
+  duration_ms: 5.143631
+  type: 'test'
+  ...
+# Subtest: quality is understandable, distance-based, bounded and unaffected by idling
+ok 12 - quality is understandable, distance-based, bounded and unaffected by idling
+  ---
+  duration_ms: 9.055332
+  type: 'test'
+  ...
+# Subtest: road distance rewards accurate driving while off-road travel reduces the percentage
+ok 13 - road distance rewards accurate driving while off-road travel reduces the percentage
+  ---
+  duration_ms: 1.345432
+  type: 'test'
+  ...
+# Subtest: three cars have clearly different acceleration, speed and cornering limits
+ok 14 - three cars have clearly different acceleration, speed and cornering limits
+  ---
+  duration_ms: 12.0063
+  type: 'test'
+  ...
+# Subtest: fixed steps produce equivalent handling at 30, 60 and 144 frames per second
+ok 15 - fixed steps produce equivalent handling at 30, 60 and 144 frames per second
+  ---
+  duration_ms: 5.985612
+  type: 'test'
+  ...
+# Subtest: brake stops before reverse, reverse backs out, and handbrake does not reverse
+ok 16 - brake stops before reverse, reverse backs out, and handbrake does not reverse
+  ---
+  duration_ms: 2.910323
+  type: 'test'
+  ...
+# Subtest: continuous swept collision detects thin obstacles even across a long high-speed segment
+ok 17 - continuous swept collision detects thin obstacles even across a long high-speed segment
+  ---
+  duration_ms: 0.574603
+  type: 'test'
+  ...
+# Subtest: sustained collision does not create per-frame penalty explosions
+ok 18 - sustained collision does not create per-frame penalty explosions
+  ---
+  duration_ms: 4.047815
+  type: 'test'
+  ...
+# Subtest: recovering then hitting again counts a separate collision
+ok 19 - recovering then hitting again counts a separate collision
+  ---
+  duration_ms: 1.210449
+  type: 'test'
+  ...
+# Subtest: only entering water ends play; poor score, collisions and elapsed time do not
+ok 20 - only entering water ends play; poor score, collisions and elapsed time do not
+  ---
+  duration_ms: 2.741397
+  type: 'test'
+  ...
+# Subtest: pause freezes all session state and drops pending simulation time
+ok 21 - pause freezes all session state and drops pending simulation time
+  ---
+  duration_ms: 0.756182
+  type: 'test'
+  ...
+# Subtest: restart resets every session metric, input-derived motion and event state
+ok 22 - restart resets every session metric, input-derived motion and event state
+  ---
+  duration_ms: 0.743358
+  type: 'test'
+  ...
+# Subtest: invalid car and non-finite or excessive timing/control input are bounded
+ok 23 - invalid car and non-finite or excessive timing/control input are bounded
+  ---
+  duration_ms: 0.192099
+  type: 'test'
+  ...
+# Subtest: runtime is local-only, has no account/storage access or unsafe content insertion
+ok 24 - runtime is local-only, has no account/storage access or unsafe content insertion
+  ---
+  duration_ms: 1.147782
+  type: 'test'
+  ...
+# Subtest: local art, speech, theme and licensed dependency are present
+ok 25 - local art, speech, theme and licensed dependency are present
+  ---
+  duration_ms: 1.570762
+  type: 'test'
+  ...
+# Subtest: six named worlds have distinct increasing gravity, generous fuel and valid safe pads
+ok 26 - six named worlds have distinct increasing gravity, generous fuel and valid safe pads
+  ---
+  duration_ms: 8.526926
+  type: 'test'
+  ...
+# Subtest: gravity changes acceleration and no release hover/steering exists
+ok 27 - gravity changes acceleration and no release hover/steering exists
+  ---
+  duration_ms: 2.431849
+  type: 'test'
+  ...
+# Subtest: strict two-dimensional state and main thrust follows tilt
+ok 28 - strict two-dimensional state and main thrust follows tilt
+  ---
+  duration_ms: 0.198721
+  type: 'test'
+  ...
+# Subtest: main engine lifts safely from start in every gravity
+ok 29 - main engine lifts safely from start in every gravity
+  ---
+  duration_ms: 4.504588
+  type: 'test'
+  ...
+# Subtest: left command makes negative tilt and right positive with angular inertia
+ok 30 - left command makes negative tilt and right positive with angular inertia
+  ---
+  duration_ms: 0.274803
+  type: 'test'
+  ...
+# Subtest: fuel charges main and each side engine independently and in combination
+ok 31 - fuel charges main and each side engine independently and in combination
+  ---
+  duration_ms: 0.119744
+  type: 'test'
+  ...
+# Subtest: contradictory rotation commands cancel force, plumes and rotation spending
+ok 32 - contradictory rotation commands cancel force, plumes and rotation spending
+  ---
+  duration_ms: 1.077651
+  type: 'test'
+  ...
+# Subtest: empty tank has no engine force or exhaust and finite flight fails
+ok 33 - empty tank has no engine force or exhaust and finite flight fails
+  ---
+  duration_ms: 0.957046
+  type: 'test'
+  ...
+# Subtest: partial last burn is prorated and fuel never becomes negative
+ok 34 - partial last burn is prorated and fuel never becomes negative
+  ---
+  duration_ms: 0.149279
+  type: 'test'
+  ...
+# Subtest: same-step safe goal contact precedes depletion, then settles for 0.6 seconds
+ok 35 - same-step safe goal contact precedes depletion, then settles for 0.6 seconds
+  ---
+  duration_ms: 1.114581
+  type: 'test'
+  ...
+# Subtest: impact outranks fuel depletion and cannot become success
+ok 36 - impact outranks fuel depletion and cannot become success
+  ---
+  duration_ms: 0.671383
+  type: 'test'
+  ...
+# Subtest: practice stays powered at zero represented fuel and never depletes
+ok 37 - practice stays powered at zero represented fuel and never depletes
+  ---
+  duration_ms: 1.209968
+  type: 'test'
+  ...
+# Subtest: safe actual goal contact succeeds with a stable, upright settled state
+ok 38 - safe actual goal contact succeeds with a stable, upright settled state
+  ---
+  duration_ms: 0.293588
+  type: 'test'
+  ...
+# Subtest: flying across goal zone above pad is not success
+ok 39 - flying across goal zone above pad is not success
+  ---
+  duration_ms: 0.65909
+  type: 'test'
+  ...
+# Subtest: safe return to start is allowed and never completes goal
+ok 40 - safe return to start is allowed and never completes goal
+  ---
+  duration_ms: 0.364259
+  type: 'test'
+  ...
+# Subtest: reject unsafe goal horizontal speed
+ok 41 - reject unsafe goal horizontal speed
+  ---
+  duration_ms: 1.228484
+  type: 'test'
+  ...
+# Subtest: reject unsafe goal descent speed
+ok 42 - reject unsafe goal descent speed
+  ---
+  duration_ms: 0.097542
+  type: 'test'
+  ...
+# Subtest: reject unsafe goal tilt
+ok 43 - reject unsafe goal tilt
+  ---
+  duration_ms: 0.066324
+  type: 'test'
+  ...
+# Subtest: reject unsafe goal spin
+ok 44 - reject unsafe goal spin
+  ---
+  duration_ms: 0.062086
+  type: 'test'
+  ...
+# Subtest: reject unsafe goal partial footprint
+ok 45 - reject unsafe goal partial footprint
+  ---
+  duration_ms: 0.060533
+  type: 'test'
+  ...
+# Subtest: reject unsafe goal pad side
+ok 46 - reject unsafe goal pad side
+  ---
+  duration_ms: 0.051016
+  type: 'test'
+  ...
+# Subtest: reject unsafe goal pad underside/interior
+ok 47 - reject unsafe goal pad underside/interior
+  ---
+  duration_ms: 0.052478
+  type: 'test'
+  ...
+# Subtest: obstacle and terrain contacts are fatal
+ok 48 - obstacle and terrain contacts are fatal
+  ---
+  duration_ms: 0.115425
+  type: 'test'
+  ...
+# Subtest: adaptive spatial collision prevents fast tunneling through rocks and pad sides
+ok 49 - adaptive spatial collision prevents fast tunneling through rocks and pad sides
+  ---
+  duration_ms: 0.813959
+  type: 'test'
+  ...
+# Subtest: fast vertical collision cannot tunnel through arrival
+ok 50 - fast vertical collision cannot tunnel through arrival
+  ---
+  duration_ms: 0.680801
+  type: 'test'
+  ...
+# Subtest: sector boundary and extreme simulation work fail visibly
+ok 51 - sector boundary and extreme simulation work fail visibly
+  ---
+  duration_ms: 0.097743
+  type: 'test'
+  ...
+# Subtest: SAT detects crossings, containment and separation
+ok 52 - SAT detects crossings, containment and separation
+  ---
+  duration_ms: 0.122028
+  type: 'test'
+  ...
+# Subtest: fixed-step result is identical at 30, 60 and 144 render Hz
+ok 53 - fixed-step result is identical at 30, 60 and 144 render Hz
+  ---
+  duration_ms: 17.638473
+  type: 'test'
+  ...
+# Subtest: pause drops catch-up time, clears engines and cannot alter result
+ok 54 - pause drops catch-up time, clears engines and cannot alter result
+  ---
+  duration_ms: 1.825497
+  type: 'test'
+  ...
+# Subtest: invalid dt/input is inert, long frames bounded and stage/mode enums rejected
+ok 55 - invalid dt/input is inert, long frames bounded and stage/mode enums rejected
+  ---
+  duration_ms: 0.400227
+  type: 'test'
+  ...
+# Subtest: retry and switching stages/modes restore state without old input or timer
+ok 56 - retry and switching stages/modes restore state without old input or timer
+  ---
+  duration_ms: 0.158826
+  type: 'test'
+  ...
+# Subtest: input aliases, multiple pointers, cancellation and clear have no stuck keys
+ok 57 - input aliases, multiple pointers, cancellation and clear have no stuck keys
+  ---
+  duration_ms: 0.357407
+  type: 'test'
+  ...
+# Subtest: grading uses fraction only and exact documented band boundaries
+ok 58 - grading uses fraction only and exact documented band boundaries
+  ---
+  duration_ms: 0.127879
+  type: 'test'
+  ...
+# Subtest: records accept landed standard only, preserve best and separate practice
+ok 59 - records accept landed standard only, preserve best and separate practice
+  ---
+  duration_ms: 0.306362
+  type: 'test'
+  ...
+# Subtest: malformed, hostile, oversized and unavailable storage fail safely
+ok 60 - malformed, hostile, oversized and unavailable storage fail safely
+  ---
+  duration_ms: 0.355043
+  type: 'test'
+  ...
+# Subtest: ordinary player-button flight completes Selene with finite fuel and rock clearance
+ok 61 - ordinary player-button flight completes Selene with finite fuel and rock clearance
+  ---
+  duration_ms: 36.465685
+  type: 'test'
+  ...
+# Subtest: ordinary player-button flight completes Ochre with finite fuel and rock clearance
+ok 62 - ordinary player-button flight completes Ochre with finite fuel and rock clearance
+  ---
+  duration_ms: 21.27979
+  type: 'test'
+  ...
+# Subtest: ordinary player-button flight completes Verdant with finite fuel and rock clearance
+ok 63 - ordinary player-button flight completes Verdant with finite fuel and rock clearance
+  ---
+  duration_ms: 35.177772
+  type: 'test'
+  ...
+# Subtest: ordinary player-button flight completes Nacre with finite fuel and rock clearance
+ok 64 - ordinary player-button flight completes Nacre with finite fuel and rock clearance
+  ---
+  duration_ms: 21.799049
+  type: 'test'
+  ...
+# Subtest: ordinary player-button flight completes Cinder with finite fuel and rock clearance
+ok 65 - ordinary player-button flight completes Cinder with finite fuel and rock clearance
+  ---
+  duration_ms: 20.097342
+  type: 'test'
+  ...
+# Subtest: ordinary player-button flight completes Atlas with finite fuel and rock clearance
+ok 66 - ordinary player-button flight completes Atlas with finite fuel and rock clearance
+  ---
+  duration_ms: 15.035725
+  type: 'test'
+  ...
+# Subtest: infinite practice also completes highest-gravity route, without spending
+ok 67 - infinite practice also completes highest-gravity route, without spending
+  ---
+  duration_ms: 9.922741
+  type: 'test'
+  ...
+# Subtest: normal engine-only failure can retry and subsequently fly successfully
+ok 68 - normal engine-only failure can retry and subsequently fly successfully
+  ---
+  duration_ms: 12.951786
+  type: 'test'
+  ...
+# Subtest: runtime has no network backend, dynamic HTML insertion or imported test controller
+ok 69 - runtime has no network backend, dynamic HTML insertion or imported test controller
+  ---
+  duration_ms: 1.661361
+  type: 'test'
+  ...
+# Subtest: world is 28 km; five 1.4 km runways have reciprocal identifiers and separated centres
+ok 70 - world is 28 km; five 1.4 km runways have reciprocal identifiers and separated centres
+  ---
+  duration_ms: 1.114811
+  type: 'test'
+  ...
+# Subtest: every runway, taxiway, apron and protected final has exact level collision terrain
+ok 71 - every runway, taxiway, apron and protected final has exact level collision terrain
+  ---
+  duration_ms: 23.438699
+  type: 'test'
+  ...
+# Subtest: all actual obstacle bounds clear runway and arrival corridor; buildings reserve apron
+ok 72 - all actual obstacle bounds clear runway and arrival corridor; buildings reserve apron
+  ---
+  duration_ms: 16.301588
+  type: 'test'
+  ...
+# Subtest: terrain uses exact triangle interpolation rather than a second analytic surface
+ok 73 - terrain uses exact triangle interpolation rather than a second analytic surface
+  ---
+  duration_ms: 0.562991
+  type: 'test'
+  ...
+# Subtest: full power alone never rotates; the published pitch hold produces climb
+ok 74 - full power alone never rotates; the published pitch hold produces climb
+  ---
+  duration_ms: 14.890093
+  type: 'test'
+  ...
+# Subtest: pitch holds on release; bank levels and coordinated turns follow player input
+ok 75 - pitch holds on release; bank levels and coordinated turns follow player input
+  ---
+  duration_ms: 22.505858
+  type: 'test'
+  ...
+# Subtest: 30/60/144 Hz produce identical full power rotation and climb
+ok 76 - 30/60/144 Hz produce identical full power rotation and climb
+  ---
+  duration_ms: 21.569711
+  type: 'test'
+  ...
+# Subtest: pause discards elapsed time, clears brake, and restart clears complete session
+ok 77 - pause discards elapsed time, clears brake, and restart clears complete session
+  ---
+  duration_ms: 2.288211
+  type: 'test'
+  ...
+# Subtest: finite bounded timing, inputs and invalid route selection
+ok 78 - finite bounded timing, inputs and invalid route selection
+  ---
+  duration_ms: 1.121513
+  type: 'test'
+  ...
+# Subtest: safe destination touchdown requires rollout and actual stopped state
+ok 79 - safe destination touchdown requires rollout and actual stopped state
+  ---
+  duration_ms: 9.504971
+  type: 'test'
+  ...
+# Subtest: merely overflying a destination never completes it
+ok 80 - merely overflying a destination never completes it
+  ---
+  duration_ms: 10.2273
+  type: 'test'
+  ...
+# Subtest: wrong airport and reciprocal landings are explicitly safe diversions
+ok 81 - wrong airport and reciprocal landings are explicitly safe diversions
+  ---
+  duration_ms: 6.988234
+  type: 'test'
+  ...
+# Subtest: landing rejects excessive descent
+ok 82 - landing rejects excessive descent
+  ---
+  duration_ms: 0.226442
+  type: 'test'
+  ...
+# Subtest: landing rejects excessive speed
+ok 83 - landing rejects excessive speed
+  ---
+  duration_ms: 0.078887
+  type: 'test'
+  ...
+# Subtest: landing rejects sideways
+ok 84 - landing rejects sideways
+  ---
+  duration_ms: 0.059902
+  type: 'test'
+  ...
+# Subtest: landing rejects wingtip
+ok 85 - landing rejects wingtip
+  ---
+  duration_ms: 0.075341
+  type: 'test'
+  ...
+# Subtest: landing rejects runway edge
+ok 86 - landing rejects runway edge
+  ---
+  duration_ms: 0.068087
+  type: 'test'
+  ...
+# Subtest: landing rejects off runway
+ok 87 - landing rejects off runway
+  ---
+  duration_ms: 0.063688
+  type: 'test'
+  ...
+# Subtest: rolling off pavement is not a successful landing
+ok 88 - rolling off pavement is not a successful landing
+  ---
+  duration_ms: 0.162734
+  type: 'test'
+  ...
+# Subtest: stall is recoverable with normal nose-down and full-power inputs
+ok 89 - stall is recoverable with normal nose-down and full-power inputs
+  ---
+  duration_ms: 4.674616
+  type: 'test'
+  ...
+# Subtest: water, terrain and bounded obstacle collisions end clearly
+ok 90 - water, terrain and bounded obstacle collisions end clearly
+  ---
+  duration_ms: 1.120972
+  type: 'test'
+  ...
+# Subtest: guidance detects flare without conflicting stall advice and unstable approach recovery
+ok 91 - guidance detects flare without conflicting stall advice and unstable approach recovery
+  ---
+  duration_ms: 0.397011
+  type: 'test'
+  ...
+# Subtest: input matches instructions; key release, opposing inputs, pointer cancel and clear cannot stick
+ok 92 - input matches instructions; key release, opposing inputs, pointer cancel and clear cannot stick
+  ---
+  duration_ms: 0.587085
+  type: 'test'
+  ...
+# Subtest: static runtime contains no remote dependencies, HTML injection, telemetry, storage or backend writes
+ok 93 - static runtime contains no remote dependencies, HTML injection, telemetry, storage or backend writes
+  ---
+  duration_ms: 3.016561
+  type: 'test'
+  ...
+# Subtest: airspeed drag is forgiving and control authority remains at high speed
+ok 94 - airspeed drag is forgiving and control authority remains at high speed
+  ---
+  duration_ms: 6.775377
+  type: 'test'
+  ...
+# Subtest: control-only flight: Haven Coast → Meadow Field
+ok 95 - control-only flight: Haven Coast → Meadow Field
+  ---
+  duration_ms: 177.753859
+  type: 'test'
+  ...
+# Subtest: control-only flight: Haven Coast → Pine Reach
+ok 96 - control-only flight: Haven Coast → Pine Reach
+  ---
+  duration_ms: 433.556489
+  type: 'test'
+  ...
+# Subtest: control-only flight: Haven Coast → Sunstone Mesa
+ok 97 - control-only flight: Haven Coast → Sunstone Mesa
+  ---
+  duration_ms: 440.390936
+  type: 'test'
+  ...
+# Subtest: control-only flight: Haven Coast → Northwater
+ok 98 - control-only flight: Haven Coast → Northwater
+  ---
+  duration_ms: 380.260287
+  type: 'test'
+  ...
+# Subtest: control-only flight: Meadow Field → Haven Coast
+ok 99 - control-only flight: Meadow Field → Haven Coast
+  ---
+  duration_ms: 467.773737
+  type: 'test'
+  ...
+# Subtest: control-only flight: Meadow Field → Pine Reach
+ok 100 - control-only flight: Meadow Field → Pine Reach
+  ---
+  duration_ms: 185.820154
+  type: 'test'
+  ...
+# Subtest: control-only flight: Meadow Field → Sunstone Mesa
+ok 101 - control-only flight: Meadow Field → Sunstone Mesa
+  ---
+  duration_ms: 311.303676
+  type: 'test'
+  ...
+# Subtest: control-only flight: Meadow Field → Northwater
+ok 102 - control-only flight: Meadow Field → Northwater
+  ---
+  duration_ms: 370.686988
+  type: 'test'
+  ...
+# Subtest: control-only flight: Pine Reach → Haven Coast
+ok 103 - control-only flight: Pine Reach → Haven Coast
+  ---
+  duration_ms: 455.645036
+  type: 'test'
+  ...
+# Subtest: control-only flight: Pine Reach → Meadow Field
+ok 104 - control-only flight: Pine Reach → Meadow Field
+  ---
+  duration_ms: 302.185145
+  type: 'test'
+  ...
+# Subtest: control-only flight: Pine Reach → Sunstone Mesa
+ok 105 - control-only flight: Pine Reach → Sunstone Mesa
+  ---
+  duration_ms: 223.891315
+  type: 'test'
+  ...
+# Subtest: control-only flight: Pine Reach → Northwater
+ok 106 - control-only flight: Pine Reach → Northwater
+  ---
+  duration_ms: 747.558778
+  type: 'test'
+  ...
+# Subtest: control-only flight: Sunstone Mesa → Haven Coast
+ok 107 - control-only flight: Sunstone Mesa → Haven Coast
+  ---
+  duration_ms: 645.66724
+  type: 'test'
+  ...
+# Subtest: control-only flight: Sunstone Mesa → Meadow Field
+ok 108 - control-only flight: Sunstone Mesa → Meadow Field
+  ---
+  duration_ms: 424.180734
+  type: 'test'
+  ...
+# Subtest: control-only flight: Sunstone Mesa → Pine Reach
+ok 109 - control-only flight: Sunstone Mesa → Pine Reach
+  ---
+  duration_ms: 359.993185
+  type: 'test'
+  ...
+# Subtest: control-only flight: Sunstone Mesa → Northwater
+ok 110 - control-only flight: Sunstone Mesa → Northwater
+  ---
+  duration_ms: 312.358973
+  type: 'test'
+  ...
+# Subtest: control-only flight: Northwater → Haven Coast
+ok 111 - control-only flight: Northwater → Haven Coast
+  ---
+  duration_ms: 326.579817
+  type: 'test'
+  ...
+# Subtest: control-only flight: Northwater → Meadow Field
+ok 112 - control-only flight: Northwater → Meadow Field
+  ---
+  duration_ms: 263.029407
+  type: 'test'
+  ...
+# Subtest: control-only flight: Northwater → Pine Reach
+ok 113 - control-only flight: Northwater → Pine Reach
+  ---
+  duration_ms: 361.879645
+  type: 'test'
+  ...
+# Subtest: control-only flight: Northwater → Sunstone Mesa
+ok 114 - control-only flight: Northwater → Sunstone Mesa
+  ---
+  duration_ms: 374.529126
+  type: 'test'
+  ...
+1..114
+# tests 114
+# suites 0
+# pass 114
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7881.021084

@@ -145,7 +145,7 @@ function renderPanel() {
 }
 function objectives() {
   const s = game.state;
-  return [[s.stats.mined >= 6, 'Gather driftwood on the beach', 'Hold left click on six logs. Logs also yield resin. Press E at a berry bush for food, fiber and seeds.'], [s.crafted.includes('woodPick') && s.crafted.includes('bench'), 'Make a place to work', 'Tab → Craft: turn logs into planks; craft a workbench and a driftwood pick. Assign them in Pack. Right click places the bench.'], [s.crafted.includes('stonePick'), 'Follow the cave trail', 'Chart marks every cave entrance. A driftwood pick mines stone and copper. Craft a stone pick at your bench to mine iron.'], [s.crafted.includes('kiln') && s.crafted.includes('copperPick'), 'Warm the forge', 'Gather clay on the low shores, coal and copper underground. A kiln smelts copper; make a copper pick for prism seams.'], [s.crafted.includes('raft'), 'Raise a small sail', 'Eight logs and four ropes at a bench make a raft. Wade into water, select it, then right click to launch and board.'], [s.discoveries.length >= 3, 'A wider horizon', 'Visit three islands. Discovery unlocks regional designs. Landmarks contain optional stories and pearls.'], [s.stats.harvest > 0 && s.stats.fish > 0, 'Set a generous table', 'Place a garden bed and press E with a seed in your pack. Cast a fishing rod toward low open water with E; stay still for six seconds.'], [s.crafted.includes('artisans'), 'Learn the finer crafts', 'Smelt iron at a forge; weave cloth at a loom. Build an artisan table for stonework, instruments and late luxuries.'], [game.luxury().points >= 95, 'A home worth returning to', 'Rest at a daybed to anchor your camp. Furnish within 24 blocks: light, rest, gardens, art, water, music, and thoughtful architecture. Reach 95 comfort.'], [s.secrets.length === 5 && game.luxury().points >= 135, 'Become a tidekeeper', 'Find five quiet stories and build a 135-comfort sanctuary. Then keep building: this is your archipelago.']];
+  return [[s.stats.mined >= 6, 'Gather driftwood on the beach', 'Hold left click on six logs. Logs also yield resin. Press E at a berry bush for food, fiber and seeds.'], [s.crafted.includes('woodPick') && s.crafted.includes('bench'), 'Make a place to work', 'Tab → Craft: turn logs into planks; craft a workbench and a driftwood pick. Assign them in Pack. Right click places the bench.'], [s.crafted.includes('stonePick'), 'Follow the cave trail', 'Chart marks every cave entrance. A driftwood pick mines stone and copper. Craft a stone pick at your bench to mine iron.'], [s.crafted.includes('kiln') && s.crafted.includes('copperPick'), 'Warm the forge', 'Gather clay on the low shores, coal and copper underground. A kiln smelts copper; make a copper pick for prism seams.'], [s.crafted.includes('raft'), 'Raise a small sail', 'Eight logs and four ropes at a bench make a raft. Wade into water, select it, then right click to launch and board.'], [s.discoveries.length >= 3, 'A wider horizon', 'Visit three islands. Discovery unlocks regional designs. Landmarks contain optional stories and pearls.'], [s.stats.harvest > 0 && s.stats.fish > 0, 'Set a generous table', 'Place a garden bed and press E with a seed in your pack. Cast a fishing rod toward low open water with E; stay still for six seconds.'], [s.crafted.includes('artisans'), 'Learn the finer crafts', 'Smelt iron at a forge; weave cloth at a loom. Build an artisan table for stonework, instruments and late luxuries.'], [game.luxury().points >= 95, 'A home worth returning to', 'Rest at a daybed to anchor your camp. Furnish within 24 blocks: light, rest, gardens, art, water, music, and thoughtful architecture. Reach 95 comfort.'], [D.legacy.islands.every(id => s.secrets.includes(id)) && game.luxury().points >= 135, 'Become a tidekeeper', 'Find five quiet stories and build a 135-comfort sanctuary. Then keep building: this is your archipelago.']];
 }
 function journalPage() {
   const split = el('div', undefined, 'split'),
@@ -161,16 +161,24 @@ function journalPage() {
     ol.append(li);
   }
   left.append(ol);
+  right.append(el('h3', 'Outer gardens'));
+  paragraph('Your old shores and camp are unchanged. Sail west to Reedglass Haven (−665, −100), or east to Honeycomb Isle (660, 220). Mine their caves for jade and amber, gather bamboo, and build a renewable bamboo nursery. New crossings take roughly 25–45 seconds by raft from the nearest old shore.', right);
+  for (const [id, stages] of Object.entries(D.projects)) {
+    const progress = game.state.expedition.projects[id], island = D.islands.find(i => i.id === id);
+    right.append(el('h3', `${island.landmark} · ${progress}/${stages.length}`));
+    for (const [n, stage] of stages.entries()) paragraph(`${n < progress ? '✓' : '○'} ${stage.name}: ${Object.entries(stage.cost).map(([item, count]) => `${count} ${D.items[item].name}`).join(', ')}${stage.defeats ? `; shoo ${stage.defeats} mites (${game.state.expedition.defeated} so far)` : ''}. ${stage.unlock ? `Unlocks ${D.items[stage.unlock].name}.` : 'Awards regional materials.'}`, right);
+    paragraph('Bring supplies to the gold surface tablet and press E to restore one stage. Completing both stages creates a rest stop and unlocks a special camp furnishing.', right);
+  }
   right.append(el('h3', 'Notes washed ashore'));
-  paragraph(`Cave collection: ${game.state.caveFinds.length} / 5 tidekeeper caches. Explore the deepest chamber on each island; each cache rewards you once.`, right);
-  paragraph('No monsters. No rush. Hunger takes over two hours to empty and never kills you. Berries regrow; tools never break. Cold calls for a cloak, tea, or a warm home.', right);
+  paragraph(`Cave collection: ${game.state.caveFinds.length} / ${D.islands.length} tidekeeper caches. Explore the deepest chamber on each island; each cache rewards you once.`, right);
+  paragraph('No rush. Only Honeycomb Isle has pebble mites: three barehanded hits or one staff hit shoos one. They stay on their island and cannot kill you. Hunger takes over two hours to empty and never kills you. Berries regrow; tools never break. Cold calls for a cloak, tea, or a warm home.', right);
   for (const id of game.state.secrets) {
     const index = D.islands.findIndex(i => i.id === id);
     right.append(el('h3', D.islands[index].landmark));
     paragraph(D.lore[index], right);
   }
   if (!game.state.secrets.length) paragraph('Look for gold tablets near each island’s heart. The chart gives their locations; the stories are yours to find.', right);
-  paragraph('The sea is finite. Amber warnings begin at radius 405; danger buoys at 450. Crossing radius 490 commits a fatal storm, even if you turn around or reload. Restore a safe checkpoint explicitly afterward.', right);
+  paragraph(`The expanded sea is finite. Warnings begin at radius ${D.C.warning}; danger buoys at ${D.C.danger}. Crossing radius ${D.C.border} commits a fatal storm even after reload. Old storm markers still require explicit checkpoint recovery.`, right);
 }
 function packPage() {
   const s = game.state;
@@ -305,36 +313,20 @@ function chartPage() {
   split.append(wrap, notes);
   content.append(split);
   const ctx = canvas.getContext('2d');
-  if (!baseMap || baseMap.seed !== game.state.seed) {
-    const c = document.createElement('canvas');
-    c.width = 256;
-    c.height = 256;
-    const cc = c.getContext('2d'),
-      im = cc.createImageData(256, 256);
-    for (let z = 0; z < 256; z++) for (let x = 0; x < 256; x++) {
-      const col = W.column(x * 4 - 512, z * 4 - 512, game.state.seed),
-        color = col.h > D.C.sea ? col.island?.color || '#d0c09a' : col.h > 8 ? '#438b91' : '#203f50';
-      const v = col.h > D.C.sea ? .75 + col.h / 100 : 1;
-      const k = (z * 256 + x) * 4;
-      im.data[k] = parseInt(color.slice(1, 3), 16) * v;
-      im.data[k + 1] = parseInt(color.slice(3, 5), 16) * v;
-      im.data[k + 2] = parseInt(color.slice(5, 7), 16) * v;
-      im.data[k + 3] = 255;
-    }
-    cc.putImageData(im, 0, 0);
-    baseMap = {
-      seed: game.state.seed,
-      canvas: c
-    };
+  if (!baseMap || baseMap.world !== game.world || baseMap.revision !== game.world.revision) {
+    const c = document.createElement('canvas'), raster = window.EWChart.raster(game.world);
+    c.width = raster.width; c.height = raster.height;
+    c.getContext('2d').putImageData(new ImageData(raster.data, raster.width, raster.height), 0, 0);
+    baseMap = { world: game.world, revision: game.world.revision, canvas: c };
   }
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(baseMap.canvas, 0, 0, 640, 640);
-  const map = v => (v + 512) / 1024 * 640;
+  const map = v => (v + D.C.extent) / (D.C.extent * 2) * 640;
   ctx.strokeStyle = '#d9b77b';
   ctx.setLineDash([3, 6]);
-  for (const r of [405, 490]) {
+  for (const r of [D.C.warning, D.C.border]) {
     ctx.beginPath();
-    ctx.arc(320, 320, r / 1024 * 640, 0, Math.PI * 2);
+    ctx.arc(320, 320, r / (D.C.extent * 2) * 640, 0, Math.PI * 2);
     ctx.stroke();
   }
   ctx.setLineDash([]);
@@ -365,12 +357,12 @@ function chartPage() {
   ctx.fillStyle = '#ff6a1f';
   ctx.fillText('⌂', map(game.state.camp.x), map(game.state.camp.z));
   notes.append(el('h3', 'The sheltered sea'));
-  paragraph('North is up (−Z). White arrow: you. Ember house: camp. ▲ Safe cave entrances. ✦ Tidekeeper landmarks. Dashed rings: warning waters and the fatal outer boundary.', notes);
+  paragraph('The chart and live local map reflect mining and building. Global pixels cover 4 m; the local map shows individual blocks. North is up (−Z). White arrow: you. Ember house: camp. ▲ Safe cave entrances. ✦ Tidekeeper landmarks. Dashed rings: warning waters and the fatal outer boundary.', notes);
   for (const i of D.islands) {
     notes.append(el('strong', `${game.state.discoveries.includes(i.id) ? '✓' : '○'} ${i.name}`));
     paragraph(`${i.biome} · ${i.x}, ${i.z} · ${Math.round(Math.hypot(i.x - p.x, i.z - p.z))} m from you`, notes);
   }
-  paragraph('Sail between shores in roughly 10–25 seconds of open water; exploring a whole island takes several minutes. Caves descend along walkable ramps into three branches. Follow the amber entrance mark.', notes);
+  paragraph('Original crossings take 10–25 seconds; new outer islands take 25–45 seconds by raft from their nearest old shore; exploring a whole island takes several minutes. Caves descend along walkable ramps into three branches. Follow the amber entrance mark.', notes);
 }
 function campPage() {
   const l = game.luxury();
@@ -400,6 +392,7 @@ async function replaceGame(state, slot) {
   noticeSerial = -1;
   hotSignature = '';
   baseMap = null;
+  miniSignature = '';
   $('saveStatus').textContent = `Slot ${slot} · checkpoint ${state.status === 'alive' ? 'loaded' : 'preserved'}`;
   $('welcome').hidden = true;
   $('ending').hidden = true;
@@ -546,14 +539,14 @@ function helpPage() {
   split.append(a, b);
   content.append(split);
   a.append(el('h3', 'Hands, feet, and a horizon'));
-  const controls = [['WASD', 'Walk / swim / sail. Mouse steers your view and vessel.'], ['Space / Shift', 'Jump or swim upward / walk faster. C dives while swimming.'], ['Hold left click', 'Mine the target. Picks are required for stone and ores.'], ['Right click', 'Place selected block; eat selected food; launch selected raft in water.'], ['E', 'Use bush, garden, fishing rod, bed, furniture, chest, tablet or vessel.'], ['1–8 / mouse wheel', 'Select hotbar slot. Assign any owned item through Pack.'], ['Tab / I / B / M / J', 'Field notes / pack / recipes / chart / journal.'], ['Esc', 'Release mouse and pause. Return to shore resumes and captures mouse.'], ['F', 'Eat selected food, or a sunberry if you have one.']];
+  const controls = [['WASD', 'Walk / swim / sail. Mouse steers your view and vessel.'], ['Space / Shift', 'Jump or swim upward / walk faster. C dives while swimming.'], ['Hold left click', 'Mine the target, or bonk a nearby pebble mite. Picks are required for stone and ores.'], ['Right click', 'Place selected block; eat selected food; launch selected raft in water.'], ['E', 'Use bush, garden, fishing rod, bed, furniture, chest, tablet or vessel.'], ['1–8 / mouse wheel', 'Select hotbar slot. Assign any owned item through Pack.'], ['Tab / I / B / M / J', 'Field notes / pack / recipes / chart / journal.'], ['Esc', 'Release mouse and pause. Return to shore resumes and captures mouse.'], ['F', 'Eat selected food, or a sunberry if you have one.']];
   for (const [key, action] of controls) {
     const p = el('p');
     p.append(el('strong', key + ' · '), document.createTextNode(action));
     a.append(p);
   }
   b.append(el('h3', 'A forgiving life'));
-  paragraph('No oxygen timer, monsters, weapon combat or tool durability. Hunger and cold can lower health to 25, never to death. Rest restores health. Farm beds grow roots or grain based on position; tend with a watering can to accelerate growth. Fishing brings a pearl every fourth catch. All timers pause in panels; there is no offline growth or starvation.', b);
+  paragraph('No oxygen timer or tool durability. Honeycomb Isle alone has six weak pebble mites. Hold left click to shoo them: three hits barehanded, one with a bamboo staff or copper sabre. They rest five minutes after defeat and leave fossils and amber. They cannot leave their island or kill you. Hunger and cold can lower health to 25, never to death. Rest restores health. Farm beds grow roots or grain based on position; tend with a watering can to accelerate growth. Fishing brings a pearl every fourth catch. All timers pause in panels; there is no offline growth or starvation.', b);
   paragraph('Chests hold 4,000 items each. Campfire cooks fish; galley prepares full meals. Workstations must be placed within seven blocks. Inventory crafting is atomic: failed recipes consume nothing. There is no crafting grid; the recipe book is the full crafting system.', b);
   paragraph('At the far ocean boundary, warning text escalates before the final crossing. Crossing is terminal and cannot be paused or canceled. Its marker is written before crossing; if storage fails, the crossing is blocked with a message. Safe checkpoints remain recoverable.', b);
   paragraph('Designed for desktop keyboard and mouse. Panels adapt to small windows, but touch movement is not implemented. Use a local HTTP server; file:// module loading is unsupported.', b);
@@ -669,7 +662,7 @@ addEventListener('keydown', event => {
     game.openChest = null;
     const hit = game.target();
     game.interact();
-    audio.effect(hit && D.blocks[hit.id].key === 'gramophone' ? 'music' : 'use');
+    audio.effect(hit && ['gramophone', 'reedOrgan'].includes(D.blocks[hit.id].key) ? 'music' : 'use');
     if (game.openChest) openPanel('Pack');
   }
   if (event.code === 'KeyF') game.eat(D.items[game.selected()]?.food ? game.selected() : 'berry');
@@ -697,6 +690,7 @@ document.addEventListener('visibilitychange', () => {
 addEventListener('beforeunload', () => {
   if (started && game.state.status === 'alive') saveNow();
 });
+let miniSignature = '', miniNext = 0;
 function hud(now) {
   const s = game.state,
     p = s.player,
@@ -712,8 +706,8 @@ function hud(now) {
   const radius = Math.hypot(p.x, p.z);
   $('boundary').hidden = radius < D.C.warning;
   $('boundary').textContent = radius > D.C.danger ? `DANGER · Turn toward the islands now. Fatal storm in ${Math.max(0, Math.ceil(D.C.border - radius))} m. Crossing ends this voyage.` : 'OUTER WATERS · Headwinds slow your sail. Turn toward the islands. Saves and camp return are disabled here.';
-  const target = game.target();
-  $('targetLabel').textContent = target ? D.blocks[target.id].name + (D.blocks[target.id].category || ['berryBush', 'relic'].includes(D.blocks[target.id].key) ? ' · E to use' : '') + (target && D.blocks[target.id].tier > 0 ? ' · pick required' : '') : game.fishing ? `Fishing · ${Math.ceil(game.fishing)}s` : '';
+  const target = game.target(), actor = game.encounters.target();
+  $('targetLabel').textContent = actor ? `Pebble mite · ${s.expedition.creatures[actor.id].health}/3 · hold left click` : target ? D.blocks[target.id].name + (D.blocks[target.id].category || ['berryBush', 'relic'].includes(D.blocks[target.id].key) ? ' · E to use' : '') + (target && D.blocks[target.id].tier > 0 ? ' · pick required' : '') : game.fishing ? `Fishing · ${Math.ceil(game.fishing)}s` : '';
   $('mining').hidden = game.mineProgress <= 0;
   $('mining').value = target ? game.mineProgress / D.blocks[target.id].hardness : 0;
   if (noticeSerial !== game.messageSerial) {
@@ -735,6 +729,16 @@ function hud(now) {
     });
   }
   document.body.classList.toggle('underwater', game.world.waterAt(p.x, p.y + 1.62, p.z));
+  if (now >= miniNext) {
+    miniNext = now + 750;
+    const signature = `${s.seed}:${Math.floor(p.x)}:${Math.floor(p.z)}:${game.world.revision}:${p.yaw.toFixed(1)}`;
+    if (miniSignature !== signature) {
+      miniSignature = signature;
+      const raster = window.EWChart.raster(game.world, 128, 128, Math.floor(p.x), Math.floor(p.z)), ctx = $('miniMap').getContext('2d');
+      ctx.putImageData(new ImageData(raster.data, 128, 128), 0, 0);
+      ctx.save(); ctx.translate(64, 64); ctx.rotate(-p.yaw); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(3, 4); ctx.lineTo(-3, 4); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+  }
   audio.ambient(s.time, p.y < D.C.sea + .5);
 }
 function frame(now) {

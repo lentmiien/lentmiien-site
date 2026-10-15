@@ -1,0 +1,68 @@
+{
+  "checks": [
+    "actual Load UI migrates v1 camp, inventory, crops and chest without deleting old save",
+    "full chart names both new islands",
+    "first v2 write retains byte-identical v1 backup",
+    "empty-pack browser scenario earns new resources, craft effects and restoration progress",
+    "reload retains earned expansion edits and project progress",
+    "combat view obtains real pointer lock",
+    "held mouse defeats a weak mite without a weapon and yields fossil",
+    "full chart invalidates cached terrain after building and removing an ocean island",
+    "live mini-map updates after the same terrain removal",
+    "all nine new furnishing designs contribute comfort variety",
+    "no browser exceptions",
+    "no off-device requests"
+  ],
+  "errors": [],
+  "stats": [
+    {
+      "scene": "reed",
+      "chunks": 81,
+      "cached": 117,
+      "queued": 0,
+      "drawCalls": 46,
+      "triangles": 96374,
+      "geometries": 48,
+      "medianFrameMs": 57.59999990463257,
+      "p95FrameMs": 101.30000007152557,
+      "meanRenderMs": 1.4414634152156551
+    },
+    {
+      "scene": "reed-cave",
+      "chunks": 81,
+      "cached": 119,
+      "queued": 0,
+      "drawCalls": 41,
+      "triangles": 91986,
+      "geometries": 45,
+      "medianFrameMs": 45.799999952316284,
+      "p95FrameMs": 87.39999997615814,
+      "meanRenderMs": 1.357692301273346
+    },
+    {
+      "scene": "amber",
+      "chunks": 81,
+      "cached": 117,
+      "queued": 0,
+      "drawCalls": 69,
+      "triangles": 73920,
+      "geometries": 56,
+      "medianFrameMs": 55.09999990463257,
+      "p95FrameMs": 110.79999995231628,
+      "meanRenderMs": 1.5975609639795816
+    },
+    {
+      "scene": "amber-cave",
+      "chunks": 81,
+      "cached": 119,
+      "queued": 0,
+      "drawCalls": 47,
+      "triangles": 69218,
+      "geometries": 52,
+      "medianFrameMs": 42.59999990463257,
+      "p95FrameMs": 77.20000004768372,
+      "meanRenderMs": 1.4388888853567618
+    }
+  ],
+  "fixtureNotice": "Migration uses synthetic v1 fixture. Scenic/combat/map viewpoints are seeded test positions. Progression starts empty and uses only normal actions."
+}

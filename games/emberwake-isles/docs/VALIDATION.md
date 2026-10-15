@@ -1,5 +1,7 @@
 # Validation — Emberwake Isles
 
+This is the original-release record. See [Outer Gardens update validation](OUTER-GARDENS.md) for the current seven-island expansion and save migration.
+
 Verified 2026-10-01. Planned feature, entirely confined to this new module. No deployment, main-app startup, database access or production restart.
 
 ## Results
