@@ -72,6 +72,7 @@ class Worker {
         { $set: { holder: this.id, ...(await ownerIdentity()), leaseUntil: new Date(+this.now() + LEASE_MS) }, $inc: { fence: 1 } }, { returnDocument: 'after' }).lean();
       if (!control) return;
       this.fence = control.fence;
+      await this.service.reconcileCapacity();
       await this.repairClaims();
       // Projection and result repair continue outside windows and with dispatch disabled.
       await new CodexActivity({ gateway: this.gateway }).reconcileProven();
@@ -88,7 +89,7 @@ class Worker {
       const w = windowAt(this.now());
       const manual = current.manualDeadline && +current.manualDeadline > +this.now();
       if (!manual && (!config().auto || !w.inside || current.suppressedWindow === w.key)) return;
-      const due = { state: 'queued', runId: null, ...(manual ? {} : { nextAttemptAt: { $lte: this.now() } }) };
+      const due = { slot: { $type: 'number' }, state: 'queued', runId: null, ...(manual ? {} : { nextAttemptAt: { $lte: this.now() } }) };
       const first = await this.db.Job.findOne(due).sort({ createdAt: 1, slot: 1 }).lean();
       if (!first) { await this.controlSet({ manualRequestedAt: null, manualDeadline: null, reason: 'queue_drained' }); return; }
       if (current.nextAttemptAt && +current.nextAttemptAt > +this.now()) return;
@@ -266,6 +267,7 @@ class Worker {
     }
     await this.runSet(run, { state: 'closed' });
     await this.controlSet({ activeRun: null });
+    await this.service.reconcileCapacity();
   }
   async repairClaims() {
     // A DB request issued by a terminated process may arrive late. Claims are
@@ -281,7 +283,7 @@ class Worker {
     }
   }
   async reconcileDetached() {
-    const jobs = await this.db.Job.find({ runId: null, $or: [{ state: 'needs_review' }, { state: 'succeeded', acknowledged: false }, { 'source.conversationId': { $exists: true }, state: { $in: ['queued', 'cancelled'] } }] }).sort({ reconciledAt: 1, createdAt: 1 }).limit(20).lean();
+    const jobs = await this.db.Job.find({ runId: null, $or: [{ state: 'needs_review' }, { state: 'succeeded', $or: [{ acknowledged: false }, { slot: { $type: 'number' } }] }, { 'source.conversationId': { $exists: true }, state: { $in: ['queued', 'cancelled'] } }] }).sort({ reconciledAt: 1, createdAt: 1 }).limit(20).lean();
     for (const job of jobs) {
       await this.guard();
       const latest = job.attempts.at(-1);
@@ -303,6 +305,7 @@ class Worker {
       }
       await this.jobSet(job, { reconciledAt: this.now() });
     }
+    await this.service.reconcileCapacity();
   }
   async manage(actor, action) {
     await this.service.principal(actor.ownerId, null, CAP.manage);

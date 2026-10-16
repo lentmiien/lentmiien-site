@@ -11,6 +11,7 @@ const { sliceMessagesFromConfiguredStart } = require('../../utils/chat5MessageSe
 const { CAP, BUNDLES, problem, digest, parseSubmission, textRequest, affinity, safeReplacement, windowAt } = require('./policy');
 const { Gateway, config } = require('./gateway');
 const logger = require('../../utils/logger');
+const admission = require('./admission');
 const CHAT_BUNDLES = { admin: ['chat.conversation.read', 'chat.conversation.write'], family: [], user: [] };
 const tokenHash = secret => createHash('sha256').update(secret).digest('hex');
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -21,13 +22,21 @@ function publicJob(job, control = null) {
     attempts: job.attempts.map(a => ({ id: a.id, run_id: a.runId, status: a.remote?.status || 'upload_pending',
       cleanup: a.remote?.cleanup, termination_proven: a.remote?.termination_proven })),
     published: job.published, acknowledged: job.acknowledged,
-    can_cancel: !job.runId && (job.state === 'queued' || (job.state === 'needs_review' && job.attempts.length === 0)),
+    can_cancel: !job.runId && job.attempts.length === 0 && ['queued', 'needs_review'].includes(job.state),
     can_retry: !job.runId && job.attempts.length < 5 && ['failed', 'needs_review'].includes(job.state) && safeReplacement(job.attempts.at(-1)?.remote),
     url: `/local-ai/queue/${job._id}`, result_url: `/local-ai/api/v1/jobs/${job._id}/result` };
 }
 class LocalAiService {
   constructor({ db = models, gateway = new Gateway() } = {}) { this.db = db; this.gateway = gateway; }
-  async initialize() { await Promise.all(Object.values(this.db).map(model => model.init())); }
+  async initialize() {
+    if (!this.initializing) this.initializing = admission.initializeIndexes(this.db).catch(error => {
+      this.initializing = null;
+      logger.error('Local AI admission indexes unavailable; initialization must succeed before acceptance', { category: 'local_ai', metadata: { code: Number.isInteger(error.code) ? error.code : 'initialization_failed' } });
+      throw error;
+    });
+    await this.initializing;
+  }
+  async reconcileCapacity() { await admission.reconcileCapacity(this.db); }
   async principal(ownerId, tokenId, capability = CAP.use) {
     if (!/^[a-f\d]{24}$/i.test(String(ownerId || ''))) throw problem('unauthorized', 401);
     const user = await User.findById(ownerId).select('_id name type_user').lean();
@@ -130,28 +139,20 @@ class LocalAiService {
     if (Buffer.byteLength(JSON.stringify(frozen)) > 512 * 1024) throw problem('frozen_context_too_large', 413);
     const id = randomUUID();
     const projection = frozen.source.conversationId ? { promptId: digest(`${id}:prompt`).slice(0, 24), responseId: digest(`${id}:response`).slice(0, 24) } : undefined;
-    // Unique capacity slots bound concurrent acceptances without transactions or a leaking reservation counter.
-    for (let tries = 0; tries < 12; tries += 1) {
-      const slots = await this.db.Job.find().select('slot ownerSlot ownerId').lean();
-      const global = new Set(slots.map(j => j.slot));
-      const own = new Set(slots.filter(j => j.ownerId === actor.ownerId).map(j => j.ownerSlot));
-      const free = (set, max) => { for (let i = 0; i < max; i += 1) if (!set.has(i)) return i; return -1; };
-      const slot = free(global, 1000); const ownerSlot = free(own, 100);
-      if (slot < 0 || ownerSlot < 0) throw problem('durable_record_quota', 507);
-      try {
-        const job = await this.db.Job.create({ _id: id, ownerId: actor.ownerId, tokenId: actor.tokenId, key, digest: hash,
-          ...frozen, projection, slot, ownerSlot, affinity: frozen.source.catalog ? `llm:${frozen.source.catalog.upstream_model}` : affinity(frozen.type, frozen.request),
-          nextAttemptAt: windowAt().inside ? new Date() : windowAt().next });
-        // The acceptance document is authoritative; this repairable projection must never turn a durable acceptance into a rejection.
-        await this.project(job).catch(() => logger.warning('Local AI Chat5 projection pending repair', { category: 'local_ai', metadata: { jobId: id } }));
-        return job.toObject();
-      } catch (error) {
-        if (error.code !== 11000) throw error;
-        const replay = await this.db.Job.findOne({ ownerId: actor.ownerId, key }).lean();
-        if (replay) { if (replay.digest !== hash) throw problem('idempotency_conflict', 409); return replay; }
-      }
-    }
-    throw problem('acceptance_busy_retry_same_key', 503);
+    const replay = async () => {
+      const job = await this.db.Job.findOne({ ownerId: actor.ownerId, key }).lean();
+      if (job && job.digest !== hash) throw problem('idempotency_conflict', 409);
+      return job;
+    };
+    const job = await admission.admit(this.db, actor.ownerId, async slots => {
+      const created = await this.db.Job.create({ _id: id, ownerId: actor.ownerId, tokenId: actor.tokenId, key, digest: hash,
+        ...frozen, projection, ...slots, affinity: frozen.source.catalog ? `llm:${frozen.source.catalog.upstream_model}` : affinity(frozen.type, frozen.request),
+        nextAttemptAt: windowAt().inside ? new Date() : windowAt().next });
+      return created.toObject();
+    }, replay);
+    // The acceptance document is authoritative; projection failure cannot reject it.
+    await this.project(job).catch(() => logger.warning('Local AI Chat5 projection pending repair', { category: 'local_ai', metadata: { jobId: job._id } }));
+    return job;
   }
   async project(job) {
     if (!job.source?.conversationId) return;
@@ -184,20 +185,38 @@ class LocalAiService {
     return job;
   }
   async cancel(actor, id) {
+    await this.initialize();
     const job = await this.get(actor, id);
-    if (job.state === 'cancelled') return job;
-    const updated = await this.db.Job.findOneAndUpdate({ _id: id, ownerId: actor.ownerId, state: { $in: job.attempts.length === 0 ? ['queued', 'needs_review'] : ['queued'] }, runId: null, version: job.version }, { $set: { state: 'cancelled', reason: 'cancelled_before_export' }, $inc: { version: 1 } }, { returnDocument: 'after' });
+    if (job.state === 'cancelled') return admission.releaseAfterAcceptance(this.db, job);
+    if (job.attempts.length) throw problem('already_claimed_stop_entire_run_via_admin', 409);
+    const updated = await this.db.Job.findOneAndUpdate({ _id: id, ownerId: actor.ownerId, state: { $in: ['queued', 'needs_review'] }, 'attempts.0': { $exists: false }, runId: null, version: job.version }, { $set: { state: 'cancelled', reason: 'cancelled_before_export' }, $inc: { version: 1 } }, { returnDocument: 'after' });
     if (!updated) throw problem('already_claimed_stop_entire_run_via_admin', 409);
     await this.project(updated).catch(() => logger.warning('Local AI cancellation projection pending repair', { category: 'local_ai', metadata: { jobId: id } }));
-    return updated;
+    return admission.releaseAfterAcceptance(this.db, updated);
   }
   async retry(actor, id) {
+    await this.initialize();
+    // Repair first, so the version read below includes any recovered release.
+    await this.reconcileCapacity();
     const job = await this.get(actor, id);
     const latest = job.attempts.at(-1);
-    if (job.runId || job.attempts.length >= 5 || !['failed', 'needs_review'].includes(job.state) || !safeReplacement(latest?.remote)) throw problem('replacement_not_safe', 409);
-    const updated = await this.db.Job.findOneAndUpdate({ _id: id, version: job.version, runId: null }, { $set: { state: 'queued', reason: 'explicit_retry', nextAttemptAt: windowAt().inside ? new Date() : windowAt().next }, $inc: { version: 1 } }, { returnDocument: 'after' });
-    if (!updated) throw problem('job_changed', 409);
-    return updated;
+    if (job.runId || job.attempts.length >= 5 || !['failed', 'needs_review'].includes(job.state) || !safeReplacement(latest?.remote)
+      || !await admission.detachedFromRun(this.db, job)) throw problem('replacement_not_safe', 409);
+    const write = async slots => {
+      const updated = await this.db.Job.findOneAndUpdate({ _id: id, ownerId: actor.ownerId, version: job.version, runId: null }, {
+        $set: { ...slots, state: 'queued', reason: 'explicit_retry', nextAttemptAt: windowAt().inside ? new Date() : windowAt().next },
+        $unset: { admissionReleasedAt: 1 }, $inc: { version: 1 },
+      }, { returnDocument: 'after' });
+      if (!updated) throw problem('job_changed', 409);
+      return updated;
+    };
+    if (typeof job.slot === 'number') return write({});
+    // Both slots and dispatchability change in the SAME journaled document write.
+    return admission.admit(this.db, actor.ownerId, write, async () => {
+      const current = await this.db.Job.findById(id).select('version').lean();
+      if (current?.version !== job.version) throw problem('job_changed', 409);
+      return null;
+    });
   }
 }
 module.exports = { LocalAiService, publicJob, tokenHash, CHAT_BUNDLES };

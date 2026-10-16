@@ -4,16 +4,17 @@ const options = { timestamps: true, minimize: false, bufferCommands: false, writ
 const job = new Schema({
   _id: String, ownerId: { type: String, required: true }, tokenId: String,
   key: { type: String, required: true }, digest: { type: String, required: true },
-  slot: { type: Number, required: true, unique: true }, ownerSlot: { type: Number, required: true },
+  slot: Number, ownerSlot: Number, admissionReleasedAt: Date,
   type: String, request: Schema.Types.Mixed, source: Schema.Types.Mixed, affinity: String,
   state: { type: String, default: 'queued', index: true }, reason: String,
   reconciledAt: Date, nextAttemptAt: Date, runId: { type: String, default: null, index: true },
   attempts: { type: [Schema.Types.Mixed], default: [] }, result: Schema.Types.Mixed,
   published: { type: Boolean, default: false }, acknowledged: { type: Boolean, default: false },
   projection: Schema.Types.Mixed, version: { type: Number, default: 0 },
-}, options);
+}, { ...options, autoIndex: false });
 job.index({ ownerId: 1, key: 1 }, { unique: true });
-job.index({ ownerId: 1, ownerSlot: 1 }, { unique: true });
+job.index({ slot: 1 }, { name: 'admission_slot_unique', unique: true, partialFilterExpression: { slot: { $type: 'number' } } });
+job.index({ ownerId: 1, ownerSlot: 1 }, { name: 'admission_owner_slot_unique', unique: true, partialFilterExpression: { ownerSlot: { $type: 'number' } } });
 job.index({ state: 1, nextAttemptAt: 1, affinity: 1, slot: 1 });
 const run = new Schema({
   _id: String, wire: Schema.Types.Mixed, manifest: { type: [Schema.Types.Mixed], default: [] },

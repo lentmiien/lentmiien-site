@@ -3,7 +3,7 @@ jest.mock('mongoose', () => ({ connect: jest.fn(), disconnect: jest.fn() }));
 jest.mock('../../models/role', () => ({ updateOne: jest.fn() }));
 jest.mock('../../models/useraccount', () => ({ findById: jest.fn() }));
 jest.mock('../../models/codex_turn', () => ({ findById: jest.fn(), updateOne: jest.fn() }));
-jest.mock('../../services/localAi', () => ({ service: { initialize: jest.fn(), principal: jest.fn(), gateway: { request: jest.fn() } } }));
+jest.mock('../../services/localAi', () => ({ service: { initialize: jest.fn(), reconcileCapacity: jest.fn(), principal: jest.fn(), gateway: { request: jest.fn() } } }));
 jest.mock('../../utils/logger', () => ({ notice: jest.fn(), error: jest.fn() }));
 const { service } = require('../../services/localAi');
 const Turn = require('../../models/codex_turn');
@@ -14,6 +14,14 @@ describe('operator Codex activity recovery', () => {
     Turn.findById.mockReturnValue({ lean: async () => ({ batchActivity: { id: 'codex_test', coordinatorId: 'old', generation: 1 } }) });
   });
   afterEach(() => jest.restoreAllMocks());
+  test('initialize reconciles safe admission releases after provisioning indexes and authorization', async () => {
+    await main(['initialize', 'admin']);
+    expect(service.initialize).toHaveBeenCalledTimes(1);
+    expect(service.principal).toHaveBeenCalledWith('admin', null, 'local_ai.scheduler.manage');
+    expect(service.reconcileCapacity).toHaveBeenCalledTimes(1);
+    expect(service.initialize.mock.invocationCallOrder[0]).toBeLessThan(service.reconcileCapacity.mock.invocationCallOrder[0]);
+    expect(service.principal.mock.invocationCallOrder[0]).toBeLessThan(service.reconcileCapacity.mock.invocationCallOrder[0]);
+  });
   test('never recovers or releases merely because a heartbeat is stale', async () => {
     await expect(main(['reconcile-activity', 'admin', 'turn'])).rejects.toMatchObject({ code: 'operator_must_prove_old_coordinator_and_entire_agent_tree_terminated' });
     expect(service.gateway.request).not.toHaveBeenCalled();

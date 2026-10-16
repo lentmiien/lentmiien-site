@@ -46,16 +46,12 @@ source `689c68a` while the Sep 16 container still ran `5c2802a`, without the ses
 or OpenAPI routes. Health/ready 200 did not establish compatibility. This is supplied
 runtime evidence, not a new production probe by this change.
 
-The confirmed human rebuild uses existing project `ai-gateway` and both Compose files,
-preserving the existing mounts and live override:
-
-```sh
-cd /home/lennart/ai-services/ai-gateway && docker compose -p ai-gateway -f /home/lennart/ai-services/ai-gateway/docker-compose.yml -f /home/lennart/ai-services/llm-batching-poc/runtime/gateway.override.yml up -d --build --no-deps ai_gateway
-```
-
-No extra env file or prerequisite override is needed; `LLM_ADMIN_TOKEN` is confirmed unset.
-This command is for the human and was not executed during the contract check.
-Preserve the established override, environment and project. Verify the running image and
+For the exact live deployment command, follow the **current Gateway release
+runbook**, preserving its image, mounts, environment and Compose configuration.
+Latest operator-verified ACTIVE deployment uses project `ai-gateway`, service
+`ai_gateway`, and `embeddinggemma2/release-state/gateway-image.yml`. The historical
+`llm-batching-poc/runtime/gateway.override.yml` rebuild command is no longer current.
+No Gateway deployment was executed by this Site change. Verify the running image and
 container include the session module and publish the four explicit owned-session operations
 plus generation POST through `/qwen3-lora/{path}` (no literal `/qwen3-lora/generate`
 OpenAPI entry). Site's **Refresh status** checks only bounded `/openapi.json`; it
@@ -248,9 +244,9 @@ No exception bodies, credentials, model inputs or outputs enter these diagnostic
 Human deployment sequence (not executed by this change):
 
 1. Stop Site so old producers cannot run. Preserve v0, keys, settings and all history.
-2. Update Gateway to the reviewed unused-session root fix and rebuild its correct project:
-   `docker compose -p ai-gateway -f ai-gateway/docker-compose.yml -f llm-batching-poc/runtime/gateway.override.yml up -d --build --no-deps ai_gateway`
-   Run from the ai-services root. The existing lost-token session requires Gateway's
+2. Update Gateway to the reviewed unused-session root fix using the exact command
+   in its current release runbook and ACTIVE Compose configuration (see above).
+   The existing lost-token session requires Gateway's
    standard startup fence/recovery; do not manually set Mongo `blocked:false`.
 3. Update Site and restart it. No reset, import, key rotation or database bootstrap is
    needed for this repair. Read status, explicitly cancel pending local work if any, then

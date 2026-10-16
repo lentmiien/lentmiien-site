@@ -17,6 +17,7 @@ const Role = require('../../models/role');
 const Conversation = require('../../models/conversation5');
 const Message = require('../../models/chat5');
 const ModelCard = require('../../models/ai_model_card');
+const admission = require('../../services/localAi/admission');
 const { readImage } = require('../../services/localAi/artifacts');
 const qwen = require('../fixtures/local-ai/qwen.json');
 const clone = x => JSON.parse(JSON.stringify(x));
@@ -33,7 +34,7 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
   beforeAll(async () => {
     const uri = process.env.LOCAL_AI_TEST_MONGO_URI;
     if (!/^mongodb:\/\/127\.0\.0\.1:\d+\/local_ai_test(?:\?|$)/.test(uri)) throw new Error('Disposable loopback local_ai_test database required');
-    await mongoose.connect(uri, { bufferCommands: false });
+    await mongoose.connect(uri, { bufferCommands: false, monitorCommands: true });
     root = await fs.mkdtemp(path.join(os.tmpdir(), 'local-ai-test-'));
     process.env.LOCAL_AI_BATCH_DATA_DIR = root;
     process.env.BATCH_SERVER_TOKEN = 'x'.repeat(40); process.env.BATCH_CLIENT_ID = 'site-test';
@@ -119,7 +120,172 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     await expect(service.submit(actor, 'same', text('b'))).rejects.toMatchObject({ code: 'idempotency_conflict' });
     await expect(service.get({ ownerId: String(other._id) }, accepted[0]._id)).rejects.toMatchObject({ status: 404 });
     await Job.insertMany(Array.from({ length: 99 }, (_, i) => ({ _id: `quota_${i}`, ownerId: actor.ownerId, key: `quota_${i}`, digest: 'x', slot: i + 1, ownerSlot: i + 1 })));
-    await expect(service.submit(actor, 'over-quota', text())).rejects.toMatchObject({ code: 'durable_record_quota' });
+    await expect(service.submit(actor, 'over-quota', text())).rejects.toMatchObject({ code: 'outstanding_work_quota' });
+  });
+  test('more than 100 historical jobs retain every key, frozen input and result while slots recycle', async () => {
+    const history = [];
+    for (let i = 0; i < 104; i += 1) {
+      const job = await enqueue(`history-${i}`);
+      history.push(job);
+      if (i % 2) {
+        await tick(); complete([...runs.values()].at(-1)); await tick();
+      } else await service.cancel(actor, job._id);
+      expect((await load(job._id)).slot).toBeUndefined();
+    }
+    expect(await Job.countDocuments()).toBe(104);
+    expect(await Job.countDocuments({ slot: { $type: 'number' } })).toBe(0);
+    expect(await Job.countDocuments({ published: true, 'result.text': 'finished' })).toBe(52);
+    await Job.insertMany(Array.from({ length: 100 }, (_, i) => ({ _id: `outstanding-${i}`, ownerId: actor.ownerId, key: `outstanding-${i}`, digest: 'x', slot: i, ownerSlot: i })));
+    process.env.LOCAL_AI_BATCH_ENABLED = 'false'; fault.offline = true;
+    for (const original of history) {
+      const replay = await service.submit(actor, original.key, text());
+      expect(replay).toMatchObject({ _id: original._id, key: original.key, digest: original.digest, request: original.request, source: original.source });
+      expect(replay.slot).toBeUndefined();
+      if (replay.state === 'succeeded') {
+        expect(replay).toMatchObject({ published: true, acknowledged: true, result: { text: 'finished' } });
+        expect(replay.attempts[0].body.request).toEqual(original.request);
+      }
+    }
+    expect(await Job.countDocuments()).toBe(204);
+    await expect(service.submit(actor, history[0].key, text('b'))).rejects.toMatchObject({ code: 'idempotency_conflict' });
+  }, 60000);
+  test.each(['owner', 'global'])('concurrent reservations enforce the %s limit with replay intact', async scope => {
+    const count = scope === 'owner' ? 99 : 999;
+    await Job.insertMany(Array.from({ length: count }, (_, i) => ({ _id: `held-${i}`, ownerId: scope === 'owner' ? actor.ownerId : `owner-${Math.floor(i / 100)}`,
+      key: `held-${i}`, digest: 'x', slot: i, ownerSlot: i % 100 })));
+    const results = await Promise.allSettled(Array.from({ length: 12 }, (_, i) => service.submit(actor, `race-${i}`, text())));
+    const accepted = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+    expect(accepted).toHaveLength(1);
+    expect(results.filter(r => r.status === 'rejected').every(r => r.reason.code === 'outstanding_work_quota')).toBe(true);
+    expect(await Job.countDocuments({ slot: { $type: 'number' } })).toBe(count + 1);
+    const replays = await Promise.all(Array.from({ length: 8 }, () => service.submit(actor, accepted[0].key, text())));
+    expect(replays.every(j => j._id === accepted[0]._id)).toBe(true);
+    expect(await Job.countDocuments()).toBe(count + 1);
+  });
+  async function failedJob() {
+    const job = await enqueue('failed'); await tick(); const run = [...runs.values()][0];
+    run.status = 'drained'; Object.assign(run.operations[0], { status: 'failed', termination_proven: true, cleanup: 'verified', error: 'confirmed_failure' });
+    await tick(); return load(job._id);
+  }
+  test('safe final failure frees capacity; retry and new submissions compete atomically for the last slot', async () => {
+    const failed = await failedJob(); expect(failed.slot).toBeUndefined(); expect(failed.state).toBe('failed');
+    await Job.insertMany(Array.from({ length: 100 }, (_, i) => ({ _id: `held-${i}`, ownerId: actor.ownerId, key: `held-${i}`, digest: 'x', slot: i, ownerSlot: i })));
+    await expect(service.retry(actor, failed._id)).rejects.toMatchObject({ code: 'outstanding_work_quota' });
+    expect((await load(failed._id)).state).toBe('failed');
+    await service.cancel(actor, 'held-99');
+    const results = await Promise.allSettled([
+      ...Array.from({ length: 8 }, () => service.retry(actor, failed._id)),
+      ...Array.from({ length: 8 }, (_, i) => service.submit(actor, `competing-${i}`, text())),
+    ]);
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter(r => r.status === 'rejected').every(r => ['outstanding_work_quota', 'job_changed', 'replacement_not_safe'].includes(r.reason.code))).toBe(true);
+    expect(await Job.countDocuments({ ownerId: actor.ownerId, slot: { $type: 'number' } })).toBe(100);
+    expect(await Job.countDocuments({ key: 'failed' })).toBe(1);
+    expect((await load(failed._id)).attempts).toEqual(failed.attempts);
+    const replay = await service.submit(actor, 'failed', text()); expect(replay._id).toBe(failed._id);
+    expect(replay.request).toEqual(failed.request); expect(replay.digest).toBe(failed.digest);
+  });
+  test('lost retry reply keeps one atomic reservation and dispatch uses the original frozen attempt chain', async () => {
+    const failed = await failedJob();
+    const update = Job.findOneAndUpdate.bind(Job);
+    const spy = jest.spyOn(Job, 'findOneAndUpdate').mockImplementationOnce(async (...args) => {
+      await update(...args); throw new Error('lost retry reply');
+    });
+    try { await expect(service.retry(actor, failed._id)).rejects.toThrow('lost retry reply'); } finally { spy.mockRestore(); }
+    service = new LocalAiService({ gateway: new Gateway() }); await service.initialize();
+    const replay = await service.submit(actor, 'failed', text());
+    expect(replay.state).toBe('queued'); expect(typeof replay.slot).toBe('number'); expect(typeof replay.ownerSlot).toBe('number');
+    await expect(service.retry(actor, failed._id)).rejects.toMatchObject({ code: 'replacement_not_safe' });
+    expect(await Job.countDocuments()).toBe(1);
+    worker.stop(); await expireLease(); worker = makeWorker();
+    await Job.updateOne({ _id: failed._id }, { $set: { nextAttemptAt: new Date(0) } }); await tick();
+    const replacement = [...runs.values()].at(-1).operations[0];
+    expect(replacement.body).toMatchObject({ logical_job_id: failed._id, retry_of: failed.attempts[0].id, request: failed.request });
+  });
+  test('acceptance, release and retry use acknowledged journaled writes on standalone Mongo', async () => {
+    const writes = [];
+    const listener = event => {
+      const command = event.command;
+      if (command.insert === Job.collection.name || command.findAndModify === Job.collection.name) writes.push(command);
+    };
+    const client = mongoose.connection.getClient(); client.on('commandStarted', listener);
+    try {
+      const cancelled = await enqueue('cancel-durable'); await service.cancel(actor, cancelled._id);
+      const failed = await failedJob(); await service.retry(actor, failed._id);
+    } finally { client.off('commandStarted', listener); }
+    expect(writes.some(c => c.insert)).toBe(true);
+    expect(writes.some(c => c.update?.$unset?.slot)).toBe(true);
+    expect(writes.some(c => c.update?.$set?.reason === 'explicit_retry')).toBe(true);
+    for (const command of writes) expect(command.writeConcern).toMatchObject({ w: 'majority', j: true });
+  });
+  test('release recovery after durable cancellation does not lose acceptance or release a later retry', async () => {
+    const job = await enqueue();
+    const update = Job.findOneAndUpdate.bind(Job);
+    const spy = jest.spyOn(Job, 'findOneAndUpdate').mockImplementation((filter, change, options) => {
+      if (change.$unset?.slot) throw new Error('release storage unavailable');
+      return update(filter, change, options);
+    });
+    try { expect((await service.cancel(actor, job._id)).state).toBe('cancelled'); } finally { spy.mockRestore(); }
+    const held = await load(job._id); expect(held.slot).toBe(job.slot);
+    service = new LocalAiService({ gateway: new Gateway() }); await service.initialize();
+    await service.reconcileCapacity(); await service.reconcileCapacity();
+    expect((await load(job._id)).slot).toBeUndefined();
+    expect((await load(job._id)).request).toEqual(job.request);
+    // A stale release CAS must not free a reservation acquired by retry.
+    const failed = await failedJob();
+    await service.retry(actor, failed._id);
+    await admission.releaseCapacity(service.db, { ...failed, slot: 0 });
+    expect(typeof (await load(failed._id)).slot).toBe('number');
+  });
+  test('manifest closure crash windows retain slots and block retry until coordinator recovery', async () => {
+    const job = await enqueue(); await tick(); const run = [...runs.values()][0];
+    const op = { ...run.operations[0], status: 'failed', termination_proven: true, cleanup: 'verified' };
+    await worker.reconcileOperation(await load(job._id), op);
+    await Job.updateOne({ _id: job._id }, { $set: { runId: null } });
+    for (const state of ['sealed', 'closed']) {
+      await Run.updateOne({ _id: run.id }, { $set: { state } });
+      await service.reconcileCapacity(); expect(typeof (await load(job._id)).slot).toBe('number');
+      await expect(service.retry(actor, job._id)).rejects.toMatchObject({ code: 'replacement_not_safe' });
+    }
+    run.status = 'drained'; Object.assign(run.operations[0], op);
+    worker.stop(); await expireLease(); worker = makeWorker(); await tick();
+    expect((await load(job._id)).slot).toBeUndefined();
+    expect((await load(job._id)).state).toBe('failed');
+  });
+  test('review, unknown ownership, collecting and unacknowledged results retain capacity', async () => {
+    const job = await enqueue(); await tick(); const run = [...runs.values()][0]; run.status = 'needs_review';
+    Object.assign(run.operations[0], { status: 'outcome_unknown', termination_proven: false, cleanup: 'uncertain' });
+    await tick(); expect(typeof (await load(job._id)).slot).toBe('number');
+    await expect(service.cancel(actor, job._id)).rejects.toMatchObject({ status: 409 });
+    complete(run, { done: true, message: {} }); await tick();
+    expect((await load(job._id)).state).toBe('needs_review'); expect(typeof (await load(job._id)).slot).toBe('number');
+    complete(run); run.operations[0].termination_proven = false; fault.ack = true;
+    await tick(); expect(typeof (await load(job._id)).slot).toBe('number'); expect((await load(job._id)).acknowledged).toBe(false);
+    await tick(); expect((await load(job._id)).acknowledged).toBe(true); expect(typeof (await load(job._id)).slot).toBe('number');
+    run.operations[0].termination_proven = true; run.operations[0].cleanup = 'uncertain';
+    await tick(); expect(typeof (await load(job._id)).slot).toBe('number');
+    run.operations[0].cleanup = 'verified'; await tick();
+    expect((await load(job._id)).slot).toBeUndefined(); expect((await load(job._id)).result.text).toBe('finished');
+  });
+  test.each([false, true])('initializer replaces legacy capacity indexes (sparse=%s), survives interruption and excludes null history', async sparse => {
+    const job = await enqueue();
+    await Job.collection.createIndex({ slot: 1 }, { unique: true, sparse, name: 'slot_1' });
+    await Job.collection.createIndex({ ownerId: 1, ownerSlot: 1 }, { unique: true, sparse, name: 'ownerId_1_ownerSlot_1' });
+    await Job.collection.dropIndex('admission_slot_unique'); await Job.collection.dropIndex('admission_owner_slot_unique');
+    const drop = jest.spyOn(Job.collection, 'dropIndex').mockRejectedValueOnce(new Error('initializer interrupted'));
+    const restarted = new LocalAiService({ gateway: new Gateway() });
+    try { await expect(restarted.initialize()).rejects.toThrow('initializer interrupted'); } finally { drop.mockRestore(); }
+    expect((await Job.collection.indexes()).filter(i => i.name.startsWith('admission_'))).toHaveLength(2);
+    await restarted.initialize();
+    await new LocalAiService({ gateway: new Gateway() }).initialize();
+    const indexes = await Job.collection.indexes();
+    expect(indexes.some(i => ['slot_1', 'ownerId_1_ownerSlot_1'].includes(i.name))).toBe(false);
+    expect(indexes.find(i => i.name === 'admission_slot_unique')).toMatchObject({ unique: true, partialFilterExpression: { slot: { $type: 'number' } } });
+    expect(indexes.find(i => i.name === 'admission_owner_slot_unique')).toMatchObject({ unique: true, partialFilterExpression: { ownerSlot: { $type: 'number' } } });
+    await service.cancel(actor, job._id);
+    await Job.insertMany(Array.from({ length: 3 }, (_, i) => ({ _id: `null-history-${i}`, ownerId: actor.ownerId, key: `null-history-${i}`, digest: 'x', state: 'cancelled', slot: null, ownerSlot: null })));
+    await enqueue('after-migration'); expect(await Job.countDocuments()).toBe(5);
+    await expect(Job.create({ _id: 'duplicate', ownerId: actor.ownerId, key: 'key', digest: 'x' })).rejects.toMatchObject({ code: 11000 });
   });
   test('readiness requires healthy AND proven idle; 30-minute delay survives restart', async () => {
     await enqueue(); readiness.idle_proven = false; await tick();

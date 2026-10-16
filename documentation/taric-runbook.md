@@ -486,16 +486,13 @@ proof and capability even if discovery later fails; it never substitutes operato
 Cache freshness is bounded, not an atomic guarantee against an image changing immediately
 after discovery. Deployments must continue to stop/drain workers and preserve the hold.
 
-1. The human rebuilds the Gateway in confirmed existing project `ai-gateway`, using both
-   confirmed Compose files to preserve the existing mounts and live override:
-
-   ```sh
-   cd /home/lennart/ai-services/ai-gateway && docker compose -p ai-gateway -f /home/lennart/ai-services/ai-gateway/docker-compose.yml -f /home/lennart/ai-services/llm-batching-poc/runtime/gateway.override.yml up -d --build --no-deps ai_gateway
-   ```
-
-   No extra env file or prerequisite override is needed; `LLM_ADMIN_TOKEN` is confirmed
-   unset. This is a human deployment command, not executed by this contract check. See the
-   [handoff](taric-owned-release.md#human-deployment-separate-runtime-authorization).
+1. Follow the **current Gateway release runbook** for its exact live deployment
+   command and image/Compose files. Latest operator-verified ACTIVE deployment uses
+   project `ai-gateway`, service `ai_gateway`, and
+   `embeddinggemma2/release-state/gateway-image.yml`. The former
+   `llm-batching-poc/runtime/gateway.override.yml` command is historical and must not
+   be reused. Preserve the current mounts/environment; this Site check does not
+   deploy Gateway. See the [handoff](taric-owned-release.md#human-deployment-separate-runtime-authorization).
 2. Deploy the Site follow-up through the established procedure. Open `/admin/taric` and
    click **Refresh status**. With old Gateway, the page shows upgrade instructions and
    disables manual tests and benchmark execution. Configuration, credentials, imports,

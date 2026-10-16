@@ -16,7 +16,8 @@ async function main(argv) {
   await service.initialize();
   await service.principal(actorId, null, CAP.manage);
   if (command === 'initialize') {
-    process.stdout.write('Local AI collections and required unique indexes ready.\n');
+    await service.reconcileCapacity();
+    process.stdout.write('Local AI indexes ready; safe terminal admission slots reconciled; all history retained.\n');
   } else if (command === 'grant-capability') {
     if (![CAP.use, CAP.manage, 'chat.conversation.read', 'chat.conversation.write'].includes(argument)) throw problem('unsupported_capability');
     const user = await User.findById(subject).select('name').lean();

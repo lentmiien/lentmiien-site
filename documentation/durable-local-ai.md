@@ -7,7 +7,7 @@ outputs are owner-scoped, Chat5 sources additionally require current membership
 and `chat.conversation.read`/`chat.conversation.write`. Administrative
 `local_ai.scheduler.manage` controls execution, never grants prompt access.
 Browser writes use shared session CSRF. Inputs are strict typed JSON, bounded to
-256 KiB per acceptance; durable capacity slots bound total and per-owner records.
+256 KiB per acceptance; durable capacity slots bound total and per-owner outstanding work.
 Outputs are escaped text or authorized private PNG delivery; no analytics, public
 media, or cloud fallback. Only the configured Gateway origin is contacted, without
 redirects. Private/no-store responses. Logs contain opaque IDs and sanitized codes,
@@ -87,11 +87,12 @@ The acceptance document contains the owner-scoped idempotency key and Site diges
 frozen source/request, capacity slots and deterministic publication IDs. Its
 journaled, acknowledged Mongo write precedes HTTP 202. Required unique indexes are
 awaited before acceptance. No Mongo transactions or replica set are required.
-Never delete pending or uncertain jobs to make room.
+Never delete accepted jobs to make room; safely terminal jobs release only admission slots.
 
 Collections: `localaijobs`, `localairuns`, `localaicontrols`, `localaitokens`.
 Existing `codex_turns` records gain `batchActivity`; Chat5 messages gain optional
-`localBatchJobId` and `localBatchVersion`. No destructive migration is required.
+`localBatchJobId` and `localBatchVersion`. The restart-safe admission-index migration
+below changes constraints and slot metadata only; it deletes no records.
 Site keeps Gateway run IDs, original timestamp strings, original operation bodies
 and optional fields, latest remote evidence, and opaque Gateway result digests.
 The Site idempotency digest is **not** the Gateway Python canonical-JSON digest.
@@ -151,9 +152,33 @@ availability tradeoff, not a claim that HTTP and Mongo form one atomic transacti
 
 ### Capacity and retention
 
-- Site: 256 KiB submission JSON; frozen input 512 KiB maximum; 100 retained jobs
-  per owner and 1,000 total, including completed/cancelled jobs. Concurrent
-  acceptance is bounded by unique owner/global capacity slots, not racy counts.
+- Site: 256 KiB submission JSON; frozen input 512 KiB maximum; **100 admitted
+  outstanding jobs per owner and 1,000 globally**. Retained history has no job-count
+  limit. Concurrent new submissions and manual retries reserve unique numeric
+  owner/global slots in the same journaled write that makes the job dispatchable;
+  there are no separate reservation counters or Mongo transactions.
+- Release policy: never-exported cancellation (no attempts); successful publication
+  with stored result, Gateway acknowledgement, and explicit termination plus
+  `verified`/`not_required` cleanup; or final `failed` with those termination and
+  cleanup proofs. Exported work also requires its recorded manifest to be durably
+  `closed` and no longer the scheduler's active run. Failed work does not automatically
+  retry. Manual retry must reacquire both slots atomically; if full it returns HTTP
+  507 `outstanding_work_quota` and leaves the failure and evidence unchanged.
+- `needs_review`, `outcome_unknown`, uncertain ownership/cleanup, missing manifests,
+  unfinished collection/publication/acknowledgement, and queued/deferred work retain
+  capacity. Exhausted interrupted/deferred attempts remain in review. Cancel is only
+  available before any attempt; stopping exported work uses the run controls.
+  Late proof/results continue to reconcile before any release.
+- Release unsets only `slot`/`ownerSlot`, records `admissionReleasedAt`, and advances
+  the job version. Jobs, original idempotency keys/digests, frozen inputs, attempt
+  chains, results, manifests, and unresolved evidence remain. Replaying an identical
+  submission returns the original job even with capacity full or acceptance disabled;
+  it never reacquires slots or creates a second job. Changed input remains HTTP 409.
+- A crash between terminal persistence and release can temporarily retain capacity.
+  Worker ticks, new admission/retry, and the initializer repair it with version-checked
+  writes. A stale release cannot free a later retry's reservation. A crash/lost reply
+  after retry admission leaves one queued job holding both slots; inspect/replay the
+  original submission key, never invent a new job to recover it.
 - Cohorts start at eight (256 MiB Gateway reservation at 32 MiB/op). A partial
   quota rejection persists backpressure and stop intent, seals nothing, and halves
   the persisted cohort cap down to one. Confirmed unaccepted records remain queued;
@@ -161,16 +186,28 @@ availability tradeoff, not a claim that HTTP and Mongo form one atomic transacti
   drop rejected operations or run an incomplete chosen manifest.
 - Gateway defaults: 2 GiB batch storage, 256 MiB minimum free space, 10,000 records.
   It retains acknowledged artifacts; there is no Gateway GC in this release.
-- Site does not implement automatic archival/deletion or capacity-slot recycling.
-  Monitor disk/record quotas and plan reviewed archival before sustained use.
-  Increasing limits needs a deliberate capacity review; never delete unresolved
-  evidence. Back up MongoDB, Site private artifacts and Gateway `/data/batch`
-  together, preserving IDs and the stable client ID.
+- No Site deletion, TTL or operator deletion is used to free admission capacity.
+  History and private artifacts still consume disk indefinitely. Monitor disk growth
+  and the independent Gateway storage/record limits; Site slot recycling does not
+  change Gateway retention or its admission limits.
+- Back up **all** Site MongoDB collections (including released job history and the
+  unique owner/key index), Site private artifacts and Gateway `/data/batch` together,
+  preserving IDs, tokens and the stable client ID. Stop producers/coordinators for a
+  consistent backup/restore. Restore all history, not only jobs holding slots, then
+  run the initializer before resuming traffic. Never clear slots or unresolved
+  evidence by hand. Retain backups before the index migration.
 
 ## Configuration and setup
 
-Gateway must already contain `b1e5e173dee64f5a9fb5748ff51f06403a9385e6` (or its
-reviewed descendant). This Site release did not deploy or restart anything.
+The handoff Gateway reference is `ae5215d063bb85dfad5f82a5859f650dc524c70d` (or its
+reviewed descendant). This Site change does not integrate unrelated Gateway work.
+Use the **current Gateway release runbook** for the exact live deployment command,
+image and Compose file set. Latest operator-verified ACTIVE deployment uses project
+`ai-gateway`, service `ai_gateway`, and
+`embeddinggemma2/release-state/gateway-image.yml`; the historical
+`llm-batching-poc/runtime/gateway.override.yml` is not the active override. Do not
+copy an old Site rebuild command. The live pilot integration decision belongs to
+Lennart. This Site release did not deploy, restart, or mutate production.
 
 Gateway configuration, initially dispatch disabled:
 
@@ -211,9 +248,27 @@ From a trusted Site checkout with its normal secret environment loaded, run:
 node scripts/local-ai-admin.js initialize ADMIN_USER_ID
 ```
 
-This connects only to configured MongoDB and builds the required unique indexes;
-it does not start app.js, schedulers, setup.js or a model. Verify successful completion
-before accepting traffic. Use the Node version pinned by Volta in package.json.
+Stop old Site producers/coordinators and keep both flags false before initialization.
+This connects only to configured MongoDB; it does not start app.js, schedulers,
+setup.js or a model. It creates `admission_slot_unique` on `{slot:1}` and
+`admission_owner_slot_unique` on `{ownerId:1,ownerSlot:1}`, each unique with a
+numeric `$type` partial filter on its slot field. Missing **and null** slots are
+excluded: a sparse compound owner/slot index is unsafe because owner is always
+present. The permanent unique `{ownerId:1,key:1}` index remains unfiltered.
+
+Replacement constraints are created before removing the previous slot indexes
+(including legacy `slot_1` and `ownerId_1_ownerSlot_1`, sparse or non-sparse).
+Initialization then reconciles safely terminal slots. Interrupted initialization
+can be rerun; it does not delete job documents, rewrite keys, or reset run evidence.
+The application also awaits index initialization before submissions/retries and
+repairs pending releases during normal operation. Index creation failures fail
+closed and appear in `local_ai` logs. The configured DB account needs create/list/drop
+index privileges on `localaijobs` in addition to existing read/write access.
+Verify successful completion and both partial unique indexes before accepting
+traffic. Do not run the old Site code against the migrated data; it assumes slots
+on every historical job. Restore the pre-migration backup only as a coordinated,
+reviewed rollback with accepted work and Gateway evidence preserved. Use the Node
+version pinned by Volta in package.json.
 There are no new dependencies. `npm ci` is the clean install command if dependencies
 need installing; `npm start` is not a smoke test because prestart mutates data.
 
@@ -427,7 +482,8 @@ the old process. Ordinary same-host process restart needs no such command.
    CSRF. Verify browser recovery retains the same request/seed/key after a lost 202.
 9. Only after those canaries and client coverage pass, set
    `LOCAL_AI_BATCH_AUTO_DISPATCH=true`. Monitor `local_ai` and
-   `chat5_authorization` warnings, persisted delay/reason, disk and record quotas.
+   `chat5_authorization` warnings, persisted delay/reason, outstanding admission
+   capacity, disk growth and independent Gateway record/storage quotas.
    Cloudflare must bypass cache for `/local-ai/*` and `/api/local-ai/*`; preserve
    HTTPS/authentication and narrowly permit intended machine traffic. Never add a
    broad public auth bypass. Private artifacts have no static route.
@@ -444,7 +500,9 @@ even while batching is disabled; follow Gateway's documented recovery procedure.
 ## Validation evidence and practical limits
 
 The focused suite includes policy/TZ boundaries, real standalone Mongo plus a real
-HTTP fake Gateway, concurrent acceptance/mismatch/quotas, grouping, persisted delay,
+HTTP fake Gateway, concurrent acceptance/mismatch/quotas, 104 retained historical jobs without loss,
+owner/global reservation races, failure retry re-admission, lost retry replies,
+release/manifest crash recovery and legacy/sparse index migration, grouping, persisted delay,
 partial uploads, lost upload/start/ack replies, stale fencing, cutoff/offline,
 manual drain/deadline, safe replacement identity, unknown/late success, unreachable
 stop, deterministic publication, token revocation, capability/membership/CSRF
@@ -453,11 +511,13 @@ delivery tests cover heartbeat/release uncertainty and removed recipients. Brows
 smoke tests render synthetic private queue detail at 390 and 1440 pixels, check
 escaping, overflow and unavailable unsafe retry.
 
-Release verification: the full suite passed 393 suites / 5,058 tests (8 suites /
-122 tests skipped); the final focused run passed 7 suites / 51 tests, including
-21 real standalone-Mongo/fake-Gateway integration cases. Existing configured
-coverage thresholds passed. Tests ran on the available Node 24.12.0 runtime;
-deployment should use the repository's Volta-pinned Node version.
+Pre-rollout admission verification: the focused run passed 7 suites / 63 tests,
+including 32 real standalone-Mongo/fake-Gateway integration cases and wire-level
+checks of acknowledged journaled writes. The full suite passed 393 suites / 5,071
+tests (8 suites / 122 tests skipped); configured coverage thresholds passed. Tests
+ran on Node 24.12.0; deployment should use the repository's Volta-pinned Node version.
+No environment variables or dependencies changed; the admission-index migration
+and initialization/reconciliation steps above are required.
 
 Reproduce the disposable integration environment (never point this at production):
 
