@@ -65,12 +65,14 @@ const CodexTurnSchema = new Schema({
   startedAt: { type: Date, default: null },
   completedAt: { type: Date, default: null },
   durationMs: { type: Number, default: null },
+  batchActivity: { type: Schema.Types.Mixed, default: null },
   cancelRequestedAt: { type: Date, default: null },
 }, {
   timestamps: true,
   versionKey: false,
 });
 
+CodexTurnSchema.index({ 'batchActivity.state': 1 }, { sparse: true });
 CodexTurnSchema.index({ status: 1, queuedAt: 1 });
 CodexTurnSchema.index({ workspaceId: 1, status: 1, queuedAt: 1 });
 CodexTurnSchema.index({ sessionId: 1, sequence: 1 }, { unique: true });

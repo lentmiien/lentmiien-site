@@ -31,6 +31,16 @@ block content
     .ai-gateway__header
       .ai-gateway__heading
         h1 AI Gateway
+        section#localAiScheduler
+          h2 Durable local batches
+          p Daily 01:00–06:00 Asia/Tokyo. Manual start drains the queue or stops at the earlier of five hours and next 06:00. Stop intent persists while Gateway is unreachable.
+          a(href='/local-ai/queue') Your private queue
+          .d-flex.flex-wrap.gap-2
+            button.btn.btn-primary(type='button' data-batch-control='start') Start local batch
+            button.btn.btn-outline-warning(type='button' data-batch-control='finish_current') Stop after current
+            button.btn.btn-outline-danger(type='button' data-batch-control='cancel_active') Stop now
+          pre#localAiSchedulerState(aria-live='polite') Loading…
+        script(src='/js/local-ai-integrations.js' defer)
         p.text-muted Monitor gateway health, GPU load, limits, and live logs.
       .ai-gateway__meta
         span.meta-chip Fetched: #{new Date(dashboard.fetchedAt || Date.now()).toLocaleString()}

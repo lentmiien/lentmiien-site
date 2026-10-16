@@ -274,3 +274,14 @@ COMMONS_NPC_MAX_TOKENS=512        # 256-1024; visible text still capped at 1200 
 # EMBEDDINGGEMMA2_GLOBAL_ITEMS=500
 # EMBEDDINGGEMMA2_USER_BYTES=268435456
 # EMBEDDINGGEMMA2_GLOBAL_BYTES=536870912
+
+# Durable local AI: keep acceptance and automatic dispatch OFF during rollout.
+# AI_GATEWAY_BASE_URL is the Gateway HTTP origin (normally port 8080).
+LOCAL_AI_BATCH_ENABLED=false
+LOCAL_AI_BATCH_AUTO_DISPATCH=false
+# Must match Gateway; client ID remains stable across token rotation.
+BATCH_CLIENT_ID=
+# Dedicated random secret >=32 characters; never reuse API_KEY or LLM_ADMIN_TOKEN.
+BATCH_SERVER_TOKEN=
+# Private durable directory, outside public; back up together with MongoDB.
+LOCAL_AI_BATCH_DATA_DIR=./private_data/local-ai

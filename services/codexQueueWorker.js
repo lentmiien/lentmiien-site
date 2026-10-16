@@ -9,6 +9,7 @@ const CodexSession = require('../models/codex_session');
 const codexToolService = require('./codexToolService');
 const CodexLocalRunner = require('./codexLocalRunner');
 const CodexOllamaReservation = require('./codexOllamaReservation');
+const { CodexActivity } = require('./localAi/codexActivity');
 const logger = require('../utils/logger');
 
 function addMilliseconds(date, ms) {
@@ -187,6 +188,7 @@ class CodexQueueWorker {
   constructor(options = {}) {
     this.workerId = `codex-worker-${process.pid}-${randomUUID()}`;
     this.runner = options.runner || new CodexLocalRunner();
+    this.batchActivity = options.batchActivity || new CodexActivity();
     this.ollamaReservation = options.ollamaReservation || new CodexOllamaReservation();
     this.databaseReady = options.databaseReady || (() => true);
     this.started = false;
@@ -876,8 +878,11 @@ class CodexQueueWorker {
       additionalMessageInterval.unref();
     }
 
+    let batchActivity = null;
+    let batchTerminationProven = false;
     try {
       if (usesOllama) {
+        batchActivity = await this.batchActivity.begin(String(turn._id), this.workerId);
         await onEvent({
           stream: 'system',
           eventType: 'gpu.reservation.requested',
@@ -905,8 +910,14 @@ class CodexQueueWorker {
         onCommand,
         onThreadId,
         onTurnStarted,
+        onBatchProcessStarted: batchActivity ? async (processInfo) => {
+          await CodexTurn.updateOne({ _id: turn._id, 'batchActivity.id': batchActivity.id },
+            { $set: { 'batchActivity.process': { ...processInfo, host: require('os').hostname(), observedAt: new Date() } } },
+            { writeConcern: { w: 'majority', j: true } });
+        } : undefined,
         isCancellationRequested,
       });
+      batchTerminationProven = result.batchTerminationProven === true;
       await stopAdditionalMessageDelivery();
 
       const completedAt = new Date();
@@ -1013,6 +1024,9 @@ class CodexQueueWorker {
             errorName: error?.name || 'Error',
           },
         });
+      });
+      await this.batchActivity.finish(batchActivity, batchTerminationProven).catch(error => {
+        logger.warning('Codex durable activity release pending reconciliation', { category: 'local_ai', metadata: { turnId: String(turn._id), code: error.code || 'storage_failure' } });
       });
       this.activeTurns.delete(String(turn._id));
       if (usesOllama) {

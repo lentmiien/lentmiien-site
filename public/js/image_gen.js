@@ -7,6 +7,7 @@
   const wfCount = $('#wfCount');
   const wfJsonArea = $('#workflowJson');
   const promptTextInput = $('#promptText');
+  let refreshLocalBatchEligibility = () => {};
   const negativeTextInput = $('#negativeText');
   const nodeFieldSelect = $('#nodeFieldSelect');
   const fieldAsPromptToggle = $('#fieldAsPrompt');
@@ -1251,6 +1252,7 @@
     if (!wfJsonArea) return;
     const payload = buildWorkflowPayload();
     wfJsonArea.value = payload ? JSON.stringify(payload, null, 2) : '';
+    refreshLocalBatchEligibility();
   }
 
   function setFieldControlType(key, type) {
@@ -1507,6 +1509,36 @@
   if (btnMakeEditable) btnMakeEditable.addEventListener('click', makeSelectedFieldEditable);
   if (btnViewJson) btnViewJson.addEventListener('click', updateJsonViewer);
   const btnGenerate = $('#btnGenerate');
+  const localBatchButton = $('#btnLocalAiImageBatch');
+  const localBatchStatus = $('#localAiBatchStatus');
+  let frozenBatch = null;
+  if (localBatchButton) {
+    const checkBatch = () => {
+      const graph = buildWorkflowPayload({ randomize: false });
+      const classes = ['UNETLoader', 'CLIPLoader', 'VAELoader', 'TextEncodeQwenImage21', 'EmptyLatentImage', 'KSampler', 'VAEDecode', 'SaveImage'];
+      const eligible = graph && Object.keys(graph).length === 8 && classes.every((name, i) => graph[String(i + 1)]?.class_type === name);
+      localBatchButton.disabled = !eligible;
+      if (!eligible) localBatchStatus.textContent = 'This workflow is unsupported by local batch v1. Required: Qwen Image 2.1 T2I nodes 1–8; edit, upload and video graphs cannot be batched.';
+    };
+    // Wait until all deferred scripts, including the shared batch client, have loaded.
+    window.addEventListener('load', () => {
+      window.localAiBatch.load().then(config => { if (!config.enabled) throw new Error('Local batch submissions are disabled by the operator.'); refreshLocalBatchEligibility = checkBatch; checkBatch(); })
+        .catch(error => { localBatchStatus.textContent = error.message; });
+    });
+    localBatchButton.addEventListener('click', async () => {
+      localBatchButton.disabled = true;
+      try {
+        if (!frozenBatch) frozenBatch = buildWorkflowPayload({ randomize: true });
+        renderEditableFields(); updateJsonViewer();
+        const job = await window.localAiBatch.submit({ type: 'comfy.image', request: { prompt: frozenBatch } });
+        frozenBatch = null;
+        localBatchStatus.textContent = 'Durably queued. ';
+        const link = document.createElement('a'); link.href = job.url; link.textContent = 'View private image job'; localBatchStatus.append(link);
+      } catch (error) { if (error.definitive) frozenBatch = null; localBatchStatus.textContent = error.message; }
+      finally { localBatchButton.disabled = false; }
+    });
+  }
+
   if (btnGenerate) btnGenerate.addEventListener('click', generate);
   const btnPoll = $('#btnPoll');
   if (btnPoll) btnPoll.addEventListener('click', loadJobById);

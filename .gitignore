@@ -47,3 +47,5 @@ __pycache__/
 /private_data/embeddinggemma2_test/
 # Preserve ignores for any unused pre-release assets; never migrate automatically.
 /private_data/embeddinggemma2/
+
+/private_data/local-ai/

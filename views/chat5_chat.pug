@@ -424,6 +424,14 @@ block content
     #message.chat5-editor
       // Editor is initialized via JS
     p#chat5CharCounter.small.text-muted.mt-1 0 chars
+    .local-ai-batch
+      button#localAiChatBatch.btn.btn-primary(type='button' disabled=conversationSource !== 'conversation5') Queue local batch
+      a.ms-2(href='/local-ai/queue') Local queue
+      button#localAiRecover.btn.btn-outline-secondary(type='button') Recover uncertain submission
+      p.small Text only; select a Local model, reasoning “none”, standard mode, medium verbosity, text output and no tools. Queued prompts use independent snapshots. Save a new conversation first.
+      p#localAiBatchStatus(role='status')
+    script(src='/js/local-ai-client.js' defer)
+    script(src='/js/local-ai-integrations.js' defer)
     .chat5-send-controls.d-flex.justify-content-evenly.flex-wrap.gap-2
       button.btn.btn-success(type="button", onclick="Append(true, false)") Append
       button.btn.btn-outline-success(type="button", onclick="Append(true, false, 'bot')") Append as bot

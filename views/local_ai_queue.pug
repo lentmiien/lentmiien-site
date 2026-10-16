@@ -1,0 +1,77 @@
+doctype html
+html(lang='en')
+  head
+    meta(charset='utf-8')
+    meta(name='viewport' content='width=device-width, initial-scale=1')
+    meta(name='csrf-token' content=csrfToken)
+    title Local AI queue
+    link(rel='stylesheet' href='/css/color-theme.css')
+    link(rel='stylesheet' href='/css/local-ai.css')
+    script(src='/js/local-ai-queue.js' defer)
+  body
+    main
+      nav
+        a(href='/mypage') My account
+        |  ·
+        a(href='/local-ai/queue') Local AI queue
+        |  ·
+        a(href='/admin/ai-gateway') Gateway controls
+      h1 Local AI queue
+      p Durable local generation, 01:00–06:00 Asia/Tokyo. Completed outputs are collected at any time. Every prompt uses an independent frozen snapshot.
+      p= config.enabled ? (config.auto ? 'Automatic dispatch enabled.' : 'Automatic dispatch disabled; reconciliation remains active.') : 'New submissions disabled; reconciliation remains active.'
+      p#local-ai-status(role='status')
+      if job
+        h2= job.type
+        dl
+          dt Job
+          dd= job.id
+          dt State
+          dd= job.state
+          dt Reason
+          dd= job.reason || 'None'
+          dt Next eligible attempt
+          dd= job.next_attempt_at || 'Awaiting reconciliation'
+        if job.state === 'needs_review'
+          p.warning Outcome or authorization requires review. A timeout is not proof that execution stopped. Do not submit a replacement under a new key.
+        if job.conversation_id
+          a(href=`/chat5/chat/${job.conversation_id}`) Open conversation
+        details
+          summary Frozen request (private)
+          pre= JSON.stringify(job.request, null, 2)
+        h3 Attempts
+        each attempt in job.attempts
+          p= `${attempt.id}: ${attempt.status}; cleanup ${attempt.cleanup || 'unknown'}; termination proven ${attempt.termination_proven === true}`
+        if job.result
+          if job.result.artifactId
+            img.result(src=job.result_url alt='Private generated image')
+          else
+            pre= job.result.text
+            if job.result.thinking
+              details
+                summary Thinking
+                pre= job.result.thinking
+        if job.can_cancel
+          button(type='button' data-action='cancel' data-job=job.id) Cancel queued job
+        if job.can_retry
+          button(type='button' data-action='retry' data-job=job.id) Retry generation
+        if job.state === 'needs_review' && !job.can_retry
+          p Retry is unavailable until termination and cleanup are proven.
+        p Reload this page to see reconciliation progress.
+      else
+        table
+          thead
+            tr
+              th Job
+              th Type
+              th State
+              th Next attempt / reason
+          tbody
+            each item in jobs
+              tr
+                td
+                  a(href=item.url)= item.id.slice(0, 8)
+                td= item.type
+                td= item.state
+                td= item.reason || item.next_attempt_at || '—'
+        if !jobs.length
+          p No accepted jobs.

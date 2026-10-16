@@ -98,6 +98,13 @@ block content
             input#negativeText.form-control(type="text" autocomplete="off")
         .d-flex.gap-2.mt-3
           button#btnGenerate.btn.btn-success(type="button") Submit job
+          button#btnLocalAiImageBatch.btn.btn-primary(type='button' disabled) Queue local batch
+          a(href='/local-ai/queue') Local queue
+          button#localAiRecover.btn.btn-outline-secondary(type='button') Recover uncertain submission
+        p.small Only Qwen Image 2.1 T2I normal/uncensored, exact nodes 1–8, Euler/simple, one PNG, no input files. Overrides and the chosen seed are frozen on submission.
+        p#localAiBatchStatus(role='status')
+        script(src='/js/local-ai-client.js' defer)
+        script(src='/js/local-ai-integrations.js' defer)
 
     // Workflow input files
     .card.mb-3

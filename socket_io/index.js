@@ -57,6 +57,7 @@ module.exports = (server, sessionMiddleware, { databaseReady = isDatabaseReady }
 
   // Handle connections
   io.on('connection', async (socket) => {
+    socket.use(require('../middleware/chat5PrivateAccess').socketGuard(socket));
     const userName = socket.data.userName;
     const principal = socket.data.principal;
     let cancelExpiry = null;
@@ -97,6 +98,7 @@ module.exports = (server, sessionMiddleware, { databaseReady = isDatabaseReady }
 
   io.userRoom = roomForUser;
   io.conversationRoom = roomForConversation;
+  require('../utils/chat5RoomDelivery').install(io);
 
   return io;
 };

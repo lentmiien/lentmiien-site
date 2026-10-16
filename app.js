@@ -185,6 +185,8 @@ app.use(require('./middleware/accountSurfaceBody'));
 // Miien applies small, route-specific parsers after authentication/authorization.
 // Dedicated TARIC machine authentication must precede all legacy body parsing/auth.
 const taricTool = require('./services/taric');
+const localAi = require('./services/localAi');
+app.use('/api/local-ai/v1', require('./routes/localAi').createRouter(localAi, { machine: true }));
 app.use('/api/taric/v1', require('./routes/taric').createTaricRouter(taricTool.service));
 const amiamiUpload = require('./services/amiamiUpload');
 const isAmiAmiUploadPath = req => /^\/admin\/amiami-items\/upload(?:\/|$)/i.test(req.path);
@@ -194,9 +196,10 @@ const legacyJsonParser = express.json({ limit: DEFAULT_BODY_LIMIT });
 const isMusicPath = req => /^\/(?:music|admin\/music-test)(?:\/|$)/i.test(req.path);
 const isCommonsPrivatePath = req => /^\/commons\/api(?:\/|$)/i.test(req.path);
 const isEmbeddingGemma2Path = req => /^\/admin\/embeddinggemma2(?:\/|$)/i.test(req.path);
+const isLocalAiPath = req => /^\/local-ai(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
-app.use((req, res, next) => (isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
-app.use((req, res, next) => (isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
+app.use((req, res, next) => (isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
+app.use((req, res, next) => (isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -519,6 +522,7 @@ app.use('/chat3', isAuthenticated, authorize("chat3"), chat3Router);
 app.use('/chat4', isAuthenticated, authorize("chat4"), chat4Router);
 app.use('/chat5/miien', require('./controllers/miienController'));
 app.use('/chat5/chat/:id/export', require('./routes/chat5Export').createChat5ExportRouter());
+app.use('/local-ai', require('./routes/localAi').createRouter(localAi));
 app.use('/chat5', isAuthenticated, authorize("chat5"), chat5Router);
 app.use('/openai', isAuthenticated, authorize("openai"), openaiRouter);
 app.use('/embedding', isAuthenticated, authorize("embedding"), embeddingRouter);
@@ -797,6 +801,7 @@ function startDatabaseServices() {
     }
   });
 
+  localAi.worker.start();
   seedMissingToolManagerEntries();
   validateBatchDefaultModelSetting().catch((error) => {
     logger.warning('Unable to validate the batch default model setting at startup', {
@@ -839,18 +844,21 @@ databaseLifecycle.on('ready', startDatabaseServices);
 // Remove our listener before re-raising so normal process termination is preserved.
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.once(signal, () => {
+    localAi.worker.stop();
     taricTool.worker.stop();
     amiamiUpload.stop();
     process.kill(process.pid, signal);
   });
 }
 databaseLifecycle.on('unavailable', () => {
+  localAi.worker.stop();
   taricTool.worker.stop();
   amiamiUpload.stop();
   databaseServicesNeedRecovery = databaseServicesStarted;
   io.disconnectSockets?.(true);
 });
 databaseLifecycle.on('recovered', () => {
+  localAi.worker.start();
   taricTool.worker.start();
   amiamiUpload.start();
   if (!databaseServicesNeedRecovery) return;

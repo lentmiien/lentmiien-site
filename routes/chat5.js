@@ -68,15 +68,15 @@ router.get('/quick-settings', quickSettingsController.list);
 router.post('/quick-settings', quickSettingsController.create);
 router.post('/quick-settings/:id', quickSettingsController.update);
 router.post('/quick-settings/:id/delete', quickSettingsController.remove);
-router.get('/story_mode/:id', controller.story_mode);
-router.get('/edit_message/:id', controller.edit_message);
-router.post('/update_message/:id', upload.array('imgs'), controller.update_message);
+router.get('/story_mode/:id', require('../middleware/chat5PrivateAccess').page, controller.story_mode);
+router.get('/edit_message/:id', require('../middleware/chat5PrivateAccess').messagePage, controller.edit_message);
+router.post('/update_message/:id', require('../middleware/chat5PrivateAccess').messagePage, upload.array('imgs'), controller.update_message);
 router.get('/top', controller.view_chat5_top);
 router.post('/training-entries', trainingDataController.createEntry);
 router.post('/training-entries/:id/delete', trainingDataController.deleteEntry);
-router.get('/chat/:id', controller.view_chat5);
-router.get('/voice/:id', controller.view_chat5_voice);
-router.post('/chat/:id', controller.post_chat5);
+router.get('/chat/:id', require('../middleware/chat5PrivateAccess').page, controller.view_chat5);
+router.get('/voice/:id', require('../middleware/chat5PrivateAccess').page, controller.view_chat5_voice);
+router.post('/chat/:id', require('../middleware/chat5PrivateAccess').page, controller.post_chat5);
 
 // PDF ingestion for Chat5
 router.post('/documents/pdf', upload.single('pdf'), chat5DocumentController.uploadPdf);

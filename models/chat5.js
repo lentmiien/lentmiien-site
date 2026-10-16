@@ -32,6 +32,8 @@ const Chat5 = new mongoose.Schema({
     error: String,
   },
 
+  localBatchVersion: Number,
+  localBatchJobId: { type: String, index: true },
   timestamp: { type: Date, default: Date.now },
   hideFromBot: { type: Boolean, default: false },
   embeddingRequested: { type: Boolean, default: undefined },

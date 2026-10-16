@@ -1,3 +1,4 @@
+jest.mock('../../utils/chat5RoomDelivery', () => ({ install: jest.fn() }));
 const mockIo = {
   on: jest.fn(),
   use: jest.fn(),
@@ -55,6 +56,7 @@ describe('Socket.IO connection initialization', () => {
       emit: jest.fn(),
       join: jest.fn().mockResolvedValue(undefined),
       on: jest.fn(),
+      use: jest.fn(),
       ...overrides,
     };
     socket.disconnect.mockImplementation(() => {

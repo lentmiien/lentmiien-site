@@ -414,6 +414,7 @@ class CodexLocalRunner {
     onCommand,
     onThreadId,
     onTurnStarted,
+    onBatchProcessStarted,
     isCancellationRequested,
   }) {
     const runnerConfig = this.getConfig();
@@ -469,6 +470,8 @@ class CodexLocalRunner {
     let childError = null;
     let terminalTurn = null;
     let childClosed = false;
+    const trackBatchProcessGroup = process.env.LOCAL_AI_BATCH_ENABLED === 'true'
+      && turn.modelProvider === 'ollama' && process.platform === 'linux' && target?.type !== 'remote-ssh-linux';
     let timeoutHandle = null;
     let cancelInterval = null;
     let killTimer = null;
@@ -861,7 +864,18 @@ class CodexLocalRunner {
               : 'failed';
         const stderrText = stderrChunks.join('').trim();
         const terminalError = terminalTurn?.error?.message || '';
+        let batchTerminationProven = false;
+        if (trackBatchProcessGroup && child?.pid) {
+          // Closing the transport alone is insufficient. The entire dedicated local
+          // process group, including tools and children, must have disappeared.
+          for (let attempt = 0; attempt < 25; attempt += 1) {
+            try { process.kill(-child.pid, 0); }
+            catch (error) { if (error.code === 'ESRCH') { batchTerminationProven = true; break; } }
+            await new Promise(done => setTimeout(done, 200));
+          }
+        }
         resolve({
+          batchTerminationProven,
           exitCode: result.exitCode ?? child?.exitCode ?? null,
           exitSignal: result.exitSignal || child?.signalCode || '',
           status,
@@ -909,6 +923,7 @@ class CodexLocalRunner {
           cwd: command.cwd,
           env: process.env,
           stdio: ['pipe', 'pipe', 'pipe'],
+          ...(trackBatchProcessGroup ? { detached: true } : {}),
         });
       } catch (error) {
         childError = error;
@@ -948,6 +963,7 @@ class CodexLocalRunner {
       });
 
       const startProtocol = async () => {
+        if (onBatchProcessStarted) await onBatchProcessStarted({ pid: child.pid, processGroup: trackBatchProcessGroup ? child.pid : null, remote: target?.type === 'remote-ssh-linux' });
         await sendRequest('initialize', {
           clientInfo: APP_SERVER_CLIENT_INFO,
           capabilities: {
