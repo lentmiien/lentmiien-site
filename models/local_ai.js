@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
-const options = { timestamps: true, minimize: false, bufferCommands: false, writeConcern: { w: 'majority', j: true } };
+// The web process compiles models before connecting, with buffering disabled.
+// Provision explicitly after readiness; Mongoose caches failed auto-init promises.
+const options = { timestamps: true, minimize: false, bufferCommands: false, autoCreate: false, autoIndex: false, writeConcern: { w: 'majority', j: true } };
 const job = new Schema({
   _id: String, ownerId: { type: String, required: true }, tokenId: String,
   key: { type: String, required: true }, digest: { type: String, required: true },

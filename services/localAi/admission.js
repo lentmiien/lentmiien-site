@@ -1,19 +1,31 @@
 const { safeReplacement, problem } = require('./policy');
 const logger = require('../../utils/logger');
+const { operation } = require('./diagnostics');
 const LIMITS = { owner: 100, total: 1000 };
 const INDEXES = ['admission_slot_unique', 'admission_owner_slot_unique'];
 
 async function initializeIndexes(db) {
-  await Promise.all(Object.values(db).map(model => model.init()));
+  for (const [name, model] of Object.entries(db)) {
+    await operation(`${name}.create_collection`, () => model.createCollection());
+    await operation(`${name}.create_indexes`, () => model.createIndexes());
+  }
   // Job auto-indexing is disabled: install replacement constraints BEFORE removing
   // the old lifetime constraints. Every intermediate step is safe to repeat.
-  await db.Job.createIndexes();
-  const indexes = await db.Job.collection.indexes();
+  const indexes = await operation('Job.verify_indexes', () => db.Job.collection.indexes());
+  // Verify the actual constraints before removing any legacy index.
+  for (const [field, name] of [['slot', INDEXES[0]], ['ownerSlot', INDEXES[1]]]) {
+    const index = indexes.find(entry => entry.name === name);
+    const key = field === 'slot' ? { slot: 1 } : { ownerId: 1, ownerSlot: 1 };
+    if (!index?.unique || index.sparse || JSON.stringify(index.key) !== JSON.stringify(key)
+      || JSON.stringify(index.partialFilterExpression) !== JSON.stringify({ [field]: { $type: 'number' } })) {
+      await operation('Job.verify_indexes', () => { throw problem('admission_index_invalid', 503); });
+    }
+  }
   for (const index of indexes) {
     if (INDEXES.includes(index.name)) continue;
     const key = JSON.stringify(index.key);
     if (key !== JSON.stringify({ slot: 1 }) && key !== JSON.stringify({ ownerId: 1, ownerSlot: 1 })) continue;
-    try { await db.Job.collection.dropIndex(index.name); }
+    try { await operation('Job.drop_legacy_index', () => db.Job.collection.dropIndex(index.name)); }
     catch (error) { if (error.code !== 27) throw error; } // Another initializer already removed it.
   }
 }

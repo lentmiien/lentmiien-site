@@ -64,7 +64,7 @@ block content
   - const trainingFlash = typeof trainingStatus !== 'undefined' && trainingStatus ? trainingStatus : {};
   - const chat5MessageWindow = typeof messageWindow !== 'undefined' && messageWindow ? messageWindow : { batchSize: 25, initialLimit: 25, total: Array.isArray(messages) ? messages.length : 0, loadedStart: 0, loadedEnd: Array.isArray(messages) ? messages.length : 0, hasMoreOlder: false, source: conversationSource };
   h2#conversation_title.chat5-title= conversation.title
-  p#id.chat5-meta(data-source=conversationSource)= conversation._id
+  p#id.chat5-meta(data-source=conversationSource data-output-format=conversation.metadata.outputFormat)= conversation._id
   .chat5-header-actions.d-flex.gap-2.mb-3
     a.btn.btn-outline-primary(href=`/chat4/createknowledgefromchat/${conversation._id.toString()}`) Create knowledge entry
     a.btn.btn-outline-secondary(href=`/chat5/voice/${conversation._id.toString()}`) Open voice view
@@ -425,7 +425,7 @@ block content
       // Editor is initialized via JS
     p#chat5CharCounter.small.text-muted.mt-1 0 chars
     .local-ai-batch
-      button#localAiChatBatch.btn.btn-primary(type='button' disabled=conversationSource !== 'conversation5') Queue local batch
+      button#localAiChatBatch.btn.btn-primary(type='button' disabled) Queue local batch
       a.ms-2(href='/local-ai/queue') Local queue
       button#localAiRecover.btn.btn-outline-secondary(type='button') Recover uncertain submission
       p.small Text only; select a Local model, reasoning “none”, standard mode, medium verbosity, text output and no tools. Queued prompts use independent snapshots. Save a new conversation first.

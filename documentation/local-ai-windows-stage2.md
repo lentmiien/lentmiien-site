@@ -1,5 +1,56 @@
 # Windows Site stage 2 — install with batching OFF
 
+## Postdeploy correction after `9ef5833`
+
+Explanation: the web bootstrap disables Mongoose command buffering globally and
+compiles models before connecting. Local AI previously let Mongoose auto-create
+collections at compilation. In that order, `Model.init()` caches a rejected
+`TypeError: Cannot read properties of undefined (reading 'createCollection')`.
+Every later initialization retry receives the same rejection even after a healthy
+MongoDB ping. This was reproduced against disposable standalone MongoDB with the
+actual bootstrap settings; the older integration harness missed the global setting.
+The rejection occurs before the `scheduler` upsert and before any artifact I/O.
+Existing partial indexes, valid string control IDs and majority/journaled write
+concern do not repair a cached rejected promise. The normal console's ACL denial
+does not establish a LocalSystem storage failure. Gateway's disabled persistence
+readiness is a separate condition.
+
+The correction disables automatic Local AI collection/index creation and explicitly
+provisions them after database readiness. Failed attempts retry the real operations;
+partial unique constraints are verified before removing legacy slot indexes.
+Logs include code-owned operation, allowlisted reason class, numeric Mongo code,
+and known system code/syscall when available, without raw exceptions or data.
+Chat5 reads and validates the rendered paragraph's trimmed conversation ID; source,
+settings and attachment eligibility are checked again on click. Image batch controls
+also retain eligibility and in-flight guards. No accepted records/results are deleted.
+
+Actions for the already initialized Windows host (human deployment only):
+
+1. Keep both Site batch flags and Gateway batching OFF. Drain existing Codex work,
+   stop the console worker with Ctrl+C, then stop `LennartWeb` in elevated PowerShell.
+2. In `C:\Projects\lentmiien-site`, confirm a clean checkout, run
+   `git pull --ff-only origin main`, and verify HEAD against the supplied hotfix hash.
+   Stop on Git failure/divergence. Dependencies/lockfile did not change; no reinstall,
+   environment edit, ACL rewrite, database reset, or initializer rerun is required.
+3. Start `LennartWeb`, then run `npm run codex-worker` in its usual normal console.
+   Use the existing WinSW launcher; do not run `npm start`, `setup.js`, or another web
+   instance. Restarting the web process is necessary to load the fix and discard the
+   old cached initialization failure.
+4. With both flags still OFF, check database readiness and the read-only scheduler
+   endpoint: a persisted `scheduler` record and advancing lease/fence should appear.
+   Check that initialization errors stop. Hard-refresh Chat5/image pages to load the
+   corrected scripts; buttons should remain disabled while submissions are OFF.
+   If failure remains, retain the new sanitized diagnostic fields for investigation.
+   Never clear a lease or accepted history to make this check pass.
+
+Validation uses Node 24.20.0, real standalone MongoDB and actual bootstrap worker
+startup/retry, plus rendered Pug/DOM tests and a network-intercepted Chromium click
+test. Windows paths, process identity and skipped directory fsync are unit-tested;
+real Windows LocalSystem ACL/file flush behavior still needs human verification
+during the separately authorized canary. No production action was performed for
+this correction. The original stage-2 installation procedure below is retained for
+new installations; its earlier clean-review statement predates this discovered bug.
+
 ## Explanation
 
 Operator-confirmed starting state: Gateway stage 1 PASS at integrated release

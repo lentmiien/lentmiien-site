@@ -12,6 +12,7 @@ const { CAP, BUNDLES, problem, digest, parseSubmission, textRequest, affinity, s
 const { Gateway, config } = require('./gateway');
 const logger = require('../../utils/logger');
 const admission = require('./admission');
+const { errorDiagnostic } = require('./diagnostics');
 const CHAT_BUNDLES = { admin: ['chat.conversation.read', 'chat.conversation.write'], family: [], user: [] };
 const tokenHash = secret => createHash('sha256').update(secret).digest('hex');
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -31,7 +32,7 @@ class LocalAiService {
   async initialize() {
     if (!this.initializing) this.initializing = admission.initializeIndexes(this.db).catch(error => {
       this.initializing = null;
-      logger.error('Local AI admission indexes unavailable; initialization must succeed before acceptance', { category: 'local_ai', metadata: { code: Number.isInteger(error.code) ? error.code : 'initialization_failed' } });
+      logger.error('Local AI admission indexes unavailable; initialization will retry before acceptance', { category: 'local_ai', metadata: { code: 'initialization_failed', ...errorDiagnostic(error, 'initialize') } });
       throw error;
     });
     await this.initializing;

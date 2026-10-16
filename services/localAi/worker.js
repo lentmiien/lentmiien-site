@@ -6,6 +6,7 @@ const { ownerIdentity, previousCoordinatorTerminated } = require('./coordinator'
 const { CodexActivity } = require('./codexActivity');
 const { isDatabaseReady } = require('../../middleware/databaseReadiness');
 const logger = require('../../utils/logger');
+const { errorDiagnostic } = require('./diagnostics');
 const TERMINAL = new Set(['drained', 'needs_review', 'stopped', 'expired']);
 const OP_TERMINAL = new Set(['succeeded', 'failed', 'interrupted', 'deferred', 'outcome_unknown']);
 const LEASE_MS = 90000;
@@ -15,7 +16,7 @@ class Worker {
     this.ready = ready; this.now = now; this.terminated = terminated; this.id = randomUUID(); this.running = false; this.busy = false; this.fence = null; this.warnings = new Map();
   }
   warn(message, metadata) {
-    const key = `${metadata.code}:${metadata.jobId || ''}`;
+    const key = `${metadata.code}:${metadata.operation || ''}:${metadata.reasonClass || ''}:${metadata.reasonCode || ''}:${metadata.mongoCode || ''}:${metadata.systemCode || ''}:${metadata.jobId || ''}`;
     if (Date.now() - (this.warnings.get(key) || 0) < 300000) return;
     this.warnings.set(key, Date.now());
     logger.warning(message, { category: 'local_ai', metadata });
@@ -55,23 +56,31 @@ class Worker {
   async tick() {
     if (!this.running || this.busy || !this.ready() || !this.gateway.configured()) return;
     this.busy = true;
+    let operation = 'initialize';
     try {
       await this.service.initialize();
+      operation = 'Control.upsert';
       await this.db.Control.updateOne({ _id: 'scheduler' }, { $setOnInsert: { leaseUntil: new Date(0), fence: 0 } }, { upsert: true });
+      operation = 'Control.read';
       const previous = await this.db.Control.findById('scheduler').lean();
       if (previous.holder !== this.id) {
         if (+previous.leaseUntil > +this.now()) return;
         // The v1 Gateway has no coordinator fence token. Never steal a lease from
         // a paused/live process: it could still send a late seal. Require OS proof.
+        operation = 'coordinator.termination_check';
         if (!await this.terminated(previous)) {
           this.warn('Local AI coordinator takeover blocked until old process is fenced', { code: 'coordinator_termination_unproven' });
           return;
         }
       }
+      operation = 'coordinator.identity';
+      const identity = await ownerIdentity();
+      operation = 'Control.acquire';
       const control = await this.db.Control.findOneAndUpdate({ _id: 'scheduler', fence: previous.fence, holder: previous.holder },
-        { $set: { holder: this.id, ...(await ownerIdentity()), leaseUntil: new Date(+this.now() + LEASE_MS) }, $inc: { fence: 1 } }, { returnDocument: 'after' }).lean();
+        { $set: { holder: this.id, ...identity, leaseUntil: new Date(+this.now() + LEASE_MS) }, $inc: { fence: 1 } }, { returnDocument: 'after' }).lean();
       if (!control) return;
       this.fence = control.fence;
+      operation = 'coordinator.reconcile';
       await this.service.reconcileCapacity();
       await this.repairClaims();
       // Projection and result repair continue outside windows and with dispatch disabled.
@@ -85,6 +94,7 @@ class Worker {
       }
       await this.reconcileDetached();
       if (!config().enabled) return;
+      operation = 'coordinator.dispatch';
       const current = await this.guard();
       const w = windowAt(this.now());
       const manual = current.manualDeadline && +current.manualDeadline > +this.now();
@@ -123,7 +133,7 @@ class Worker {
       await this.drive(run);
     } catch (error) {
       if (error.code !== 'coordinator_fenced') {
-        this.warn('Local AI coordinator requires retry or review', { code: error.code || 'storage_failure' });
+        this.warn('Local AI coordinator requires retry or review', { code: Number.isInteger(error.code) ? error.code : 'coordinator_failure', ...errorDiagnostic(error, operation) });
         if (this.fence !== null && this.ready()) await this.controlSet({ reason: error.code || 'storage_failure', nextAttemptAt: new Date(+this.now() + 1800000) }).catch(() => {});
       }
     } finally { this.busy = false; }

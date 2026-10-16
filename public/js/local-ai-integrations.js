@@ -11,37 +11,48 @@
     try { showJob(await window.localAiBatch.retryPending()); } catch (error) { status.textContent = error.message; }
   });
   if (button) {
+    let enabled = false;
+    let submitting = false;
+    const conversationId = () => document.getElementById('id')?.textContent.trim() || '';
+    const outputFormat = () => document.getElementById('outputFormat')?.value || document.getElementById('id')?.dataset.outputFormat || 'text';
+    function ineligible(settings) {
+      if (!enabled) return 'Local batch submissions are disabled by the operator.';
+      if (!/^[a-f\d]{24}$/i.test(conversationId())) return 'Save this conversation before batching.';
+      if (document.getElementById('id')?.dataset.source !== 'conversation5') return 'Shared templates cannot be batched.';
+      if (!(window.chatModels || []).some(model => model.api_model === settings.model && model.provider === 'Local')) return 'Select a Local model for local batching.';
+      if (settings.tools.length) return 'Local batching does not support tools.';
+      if (settings.reasoning !== 'none' || settings.mode !== 'standard' || settings.verbosity !== 'medium' || outputFormat() !== 'text') return 'Use reasoning none, standard mode, medium verbosity and text output.';
+      if (document.getElementById('fileInput')?.files?.length) return 'Local batching does not support attached files.';
+      return '';
+    }
+    function eligible(showReason = true) {
+      const reason = ineligible(collectChatSettings());
+      button.disabled = submitting || Boolean(reason);
+      if (showReason) status.textContent = reason;
+    }
+    button.disabled = true;
     window.addEventListener('load', () => {
       window.localAiBatch.load().then(config => {
-        if (!config.enabled) throw new Error('Local batch submissions are disabled by the operator.');
-        const eligible = () => {
-          const settings = collectChatSettings();
-          const local = (window.chatModels || []).some(model => model.api_model === settings.model && model.provider === 'Local');
-          const reason = document.getElementById('id')?.value === 'NEW' ? 'Save this conversation before batching.'
-            : !local ? 'Select a Local model for local batching.'
-              : settings.tools.length ? 'Local batching does not support tools.'
-                : settings.reasoning !== 'none' || settings.mode !== 'standard' || settings.verbosity !== 'medium' ? 'Use reasoning none, standard mode and medium verbosity.'
-                  : document.getElementById('fileInput')?.files?.length ? 'Local batching does not support attached files.' : '';
-          button.dataset.ineligible = '';
-          button.disabled = Boolean(reason);
-          status.textContent = reason;
-        };
-        document.querySelectorAll('select, input').forEach(input => input.addEventListener('change', eligible));
+        enabled = config.enabled === true;
+        document.querySelectorAll('select, input').forEach(input => input.addEventListener('change', () => eligible()));
         eligible();
       }).catch(error => { status.textContent = error.message; });
     });
     button.addEventListener('click', async () => {
+      if (submitting) return;
+      submitting = true;
       button.disabled = true;
       try {
         const settings = collectChatSettings();
-        if (document.getElementById('fileInput')?.files?.length) throw new Error('Batch does not support attached images.');
-        const job = await window.localAiBatch.submit({ type: 'chat5.response', conversation_id: document.getElementById('id').value,
+        const reason = ineligible(settings);
+        if (reason) throw new Error(reason);
+        const job = await window.localAiBatch.submit({ type: 'chat5.response', conversation_id: conversationId(),
           prompt: window.editor.getMarkdown(), settings: { model: settings.model, contextPrompt: settings.context,
             maxMessages: settings.maxMessages, tools: settings.tools, reasoning: settings.reasoning,
-            mode: settings.mode, verbosity: settings.verbosity, outputFormat: document.getElementById('outputFormat')?.value || 'text' } });
+            mode: settings.mode, verbosity: settings.verbosity, outputFormat: outputFormat() } });
         showJob(job);
-      } catch (error) { status.textContent = error.message; button.dataset.ineligible = error.definitive ? 'true' : ''; }
-      finally { button.disabled = button.dataset.ineligible === 'true'; }
+      } catch (error) { status.textContent = error.message; }
+      finally { submitting = false; eligible(false); }
     });
   }
   const panel = document.getElementById('localAiScheduler');

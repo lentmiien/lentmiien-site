@@ -1513,21 +1513,31 @@
   const localBatchStatus = $('#localAiBatchStatus');
   let frozenBatch = null;
   if (localBatchButton) {
-    const checkBatch = () => {
-      const graph = buildWorkflowPayload({ randomize: false });
+    let batchEnabled = false;
+    let batchSubmitting = false;
+    const isBatchGraph = graph => {
       const classes = ['UNETLoader', 'CLIPLoader', 'VAELoader', 'TextEncodeQwenImage21', 'EmptyLatentImage', 'KSampler', 'VAEDecode', 'SaveImage'];
-      const eligible = graph && Object.keys(graph).length === 8 && classes.every((name, i) => graph[String(i + 1)]?.class_type === name);
-      localBatchButton.disabled = !eligible;
-      if (!eligible) localBatchStatus.textContent = 'This workflow is unsupported by local batch v1. Required: Qwen Image 2.1 T2I nodes 1–8; edit, upload and video graphs cannot be batched.';
+      return graph && Object.keys(graph).length === 8 && classes.every((name, i) => graph[String(i + 1)]?.class_type === name);
+    };
+    const checkBatch = (showReason = true) => {
+      const graph = buildWorkflowPayload({ randomize: false });
+      const eligible = isBatchGraph(graph);
+      localBatchButton.disabled = !batchEnabled || batchSubmitting || !eligible;
+      if (showReason) localBatchStatus.textContent = !batchEnabled ? 'Local batch submissions are disabled by the operator.'
+        : !eligible ? 'This workflow is unsupported by local batch v1. Required: Qwen Image 2.1 T2I nodes 1–8; edit, upload and video graphs cannot be batched.' : '';
     };
     // Wait until all deferred scripts, including the shared batch client, have loaded.
     window.addEventListener('load', () => {
-      window.localAiBatch.load().then(config => { if (!config.enabled) throw new Error('Local batch submissions are disabled by the operator.'); refreshLocalBatchEligibility = checkBatch; checkBatch(); })
+      window.localAiBatch.load().then(config => { batchEnabled = config.enabled === true; refreshLocalBatchEligibility = checkBatch; checkBatch(); })
         .catch(error => { localBatchStatus.textContent = error.message; });
     });
     localBatchButton.addEventListener('click', async () => {
+      if (batchSubmitting) return;
+      batchSubmitting = true;
       localBatchButton.disabled = true;
       try {
+        if (!batchEnabled) throw new Error('Local batch submissions are disabled by the operator.');
+        if (!isBatchGraph(frozenBatch || buildWorkflowPayload({ randomize: false }))) throw new Error('This workflow is unsupported by local batch v1.');
         if (!frozenBatch) frozenBatch = buildWorkflowPayload({ randomize: true });
         renderEditableFields(); updateJsonViewer();
         const job = await window.localAiBatch.submit({ type: 'comfy.image', request: { prompt: frozenBatch } });
@@ -1535,7 +1545,7 @@
         localBatchStatus.textContent = 'Durably queued. ';
         const link = document.createElement('a'); link.href = job.url; link.textContent = 'View private image job'; localBatchStatus.append(link);
       } catch (error) { if (error.definitive) frozenBatch = null; localBatchStatus.textContent = error.message; }
-      finally { localBatchButton.disabled = false; }
+      finally { batchSubmitting = false; checkBatch(false); }
     });
   }
 

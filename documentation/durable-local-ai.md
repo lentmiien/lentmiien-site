@@ -89,6 +89,13 @@ journaled, acknowledged Mongo write precedes HTTP 202. Required unique indexes a
 awaited before acceptance. No Mongo transactions or replica set are required.
 Never delete accepted jobs to make room; safely terminal jobs release only admission slots.
 
+Local AI models disable automatic collection/index creation because the web process
+compiles them before connecting with command buffering disabled. Initialization
+explicitly creates collections/indexes after readiness and verifies both partial
+unique admission indexes before dropping legacy constraints. It does not await a
+cached `Model.init()` promise: a failed attempt must be able to retry real storage
+operations on the next worker tick. See the [Windows postdeploy correction](local-ai-windows-stage2.md#postdeploy-correction-after-9ef5833).
+
 Collections: `localaijobs`, `localairuns`, `localaicontrols`, `localaitokens`.
 Existing `codex_turns` records gain `batchActivity`; Chat5 messages gain optional
 `localBatchJobId` and `localBatchVersion`. The restart-safe admission-index migration
