@@ -199,6 +199,12 @@ availability tradeoff, not a claim that HTTP and Mongo form one atomic transacti
 
 ## Configuration and setup
 
+For the confirmed Windows deployment, use [Site stage 2, batching OFF](local-ai-windows-stage2.md).
+Lennart confirmed Gateway integrated release
+`dffccc9029313cd1886fbbda8383beb19170c309` deployed and stage 1 verification PASS;
+its configured client ID is `lentmiien-site`. This is operator-supplied evidence,
+not a deployment performed by the Site implementation.
+
 The handoff Gateway reference is `ae5215d063bb85dfad5f82a5859f650dc524c70d` (or its
 reviewed descendant). This Site change does not integrate unrelated Gateway work.
 Use the **current Gateway release runbook** for the exact live deployment command,
@@ -213,7 +219,7 @@ Gateway configuration, initially dispatch disabled:
 
 ```dotenv
 BATCH_ENABLED=false
-BATCH_CLIENT_ID=site-local-ai
+BATCH_CLIENT_ID=lentmiien-site
 BATCH_SERVER_TOKEN=<dedicated random secret of at least 32 characters>
 BATCH_DATA_DIR=/data/batch
 BATCH_EXTERNAL_CLIENT_COVERAGE=unverified
@@ -232,7 +238,7 @@ Site configuration (also set on every standalone Codex worker):
 AI_GATEWAY_BASE_URL=http://<gateway-host>:8080
 LOCAL_AI_BATCH_ENABLED=false
 LOCAL_AI_BATCH_AUTO_DISPATCH=false
-BATCH_CLIENT_ID=site-local-ai
+BATCH_CLIENT_ID=lentmiien-site
 BATCH_SERVER_TOKEN=<the same dedicated secret>
 LOCAL_AI_BATCH_DATA_DIR=<absolute persistent private directory outside public>
 ```
@@ -245,8 +251,25 @@ operator secret configuration, not shell history or committed files.
 From a trusted Site checkout with its normal secret environment loaded, run:
 
 ```sh
-node scripts/local-ai-admin.js initialize ADMIN_USER_ID
+node scripts/local-ai-admin.js initialize-by-name "EXACT_SITE_ADMIN_LOGIN_NAME"
 ```
+
+Use the exact, case-sensitive **Site login username**, not email, Windows account,
+display name, password, or MongoDB ID. It is not a secret. The CLI loads working-directory
+`.env` quietly; inherited environment variables take precedence, just as in `app.js`
+and `scripts/codex-worker.js`. Run from the deployment checkout with the same effective
+`MONGOOSE_URL` as the service. It does not read WinSW XML or copy a running process's
+environment automatically.
+
+This remains a trusted, host-administrator CLI, not a new login or HTTP endpoint.
+The bounded name lookup uses binary exact equality, selects only `_id`, and stops at
+two matches. Missing or duplicate names (including non-admin duplicates) fail closed.
+It reloads the principal through the existing `local_ai.scheduler.manage` capability
+check and additionally requires the matching name and `type_user=admin` before
+explicit index migration/reconciliation. No account, role, password, token, or
+capability is created or changed. Success output contains no account data; failures
+print/log allowlisted codes only. Existing `initialize ADMIN_USER_ID` remains available
+with its existing capability policy. Other administration commands still take IDs.
 
 Stop old Site producers/coordinators and keep both flags false before initialization.
 This connects only to configured MongoDB; it does not start app.js, schedulers,
@@ -445,7 +468,7 @@ the old process. Ordinary same-host process restart needs no such command.
    git show --stat <SITE_RELEASE_COMMIT>
    git merge --ff-only <SITE_RELEASE_COMMIT>
    npm ci
-   node scripts/local-ai-admin.js initialize ADMIN_USER_ID
+   node scripts/local-ai-admin.js initialize-by-name "EXACT_SITE_ADMIN_LOGIN_NAME"
    ```
 
    Replace `<SITE_RELEASE_COMMIT>` with the Site commit reported with this release.

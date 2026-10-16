@@ -1,4 +1,5 @@
 jest.mock('../../utils/logger', () => ({ warning: jest.fn(), error: jest.fn(), notice: jest.fn(), info: jest.fn() }));
+jest.mock('dotenv', () => ({ config: jest.fn() }));
 const mongoose = require('mongoose');
 const express = require('express');
 const os = require('os');
@@ -114,6 +115,22 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
   function complete(run, result = { done: true, message: { content: 'finished' } }) {
     run.status = 'drained'; for (const op of run.operations) Object.assign(op, { status: 'succeeded', result, result_digest: 'opaque-not-site-digest', cleanup: 'verified' });
   }
+  test('trusted initializer resolves exact admin names and refuses legacy duplicate names', async () => {
+    const { main } = require('../../scripts/local-ai-admin');
+    process.env.MONGOOSE_URL = process.env.LOCAL_AI_TEST_MONGO_URI;
+    const output = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      await User.create({ name: 'Owner', email: 'case@example.test', type_user: 'admin', hash_password: 'unused' });
+      await main(['initialize-by-name', 'owner']);
+      expect(output).toHaveBeenCalledWith('Local AI indexes ready; safe terminal admission slots reconciled; all history retained.\n');
+      const indexes = await Job.collection.indexes();
+      expect(indexes.find(i => i.name === 'admission_slot_unique')).toMatchObject({ unique: true, partialFilterExpression: { slot: { $type: 'number' } } });
+      await expect(main(['initialize-by-name', '.*'])).rejects.toMatchObject({ code: 'admin_name_not_unique' });
+      await User.create({ name: 'owner', email: 'duplicate@example.test', type_user: 'user', hash_password: 'unused' });
+      await expect(main(['initialize-by-name', 'owner'])).rejects.toMatchObject({ code: 'admin_name_not_unique' });
+      expect(runs.size).toBe(0);
+    } finally { output.mockRestore(); }
+  });
   test('concurrent idempotent durable acceptance, mismatch, owner isolation and quotas', async () => {
     const accepted = await Promise.all(Array.from({ length: 8 }, () => service.submit(actor, 'same', text())));
     expect(new Set(accepted.map(j => j._id)).size).toBe(1); expect(await Job.countDocuments()).toBe(1);
