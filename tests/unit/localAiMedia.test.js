@@ -55,10 +55,10 @@ test('symlink ancestors, hardlinks and unsafe static roots are rejected', async 
 test.each(['../x.png', '/x.png', 'https://host/x.png', 'x.png:secret', 'x[output].png', 'gateway_batch_x.png', 'x%2fp.png', 'x\\y.png'])('shared import disallows %s', filename => {
   expect(importSchema.safeParse({ source: { filename, subfolder: '' }, expected_sha256: sha }).success).toBe(false);
 });
-test('shared imports require explicit source revision and safe relative source', () => {
+test('shared imports accept an optional expected revision and require a safe relative source', () => {
   expect(importSchema.safeParse({ source: { filename: 'x.png', subfolder: 'approved/nested' }, expected_sha256: sha }).success).toBe(true);
   expect(importSchema.safeParse({ source: { filename: 'x.png', subfolder: '../other' }, expected_sha256: sha }).success).toBe(false);
-  expect(importSchema.safeParse({ source: { filename: 'x.png', subfolder: '' } }).success).toBe(false);
+  expect(importSchema.safeParse({ source: { filename: 'x.png', subfolder: '' } }).success).toBe(true);
 });
 test('ref schema allows image-only user messages, rejects inline payloads and assistant images', () => {
   const request = { model: 'vision', messages: [{ role: 'user', content: '', images: [reference] }], max_tokens: 1 };

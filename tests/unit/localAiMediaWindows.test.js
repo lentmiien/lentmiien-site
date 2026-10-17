@@ -24,3 +24,12 @@ test('native Windows ACL denial fails closed; successful inspection uses an argu
   expect(exec).toHaveBeenLastCalledWith(expect.stringContaining('powershell.exe'), expect.arrayContaining(['-StoragePath', 'C:\\ProgramData\\LennartWebLocalAI']),
     expect.objectContaining({ windowsHide: true, timeout: 10000, maxBuffer: 1024 }), expect.any(Function));
 });
+test('registered output root uses the same fail-closed Windows path and ACL boundary', () => {
+  Object.defineProperty(process, 'platform', { ...platform, value: 'win32' }); jest.doMock('path', () => win32);
+  let storage; jest.isolateModules(() => { storage = require('../../services/localAi/outputs'); });
+  delete process.env.LOCAL_AI_OUTPUT_DATA_DIR;
+  expect(storage.root()).toBe('C:\\ProgramData\\LennartWebLocalAI\\outputs');
+  for (const value of ['C:\\ProgramData\\outputs:stream', '\\\\host\\share', 'C:relative', 'C:\\unsafe.\\outputs']) {
+    process.env.LOCAL_AI_OUTPUT_DATA_DIR = value; expect(() => storage.root()).toThrow('output_storage_config');
+  }
+});

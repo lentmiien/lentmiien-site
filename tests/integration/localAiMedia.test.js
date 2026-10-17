@@ -67,9 +67,10 @@ suite('Phase 1 immutable inputs with real standalone Mongo and bounded HTTP tran
     app.put('/batch/inputs/:id/import', async (req, res) => {
       const data = fault.library || bytes;
       expect(req.body.schema_version).toBe(2);
-      if (storage.hash(data) !== req.body.expected_sha256) return res.status(409).json({ detail: { code: 'source_revision_mismatch' } });
+      if (req.body.expected_sha256 && storage.hash(data) !== req.body.expected_sha256) return res.status(409).json({ detail: { code: 'source_revision_mismatch' } });
       const descriptor = { ...await storage.validateRaster(data), artifact_id: req.params.id, schema_version: 2, request_digest: digest({ kind: 'comfy_shared_library', ...req.body }), url: 'http://foreign.invalid/no' };
       inputs.set(req.params.id, { bytes: data, descriptor }); fault.imports++;
+      if (fault.loseImport) { fault.loseImport = false; return req.socket.destroy(); }
       res.status(201).json(descriptor);
     });
     app.get('/batch/runs/:id', (req, res) => runs.has(req.params.id) ? res.json(runs.get(req.params.id)) : res.status(404).json({ detail: { code: 'not_found' } }));
@@ -129,6 +130,17 @@ suite('Phase 1 immutable inputs with real standalone Mongo and bounded HTTP tran
     await db.Token.updateOne({ _id: bearer.id }, { $set: { revokedAt: new Date() } });
     r = await fetch(origin + '/api/local-ai/v1/inputs/' + d.artifact_id, { headers: { Authorization: `Bearer ${bearer.secret}` } }); expect(r.status).toBe(401);
   });
+  test('optional-revision shared import recovers a lost receipt without rereading overwritten original or accepting a job', async () => {
+    fault.loseImport = true;
+    const raw = { source: { filename: 'reference.png', subfolder: '' } };
+    await expect(service.inputs.importShared(actor, 'import-lost', raw)).rejects.toMatchObject({ status: 502 });
+    expect(await db.Job.countDocuments()).toBe(0);
+    fault.library = Buffer.from('overwritten source');
+    const ready = await service.inputs.importShared(actor, 'import-lost', raw);
+    expect(fault.imports).toBe(1); expect(await storage.read(ready._id, ready.descriptor)).toEqual(bytes);
+    expect(ready.state).toBe('ready'); expect(ready.gatewayReceipt?.sha256 || ready.descriptor.sha256).toBe(storage.hash(bytes));
+    await expect(service.inputs.resolve({ ownerId: String(other._id) }, ref(ready))).rejects.toMatchObject({ status: 404 });
+  });
   test('immutable publication recovers lost DB ack, restart and exact replay; retained bytes survive job release', async () => {
     const record = await service.inputs.prepare(actor, 'lost', storage.hash(bytes));
     const original = db.Input.findOneAndUpdate.bind(db.Input);
@@ -165,7 +177,7 @@ suite('Phase 1 immutable inputs with real standalone Mongo and bounded HTTP tran
     expect(inputs.get(record._id).bytes).toEqual(bytes);
   });
   test('whole-cohort size uses live capacity; lost reservation reply preserves manifest and seal', async () => {
-    const record = await capture(); await submit(record, 'one'); await submit(record, 'two'); fault.capacity = 35717120 + 1048576; fault.loseRun = true;
+    const record = await capture(); const first = await submit(record, 'one'); await submit(record, 'two'); await service.inputs.stage(first); fault.capacity = 35717120 + 1048576; fault.loseRun = true;
     await worker.tick(); expect(fault.seals).toBe(0); const original = await db.Run.findOne({}).lean(); expect(original.manifest).toHaveLength(1);
     worker.stop(); worker = newWorker(); await db.Control.updateOne({ _id: 'scheduler' }, { $set: { leaseUntil: new Date(0) } }); await worker.tick();
     const recovered = await db.Run.findById(original._id).lean(); expect(recovered.wire).toEqual(original.wire); expect(recovered.manifest).toEqual(original.manifest); expect(fault.seals).toBe(1); expect(fault.reservations).toBe(1);

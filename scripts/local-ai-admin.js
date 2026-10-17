@@ -12,7 +12,7 @@ const { CAP, ID, problem } = require('../services/localAi/policy');
 async function main(argv) {
   const [command, actor, subject, argument, proof] = argv;
   let actorId = actor;
-  if (!['initialize', 'initialize-by-name', 'grant-capability', 'issue-token', 'revoke-token', 'reconcile-activity', 'fence-coordinator'].includes(command)) throw problem('invalid_admin_command', 400);
+  if (!['rollback-check', 'initialize', 'initialize-by-name', 'grant-capability', 'issue-token', 'revoke-token', 'reconcile-activity', 'fence-coordinator'].includes(command)) throw problem('invalid_admin_command', 400);
   if (command === 'initialize-by-name' && (argv.length !== 2 || typeof actor !== 'string'
     || !actor.trim() || actor.length > 100 || /[\x00-\x1f\x7f]/.test(actor))) throw problem('invalid_admin_name', 400);
   await mongoose.connect(process.env.MONGOOSE_URL, { serverSelectionTimeoutMS: 10000, bufferCommands: false });
@@ -26,7 +26,10 @@ async function main(argv) {
   const principal = await service.principal(actorId, null, CAP.manage);
   if (command === 'initialize-by-name' && (principal?.type_user !== 'admin' || principal.name !== actor)) throw problem('validated_admin_required', 403);
   await service.initialize();
-  if (command === 'initialize' || command === 'initialize-by-name') {
+  if (command === 'rollback-check') {
+    const result = await require('../services/localAi/compatibility').assertRollbackCompatible(service.db, subject);
+    process.stdout.write(JSON.stringify(result) + '\n');
+  } else if (command === 'initialize' || command === 'initialize-by-name') {
     await service.reconcileCapacity();
     process.stdout.write('Local AI indexes ready; safe terminal admission slots reconciled; all history retained.\n');
   } else if (command === 'grant-capability') {
@@ -78,6 +81,7 @@ async function main(argv) {
 function reportFailure(error) {
   // Driver/provider errors can contain credentials or account input, even in code.
   const safeCodes = new Set(['invalid_admin_command', 'invalid_admin_name', 'admin_name_not_unique', 'validated_admin_required',
+    'rollback_requires_site_phase2', 'rollback_requires_site_phase1', 'invalid_rollback_target',
     'unauthorized', 'forbidden', 'unsupported_capability', 'user_not_found', 'invalid_token_id', 'invalid_token_request',
     'operator_must_prove_old_coordinator_terminated', 'coordinator_changed',
     'operator_must_prove_old_coordinator_and_entire_agent_tree_terminated', 'activity_not_found',

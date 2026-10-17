@@ -20,17 +20,18 @@ const tokenHash = secret => createHash('sha256').update(secret).digest('hex');
 const plain = value => JSON.parse(JSON.stringify(value));
 function publicJob(job, control = null) {
   return { id: job._id, type: job.source?.conversationId ? 'chat5.response' : job.type, state: job.state,
-    reason: job.reason || (job.state === 'queued' ? control?.reason : null) || null, next_attempt_at: job.state === 'queued' && control?.nextAttemptAt && +control.nextAttemptAt > +job.nextAttemptAt ? control.nextAttemptAt : job.nextAttemptAt, created_at: job.createdAt,
+    reason: job.reason || (job.state === 'queued' && job.schemaVersion === 2 && !config().media ? 'batch_media_disabled' : null) || (job.state === 'queued' ? control?.reason : null) || null, next_attempt_at: job.state === 'queued' && control?.nextAttemptAt && +control.nextAttemptAt > +job.nextAttemptAt ? control.nextAttemptAt : job.nextAttemptAt, created_at: job.createdAt,
     conversation_id: job.source?.conversationId || null, run_id: job.runId,
     attempts: job.attempts.map(a => ({ id: a.id, run_id: a.runId, status: a.remote?.status || 'upload_pending',
       cleanup: a.remote?.cleanup, termination_proven: a.remote?.termination_proven })),
+    artifacts: job.published ? (job.result?.artifacts || []).map(a => ({ slot: a.slot, media_type: a.media_type, url: `/local-ai/api/v1/jobs/${job._id}/outputs/${a.slot}` })) : [],
     published: job.published, acknowledged: job.acknowledged,
     can_cancel: !job.runId && job.attempts.length === 0 && ['queued', 'needs_review'].includes(job.state),
     can_retry: !job.runId && job.attempts.length < 5 && ['failed', 'needs_review'].includes(job.state) && safeReplacement(job.attempts.at(-1)?.remote),
     url: `/local-ai/queue/${job._id}`, result_url: `/local-ai/api/v1/jobs/${job._id}/result` };
 }
 class LocalAiService {
-  constructor({ db = models, gateway = new Gateway() } = {}) { this.db = db; this.gateway = gateway; this.inputs = new Inputs(this); }
+  constructor({ db = models, gateway = new Gateway() } = {}) { this.db = db; this.gateway = gateway; this.inputs = new Inputs(this); this.workflows = new (require('./workflows').Workflows)(this); }
   async initialize() {
     if (!this.initializing) this.initializing = admission.initializeIndexes(this.db).catch(error => {
       this.initializing = null;
@@ -69,6 +70,8 @@ class LocalAiService {
   }
   async sourceAccess(job) {
     const user = await this.principal(job.ownerId, job.tokenId);
+    const references = job.type === 'comfy.workflow' ? Object.values(job.request.bindings) : job.type === 'llm.chat' ? job.request.messages.flatMap(m => m.images || []) : [];
+    for (const ref of references) await this.inputs.resolve({ ownerId: job.ownerId, tokenId: job.tokenId }, ref, { verifyBytes: false });
     if (job.source?.conversationId) {
       if (!await hasCapabilities(user, ['chat.conversation.read', 'chat.conversation.write'], { roleModel: Role, roleCapabilityBundles: CHAT_BUNDLES })) throw problem('source_access_revoked', 403);
       const conv = await Conversation.findOne({ _id: job.source.conversationId, members: user.name }).lean();
@@ -89,10 +92,10 @@ class LocalAiService {
       || request.messages.reduce((n, m) => n + Array.from(m.content).length, 0) > limits.max_prompt_chars) throw problem('catalog_limit_exceeded');
     return plain(model);
   }
-  async validateImages(request, actor, catalog) {
+  async validateImages(request, actor, catalog, retained = false) {
     const references = request.messages.flatMap(m => m.images || []);
     if (!references.length) return false;
-    const caps = await this.inputs.negotiate();
+    const caps = retained ? { operation_schema_versions: [2], features: { ollama_image_refs: true }, schema2: { run_manifest_required: true, supported_types: ['llm.chat'], max_images: 3, max_image_bytes: 6000000, max_input_bytes: 33554432, max_pixels: 16000000, max_edge: 8192 } } : await this.inputs.negotiate();
     if (!caps.operation_schema_versions?.includes(2) || !caps.features?.ollama_image_refs || !caps.schema2?.run_manifest_required
       || !caps.schema2.supported_types?.includes('llm.chat')) throw problem('gateway_vision_unavailable', 503);
     const policy = caps.schema2;
@@ -121,16 +124,21 @@ class LocalAiService {
   }
   async validateFrozen(job) {
     await this.sourceAccess(job);
+    if (job.type === 'comfy.workflow') {
+      require('../../public/js/local-ai-workflows').validate(job.source.workflowPolicy, job.request);
+      await this.workflows.references({ ownerId: job.ownerId, tokenId: job.tokenId }, job.request, job.source.workflowPolicy);
+    }
     if (job.type === 'llm.chat') {
       const current = await this.validateModel(job.request);
       if (job.schemaVersion === 2) {
         if (digest(this.catalogPolicy(current)) !== digest(this.catalogPolicy(job.source.catalog))) throw problem('frozen_model_policy_changed', 409);
-        await this.validateImages(job.request, { ownerId: job.ownerId, tokenId: job.tokenId }, current);
+        await this.validateImages(job.request, { ownerId: job.ownerId, tokenId: job.tokenId }, current, true);
       }
       if (current.provider !== job.source.catalog?.provider || current.upstream_model !== job.source.catalog?.upstream_model) throw problem('frozen_model_mapping_changed', 409);
     }
   }
   async freeze(input, actor) {
+    if (input.type === 'comfy.workflow') return this.workflows.freeze(input.request, actor);
     if (input.type !== 'chat5.response') {
       const catalog = input.type === 'llm.chat' ? await this.validateModel(input.request) : undefined;
       const media = catalog && await this.validateImages(input.request, actor, catalog);
@@ -189,7 +197,7 @@ class LocalAiService {
     };
     const job = await admission.admit(this.db, actor.ownerId, async slots => {
       const created = await this.db.Job.create({ _id: id, ownerId: actor.ownerId, tokenId: actor.tokenId, key, digest: hash,
-        ...frozen, projection, ...slots, affinity: frozen.schemaVersion === 2 ? `vision:${digest([this.catalogPolicy(frozen.source.catalog), Object.fromEntries(Object.entries(frozen.request).filter(([k]) => k !== 'messages'))])}` : frozen.source.catalog ? `llm:${frozen.source.catalog.upstream_model}` : affinity(frozen.type, frozen.request),
+        ...frozen, projection, ...slots, affinity: frozen.source.affinity || (frozen.schemaVersion === 2 ? `vision:${digest([this.catalogPolicy(frozen.source.catalog), Object.fromEntries(Object.entries(frozen.request).filter(([k]) => k !== 'messages'))])}` : frozen.source.catalog ? `llm:${frozen.source.catalog.upstream_model}` : affinity(frozen.type, frozen.request)),
         nextAttemptAt: windowAt().inside ? new Date() : windowAt().next });
       return created.toObject();
     }, replay);

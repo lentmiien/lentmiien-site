@@ -41,8 +41,14 @@ function createRouter({ service, worker }, { machine = false } = {}) {
     router.use((req, res, next) => ['GET', 'HEAD'].includes(req.method) ? next() : csrf.requireToken(req, res, next));
   }
   const api = machine ? '' : '/api/v1';
-  const serialize = (job, control) => ({ ...publicJob(job, control), result_url: `${machine ? '/api/local-ai/v1' : '/local-ai/api/v1'}/jobs/${job._id}/result` });
+  const serialize = (job, control) => ({ ...publicJob(job, control), artifacts: publicJob(job, control).artifacts.map(a => ({ ...a, url: `${machine ? '/api/local-ai/v1' : '/local-ai/api/v1'}/jobs/${job._id}/outputs/${a.slot}` })), result_url: `${machine ? '/api/local-ai/v1' : '/local-ai/api/v1'}/jobs/${job._id}/result` });
   const wrap = fn => async (req, res, next) => { try { await fn(req, res); } catch (error) { next(error); } };
+  router.get(`${api}/workflows`, wrap(async (req, res) => res.json(await service.workflows.catalog())));
+  router.get(`${api}/workflows/:id/versions/:hash`, wrap(async (req, res) => res.json(await service.workflows.policy(req.params.id, req.params.hash))));
+  router.get(`${api}/inputs`, wrap(async (req, res) => {
+    const records = await service.db.Input.find({ ownerId: req.localAiActor.ownerId, state: 'ready' }).sort({ createdAt: -1 }).limit(128).lean();
+    res.json({ inputs: records.map(inputDescriptor) });
+  }));
   router.post(`${api}/inputs`, createInputUpload(service), wrap(async (req, res) => {
     res.status(201).json(inputDescriptor(req.localAiInput));
   }));
@@ -52,10 +58,10 @@ function createRouter({ service, worker }, { machine = false } = {}) {
   router.get(`${api}/inputs/by-key/:key`, wrap(async (req, res) => res.json(inputDescriptor(await service.inputs.lookup(req.localAiActor, null, req.params.key)))));
   router.get(`${api}/inputs/:id`, wrap(async (req, res) => res.json(inputDescriptor(await service.inputs.lookup(req.localAiActor, req.params.id)))));
   router.get(`${api}/inputs/:id/content`, wrap(async (req, res) => {
-    const record = await service.inputs.lookup(req.localAiActor, req.params.id);
+    const record = await service.inputs.lookup(req.localAiActor, req.params.id, null, { verifyBytes: false });
     if (record.state !== 'ready') throw problem('input_not_ready', 409);
-    res.set({ 'Content-Type': record.descriptor.media_type, 'X-Content-Type-Options': 'nosniff', ETag: `"${record.descriptor.sha256}"` })
-      .send(await inputStorage.read(record._id, record.descriptor));
+    await service.inputs.resolve(req.localAiActor, { artifact_id: record._id, sha256: record.descriptor.sha256 }, { verifyBytes: false });
+    await require('../services/localAi/privateDelivery').readAndDeliver(req, res, () => inputStorage.read(record._id, record.descriptor), record.descriptor);
   }));
   router.post(`${api}/jobs`, wrap(async (req, res) => {
     const job = await service.submit(req.localAiActor, req.get('Idempotency-Key'), req.body);
@@ -74,7 +80,15 @@ function createRouter({ service, worker }, { machine = false } = {}) {
     const job = await service.get(req.localAiActor, req.params.id);
     if (!job.published) throw problem('result_not_published', 409);
     if (job.result?.artifactId) res.type('png').set('X-Content-Type-Options', 'nosniff').send(await readImage(job.result));
+    else if (job.result?.artifacts) res.json({ ...job.result, artifacts: job.result.artifacts.map(a => ({ ...a, url: `${machine ? '/api/local-ai/v1' : '/local-ai/api/v1'}/jobs/${job._id}/outputs/${a.slot}` })) });
     else res.json({ text: job.result.text, thinking: job.result.thinking || null });
+  }));
+  router.get(`${api}/jobs/:id/outputs/:slot`, wrap(async (req, res) => {
+    const job = await service.get(req.localAiActor, req.params.id);
+    if (!job.published || !/^(0|[1-9]\d?)$/.test(req.params.slot)) throw problem('not_found', 404);
+    const artifact = job.result?.artifacts?.find(a => a.slot === Number(req.params.slot));
+    if (!artifact) throw problem('not_found', 404);
+    await require('../services/localAi/privateDelivery').readAndDeliver(req, res, () => require('../services/localAi/outputs').read(artifact), artifact);
   }));
   for (const action of ['cancel', 'retry']) router.post(`${api}/jobs/:id/${action}`, wrap(async (req, res) => res.json(serialize(await service[action](req.localAiActor, req.params.id)))));
   if (!machine) {
@@ -87,8 +101,17 @@ function createRouter({ service, worker }, { machine = false } = {}) {
       const job = await service.get(req.localAiActor, req.params.id);
       res.render('local_ai_queue', { jobs: [], job: { ...publicJob(job, await service.db.Control.findById('scheduler').lean()), request: job.request, result: job.published ? job.result : null }, config: { enabled: config().enabled, auto: config().auto } });
     }));
-    router.get('/api/v1/config', wrap(async (req, res) => res.json({ enabled: config().enabled, mediaEnabled: config().media, ownerId: req.localAiActor.ownerId, csrfToken: res.locals.csrfToken,
-      supported: ['llm.chat', 'chat5.response', 'comfy.image'], image_workflow: 'qwen-image-2.1-t2i-v1' })));
+    router.get('/api/v1/config', wrap(async (req, res) => {
+      let workflowEnabled = false, workflowReason = null;
+      if (config().media) {
+        try { await service.workflows.negotiate(); workflowEnabled = true; }
+        catch (error) { workflowReason = error.code || 'gateway_workflows_unavailable'; }
+      }
+      res.json({ enabled: config().enabled, mediaEnabled: config().media, workflowEnabled, workflowReason,
+        ownerId: req.localAiActor.ownerId, csrfToken: res.locals.csrfToken,
+        canImportShared: await require('../utils/authorization').hasCapabilities(req.localAiActor.user, [CAP.importShared], { roleModel: Role, roleCapabilityBundles: BUNDLES }),
+        supported: ['llm.chat', 'chat5.response', 'comfy.image', ...(workflowEnabled ? ['comfy.workflow'] : [])], image_workflow: 'qwen-image-2.1-t2i-v1' });
+    }));
     const admin = createRequireCapabilities({ capabilities: [CAP.manage], roleModel: Role, roleCapabilityBundles: BUNDLES });
     router.get('/api/v1/scheduler', admin, wrap(async (req, res) => {
       const control = await service.db.Control.findById('scheduler').lean();

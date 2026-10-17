@@ -233,7 +233,7 @@ function guardStaticMedia(root, middleware) {
           if (['ENOENT', 'ENOTDIR'].includes(error.code)) return null;
           throw error;
         });
-        if (canonical && [storageRoot(), require('./localAi/inputStorage').storageRoot()].some(privateRoot => within(privateRoot, canonical))) {
+        if (canonical && [storageRoot(), require('./localAi/inputStorage').storageRoot(), require('./localAi/outputs').root()].some(privateRoot => within(privateRoot, canonical))) {
           return res.status(404).set('Cache-Control', 'private, no-store').end();
         }
       }

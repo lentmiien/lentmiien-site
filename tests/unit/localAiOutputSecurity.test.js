@@ -1,0 +1,36 @@
+const fs = require('fs/promises');
+const os = require('os');
+const path = require('path');
+const { EventEmitter } = require('events');
+const { assertRollbackCompatible } = require('../../services/localAi/compatibility');
+const { readAndDeliver } = require('../../services/localAi/privateDelivery');
+const { guardStaticMedia } = require('../../services/gptImageStorageService');
+const { ensureStorage } = require('../../services/localAi/inputStorage');
+let root;
+beforeAll(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), 'site-output-security-')); process.env.LOCAL_AI_OUTPUT_DATA_DIR = path.join(root, 'outputs'); await fs.mkdir(process.env.LOCAL_AI_OUTPUT_DATA_DIR, { mode: 0o700 }); });
+afterAll(async () => { delete process.env.LOCAL_AI_OUTPUT_DATA_DIR; await fs.rm(root, { recursive: true, force: true }); });
+test('output root rejects public mounts and symlink ancestors; static aliases cannot expose private MP4', async () => {
+  await expect(ensureStorage(path.resolve('public/output-test'))).rejects.toMatchObject({ code: 'input_storage_unsafe' });
+  await fs.symlink(process.env.LOCAL_AI_OUTPUT_DATA_DIR, path.join(root, 'alias'));
+  await expect(ensureStorage(path.join(root, 'alias/sub'))).rejects.toThrow();
+  await fs.writeFile(path.join(process.env.LOCAL_AI_OUTPUT_DATA_DIR, 'file.mp4'), 'private fixture');
+  const next = jest.fn(), serve = jest.fn(); const res = { status: jest.fn().mockReturnThis(), set: jest.fn().mockReturnThis(), end: jest.fn() };
+  await guardStaticMedia(root, serve)({ path: '/alias/file.mp4' }, res, next);
+  expect(res.status).toHaveBeenCalledWith(404); expect(serve).not.toHaveBeenCalled(); expect(next).not.toHaveBeenCalled();
+});
+test('private media delivery bounds concurrent buffers until response completion', async () => {
+  const response = () => { const res = new EventEmitter(); res.set = () => res; res.send = () => {}; return res; };
+  const req = { get: () => undefined, method: 'GET' }, a = response(), b = response(), c = response();
+  await readAndDeliver(req, a, async () => Buffer.from('a'), { media_type: 'image/png', sha256: 'a'.repeat(64) });
+  await readAndDeliver(req, b, async () => Buffer.from('b'), { media_type: 'image/png', sha256: 'b'.repeat(64) });
+  await expect(readAndDeliver(req, c, async () => Buffer.from('c'), {})).rejects.toMatchObject({ status: 503 });
+  a.emit('finish'); b.emit('close');
+  await readAndDeliver(req, c, async () => Buffer.from('c'), { media_type: 'image/png', sha256: 'c'.repeat(64) }); c.emit('finish');
+});
+test('retained workflow/input/budget records forbid older binary rollback even with flags OFF', async () => {
+  const db = Object.fromEntries(['Job', 'Run', 'Input', 'OutputQuota'].map(k => [k, { exists: jest.fn(async () => null) }]));
+  await expect(assertRollbackCompatible(db, 'phase1')).resolves.toEqual({ compatible: true, target: 'phase1' });
+  db.OutputQuota.exists.mockResolvedValue(true); await expect(assertRollbackCompatible(db, 'phase1')).rejects.toMatchObject({ code: 'rollback_requires_site_phase2' });
+  db.OutputQuota.exists.mockResolvedValue(null); db.Input.exists.mockResolvedValue(true);
+  await expect(assertRollbackCompatible(db, 'v1')).rejects.toMatchObject({ code: 'rollback_requires_site_phase1' });
+});

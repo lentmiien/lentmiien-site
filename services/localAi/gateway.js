@@ -28,9 +28,11 @@ class Gateway {
           ...(clock ? { 'Cache-Control': 'no-cache, no-store', Pragma: 'no-cache' } : {}) },
         timeout: multipart || binary ? 65000 : 15000, maxRedirects: 0, maxBodyLength: multipart ? 33554432 + 65536 : 1048576,
         maxContentLength: binary ? 33554432 : 20 * 1024 * 1024,
-        responseType: binary ? 'arraybuffer' : 'json',
+        responseType: binary === 'stream' ? 'stream' : binary ? 'arraybuffer' : 'json',
+        ...(!binary ? { transformResponse: [require('./gatewayJson').parseResponse] } : {}),
       });
     } catch (error) {
+      if (binary === 'stream') error.response?.data?.destroy?.();
       const raw = error.response?.data?.detail?.code;
       throw Object.assign(problem(typeof raw === 'string' && /^[a-z0-9_]{1,80}$/.test(raw) ? raw : 'gateway_unreachable', error.response?.status || 502),
         { httpStatus: error.response?.status, gatewayResponse: !!error.response });
@@ -45,6 +47,8 @@ class Gateway {
   }
   admissionClock() { return this.request('GET', `/batch/capabilities?clock_probe=${randomUUID()}`, undefined, false, true); }
   capabilities() { return this.request('GET', '/batch/capabilities'); }
+  workflows() { return this.request('GET', '/batch/workflows'); }
+  workflow(id, hash) { return this.request('GET', `/batch/workflows/${encodeURIComponent(id)}/versions/${encodeURIComponent(hash)}`); }
   capacity() { return this.request('GET', '/batch/capacity'); }
   input(id) { return this.request('GET', `/batch/inputs/${this.inputId(id)}`); }
   inputContent(id) { return this.request('GET', `/batch/inputs/${this.inputId(id)}/content`, undefined, true); }
@@ -65,6 +69,10 @@ class Gateway {
   start(id, body) { return this.request('POST', `/batch/runs/${id}/start`, body); }
   stop(id, mode) { return this.request('POST', `/batch/runs/${id}/stop`, { mode }); }
   ack(id, result_digest) { return this.request('POST', `/batch/operations/${id}/ack`, { result_digest }); }
+  artifact(operation, id) {
+    if (!ID.test(operation) || !/^out_[a-f0-9]{32}_\d+$/.test(id)) throw problem('invalid_artifact_id');
+    return this.request('GET', `/batch/operations/${operation}/outputs/${id}`, undefined, 'stream');
+  }
   output(id) { return this.request('GET', `/batch/operations/${id}/output`, undefined, true); }
 }
 module.exports = { Gateway, config };

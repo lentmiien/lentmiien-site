@@ -1,5 +1,7 @@
 # Local AI immutable inputs and vision (Phase 1)
 
+> Current complete media release: [Site Phase 2 explanation and rollout steps](local-ai-media-release.md). This document retains the earlier stage history; use the Phase 2 runbook for registered workflows, optional-revision shared imports, output storage and rollback compatibility.
+
 Contract pin: ai-services `2975356ab4f0111929c9b2d82fa360b891f2a625`.
 Transport remains durable-local-ai v1; only image-bearing llm.chat uses operation
 schema 2. No registered Comfy workflow or multiple-output UI is enabled here.

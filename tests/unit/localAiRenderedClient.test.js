@@ -1,7 +1,7 @@
 const fs = require('fs');
 const pug = require('pug');
 const { parseSubmission } = require('../../services/localAi/policy');
-const qwen = require('../fixtures/local-ai/qwen.json');
+const policies = require('../fixtures/local-ai/workflows-8105a1b.json');
 let JSDOM;
 beforeAll(async () => { ({ JSDOM } = await import('jsdom')); });
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -9,22 +9,21 @@ const id = '0123456789abcdef01234567';
 const models = ['smollm2:360m', 'qwen3:0.6b', 'cydonia:24b-q6'].map(api_model => ({ api_model, model_name: api_model, provider: 'Local' }));
 const metadata = { model: models[0].api_model, contextPrompt: '', maxMessages: 25, tools: [], reasoning: 'none', mode: 'standard', verbosity: 'medium', outputFormat: 'text' };
 const base = { loggedIn: true, permissions: ['chat5'], htmlPaths: [], bookmarks: [] };
-let dom, requests, reply;
+let dom, requests, reply, immediateRequests;
 async function render(page, locals, enabled = true, mediaEnabled = false) {
   dom = new JSDOM(pug.renderFile(page, { ...base, ...locals }), { url: 'https://site.test/chat5/chat/' + id, runScripts: 'outside-only' });
   await new Promise(resolve => dom.window.addEventListener('load', resolve, { once: true }));
-  requests = [];
+  requests = []; immediateRequests = [];
   reply = async () => ({ ok: true, status: 202, json: async () => ({ id: 'job', url: '/local-ai/queue/job' }) });
   dom.window.fetch = jest.fn(async (url, options = {}) => {
     if (url === '/local-ai/api/v1/config') return { ok: true, headers: { get: () => 'application/json' }, json: async () => ({ enabled, mediaEnabled, ownerId: 'synthetic-owner', csrfToken: 'test-csrf' }) };
+    if (url === '/image_gen/api/generate') { immediateRequests.push(JSON.parse(options.body)); return { ok: true, headers: { get: () => 'application/json' }, json: async () => ({ status: 'completed' }) }; }
     if (url === '/local-ai/api/v1/jobs') { requests.push(options); return reply(); }
-    if (url === '/image_gen/api/workflows') return { ok: true, headers: { get: () => 'application/json' }, json: async () => ({ workflows: [{ key: 'qwen', name: 'Qwen' }, { key: 'uncensored', name: 'Qwen uncensored' }, { key: 'edit', name: 'Unsupported edit' }] }) };
-    if (url.startsWith('/image_gen/api/workflows/')) {
-      const graph = structuredClone(qwen);
-      if (url.endsWith('uncensored')) graph['1'].inputs.unet_name = 'qwen-image-2.1-UC-int8_convrot.safetensors';
-      if (url.endsWith('edit')) graph['9'] = { class_type: 'LoadImage', inputs: { image: 'test.png' } };
-      return { ok: true, headers: { get: () => 'application/json' }, json: async () => ({ workflow: graph }) };
-    }
+    if (url === '/local-ai/api/v1/workflows') return { ok: true, json: async () => ({ workflows: policies }) };
+    if (url.startsWith('/local-ai/api/v1/workflows/')) return { ok: true, json: async () => policies.find(p => url.includes('/' + p.workflow_id + '/')) };
+    if (url === '/local-ai/api/v1/inputs') return { ok: true, json: async () => ({ inputs: [1, 2, 3].map(n => ({ artifact_id: 'in_' + String(n).repeat(32), sha256: 'b'.repeat(64), width: 16, height: 16, bytes: 100 })) }) };
+    if (url === '/image_gen/api/workflows') return { ok: true, headers: { get: () => 'application/json' }, json: async () => ({ workflows: policies.map(p => ({ key: p.workflow_id, name: p.workflow_id })) }) };
+    if (url.startsWith('/image_gen/api/workflows/')) return { ok: true, headers: { get: () => 'application/json' }, json: async () => ({ workflow: structuredClone(policies.find(p => url.endsWith(p.workflow_id)).graph) }) };
     if (url === '/image_gen/api/health' || url.startsWith('/image_gen/api/files/input')) return { ok: true, headers: { get: () => 'application/json' }, json: async () => ({ ok: true, files: [] }) };
     throw new Error('Unexpected fixture request: ' + url);
   });
@@ -90,23 +89,32 @@ test('rechecks ID and attachments at click time and keeps pending submissions di
   expect(button.disabled).toBe(true);
 });
 async function imagePage(enabled = true) {
-  const window = await render('views/image_gen/index.pug', {}, enabled);
-  script('local-ai-client.js'); script('local-ai-integrations.js'); script('image_gen.js');
+  const window = await render('views/image_gen/index.pug', {}, enabled, true);
+  script('local-ai-client.js'); script('local-ai-integrations.js'); script('local-ai-workflows.js'); script('image_gen.js');
   window.dispatchEvent(new window.Event('load')); await flush(); await flush();
   return { window, button: window.document.getElementById('btnLocalAiImageBatch'), select: window.document.getElementById('wfSelect') };
 }
-test('rendered image page submits both Qwen graphs and rejects edit/upload graphs', async () => {
+test('all twenty real rendered workflows submit typed requests with ordered private reference slots', async () => {
   const { window, button, select } = await imagePage();
-  for (const key of ['qwen', 'uncensored']) {
-    select.value = key; select.dispatchEvent(new window.Event('change')); await flush();
+  for (const policy of policies) {
+    select.value = policy.workflow_id; select.dispatchEvent(new window.Event('change')); await flush();
+    const ids = Object.keys(policy.bindings);
+    if (ids.length) {
+      expect(button.disabled).toBe(true);
+      for (let i = 0; i < ids.length; i++) {
+        const inputs = window.document.getElementById('batchPrivateInput'); inputs.selectedIndex = i;
+        window.document.getElementById('btnSelectPrivateInput').click();
+        window.document.querySelectorAll('#batchReferenceSlots button')[i].click();
+      }
+    }
     expect(button.disabled).toBe(false); button.click(); await flush();
-    expect(() => parseSubmission(JSON.parse(requests.at(-1).body))).not.toThrow();
-    expect(JSON.parse(requests.at(-1).body).type).toBe('comfy.image');
+    const body = JSON.parse(requests.at(-1).body);
+    expect(() => parseSubmission(body)).not.toThrow(); expect(body.type).toBe('comfy.workflow');
+    expect(body.request.template_sha256).toBe(policy.template_sha256);
+    expect(Object.keys(body.request.bindings)).toEqual(ids);
+    for (let i = 0; i < ids.length; i++) expect(body.request.bindings[ids[i]].artifact_id).toBe('in_' + String(i + 1).repeat(32));
   }
-  expect(requests).toHaveLength(2);
-  select.value = 'edit'; select.dispatchEvent(new window.Event('change')); await flush();
-  expect(button.disabled).toBe(true); button.dispatchEvent(new window.Event('click')); await flush();
-  expect(requests).toHaveLength(2); expect(button.disabled).toBe(true);
+  expect(requests).toHaveLength(20);
 });
 test('image batching stays disabled with flag OFF, including synthetic clicks', async () => {
   const { window, button } = await imagePage(false);
@@ -127,11 +135,12 @@ test('Chat5 rejects non-Local models, selected tools and a removed ID element at
 });
 test('image request remains frozen and disabled through workflow changes until its response', async () => {
   const { window, button, select } = await imagePage();
+  select.value = 'image_qwen_image_2_1_t2i'; select.dispatchEvent(new window.Event('change')); await flush();
   let resolve; reply = () => new Promise(r => { resolve = r; });
   button.click(); await flush();
   expect(button.disabled).toBe(true); expect(requests).toHaveLength(1);
   const body = requests[0].body;
-  select.value = 'edit'; select.dispatchEvent(new window.Event('change')); await flush();
+  select.value = 'image_qwen_image_2_1_image_edit'; select.dispatchEvent(new window.Event('change')); await flush();
   button.dispatchEvent(new window.Event('click')); await flush(); expect(requests).toHaveLength(1);
   resolve({ ok: true, status: 202, json: async () => ({ url: '/local-ai/queue/job' }) }); await flush();
   expect(button.disabled).toBe(true); expect(requests[0].body).toBe(body);
@@ -164,4 +173,53 @@ test('real rendered upload handler blocks batch through FileReader and server ac
   window.chat5UploadBarrier.failed = true;
   window.dispatchEvent(new window.Event('chat5-upload-state'));
   expect(button.disabled).toBe(true);
+});
+
+test('rendered controls preserve immediate/batch parity, boolean branches, random controls and negative seed sentinels', async () => {
+  const { window, button, select } = await imagePage();
+  const p = policies.find(p => p.workflow_id === 'image_krea2_turbo_t2i');
+  window.localStorage.setItem(`imageGenWorkflowUi:${p.workflow_id}`, JSON.stringify({ fields: [
+    { key: '30:19::value', value: 'Exact edited prompt', controlType: 'prompt' },
+    { key: '30:23::value', value: true, controlType: 'boolean' },
+    { key: '30:3::seed', value: -1, controlType: 'number' },
+    { key: '30:16::sampling_mode.seed', value: 0, controlType: 'random-integer' },
+  ] }));
+  select.value = p.workflow_id; select.dispatchEvent(new window.Event('change')); await flush();
+  expect(window.document.getElementById('workflowJson').tagName).toBe('TEXTAREA');
+  expect(window.document.getElementById('promptText').tagName).toBe('TEXTAREA');
+  window.crypto.getRandomValues = values => { values.fill(12345); return values; };
+  window.document.getElementById('btnGenerate').click(); await flush();
+  button.click(); await flush();
+  const body = JSON.parse(requests.at(-1).body);
+  const mapped = require('../../public/js/local-ai-workflows').map(p, immediateRequests[0].prompt, {});
+  expect(body.request).toEqual(mapped);
+  expect(body.request.overrides['30:3/seed']).toBe(12345);
+  expect(body.request.overrides['30:16/sampling_mode.seed']).toBe(12345);
+  expect(body.request.overrides['30:23/value']).toBe(true);
+  expect(body.request.overrides['30:19/value']).toBe('Exact edited prompt');
+});
+test('a later oversized immediate overwrite cannot reuse an older private receipt for that filename', async () => {
+  const { window, button, select } = await imagePage();
+  Object.defineProperty(window.crypto, 'subtle', { value: require('crypto').webcrypto.subtle });
+  select.value = 'image_qwen_image_2_1_image_edit'; select.dispatchEvent(new window.Event('change')); await flush();
+  const originalFetch = window.fetch.getMockImplementation();
+  let eligible = true;
+  window.fetch.mockImplementation(async (url, options) => {
+    if (url === '/image_gen/api/files/input' && options?.method === 'POST') return { ok: true, headers: { get: () => 'application/json' }, json: async () => ({ file: { filename: 'reference.png', path: 'reference.png', subfolder: '' }, batch_input: eligible ? { eligible: true, artifact_id: 'in_' + 'a'.repeat(32), sha256: 'b'.repeat(64) } : { eligible: false, reason: 'batch_input_limit_32_mib' } }) };
+    return originalFetch(url, options);
+  });
+  const file = new window.File(['synthetic'], 'reference.png'); file.arrayBuffer = async () => new Uint8Array([1, 2, 3]).buffer;
+  const input = window.document.getElementById('inputFile'); Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+  const form = window.document.getElementById('inputUploadForm');
+  form.dispatchEvent(new window.Event('submit', { cancelable: true })); expect(button.disabled).toBe(true);
+  for (let i = 0; i < 20 && !window.document.getElementById('inputUploadStatus').textContent.includes('ready'); i++) await new Promise(resolve => setTimeout(resolve, 5));
+  window.document.getElementById('inputTargetField').value = '11::image'; window.document.getElementById('btnUseInput').click(); await flush();
+  expect(button.disabled).toBe(false);
+  eligible = false; Object.defineProperty(file, 'size', { value: 40 * 1024 ** 2 });
+  form.dispatchEvent(new window.Event('submit', { cancelable: true })); expect(button.disabled).toBe(true);
+  button.dispatchEvent(new window.Event('click')); await flush(); expect(requests).toHaveLength(0);
+  for (let i = 0; i < 20 && !window.document.getElementById('inputUploadStatus').textContent.includes('batch_input_limit_32_mib'); i++) await new Promise(resolve => setTimeout(resolve, 5));
+  window.document.getElementById('inputTargetField').value = '11::image'; window.document.getElementById('btnUseInput').click(); await flush();
+  expect(window.document.getElementById('inputUploadStatus').textContent).toContain('batch_input_limit_32_mib');
+  expect(button.disabled).toBe(true); expect(requests).toHaveLength(0);
 });

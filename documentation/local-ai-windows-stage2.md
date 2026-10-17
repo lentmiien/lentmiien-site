@@ -1,5 +1,7 @@
 # Windows Site stage 2 — install with batching OFF
 
+> Current complete media release: [Site Phase 2 explanation and rollout steps](local-ai-media-release.md). This document retains the earlier stage history; use the Phase 2 runbook for registered workflows, optional-revision shared imports, output storage and rollback compatibility.
+
 For the already initialized `059f45b` deployment with batching enabled and AUTO
 off, use [manual admission recovery](local-ai-admission-recovery.md#human-windows-update-only).
 That update requires neither the installation procedure below nor an initializer.

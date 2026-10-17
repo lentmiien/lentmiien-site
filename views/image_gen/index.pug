@@ -3,6 +3,7 @@ extends ../layout
 
 block styles
   style.
+    .batch-reference-preview{display:block;max-width:180px;max-height:140px;object-fit:contain;border:1px solid var(--border);margin:.5rem 0}
     .imgen-page .card{background:var(--surface-1);border:1px solid var(--border);color:var(--text);box-shadow:0 18px 40px rgba(0,0,0,0.26);border-radius:1rem}
     .imgen-page .card h2{color:var(--text);letter-spacing:.04em;text-transform:uppercase;font-size:.8rem}
     .imgen-page .form-label{color:var(--text-secondary);font-weight:600;letter-spacing:.02em}
@@ -101,8 +102,23 @@ block content
           button#btnLocalAiImageBatch.btn.btn-primary(type='button' disabled) Queue local batch
           a(href='/local-ai/queue') Local queue
           button#localAiRecover.btn.btn-outline-secondary(type='button') Recover uncertain submission
-        p.small Only Qwen Image 2.1 T2I normal/uncensored, exact nodes 1–8, Euler/simple, one PNG, no input files. Overrides and the chosen seed are frozen on submission.
+        p.small Registered image and video workflows use frozen options, seeds and private reference slots. Eligibility follows the enabled Gateway registry.
         p#localAiBatchStatus(role='status')
+        p.small.text-muted Registered batch output names are forced private. Fixed links, expressions, fonts and cache options cannot be edited.
+        button#btnRegisteredDefaults.btn.btn-secondary(type='button' disabled) Load registered batch defaults
+        #batchReferenceSlots
+        details
+          summary Private batch reference library
+          p Upload your own source, or reuse an owner-bound private input. Global filenames alone do not authorize batch use.
+          select#batchPrivateInput.form-select(aria-label='Private input')
+          button#btnRefreshPrivateInputs.btn.btn-secondary(type='button') Refresh private inputs
+          button#btnSelectPrivateInput.btn.btn-secondary(type='button') Select private input
+          label#batchImportConfirmationLabel(hidden)
+            input#batchImportConfirmation(type='checkbox')
+            |  I am authorized to import the selected shared-library file into my private inputs.
+          button#btnImportSharedInput.btn.btn-secondary(type='button' hidden) Import selected shared file privately
+          img#batchPrivatePreview.thumb-media(hidden alt='Frozen private reference preview')
+          p#batchPrivateStatus(role='status')
         script(src='/js/local-ai-client.js' defer)
         script(src='/js/local-ai-integrations.js' defer)
 
@@ -220,4 +236,5 @@ block content
 
 block script
   //- Serve this file from /public/js/image_gen.js
+  script(src="/js/local-ai-workflows.js")
   script(src="/js/image_gen.js")

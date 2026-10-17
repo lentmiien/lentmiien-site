@@ -17,8 +17,7 @@ function storageRoot() {
     || (process.platform === 'win32' && (!/^[A-Za-z]:[\\/]/.test(value) || value.slice(2).includes(':') || /[. ](?:[\\/]|$)/.test(value)))) throw problem('input_storage_config', 503);
   return path.resolve(value);
 }
-async function ensureStorage() {
-  const root = storageRoot();
+async function ensureStorage(root = storageRoot()) {
   const app = path.resolve(__dirname, '../..');
   for (const value of [path.join(app, 'public'), path.join(app, 'games'), path.join(app, 'node_modules'), process.env.VUE_PATH].filter(Boolean)) {
     const mount = path.resolve(value);
@@ -98,4 +97,4 @@ async function assertSpace() {
   const stat = await fs.statfs(root);
   if (!Number.isFinite(stat.bavail * stat.bsize) || stat.bavail * stat.bsize < 128 * 1024 * 1024) throw problem('input_storage_free_space', 507);
 }
-module.exports = { MAX_BYTES, MAX_PIXELS, hash, validId, storageRoot, ensureStorage, validateRaster, read, publish, assertSpace };
+module.exports = { MAX_BYTES, MAX_PIXELS, hash, validId, storageRoot, ensureStorage, validateRaster, read, publish, assertSpace, syncDirectory };

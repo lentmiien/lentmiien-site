@@ -8,6 +8,10 @@
   const wfJsonArea = $('#workflowJson');
   const promptTextInput = $('#promptText');
   let refreshLocalBatchEligibility = () => {};
+  const batchBindings = new Map();
+  let selectedPrivateInput = null;
+  let batchInputPreparing = false;
+  const uploadedPrivateInputs = new Map();
   const negativeTextInput = $('#negativeText');
   const nodeFieldSelect = $('#nodeFieldSelect');
   const fieldAsPromptToggle = $('#fieldAsPrompt');
@@ -480,6 +484,7 @@
       }
       return field.randomValue ?? 0;
     }
+    if (field.controlType === 'boolean') return field.value === true || field.value === 'true';
     if (field.controlType === 'number') {
       if (field.value === '' || field.value === undefined || field.value === null) {
         return Number(field.defaultValue) || 0;
@@ -538,10 +543,9 @@
       const header = document.createElement('div');
       header.className = 'd-flex justify-content-between align-items-start';
       const title = document.createElement('div');
-      title.innerHTML = `
-        <div class="workflow-field__title">${field.field}</div>
-        <div class="workflow-field__meta">${field.nodeLabel}</div>
-      `;
+      const fieldTitle = document.createElement('div'); fieldTitle.className = 'workflow-field__title'; fieldTitle.textContent = field.field;
+      const fieldMeta = document.createElement('div'); fieldMeta.className = 'workflow-field__meta'; fieldMeta.textContent = field.nodeLabel;
+      title.append(fieldTitle, fieldMeta);
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
       removeBtn.className = 'btn btn-sm btn-outline-danger';
@@ -565,6 +569,7 @@
       [
         { value: 'text', label: 'Text input' },
         { value: 'number', label: 'Number input' },
+        { value: 'boolean', label: 'Boolean (true/false)' },
         { value: 'random-integer', label: 'Random integer' },
         { value: 'prompt', label: 'Prompt (textarea)' }
       ].forEach((opt) => {
@@ -706,7 +711,7 @@
           field,
           defaultValue: value,
           value,
-          controlType: typeof value === 'number' ? 'number' : 'text',
+          controlType: typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : 'text',
           loc: {
             mode: ref.mode,
             key: ref.key,
@@ -916,6 +921,7 @@
 
   function selectInputFile(file) {
     selectedInputFile = normalizeInputFile(file);
+    selectedPrivateInput = selectedInputFile ? uploadedPrivateInputs.get(selectedInputFile.path) || null : null;
     if (selectedInputNameEl) {
       selectedInputNameEl.textContent = selectedInputFile ? selectedInputFile.path : 'No file selected';
     }
@@ -1054,6 +1060,7 @@
       return;
     }
 
+    batchInputPreparing = true; refreshLocalBatchEligibility();
     const submitButton = $('#btnUploadInput');
     if (submitButton) submitButton.disabled = true;
     setInputUploadStatus(`Uploading ${file.name}…`);
@@ -1073,6 +1080,9 @@
       const payload = await api('/api/files/input', { method: 'POST', body: formData, headers });
       const uploaded = normalizeInputFile(payload?.file || payload);
       if (uploaded) {
+        uploadedPrivateInputs.delete(uploaded.path);
+        for (const [key, binding] of batchBindings) if (binding.value === uploaded.path) batchBindings.delete(key);
+        if (payload.batch_input?.eligible) uploadedPrivateInputs.set(uploaded.path, payload.batch_input);
         selectInputFile(uploaded);
         if (inputBrowseSubfolderEl) inputBrowseSubfolderEl.value = uploaded.subfolder || '';
       }
@@ -1089,6 +1099,7 @@
       );
       log('Input upload failed: ' + err.message, 'text-danger');
     } finally {
+      batchInputPreparing = false; refreshLocalBatchEligibility();
       if (submitButton) submitButton.disabled = false;
     }
   }
@@ -1113,6 +1124,7 @@
         controlType: 'text'
       }));
     }
+    if (selectedPrivateInput && descriptor.field === 'image') batchBindings.set(`${currentWorkflowName}/${descriptor.nodeId}`, { ref: selectedPrivateInput, value: selectedInputFile.path });
     saveUiState();
     renderEditableFields();
     refreshPromptPreview();
@@ -1256,7 +1268,13 @@
     const base = parseWorkflowJson();
     if (!base) return null;
     const payload = cloneWorkflow(base);
-    return applyFieldOverrides(payload, options);
+    applyFieldOverrides(payload, options);
+    // Freeze every negative seed sentinel once in the same prepared graph used
+    // by immediate submission, including seeds in TextGenerate/colon nodes.
+    for (const node of Object.values(payload)) for (const [field, value] of Object.entries(node.inputs || {})) {
+      if (/(^|[._])seed$/.test(field) && typeof value === 'number' && value < 0) node.inputs[field] = options?.randomize ? crypto.getRandomValues(new Uint32Array(1))[0] : 0;
+    }
+    return payload;
   }
 
   function updateJsonViewer() {
@@ -1269,7 +1287,7 @@
   function setFieldControlType(key, type) {
     const field = editableFields.get(key);
     if (!field) return;
-    const nextType = ['text', 'number', 'prompt', 'random-integer'].includes(type) ? type : 'text';
+    const nextType = ['text', 'number', 'boolean', 'prompt', 'random-integer'].includes(type) ? type : 'text';
     field.controlType = nextType;
     delete field.randomValue;
     if (nextType === 'prompt') {
@@ -1524,37 +1542,140 @@
   const localBatchStatus = $('#localAiBatchStatus');
   let frozenBatch = null;
   if (localBatchButton) {
-    let batchEnabled = false;
-    let batchSubmitting = false;
-    const isBatchGraph = graph => {
-      const classes = ['UNETLoader', 'CLIPLoader', 'VAELoader', 'TextEncodeQwenImage21', 'EmptyLatentImage', 'KSampler', 'VAEDecode', 'SaveImage'];
-      return graph && Object.keys(graph).length === 8 && classes.every((name, i) => graph[String(i + 1)]?.class_type === name);
-    };
+    let batchEnabled = false, batchSubmitting = false, batchConfig;
+    const policies = new Map();
+    const currentPolicy = () => policies.get(currentWorkflowName?.replace(/\.json$/, ''));
+    async function privateApi(url, options = {}) {
+      const response = await fetch(`/local-ai/api/v1${url}`, { ...options, headers: { Accept: 'application/json', ...options.headers } });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error?.code || 'Private input preparation failed; retry with the same key.');
+      return result;
+    }
+    function references(policy, graph) {
+      const refs = {};
+      for (const id of Object.keys(policy.bindings)) {
+        const saved = batchBindings.get(`${currentWorkflowName}/${id}`);
+        if (!saved || saved.value !== graph[id]?.inputs.image) throw new Error(`Reference ${id}/image requires an owned upload or confirmed private import. Select a private input for this slot.`);
+        refs[id] = { artifact_id: saved.ref.artifact_id, sha256: saved.ref.sha256 };
+      }
+      return refs;
+    }
+    function renderSlots() {
+      const container = $('#batchReferenceSlots');
+      if (!container) return;
+      container.replaceChildren();
+      const policy = currentPolicy();
+      for (const id of Object.keys(policy?.bindings || {})) {
+        const line = document.createElement('div');
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-secondary';
+        button.textContent = `Bind selected private input to ${id}/image`;
+        button.addEventListener('click', () => {
+          if (!selectedPrivateInput) { localBatchStatus.textContent = 'Upload your source or select an owned private input first.'; return; }
+          batchBindings.set(`${currentWorkflowName}/${id}`, { ref: selectedPrivateInput, value: buildWorkflowPayload()[id].inputs.image });
+          $('#batchPrivatePreview').src = `/local-ai/api/v1/inputs/${selectedPrivateInput.artifact_id}/content`;
+          $('#batchPrivatePreview').hidden = false;
+          checkBatch();
+        });
+        line.append(button);
+        const saved = batchBindings.get(`${currentWorkflowName}/${id}`);
+        if (saved) {
+          const label = document.createElement('span'); label.textContent = ` Frozen private input ${saved.ref.artifact_id}`;
+          const preview = document.createElement('img'); preview.src = `/local-ai/api/v1/inputs/${saved.ref.artifact_id}/content`;
+          preview.alt = `Frozen reference ${id}/image`; preview.className = 'batch-reference-preview'; preview.loading = 'lazy';
+          line.append(label, preview);
+        }
+        container.append(line);
+      }
+    }
     const checkBatch = (showReason = true) => {
-      const graph = buildWorkflowPayload({ randomize: false });
-      const eligible = isBatchGraph(graph);
-      localBatchButton.disabled = !batchEnabled || batchSubmitting || !eligible;
-      if (showReason) localBatchStatus.textContent = !batchEnabled ? 'Local batch submissions are disabled by the operator.'
-        : !eligible ? 'This workflow is unsupported by local batch v1. Required: Qwen Image 2.1 T2I nodes 1–8; edit, upload and video graphs cannot be batched.' : '';
+      let reason = '';
+      try {
+        if (!batchEnabled) throw new Error('Registered batch submissions are disabled or unavailable.');
+        if (batchInputPreparing) throw new Error('Wait for input preparation and its private receipt before batching.');
+        const policy = currentPolicy();
+        if (!policy) throw new Error('Workflow is not in the enabled Gateway registry.');
+        const graph = buildWorkflowPayload({ randomize: false });
+        window.localAiWorkflows.map(policy, graph, references(policy, graph));
+      } catch (error) { reason = error.message; }
+      localBatchButton.disabled = batchSubmitting || !!reason;
+      if (showReason) localBatchStatus.textContent = reason || 'Eligible registered workflow. All final outputs will remain private.';
+      if ($('#btnRegisteredDefaults')) $('#btnRegisteredDefaults').disabled = !currentPolicy();
+      renderSlots();
     };
-    // Wait until all deferred scripts, including the shared batch client, have loaded.
-    window.addEventListener('load', () => {
-      window.localAiBatch.load().then(config => { batchEnabled = config.enabled === true; refreshLocalBatchEligibility = checkBatch; checkBatch(); })
-        .catch(error => { localBatchStatus.textContent = error.message; });
+    async function refreshPrivateInputs() {
+      const result = await privateApi('/inputs');
+      const select = $('#batchPrivateInput'); select.replaceChildren();
+      for (const input of result.inputs) {
+        const option = document.createElement('option'); option.value = JSON.stringify(input);
+        option.textContent = `${input.artifact_id} · ${input.width}×${input.height} · ${input.bytes} bytes`; select.append(option);
+      }
+    }
+    $('#btnRefreshPrivateInputs')?.addEventListener('click', () => refreshPrivateInputs().catch(e => { $('#batchPrivateStatus').textContent = e.message; }));
+    $('#btnSelectPrivateInput')?.addEventListener('click', () => {
+      try {
+        selectedPrivateInput = JSON.parse($('#batchPrivateInput').value);
+        $('#batchPrivatePreview').src = `/local-ai/api/v1/inputs/${selectedPrivateInput.artifact_id}/content`;
+        $('#batchPrivatePreview').hidden = false;
+        $('#batchPrivateStatus').textContent = 'Frozen private reference selected. Bind it to each intended node/image slot above.';
+      } catch (_) { $('#batchPrivateStatus').textContent = 'Choose an owned private input first.'; }
+    });
+    $('#btnImportSharedInput')?.addEventListener('click', async () => {
+      try {
+        if (!batchConfig?.canImportShared || !$('#batchImportConfirmation').checked || !selectedInputFile) throw new Error('Confirm your authorization for the selected shared-library file first.');
+        const body = { source: { filename: selectedInputFile.filename, subfolder: selectedInputFile.subfolder } };
+        const storageKey = `private-import:${batchConfig.ownerId}:${JSON.stringify(body)}`;
+        let key = sessionStorage.getItem(storageKey);
+        if (!key) { key = crypto.randomUUID(); sessionStorage.setItem(storageKey, key); }
+        selectedPrivateInput = await privateApi('/inputs/import', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': batchConfig.csrfToken, 'Idempotency-Key': key }, body: JSON.stringify(body) });
+        sessionStorage.removeItem(storageKey);
+        uploadedPrivateInputs.set(selectedInputFile.path, selectedPrivateInput);
+        $('#batchPrivatePreview').src = `/local-ai/api/v1/inputs/${selectedPrivateInput.artifact_id}/content`;
+        $('#batchPrivatePreview').hidden = false;
+        $('#batchPrivateStatus').textContent = 'Private snapshot verified and saved. Review the frozen preview, then bind each reference slot. No generation job has been accepted yet.';
+        $('#batchImportConfirmation').checked = false;
+        await refreshPrivateInputs();
+      } catch (error) { $('#batchPrivateStatus').textContent = error.message; }
+    });
+    $('#btnRegisteredDefaults')?.addEventListener('click', () => {
+      const policy = currentPolicy(); if (!policy) return;
+      originalWorkflow = cloneWorkflow(policy.graph); clearWorkflowUiState(); buildAvailableFields(originalWorkflow);
+      // Explicit user action: show all permitted scalar controls; no silent model reset.
+      for (const key of Object.keys(policy.overrides)) {
+        const [node, field] = key.split('/'); const descriptor = availableFields.get(`${node}::${field}`);
+        if (descriptor) editableFields.set(descriptor.key, { ...descriptor });
+      }
+      renderEditableFields(); updateJsonViewer();
+    });
+    window.addEventListener('load', async () => {
+      refreshLocalBatchEligibility = checkBatch;
+      try {
+        batchConfig = await window.localAiBatch.load();
+        if (!batchConfig.enabled || !batchConfig.mediaEnabled) { checkBatch(); return; }
+        const catalog = await privateApi('/workflows');
+        for (const entry of catalog.workflows) {
+          const policy = await privateApi(`/workflows/${encodeURIComponent(entry.workflow_id)}/versions/${entry.template_sha256}`);
+          policies.set(policy.workflow_id, policy);
+        }
+        batchEnabled = true;
+        $('#btnImportSharedInput').hidden = !batchConfig.canImportShared;
+        $('#batchImportConfirmationLabel').hidden = !batchConfig.canImportShared;
+        await refreshPrivateInputs(); checkBatch();
+      } catch (error) { localBatchStatus.textContent = error.message; }
     });
     localBatchButton.addEventListener('click', async () => {
       if (batchSubmitting) return;
-      batchSubmitting = true;
-      localBatchButton.disabled = true;
+      batchSubmitting = true; localBatchButton.disabled = true;
       try {
-        if (!batchEnabled) throw new Error('Local batch submissions are disabled by the operator.');
-        if (!isBatchGraph(frozenBatch || buildWorkflowPayload({ randomize: false }))) throw new Error('This workflow is unsupported by local batch v1.');
-        if (!frozenBatch) frozenBatch = buildWorkflowPayload({ randomize: true });
+        if (!batchEnabled) throw new Error('Registered batch submissions are disabled or unavailable.');
+        if (batchInputPreparing) throw new Error('Wait for input preparation and its private receipt before batching.');
+        if (!frozenBatch) {
+          const graph = buildWorkflowPayload({ randomize: true });
+          frozenBatch = { type: 'comfy.workflow', request: window.localAiWorkflows.map(currentPolicy(), graph, references(currentPolicy(), graph)) };
+        }
         renderEditableFields(); updateJsonViewer();
-        const job = await window.localAiBatch.submit({ type: 'comfy.image', request: { prompt: frozenBatch } });
-        frozenBatch = null;
-        localBatchStatus.textContent = 'Durably queued. ';
-        const link = document.createElement('a'); link.href = job.url; link.textContent = 'View private image job'; localBatchStatus.append(link);
+        const job = await window.localAiBatch.submit(frozenBatch);
+        frozenBatch = null; localBatchStatus.textContent = 'Durably queued. ';
+        const link = document.createElement('a'); link.href = job.url; link.textContent = 'View private media job'; localBatchStatus.append(link);
       } catch (error) { if (error.definitive) frozenBatch = null; localBatchStatus.textContent = error.message; }
       finally { batchSubmitting = false; checkBatch(false); }
     });

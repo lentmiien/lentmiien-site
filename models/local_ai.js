@@ -21,7 +21,7 @@ job.index({ state: 1, nextAttemptAt: 1, affinity: 1, slot: 1 });
 const run = new Schema({
   _id: String, wire: Schema.Types.Mixed, manifest: { type: [Schema.Types.Mixed], default: [] },
   state: { type: String, default: 'building' }, fence: Number, putStarted: { type: Boolean, default: false },
-  remote: Schema.Types.Mixed, admission: Schema.Types.Mixed, reason: String, stopMode: { type: String, default: null },
+  seal: Schema.Types.Mixed, remote: Schema.Types.Mixed, admission: Schema.Types.Mixed, reason: String, stopMode: { type: String, default: null },
   stopConfirmed: { type: Boolean, default: false },
 }, options);
 const control = new Schema({
@@ -51,6 +51,7 @@ const inputQuota = new Schema({
   allocations: { type: [{ _id: false, id: String, ownerId: String, bytes: Number }], default: [] },
 }, options);
 module.exports = {
+  OutputQuota: mongoose.model('LocalAiOutputQuota', inputQuota.clone()),
   Input: mongoose.model('LocalAiInput', input), InputQuota: mongoose.model('LocalAiInputQuota', inputQuota),
   Job: mongoose.model('LocalAiJob', job), Run: mongoose.model('LocalAiRun', run),
   Control: mongoose.model('LocalAiControl', control), Token: mongoose.model('LocalAiToken', token),

@@ -42,7 +42,13 @@ html(lang='en')
         each attempt in job.attempts
           p= `${attempt.id}: ${attempt.status}; cleanup ${attempt.cleanup || 'unknown'}; termination proven ${attempt.termination_proven === true}`
         if job.result
-          if job.result.artifactId
+          if job.result.artifacts
+            each artifact in job.artifacts
+              if artifact.media_type === 'video/mp4'
+                video.result(src=artifact.url controls preload='metadata' playsinline)
+              else
+                img.result(src=artifact.url alt=`Private generated image ${artifact.slot + 1}` loading='lazy')
+          else if job.result.artifactId
             img.result(src=job.result_url alt='Private generated image')
           else
             pre= job.result.text
@@ -70,7 +76,13 @@ html(lang='en')
               tr
                 td
                   a(href=item.url)= item.id.slice(0, 8)
-                td= item.type
+                td
+                  = item.type
+                  each artifact in item.artifacts || []
+                    if artifact.media_type === 'video/mp4'
+                      video.result(src=artifact.url controls preload='metadata' playsinline)
+                    else
+                      img.result(src=artifact.url alt='Private output' loading='lazy')
                 td= item.state
                 td= item.reason || item.next_attempt_at || '—'
         if !jobs.length

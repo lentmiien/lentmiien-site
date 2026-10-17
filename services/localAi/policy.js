@@ -55,6 +55,7 @@ const graph = z.object({
   '8': node('SaveImage', { images: link('7'), filename_prefix: z.string().max(200) }),
 }).strict();
 const submission = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('comfy.workflow'), request: z.object({ workflow_id: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/), template_sha256: z.string().regex(/^[a-f0-9]{64}$/), overrides: z.record(z.string().max(200), z.union([z.string().max(20000), z.number().finite(), z.boolean()])), bindings: z.record(z.string().max(100), inputReference) }).strict() }).strict(),
   z.object({ type: z.literal('llm.chat'), request: textRequest }).strict(),
   z.object({ type: z.literal('comfy.image'), request: z.object({ prompt: graph }).strict() }).strict(),
   z.object({ type: z.literal('chat5.response'), conversation_id: z.string().regex(/^[a-f0-9]{24}$/i), prompt: z.string().max(20000), settings: z.object({

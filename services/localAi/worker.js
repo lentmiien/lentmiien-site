@@ -101,7 +101,7 @@ class Worker {
       const w = windowAt(this.now());
       const manual = current.manualDeadline && +current.manualDeadline > +this.now();
       if (!manual && (!config().auto || !w.inside || current.suppressedWindow === w.key)) return;
-      const due = { slot: { $type: 'number' }, state: 'queued', runId: null, ...(manual ? {} : { nextAttemptAt: { $lte: this.now() } }) };
+      const due = { slot: { $type: 'number' }, state: 'queued', runId: null, ...(!config().media ? { schemaVersion: { $ne: 2 } } : {}), ...(manual ? {} : { nextAttemptAt: { $lte: this.now() } }) };
       const first = await this.db.Job.findOne(due).sort({ createdAt: 1, slot: 1 }).lean();
       if (!first) { await this.controlSet({ manualRequestedAt: null, manualDeadline: null, reason: 'queue_drained' }); return; }
       if (current.nextAttemptAt && +current.nextAttemptAt > +this.now()) return;
@@ -115,6 +115,10 @@ class Worker {
       // Oldest affinity gets a bounded cohort; other affinities retain their age for fairness.
       let selected = await this.db.Job.find({ ...due, affinity: first.affinity }).sort({ createdAt: 1, slot: 1 }).limit(Math.max(1, Math.min(8, current.cohortLimit || 8))).lean();
       if (first.schemaVersion === 2) {
+        // New media export negotiates acceptance; retained runs reconcile below
+        // without requiring the Site acceptance flag.
+        if (!config().media) throw problem('batch_media_disabled', 503);
+        if (first.type === 'comfy.workflow') await this.service.workflows.negotiate();
         // Stage complete known immutable inputs before reserving a generation
         // cohort. Failed/lost transfers cannot start execution.
         const prepared = [];
@@ -127,17 +131,13 @@ class Worker {
             this.warn('Local AI frozen media job requires review before export', { jobId: job._id, code: error.code || 'input_policy_rejected' });
             continue; // No run/manifest exists yet; no declared cohort is shrunk.
           }
-          await this.service.inputs.stage(job); prepared.push(job);
+          prepared.push(job);
         }
         selected = prepared;
         if (!selected.length) return;
-        const capacity = await this.gateway.capacity();
-        const reservation = caps.schema2?.operation_reservation_bytes;
-        if (!Number.isSafeInteger(reservation) || reservation < 35717120
-          || !Number.isSafeInteger(capacity.available_bytes) || !Number.isSafeInteger(capacity.remaining_records)) throw problem('gateway_capacity_unavailable', 503);
-        const count = Math.min(selected.length, capacity.remaining_records - 1, Math.floor((capacity.available_bytes - 1048576) / reservation));
-        if (count < 1) throw problem('gateway_cohort_storage_quota', 507);
-        selected = selected.slice(0, count);
+        selected = await this.fitCohort(selected, caps, true);
+        for (const job of selected) { await this.guard(); await this.service.inputs.stage(job); }
+        selected = await this.fitCohort(selected, caps, false);
         // Uploads/catalog probes can take minutes: never reuse their old Date.
         ({ capabilities: caps, clock } = await this.gateway.admissionClock());
       }
@@ -175,6 +175,35 @@ class Worker {
       }
     } finally { this.busy = false; }
   }
+  async fitCohort(jobs, caps, includeUploads) {
+    const capacity = await this.gateway.capacity();
+    if (!Number.isSafeInteger(capacity.available_bytes) || !Number.isSafeInteger(capacity.remaining_records)) throw problem('gateway_capacity_unavailable', 503);
+    let bytes = 1048576, uploadHeadroom = false;
+    const inputs = new Set(), selected = [];
+    for (const job of jobs) {
+      const reserve = job.type === 'comfy.workflow' ? job.source.reservationBytes : caps.schema2?.operation_reservation_bytes;
+      if (!Number.isSafeInteger(reserve) || reserve < 35717120) throw problem('gateway_capacity_unavailable', 503);
+      let extra = reserve;
+      if (includeUploads) {
+        const refs = job.type === 'comfy.workflow' ? Object.values(job.request.bindings) : job.request.messages.flatMap(m => m.images || []);
+        for (const ref of refs) if (!inputs.has(ref.artifact_id)) {
+          const record = await this.service.inputs.resolve({ ownerId: job.ownerId, tokenId: job.tokenId }, ref);
+          let receipt;
+          try { receipt = await this.gateway.input(record._id); } catch (error) { if (error.status !== 404) throw error; }
+          if (receipt) require('./inputs').verifyReceipt(record, receipt);
+          else {
+            extra += record.descriptor.bytes + 4096;
+            if (!uploadHeadroom) { extra += 2 * 33554432 + 65536; uploadHeadroom = true; }
+          }
+          inputs.add(ref.artifact_id);
+        }
+      }
+      if (bytes + extra > capacity.available_bytes || selected.length + 1 >= capacity.remaining_records) break;
+      bytes += extra; selected.push(job);
+    }
+    if (!selected.length) throw problem('gateway_cohort_storage_quota', 507);
+    return selected;
+  }
   async drive(run) {
     // Migrate an already persisted receipt without changing wire/manifest/IDs.
     // It proves admission only; fresh remote state still gates upload and seal.
@@ -189,7 +218,7 @@ class Worker {
       });
       const media = manifest.some(e => e.body.schema_version === 2);
       if (media && manifest.some(e => e.body.schema_version !== 2)) throw problem('mixed_schema_manifest', 503);
-      await this.runSet(run, { manifest, ...(media ? { wire: { ...run.wire, schema_version: 2, operation_ids: manifest.map(e => e.id) } } : {}), state: 'uploading' });
+      await this.runSet(run, { manifest, ...(media ? { wire: { ...run.wire, schema_version: 2, operation_ids: manifest.map(e => e.id), ...(manifest.some(e => e.body.type === 'comfy.workflow') ? { operation_budgets: manifest.map(e => ({ operation_id: e.id, type: e.body.type, ...(e.body.type === 'comfy.workflow' ? { workflow_id: e.body.request.workflow_id, template_sha256: e.body.request.template_sha256 } : {}) })) } : {}) } } : {}), state: 'uploading' });
     }
     // Manifest is immutable after this point, including optional request-field presence.
     for (const entry of run.manifest) {
@@ -278,14 +307,19 @@ class Worker {
       if (run.wire.schema_version === 2) {
         seal = { operations: run.manifest.map(entry => {
           const op = remote.operations.find(o => o.id === entry.id);
-          if (op.schema_version !== 2 || op.request_digest !== digest(entry.body)) throw problem('operation_digest_mismatch', 409);
+          if (op.schema_version !== 2 || !/^[a-f0-9]{64}$/.test(op.request_digest) || (entry.body.type !== 'comfy.workflow' && op.request_digest !== digest(entry.body))) throw problem('operation_digest_mismatch', 409);
           return { operation_id: entry.id, request_digest: op.request_digest };
         }) };
+      }
+      if (seal) {
+        if (run.seal && digest(run.seal) !== digest(seal)) throw problem('operation_digest_mismatch', 409);
+        if (!run.seal) await this.runSet(run, { seal });
+        seal = run.seal;
       }
       await diagnosticOperation('gateway.run_seal', () => this.gateway.start(run._id, seal));
       await this.runSet(run, { state: 'sealed' });
     } catch (error) {
-      if ([401, 403, 409, 413, 422, 507].includes(error.status)) {
+      if ([401, 403, 409, 413, 422].includes(error.status) || (error.status === 507 && run.wire.schema_version !== 2)) {
         this.warn('Local AI operation acceptance rejected; run stop required', { code: 'operation_acceptance_rejected', ...errorDiagnostic(error, 'gateway.operation_upload') });
         // Seal nothing after partial quota/validation rejection. Stop intent is durable first.
         await this.runSet(run, { stopMode: 'cancel_active', state: 'stop_pending', reason: error.code || 'acceptance_rejected' });
@@ -314,6 +348,8 @@ class Worker {
   }
   async reconcileOperation(job, op) {
     if (op.logical_job_id !== job._id || !job.attempts.some(a => a.id === op.id)) throw problem('gateway_operation_mismatch', 503);
+    const previous = job.attempts.find(a => a.id === op.id)?.remote;
+    if (job.type === 'comfy.workflow' && previous?.result && (previous.result_digest !== op.result_digest || digest(previous.result) !== digest(op.result))) throw problem('gateway_result_changed', 409);
     const attempts = job.attempts.map(a => a.id === op.id ? { ...a, remote: op } : a);
     await this.jobSet(job, { attempts }); // Preserve successful but malformed evidence; never rerun it.
     if (op.status === 'succeeded') {
@@ -327,20 +363,30 @@ class Worker {
               if (raw?.done !== true || typeof raw.message?.content !== 'string' || !raw.message.content.trim()
                 || (raw.message.tool_calls && (!Array.isArray(raw.message.tool_calls) || raw.message.tool_calls.length)) || Buffer.byteLength(JSON.stringify(raw)) > 2097152) throw problem('malformed_successful_text_result');
               result = { text: raw.message.content, ...(typeof raw.message.thinking === 'string' ? { thinking: raw.message.thinking } : {}) };
-            } else result = await importImage(this.gateway, job, op);
+            } else result = job.type === 'comfy.workflow' ? await require('./outputs').collect(this.gateway, this.db, job, op) : await importImage(this.gateway, job, op);
           }
+          if (job.type === 'comfy.workflow') {
+            require('./outputs').manifest(job, op);
+            if (result.resultDigest !== op.result_digest || result.manifestDigest !== digest(op.result)) throw problem('gateway_result_changed', 409);
+            for (const artifact of result.artifacts) await require('./outputs').read(artifact);
+          }
+          await this.service.sourceAccess(job);
           await this.jobSet(job, { result, state: 'succeeded', reason: null });
           await this.service.project(job);
           await this.jobSet(job, { published: true });
         } catch (error) {
           if (error.code === 'coordinator_fenced') throw error;
-          await this.jobSet(job, { state: 'needs_review', reason: error.code || 'publication_failed' });
+          const collecting = job.type === 'comfy.workflow' && (error.status >= 500 || /^Mongo/.test(error.name || '') || Number.isInteger(error.code) || ['ENOENT', 'ENOSPC', 'EIO', 'EPERM'].includes(error.code));
+          await this.jobSet(job, { state: collecting ? 'collecting' : 'needs_review', reason: error.code || 'publication_failed' });
           this.warn('Local AI result retained for publication review', { jobId: job._id, code: error.code || 'publication_failed' });
           return;
         }
       }
+      if (job.type === 'comfy.workflow' && op.integrity_error) { await this.jobSet(job, { state: 'needs_review', reason: op.integrity_error }); return; }
       if (!job.acknowledged) {
         if (typeof op.result_digest !== 'string' || !op.result_digest) { await this.jobSet(job, { reason: 'result_digest_missing' }); return; }
+        await this.service.sourceAccess(job);
+        if (job.type === 'comfy.workflow') for (const artifact of job.result.artifacts) await require('./outputs').read(artifact);
         await this.guard(); await this.gateway.ack(op.id, op.result_digest);
         await this.jobSet(job, { acknowledged: true });
       }
@@ -360,7 +406,7 @@ class Worker {
       } else if (safeReplacement(op) && ['interrupted', 'deferred'].includes(op.status) && job.attempts.length < 5) {
         await this.jobSet(job, { runId: null, state: 'queued', nextAttemptAt: windowAt(this.now()).next });
       } else {
-        await this.jobSet(job, { runId: null, ...(!['succeeded', 'failed', 'needs_review'].includes(job.state) ? { state: 'needs_review', reason: 'closed_run_requires_operation_reconciliation' } : {}) });
+        await this.jobSet(job, { runId: null, ...(!['succeeded', 'failed', 'needs_review', 'collecting'].includes(job.state) ? { state: 'needs_review', reason: 'closed_run_requires_operation_reconciliation' } : {}) });
       }
     }
     await this.runSet(run, { state: 'closed' });
@@ -381,11 +427,11 @@ class Worker {
     }
   }
   async reconcileDetached() {
-    const jobs = await this.db.Job.find({ runId: null, $or: [{ state: 'needs_review' }, { state: 'succeeded', $or: [{ acknowledged: false }, { slot: { $type: 'number' } }] }, { 'source.conversationId': { $exists: true }, state: { $in: ['queued', 'cancelled'] } }] }).sort({ reconciledAt: 1, createdAt: 1 }).limit(20).lean();
+    const jobs = await this.db.Job.find({ runId: null, $or: [{ state: { $in: ['needs_review', 'collecting'] } }, { state: 'succeeded', $or: [{ acknowledged: false }, { slot: { $type: 'number' } }] }, { 'source.conversationId': { $exists: true }, state: { $in: ['queued', 'cancelled'] } }] }).sort({ reconciledAt: 1, createdAt: 1 }).limit(20).lean();
     for (const job of jobs) {
       await this.guard();
       const latest = job.attempts.at(-1);
-      if (latest && ['needs_review', 'succeeded'].includes(job.state)) {
+      if (latest && ['needs_review', 'collecting', 'succeeded'].includes(job.state)) {
         try {
           const op = await this.gateway.request('GET', `/batch/operations/${latest.id}`);
           await this.reconcileOperation(job, op);
