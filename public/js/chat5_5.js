@@ -1230,33 +1230,55 @@ function UpdateConversation(options = {}) {
   });
 }
 
-document.getElementById("fileInput").addEventListener('change', () => {
-  const files = document.getElementById("fileInput").files;
-  if (files.length === 0) return;
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-
-    if (file.size > MAX_FILE_SIZE) continue;
-
-    const reader = new FileReader();
-
-    reader.onload = (event) => {
-      const conversation_id = document.getElementById("id").textContent;
-      const arrayBuffer = event.target.result;
-      socket.emit('chat5-uploadImage', {
-        conversation_id,
-        name: file.name,
-        buffer: arrayBuffer
+// Mark pending before FileReader starts: a batch click cannot race the upload.
+const hasUnacknowledgedUploads = () => Object.keys(sessionStorage).some(key => key.startsWith('chat5-upload-pending:'));
+window.chat5UploadBarrier = { pending: 0, failed: hasUnacknowledgedUploads() };
+const announceUploadState = () => window.dispatchEvent(new Event('chat5-upload-state'));
+document.getElementById('fileInput').addEventListener('change', async () => {
+  const input = document.getElementById('fileInput');
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
+  window.chat5UploadBarrier.pending += files.length;
+  window.chat5UploadBarrier.failed = false;
+  announceUploadState();
+  for (const file of files) {
+    try {
+      if (file.size > MAX_FILE_SIZE) throw new Error('Image exceeds upload limit.');
+      const arrayBuffer = await new Promise((resolve, reject) => {
+        const reader = new FileReader(); reader.onload = event => resolve(event.target.result);
+        reader.onerror = () => reject(new Error('Unable to read image.')); reader.readAsArrayBuffer(file);
       });
-    };
-
-    reader.onerror = () => {
-      console.error('Error reading file:', file.name);
-    };
-
-    reader.readAsArrayBuffer(file);
+      const conversation_id = document.getElementById('id').textContent.trim();
+      let config;
+      try { config = await window.localAiBatch?.load(); } catch (_) { /* legacy immediate upload remains available */ }
+      // Only opaque recovery metadata, never file/base64 bytes, is stored here.
+      const hash = config?.mediaEnabled
+        ? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', arrayBuffer))).map(n => n.toString(16).padStart(2, '0')).join('')
+        : Array.from(crypto.getRandomValues(new Uint8Array(16))).map(n => n.toString(16).padStart(2, '0')).join('');
+      const recoveryKey = `chat5-upload:${config?.ownerId || 'session'}:${conversation_id}:${hash}`;
+      let uploadKey = sessionStorage.getItem(recoveryKey);
+      const newConversationKey = sessionStorage.getItem(`chat5-upload:${config?.ownerId || 'session'}:NEW:${hash}`);
+      if (!uploadKey && newConversationKey && sessionStorage.getItem(`chat5-upload-pending:${newConversationKey}`)) uploadKey = newConversationKey;
+      if (!uploadKey) { uploadKey = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(n => n.toString(16).padStart(2, '0')).join(''); sessionStorage.setItem(recoveryKey, uploadKey); }
+      const pendingKey = `chat5-upload-pending:${uploadKey}`;
+      sessionStorage.setItem(pendingKey, conversation_id);
+      const response = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Upload acknowledgement uncertain. Retry the same file.')), 65000);
+        socket.emit('chat5-uploadImage', { conversation_id, name: file.name, buffer: arrayBuffer, uploadKey, csrfToken: config?.csrfToken }, reply => {
+          clearTimeout(timer); reply?.ok ? resolve(reply) : reject(new Error(reply?.message || 'Upload failed.'));
+        });
+      });
+      if (config?.mediaEnabled && !response.artifact) throw new Error('Image lacks immutable provenance; reupload before batching.');
+      sessionStorage.removeItem(pendingKey);
+    } catch (error) {
+      window.chat5UploadBarrier.failed = true;
+      const status = document.getElementById('localAiBatchStatus');
+      if (status) status.textContent = error.message;
+    } finally { window.chat5UploadBarrier.pending -= 1; announceUploadState(); }
   }
+  window.chat5UploadBarrier.failed ||= hasUnacknowledgedUploads();
+  if (!window.chat5UploadBarrier.failed) input.value = '';
+  announceUploadState();
 });
 
 // Edit message array

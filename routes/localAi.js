@@ -7,6 +7,9 @@ const { createDatabaseReadinessMiddleware } = require('../middleware/databaseRea
 const { CAP, BUNDLES, problem } = require('../services/localAi/policy');
 const { config } = require('../services/localAi/gateway');
 const { publicJob } = require('../services/localAi/service');
+const { descriptor: inputDescriptor } = require('../services/localAi/inputs');
+const inputStorage = require('../services/localAi/inputStorage');
+const { createInputUpload } = require('../middleware/localAiInputUpload');
 const { readImage } = require('../services/localAi/artifacts');
 const logger = require('../utils/logger');
 function createRouter({ service, worker }, { machine = false } = {}) {
@@ -40,6 +43,20 @@ function createRouter({ service, worker }, { machine = false } = {}) {
   const api = machine ? '' : '/api/v1';
   const serialize = (job, control) => ({ ...publicJob(job, control), result_url: `${machine ? '/api/local-ai/v1' : '/local-ai/api/v1'}/jobs/${job._id}/result` });
   const wrap = fn => async (req, res, next) => { try { await fn(req, res); } catch (error) { next(error); } };
+  router.post(`${api}/inputs`, createInputUpload(service), wrap(async (req, res) => {
+    res.status(201).json(inputDescriptor(req.localAiInput));
+  }));
+  router.post(`${api}/inputs/import`, wrap(async (req, res) => {
+    res.status(201).json(inputDescriptor(await service.inputs.importShared(req.localAiActor, req.get('Idempotency-Key'), req.body)));
+  }));
+  router.get(`${api}/inputs/by-key/:key`, wrap(async (req, res) => res.json(inputDescriptor(await service.inputs.lookup(req.localAiActor, null, req.params.key)))));
+  router.get(`${api}/inputs/:id`, wrap(async (req, res) => res.json(inputDescriptor(await service.inputs.lookup(req.localAiActor, req.params.id)))));
+  router.get(`${api}/inputs/:id/content`, wrap(async (req, res) => {
+    const record = await service.inputs.lookup(req.localAiActor, req.params.id);
+    if (record.state !== 'ready') throw problem('input_not_ready', 409);
+    res.set({ 'Content-Type': record.descriptor.media_type, 'X-Content-Type-Options': 'nosniff', ETag: `"${record.descriptor.sha256}"` })
+      .send(await inputStorage.read(record._id, record.descriptor));
+  }));
   router.post(`${api}/jobs`, wrap(async (req, res) => {
     const job = await service.submit(req.localAiActor, req.get('Idempotency-Key'), req.body);
     const location = `${machine ? '/api/local-ai/v1' : '/local-ai/api/v1'}/jobs/${job._id}`;
@@ -70,7 +87,7 @@ function createRouter({ service, worker }, { machine = false } = {}) {
       const job = await service.get(req.localAiActor, req.params.id);
       res.render('local_ai_queue', { jobs: [], job: { ...publicJob(job, await service.db.Control.findById('scheduler').lean()), request: job.request, result: job.published ? job.result : null }, config: { enabled: config().enabled, auto: config().auto } });
     }));
-    router.get('/api/v1/config', wrap(async (req, res) => res.json({ enabled: config().enabled, ownerId: req.localAiActor.ownerId, csrfToken: res.locals.csrfToken,
+    router.get('/api/v1/config', wrap(async (req, res) => res.json({ enabled: config().enabled, mediaEnabled: config().media, ownerId: req.localAiActor.ownerId, csrfToken: res.locals.csrfToken,
       supported: ['llm.chat', 'chat5.response', 'comfy.image'], image_workflow: 'qwen-image-2.1-t2i-v1' })));
     const admin = createRequireCapabilities({ capabilities: [CAP.manage], roleModel: Role, roleCapabilityBundles: BUNDLES });
     router.get('/api/v1/scheduler', admin, wrap(async (req, res) => {

@@ -1059,7 +1059,18 @@
     setInputUploadStatus(`Uploading ${file.name}…`);
     try {
       const formData = new FormData(inputUploadForm);
-      const payload = await api('/api/files/input', { method: 'POST', body: formData });
+      let uploadConfig;
+      try { uploadConfig = await window.localAiBatch?.load(); } catch (_) { /* legacy capability */ }
+      let uploadRecoveryKey;
+      const headers = {};
+      if (uploadConfig?.mediaEnabled) {
+        const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))).map(n => n.toString(16).padStart(2, '0')).join('');
+        uploadRecoveryKey = `image-gen-upload:${uploadConfig.ownerId}:${hash}`;
+        let key = sessionStorage.getItem(uploadRecoveryKey);
+        if (!key) { key = crypto.randomUUID(); sessionStorage.setItem(uploadRecoveryKey, key); }
+        headers['X-CSRF-Token'] = uploadConfig.csrfToken; headers['Idempotency-Key'] = key;
+      }
+      const payload = await api('/api/files/input', { method: 'POST', body: formData, headers });
       const uploaded = normalizeInputFile(payload?.file || payload);
       if (uploaded) {
         selectInputFile(uploaded);
@@ -1067,7 +1078,7 @@
       }
       if (inputFileEl) inputFileEl.value = '';
       if (inputOverwriteEl) inputOverwriteEl.checked = false;
-      setInputUploadStatus(`${uploaded?.path || file.name} is ready for a workflow.`, 'text-success');
+      setInputUploadStatus(`${uploaded?.path || file.name} is ready for a workflow.${payload?.batch_input?.eligible === false ? ' Batch input unavailable: ' + payload.batch_input.reason : ''}`, payload?.batch_input?.eligible === false ? 'text-warning' : 'text-success');
       await loadInputFiles({ page: 1 });
       log(`Uploaded ComfyUI input ${uploaded?.path || file.name}.`, 'text-success');
     } catch (err) {

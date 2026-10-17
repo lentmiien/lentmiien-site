@@ -285,3 +285,11 @@ BATCH_CLIENT_ID=
 BATCH_SERVER_TOKEN=
 # Private durable directory, outside public; back up together with MongoDB.
 LOCAL_AI_BATCH_DATA_DIR=./private_data/local-ai
+
+# Immutable private batch inputs + Ollama vision; never automatically enabled.
+LOCAL_AI_BATCH_MEDIA_ENABLED=false
+# Linux default: private_data/local-ai-inputs. Windows default:
+# C:/ProgramData/LennartWebLocalAI/inputs (preprovision restrictive NTFS ACLs).
+# LOCAL_AI_INPUT_DATA_DIR=
+LOCAL_AI_INPUT_QUOTA_BYTES=2147483648
+LOCAL_AI_INPUT_OWNER_QUOTA_BYTES=536870912

@@ -31,20 +31,24 @@ const ttsService = new TtsService();
 
 const TEMP_DIR = path.join(__dirname, '../../tmp_data');
 
-async function ProcessUploadedImage(tmpFile) {
-  const file_data = fs.readFileSync(tmpFile);
-  const img_data = sharp(file_data);
-  const metadata = await img_data.metadata();
-  let short_side = metadata.width < metadata.height ? metadata.width : metadata.height;
-  let long_side = metadata.width > metadata.height ? metadata.width : metadata.height;
-  let scale = 1;
-  if (short_side > 768 || long_side > 2048) {
-    if (768 / short_side < scale) scale = 768 / short_side;
-    if (2048 / long_side < scale) scale = 2048 / long_side;
+async function ProcessUploadedImage(tmpFile, { filename, beforePublish, frozenBytes } = {}) {
+  let img_buffer = frozenBytes;
+  if (!img_buffer) {
+    const file_data = fs.readFileSync(tmpFile);
+    const img_data = sharp(file_data);
+    const metadata = await img_data.metadata();
+    let short_side = metadata.width < metadata.height ? metadata.width : metadata.height;
+    let long_side = metadata.width > metadata.height ? metadata.width : metadata.height;
+    let scale = 1;
+    if (short_side > 768 || long_side > 2048) {
+      if (768 / short_side < scale) scale = 768 / short_side;
+      if (2048 / long_side < scale) scale = 2048 / long_side;
+    }
+    const scale_img = img_data.resize({ width: Math.round(metadata.width * scale) });
+    img_buffer = await scale_img.jpeg().toBuffer();
   }
-  const scale_img = img_data.resize({ width: Math.round(metadata.width * scale) });
-  const img_buffer = await scale_img.jpeg().toBuffer();
-  const new_filename = `UP-${createSafeUploadName('upload.jpg')}`;
+  const new_filename = filename || `UP-${createSafeUploadName('upload.jpg')}`;
+  if (beforePublish) await beforePublish(img_buffer);
   fs.writeFileSync(`./public/img/${new_filename}`, img_buffer);
   return new_filename;
 }

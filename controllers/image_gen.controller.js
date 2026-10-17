@@ -4145,6 +4145,21 @@ exports.uploadInput = async (req, res) => {
   const tmpPath = req.file.path;
   try {
     const buffer = await fsp.readFile(tmpPath);
+    let batchInput;
+    if (req.localAiActor) {
+      if (buffer.length > 33554432) batchInput = { eligible: false, reason: 'batch_input_limit_32_mib' };
+      else {
+        try {
+          const { service } = require('../services/localAi');
+          const { descriptor } = require('../services/localAi/inputs');
+          const record = await service.inputs.capture(req.localAiActor, req.get('Idempotency-Key'), buffer, { kind: 'image-gen-upload' });
+          batchInput = { eligible: true, ...descriptor(record) };
+        } catch (error) {
+          batchInput = { eligible: false, reason: error.code || 'input_snapshot_unavailable' };
+          if (!error.status || error.status >= 500) logger.warning('Immediate image upload has no immutable batch snapshot', { category: 'local_ai', metadata: { code: typeof error.code === 'string' && /^[a-z_]+$/.test(error.code) ? error.code : 'input_snapshot_unavailable' } });
+        }
+      }
+    }
     const payload = await comfyGatewayService.uploadInputFile({
       buffer,
       filename: path.basename(req.file.originalname),
@@ -4152,7 +4167,7 @@ exports.uploadInput = async (req, res) => {
       subfolder: req.body?.subfolder,
       overwrite: parseUploadBoolean(req.body?.overwrite)
     });
-    return res.status(201).json(payload);
+    return res.status(201).json({ ...payload, ...(batchInput ? { batch_input: batchInput } : {}) });
   } catch (e) {
     logComfyGatewayFailure('ComfyUI input upload failed', e, {
       operation: 'uploadInputFile',

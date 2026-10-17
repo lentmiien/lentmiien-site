@@ -12,6 +12,7 @@
   });
   if (button) {
     let enabled = false;
+    let mediaEnabled = false;
     let submitting = false;
     const conversationId = () => document.getElementById('id')?.textContent.trim() || '';
     const outputFormat = () => document.getElementById('outputFormat')?.value || document.getElementById('id')?.dataset.outputFormat || 'text';
@@ -22,7 +23,9 @@
       if (!(window.chatModels || []).some(model => model.api_model === settings.model && model.provider === 'Local')) return 'Select a Local model for local batching.';
       if (settings.tools.length) return 'Local batching does not support tools.';
       if (settings.reasoning !== 'none' || settings.mode !== 'standard' || settings.verbosity !== 'medium' || outputFormat() !== 'text') return 'Use reasoning none, standard mode, medium verbosity and text output.';
-      if (document.getElementById('fileInput')?.files?.length) return 'Local batching does not support attached files.';
+      if (window.chat5UploadBarrier?.pending) return 'Wait for all image uploads to be acknowledged.';
+      if (window.chat5UploadBarrier?.failed) return 'Retry the failed or uncertain image upload before batching.';
+      if (document.getElementById('fileInput')?.files?.length) return mediaEnabled ? 'Wait for image upload acknowledgement.' : 'Local batching does not support attached files.';
       return '';
     }
     function eligible(showReason = true) {
@@ -31,9 +34,10 @@
       if (showReason) status.textContent = reason;
     }
     button.disabled = true;
+    window.addEventListener('chat5-upload-state', () => eligible());
     window.addEventListener('load', () => {
       window.localAiBatch.load().then(config => {
-        enabled = config.enabled === true;
+        enabled = config.enabled === true; mediaEnabled = config.mediaEnabled === true;
         document.querySelectorAll('select, input').forEach(input => input.addEventListener('change', () => eligible()));
         eligible();
       }).catch(error => { status.textContent = error.message; });

@@ -66,7 +66,15 @@ router.get('/api/jobs/:id/images/:index', authorizeThumbnail(CAPABILITIES.output
 router.get('/api/files/:bucket', ctrl.listFiles);
 router.get('/api/files/input/view', ctrl.getInputFile);
 router.get('/api/files/:bucket/:filename', ctrl.getFile);
-router.post('/api/files/input', upload.single('file'), ctrl.uploadInput);
+router.post('/api/files/input', async (req, res, next) => {
+  if (!require('../services/localAi/gateway').config().media) return next();
+  try {
+    const service = require('../services/localAi').service;
+    const user = await service.principal(String(req.user?._id));
+    req.localAiActor = { ownerId: String(user._id) };
+    require('../middleware/sessionCsrf').createSessionCsrf().requireToken(req, res, next);
+  } catch (_) { res.status(403).json({ error: 'Input upload requires local_ai.jobs.use.' }); }
+}, upload.single('file'), ctrl.uploadInput);
 router.post('/api/files/promote', ctrl.promoteCachedFile);
 router.get('/api/prompts', ctrl.listPrompts);
 router.post('/api/rate', ctrl.rateJob);

@@ -7,7 +7,7 @@ const job = new Schema({
   _id: String, ownerId: { type: String, required: true }, tokenId: String,
   key: { type: String, required: true }, digest: { type: String, required: true },
   slot: Number, ownerSlot: Number, admissionReleasedAt: Date,
-  type: String, request: Schema.Types.Mixed, source: Schema.Types.Mixed, affinity: String,
+  schemaVersion: Number, type: String, request: Schema.Types.Mixed, source: Schema.Types.Mixed, affinity: String,
   state: { type: String, default: 'queued', index: true }, reason: String,
   reconciledAt: Date, nextAttemptAt: Date, runId: { type: String, default: null, index: true },
   attempts: { type: [Schema.Types.Mixed], default: [] }, result: Schema.Types.Mixed,
@@ -35,7 +35,23 @@ const token = new Schema({
   _id: String, hash: { type: String, unique: true, required: true }, ownerId: { type: String, required: true },
   label: String, capabilities: [String], expiresAt: { type: Date, required: true }, revokedAt: Date,
 }, options);
+const input = new Schema({
+  _id: String, ownerId: { type: String, required: true, immutable: true }, tokenId: String,
+  key: { type: String, immutable: true }, requestDigest: { type: String, immutable: true },
+  expectedSha256: { type: String, immutable: true }, source: { type: Schema.Types.Mixed, immutable: true },
+  slot: Number, ownerSlot: Number, state: { type: String, default: 'preparing' },
+  writer: Schema.Types.Mixed, descriptor: Schema.Types.Mixed, gatewayReceipt: Schema.Types.Mixed,
+}, options);
+input.index({ ownerId: 1, key: 1 }, { unique: true });
+input.index({ slot: 1 }, { unique: true });
+input.index({ ownerId: 1, ownerSlot: 1 }, { unique: true });
+input.index({ 'source.conversationId': 1, 'source.messageId': 1 });
+const inputQuota = new Schema({
+  _id: String,
+  allocations: { type: [{ _id: false, id: String, ownerId: String, bytes: Number }], default: [] },
+}, options);
 module.exports = {
+  Input: mongoose.model('LocalAiInput', input), InputQuota: mongoose.model('LocalAiInputQuota', inputQuota),
   Job: mongoose.model('LocalAiJob', job), Run: mongoose.model('LocalAiRun', run),
   Control: mongoose.model('LocalAiControl', control), Token: mongoose.model('LocalAiToken', token),
 };

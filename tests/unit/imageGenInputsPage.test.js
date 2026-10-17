@@ -34,8 +34,9 @@ describe('/image_gen workflow input library', () => {
 
     expect(routeSource).toContain("router.get('/api/files/:bucket', ctrl.listFiles);");
     expect(routeSource).toContain("router.get('/api/files/input/view', ctrl.getInputFile);");
-    expect(routeSource).toContain("router.post('/api/files/input', upload.single('file'), ctrl.uploadInput);");
-    expect(clientSource).toContain("api('/api/files/input', { method: 'POST', body: formData })");
+    expect(routeSource).toContain("router.post('/api/files/input', async (req, res, next) => {");
+    expect(routeSource.indexOf("service.principal(String(req.user?._id))")).toBeLessThan(routeSource.indexOf("}, upload.single('file'), ctrl.uploadInput)"));
+    expect(clientSource).toContain("api('/api/files/input', { method: 'POST', body: formData, headers })");
     expect(clientSource).toContain('/image_gen/api/files/input/view?path=');
     expect(clientSource).toContain("document.createElement('audio')");
     expect(clientSource).toContain("document.createElement('video')");

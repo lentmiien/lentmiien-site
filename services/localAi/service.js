@@ -12,6 +12,8 @@ const { CAP, BUNDLES, problem, digest, parseSubmission, textRequest, affinity, s
 const { Gateway, config } = require('./gateway');
 const logger = require('../../utils/logger');
 const admission = require('./admission');
+const { Inputs } = require('./inputs');
+const { prepareGenerationContext } = require('../../utils/chat5GenerationContext');
 const { errorDiagnostic } = require('./diagnostics');
 const CHAT_BUNDLES = { admin: ['chat.conversation.read', 'chat.conversation.write'], family: [], user: [] };
 const tokenHash = secret => createHash('sha256').update(secret).digest('hex');
@@ -28,7 +30,7 @@ function publicJob(job, control = null) {
     url: `/local-ai/queue/${job._id}`, result_url: `/local-ai/api/v1/jobs/${job._id}/result` };
 }
 class LocalAiService {
-  constructor({ db = models, gateway = new Gateway() } = {}) { this.db = db; this.gateway = gateway; }
+  constructor({ db = models, gateway = new Gateway() } = {}) { this.db = db; this.gateway = gateway; this.inputs = new Inputs(this); }
   async initialize() {
     if (!this.initializing) this.initializing = admission.initializeIndexes(this.db).catch(error => {
       this.initializing = null;
@@ -55,12 +57,14 @@ class LocalAiService {
     const user = await this.principal(token.ownerId, token._id);
     return { ownerId: String(user._id), tokenId: token._id, user };
   }
-  async issueToken(ownerId, label, days = 30) {
+  async issueToken(ownerId, label, days = 30, capabilities = [CAP.use]) {
     await this.principal(ownerId);
     if (!Number.isInteger(days) || days < 1 || days > 365 || typeof label !== 'string' || label.length > 80) throw problem('invalid_token_request');
+    if (!Array.isArray(capabilities) || !capabilities.includes(CAP.use) || capabilities.some(c => ![CAP.use, CAP.importShared].includes(c))) throw problem('invalid_token_capabilities');
+    for (const capability of capabilities) await this.principal(ownerId, null, capability);
     const secret = `lai_${randomBytes(32).toString('base64url')}`;
     const token = await this.db.Token.create({ _id: randomUUID(), hash: tokenHash(secret), ownerId, label,
-      capabilities: [CAP.use], expiresAt: new Date(Date.now() + days * 86400000) });
+      capabilities, expiresAt: new Date(Date.now() + days * 86400000) });
     return { id: token._id, secret, expiresAt: token.expiresAt };
   }
   async sourceAccess(job) {
@@ -85,17 +89,52 @@ class LocalAiService {
       || request.messages.reduce((n, m) => n + Array.from(m.content).length, 0) > limits.max_prompt_chars) throw problem('catalog_limit_exceeded');
     return plain(model);
   }
+  async validateImages(request, actor, catalog) {
+    const references = request.messages.flatMap(m => m.images || []);
+    if (!references.length) return false;
+    const caps = await this.inputs.negotiate();
+    if (!caps.operation_schema_versions?.includes(2) || !caps.features?.ollama_image_refs || !caps.schema2?.run_manifest_required
+      || !caps.schema2.supported_types?.includes('llm.chat')) throw problem('gateway_vision_unavailable', 503);
+    const policy = caps.schema2;
+    if (![policy.max_images, policy.max_image_bytes, policy.max_input_bytes, policy.max_pixels, policy.max_edge].every(v => Number.isSafeInteger(v) && v > 0)) throw problem('gateway_media_limits_unavailable', 503);
+    const limits = catalog.limits;
+    if (catalog.provider !== 'ollama' || catalog.allow_images !== true) throw problem('model_not_vision');
+    if (![limits.max_images, limits.max_image_bytes].every(v => Number.isSafeInteger(v) && v > 0)) throw problem('catalog_limits_unavailable', 503);
+    if (references.length > Math.min(3, limits.max_images, policy.max_images)) throw problem('image_catalog_budget', 413);
+    let total = 0, estimate = 0;
+    for (const ref of references) {
+      const record = await this.inputs.resolve(actor, ref);
+      const image = record.descriptor;
+      if (image.bytes > policy.max_input_bytes || image.width * image.height > policy.max_pixels || Math.max(image.width, image.height) > policy.max_edge) throw problem('gateway_image_limits_exceeded', 413);
+      total += image.bytes;
+      estimate += 3 * Math.ceil(record.descriptor.bytes / 3);
+    }
+    if (references.length > Math.min(3, limits.max_images, policy.max_images) || Math.max(total, estimate) > Math.min(6000000, limits.max_image_bytes, policy.max_image_bytes)) throw problem('image_catalog_budget', 413);
+    // Gateway expands refs into bare base64 only in memory. Bound that complete
+    // expansion conservatively as well as Site's much smaller persisted JSON.
+    if (Buffer.byteLength(JSON.stringify(request)) + Math.ceil(estimate * 4 / 3) > 9 * 1024 * 1024) throw problem('image_wire_budget', 413);
+    return true;
+  }
+  catalogPolicy(catalog) {
+    return { id: catalog.id, provider: catalog.provider, upstream_model: catalog.upstream_model,
+      allow_images: catalog.allow_images, limits: catalog.limits, keep_alive: catalog.keep_alive };
+  }
   async validateFrozen(job) {
     await this.sourceAccess(job);
     if (job.type === 'llm.chat') {
       const current = await this.validateModel(job.request);
+      if (job.schemaVersion === 2) {
+        if (digest(this.catalogPolicy(current)) !== digest(this.catalogPolicy(job.source.catalog))) throw problem('frozen_model_policy_changed', 409);
+        await this.validateImages(job.request, { ownerId: job.ownerId, tokenId: job.tokenId }, current);
+      }
       if (current.provider !== job.source.catalog?.provider || current.upstream_model !== job.source.catalog?.upstream_model) throw problem('frozen_model_mapping_changed', 409);
     }
   }
   async freeze(input, actor) {
     if (input.type !== 'chat5.response') {
       const catalog = input.type === 'llm.chat' ? await this.validateModel(input.request) : undefined;
-      return { type: input.type, request: input.request, source: { catalog } };
+      const media = catalog && await this.validateImages(input.request, actor, catalog);
+      return { ...(media ? { schemaVersion: 2 } : {}), type: input.type, request: input.request, source: { catalog } };
     }
     const { conv } = await this.sourceAccess({ ownerId: actor.ownerId, tokenId: actor.tokenId, source: { conversationId: input.conversation_id } });
     const settings = input.settings || plain(conv.metadata);
@@ -109,20 +148,23 @@ class LocalAiService {
     const byId = new Map(docs.map(d => [String(d._id), d]));
     const selected = ids.map(id => byId.get(String(id)));
     if (selected.some(m => !m)) throw problem('source_history_missing');
-    const historyLimit = Math.max(0, settings.maxMessages - (input.prompt ? 1 : 0));
-    const visible = historyLimit ? selected.filter(m => !m.hideFromBot).slice(-historyLimit) : [];
-    if (visible.some(m => m.contentType !== 'text' || typeof m.content?.text !== 'string' || m.content?.toolCallId || m.content?.toolName)) throw problem('batch_history_contains_tools_or_media');
-    const messages = [];
-    if (settings.contextPrompt) messages.push({ role: 'system', content: settings.contextPrompt });
-    visible.forEach(m => messages.push({ role: m.user_id === 'bot' ? 'assistant' : 'user', content: m.content.text }));
-    if (input.prompt) messages.push({ role: 'user', content: input.prompt });
+    const { messages, selectedIds } = await prepareGenerationContext({ conversation: conv, settings, selected, prompt: input.prompt,
+      resolveImage: async message => {
+        // Authority is the immutable source association, never a mutable message field.
+        const record = await this.db.Input.findOne({ ownerId: actor.ownerId, state: 'ready',
+          'source.kind': 'chat5-upload', 'source.conversationId': String(conv._id), 'source.messageId': String(message._id),
+          'source.author': message.user_id, 'source.filename': message.content.image }).lean();
+        if (!record) throw problem('batch_image_source_requires_reupload');
+        return { artifact_id: record._id, sha256: record.descriptor.sha256 };
+      } });
     const catalog = await this.gateway.catalog();
     const model = catalog?.models?.find(m => m.id === settings.model && m.provider === 'ollama');
     if (!model) throw problem('local_ollama_catalog_model_required');
     const request = { model: settings.model, messages, max_tokens: Math.min(8192, card.max_out_tokens, model.limits?.max_output_tokens || 0), think: false };
     if (!textRequest.safeParse(request).success) throw problem('batch_context_out_of_bounds');
     await this.validateModel(request);
-    return { type: 'llm.chat', request, source: { conversationId: String(conv._id), settings, messageIds: ids, prompt: input.prompt, catalog: plain(model) } };
+    const media = await this.validateImages(request, actor, model);
+    return { ...(media ? { schemaVersion: 2 } : {}), type: 'llm.chat', request, source: { conversationId: String(conv._id), settings, messageIds: selectedIds, prompt: input.prompt, catalog: plain(model) } };
   }
   async submit(actor, key, raw) {
     await this.initialize();
@@ -147,7 +189,7 @@ class LocalAiService {
     };
     const job = await admission.admit(this.db, actor.ownerId, async slots => {
       const created = await this.db.Job.create({ _id: id, ownerId: actor.ownerId, tokenId: actor.tokenId, key, digest: hash,
-        ...frozen, projection, ...slots, affinity: frozen.source.catalog ? `llm:${frozen.source.catalog.upstream_model}` : affinity(frozen.type, frozen.request),
+        ...frozen, projection, ...slots, affinity: frozen.schemaVersion === 2 ? `vision:${digest([this.catalogPolicy(frozen.source.catalog), Object.fromEntries(Object.entries(frozen.request).filter(([k]) => k !== 'messages'))])}` : frozen.source.catalog ? `llm:${frozen.source.catalog.upstream_model}` : affinity(frozen.type, frozen.request),
         nextAttemptAt: windowAt().inside ? new Date() : windowAt().next });
       return created.toObject();
     }, replay);

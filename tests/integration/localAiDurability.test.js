@@ -515,7 +515,8 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     const message = await Message.create({ user_id: owner.name, category: 'test', contentType: 'text', content: { text: 'history' } });
     const conv = await Conversation.create({ title: 'test', category: 'test', members: [owner.name], messages: [String(message._id)], metadata: { model: 'a', reasoning: 'none' } });
     const payload = { type: 'chat5.response', conversation_id: String(conv._id), prompt: 'new prompt' };
-    const job = await enqueue('chat', payload); expect(job.request.messages.map(m => m.content)).toEqual(['history', 'new prompt']);
+    const job = await enqueue('chat', payload); expect(job.request.messages.filter(m => m.role !== 'system').map(m => m.content)).toEqual(['history', 'new prompt']);
+    expect(job.request.messages[0].content).toContain('You are talking to owner.');
     await service.project(job); expect((await Conversation.findById(conv._id)).messages).toHaveLength(3);
     await tick(); complete([...runs.values()][0]); await tick(); await service.project(await load(job._id));
     expect(await Message.countDocuments({ localBatchJobId: job._id })).toBe(2); expect((await Message.findById(job.projection.responseId)).content.text).toBe('finished');
@@ -525,7 +526,7 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     await expect(service.submit(actor, 'tool', payload)).rejects.toMatchObject({ code: 'batch_tools_unsupported' });
     await Conversation.updateOne({ _id: conv._id }, { $set: { 'metadata.tools': [] } });
     await Message.updateOne({ _id: message._id }, { $set: { contentType: 'image' } });
-    await expect(service.submit(actor, 'media', payload)).rejects.toMatchObject({ code: 'batch_history_contains_tools_or_media' });
+    await expect(service.submit(actor, 'media', payload)).rejects.toMatchObject({ code: 'batch_image_source_requires_reupload' });
     await Conversation.updateOne({ _id: conv._id }, { $set: { members: [other.name] } });
     await expect(service.get(actor, job._id)).rejects.toMatchObject({ code: 'source_access_revoked' });
   });

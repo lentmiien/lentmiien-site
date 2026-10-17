@@ -233,7 +233,7 @@ function guardStaticMedia(root, middleware) {
           if (['ENOENT', 'ENOTDIR'].includes(error.code)) return null;
           throw error;
         });
-        if (canonical && within(storageRoot(), canonical)) {
+        if (canonical && [storageRoot(), require('./localAi/inputStorage').storageRoot()].some(privateRoot => within(privateRoot, canonical))) {
           return res.status(404).set('Cache-Control', 'private, no-store').end();
         }
       }
@@ -246,4 +246,4 @@ function guardStaticMedia(root, middleware) {
     }
   };
 }
-module.exports = { MEDIA_PREFIX, PRIVATE_NAME, MAX_STORED_BYTES, storageRoot, ensureStorage, assertStorageReady, initializeStorage, validateRaster, writeImage, readPrivateImage, readLibraryImage, guardStaticMedia };
+module.exports = { assertNoSymlinks, assertTrustedStorage, within, MEDIA_PREFIX, PRIVATE_NAME, MAX_STORED_BYTES, storageRoot, ensureStorage, assertStorageReady, initializeStorage, validateRaster, writeImage, readPrivateImage, readLibraryImage, guardStaticMedia };

@@ -30,7 +30,7 @@ async function main(argv) {
     await service.reconcileCapacity();
     process.stdout.write('Local AI indexes ready; safe terminal admission slots reconciled; all history retained.\n');
   } else if (command === 'grant-capability') {
-    if (![CAP.use, CAP.manage, 'chat.conversation.read', 'chat.conversation.write'].includes(argument)) throw problem('unsupported_capability');
+    if (![CAP.use, CAP.manage, CAP.importShared, 'chat.conversation.read', 'chat.conversation.write'].includes(argument)) throw problem('unsupported_capability');
     const user = await User.findById(subject).select('name').lean();
     if (!user) throw problem('user_not_found', 404);
     await Role.updateOne({ name: user.name, type: 'user' }, { $addToSet: { permissions: argument } }, { upsert: true });
@@ -43,7 +43,7 @@ async function main(argv) {
     if (!result.matchedCount) throw problem('coordinator_changed', 409);
     process.stdout.write('Terminated coordinator fenced; existing manifest retained.\n');
   } else if (command === 'issue-token') {
-    const token = await service.issueToken(subject, argument || 'local-tool');
+    const token = await service.issueToken(subject, argument || 'local-tool', 30, proof === '--shared-import' ? [CAP.use, CAP.importShared] : [CAP.use]);
     process.stdout.write(JSON.stringify(token) + '\n');
   } else if (command === 'revoke-token') {
     if (!ID.test(subject)) throw problem('invalid_token_id');

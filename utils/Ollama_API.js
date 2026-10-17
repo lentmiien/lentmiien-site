@@ -1,3 +1,4 @@
+const { messageText } = require('./chat5GenerationContext');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -415,7 +416,7 @@ const convertMessageContent = ({ message, role, allowImages }) => {
       break;
   }
 
-  const text = textParts.join('\n\n');
+  const text = ['text', 'image', 'audio'].includes(type) ? messageText(message, includeImages) : textParts.join('\n\n');
   return {
     text,
     images: includeImages ? images : [],

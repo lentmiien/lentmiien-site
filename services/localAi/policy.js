@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { z } = require('zod');
-const CAP = Object.freeze({ use: 'local_ai.jobs.use', manage: 'local_ai.scheduler.manage' });
+const CAP = Object.freeze({ use: 'local_ai.jobs.use', manage: 'local_ai.scheduler.manage', importShared: 'local_ai.inputs.import_shared' });
 const BUNDLES = Object.freeze({ admin: Object.values(CAP), family: [], user: [] });
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
 const DAY = 86400000;
@@ -30,9 +30,10 @@ function safeReplacement(op) {
   return !!op && ['failed', 'interrupted', 'deferred'].includes(op.status)
     && op.termination_proven === true && ['verified', 'not_required'].includes(op.cleanup);
 }
+const inputReference = z.object({ artifact_id: z.string().regex(/^in_[a-f0-9]{32}$/), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 const textRequest = z.object({
   model: z.string().min(1).max(200),
-  messages: z.array(z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string().max(20000) }).strict()).min(1).max(100),
+  messages: z.array(z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string().max(20000), images: z.array(inputReference).min(1).max(3).optional() }).strict().refine(m => !m.images || m.role === 'user')).min(1).max(100),
   max_tokens: z.number().int().min(1).max(8192),
   temperature: z.number().min(0).max(2).optional(),
   context_tokens: z.number().int().min(512).max(131072).optional(),
@@ -70,4 +71,4 @@ function parseSubmission(input) {
 function affinity(type, request) {
   return type === 'llm.chat' ? `llm:${request.model}` : `comfy:${digest(['1', '2', '3'].map(k => ({ class_type: request.prompt[k].class_type, inputs: request.prompt[k].inputs })))}`;
 }
-module.exports = { CAP, BUNDLES, ID, problem, digest, windowAt, runWire, safeReplacement, parseSubmission, textRequest, affinity };
+module.exports = { CAP, BUNDLES, ID, problem, digest, windowAt, runWire, safeReplacement, parseSubmission, textRequest, inputReference, affinity };

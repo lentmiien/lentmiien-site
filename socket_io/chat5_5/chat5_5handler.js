@@ -1225,12 +1225,15 @@ module.exports = async function registerChat5_5Handlers({
   ////////////////////////////
   //----- Upload image -----//
   // Append to conversation //
-  socket.on('chat5-uploadImage', async (raw) => {
+  socket.on('chat5-uploadImage', async (raw, ack) => {
     const eventName = 'chat5-uploadImage';
     const adjustments = [];
     let createdNewConversation = false;
     let conversationId = 'NEW';
     let tempFilePath = null;
+    let acknowledged = false;
+    const media = require('../../services/localAi/gateway').config().media;
+    const completeUpload = value => { acknowledged = true; if (typeof ack === 'function') ack(value); };
     try {
       if (!isPlainObject(raw)) {
         respondWithError(eventName, 'Invalid payload for uploadImage.');
@@ -1245,6 +1248,16 @@ module.exports = async function registerChat5_5Handlers({
         conversationId = 'NEW';
       }
 
+      if (media) {
+        const { safeEqual } = require('../../middleware/sessionCsrf');
+        if (!safeEqual(socket.request?.session?.csrfToken, raw.csrfToken)) throw Object.assign(new Error('csrf_rejected'), { code: 'csrf_rejected' });
+        const service = require('../../services/localAi').service;
+        if (conversationId === 'NEW') {
+          conversationId = await require('../../services/localAi/chatUpload').startConversation({ service, actor: { ownerId: String(principal._id) }, key: raw.uploadKey });
+          createdNewConversation = true;
+        }
+        await service.sourceAccess({ ownerId: String(principal._id), source: { conversationId } });
+      }
       const fileName = normalizeStringOption(raw.name, '', 'name', adjustments);
       if (!fileName) {
         respondWithError(eventName, 'A file name is required for upload.', { adjustments });
@@ -1270,7 +1283,7 @@ module.exports = async function registerChat5_5Handlers({
         }
       }
 
-      if (!fileBuffer || fileBuffer.length === 0) {
+      if (!fileBuffer || fileBuffer.length === 0 || fileBuffer.length > 32 * 1024 * 1024) {
         respondWithError(eventName, 'Invalid file data provided.', { adjustments });
         return;
       }
@@ -1286,6 +1299,18 @@ module.exports = async function registerChat5_5Handlers({
       tempFilePath = path.join(TEMP_DIR, uniqueName);
 
       await fs.promises.writeFile(tempFilePath, fileBuffer);
+      if (media) {
+        const { upload } = require('../../services/localAi/chatUpload');
+        const { userMessage, artifact } = await upload({ service: require('../../services/localAi').service,
+          actor: { ownerId: String(principal._id) }, key: raw.uploadKey, conversationId, bytes: fileBuffer,
+          normalize: options => ProcessUploadedImage(tempFilePath, options) });
+        await fs.promises.unlink(tempFilePath); tempFilePath = null;
+        const payload = { id: conversationId, messages: [serializeChat5Message(userMessage)].filter(Boolean) };
+        if (createdNewConversation) socket.emit('chat5-messages', payload);
+        else io.to(convRoom).emit('chat5-messages', payload);
+        completeUpload({ ok: true, conversationId, messageId: String(userMessage._id), artifact });
+        return;
+      }
       const uploadFile = await ProcessUploadedImage(tempFilePath);
       try {
         await fs.promises.unlink(tempFilePath);
@@ -1318,8 +1343,9 @@ module.exports = async function registerChat5_5Handlers({
       }
       notifyMembers(userName, [], 'chat5-notice', { id: conversationId, title: "New Image" }, { excludeCurrentSocket: true });
       emitAdjustments(eventName, adjustments, { conversationId, createdNewConversation, fileName });
+      completeUpload({ ok: true, conversationId, messageId: String(userMessage._id), artifact: null });
     } catch (error) {
-      logger.error('Failed to upload image in chat5', error);
+      logger.error('Failed to upload image in Chat5; retry the same upload key', { category: 'local_ai', metadata: require('../../services/localAi/diagnostics').errorDiagnostic(error, 'chat5.upload') });
       if (tempFilePath) {
         try {
           await fs.promises.unlink(tempFilePath);
@@ -1327,14 +1353,17 @@ module.exports = async function registerChat5_5Handlers({
           logger.warning('Failed to cleanup temp upload file after error', cleanupError);
         }
       }
-      if (createdNewConversation && conversationId !== 'NEW') {
+      if (!media && createdNewConversation && conversationId !== 'NEW') {
         try {
           await conversationService.deleteNewConversation(conversationId);
         } catch (cleanupError) {
           logger.error('Failed to clean up conversation after upload error', cleanupError);
         }
       }
-      respondWithError(eventName, 'Failed to upload image.', { details: error.message, adjustments });
+      completeUpload({ ok: false, message: error.status === 507 ? 'Private input storage quota is full. Contact the operator, then retry the same file.' : 'Upload was not acknowledged; retry the same file before batching.' });
+      respondWithError(eventName, 'Failed to upload image.', { adjustments });
+    } finally {
+      if (!acknowledged) completeUpload({ ok: false, message: 'Upload was not acknowledged; retry the same file before batching.' });
     }
   });
 

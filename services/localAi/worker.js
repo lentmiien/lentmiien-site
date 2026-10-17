@@ -1,5 +1,5 @@
 const { randomUUID } = require('crypto');
-const { CAP, problem, windowAt, runWire, safeReplacement } = require('./policy');
+const { CAP, problem, digest, windowAt, runWire, safeReplacement } = require('./policy');
 const { config } = require('./gateway');
 const { importImage } = require('./artifacts');
 const { ownerIdentity, previousCoordinatorTerminated } = require('./coordinator');
@@ -110,10 +110,37 @@ class Worker {
         await this.controlSet({ readiness, reason: 'gateway_not_proven_idle', nextAttemptAt: new Date(+this.now() + 1800000) }); return;
       }
       operation = 'gateway.admission_clock';
-      const { capabilities: caps, clock } = await this.gateway.admissionClock();
+      let { capabilities: caps, clock } = await this.gateway.admissionClock();
       if (caps.protocol !== 'durable-local-ai' || caps.version !== 1 || !caps.enabled || !caps.constraints?.seal_required) throw problem('gateway_protocol_unavailable', 503);
       // Oldest affinity gets a bounded cohort; other affinities retain their age for fairness.
-      const selected = await this.db.Job.find({ ...due, affinity: first.affinity }).sort({ createdAt: 1, slot: 1 }).limit(Math.max(1, Math.min(8, current.cohortLimit || 8))).lean();
+      let selected = await this.db.Job.find({ ...due, affinity: first.affinity }).sort({ createdAt: 1, slot: 1 }).limit(Math.max(1, Math.min(8, current.cohortLimit || 8))).lean();
+      if (first.schemaVersion === 2) {
+        // Stage complete known immutable inputs before reserving a generation
+        // cohort. Failed/lost transfers cannot start execution.
+        const prepared = [];
+        for (const job of selected) {
+          await this.guard();
+          try { await this.service.validateFrozen(job); }
+          catch (error) {
+            if (![401, 403, 409, 413, 422].includes(error.status)) throw error;
+            await this.jobSet(job, { state: 'needs_review', reason: error.code || 'input_policy_rejected' });
+            this.warn('Local AI frozen media job requires review before export', { jobId: job._id, code: error.code || 'input_policy_rejected' });
+            continue; // No run/manifest exists yet; no declared cohort is shrunk.
+          }
+          await this.service.inputs.stage(job); prepared.push(job);
+        }
+        selected = prepared;
+        if (!selected.length) return;
+        const capacity = await this.gateway.capacity();
+        const reservation = caps.schema2?.operation_reservation_bytes;
+        if (!Number.isSafeInteger(reservation) || reservation < 35717120
+          || !Number.isSafeInteger(capacity.available_bytes) || !Number.isSafeInteger(capacity.remaining_records)) throw problem('gateway_capacity_unavailable', 503);
+        const count = Math.min(selected.length, capacity.remaining_records - 1, Math.floor((capacity.available_bytes - 1048576) / reservation));
+        if (count < 1) throw problem('gateway_cohort_storage_quota', 507);
+        selected = selected.slice(0, count);
+        // Uploads/catalog probes can take minutes: never reuse their old Date.
+        ({ capabilities: caps, clock } = await this.gateway.admissionClock());
+      }
       const wire = boundedRunWire(manual ? 'manual' : 'automatic', this.now(), clock, this.gateway.monotonic(), current.manualDeadline, current.manualGatewayDeadline);
       if (manual && !current.manualGatewayDeadline) {
         // Anchor before creating the first immutable wire, even if we crash here.
@@ -156,11 +183,13 @@ class Worker {
       const jobs = await this.db.Job.find({ runId: run._id }).sort({ createdAt: 1, slot: 1 }).lean();
       const manifest = jobs.map(job => {
         const previous = job.attempts.filter(a => a.remote).at(-1);
-        const body = { logical_job_id: job._id, type: job.type, request: job.request };
+        const body = { ...(job.schemaVersion === 2 ? { schema_version: 2 } : {}), logical_job_id: job._id, type: job.type, request: job.request };
         if (previous) body.retry_of = previous.id;
         return { jobId: job._id, id: randomUUID(), body };
       });
-      await this.runSet(run, { manifest, state: 'uploading' });
+      const media = manifest.some(e => e.body.schema_version === 2);
+      if (media && manifest.some(e => e.body.schema_version !== 2)) throw problem('mixed_schema_manifest', 503);
+      await this.runSet(run, { manifest, ...(media ? { wire: { ...run.wire, schema_version: 2, operation_ids: manifest.map(e => e.id) } } : {}), state: 'uploading' });
     }
     // Manifest is immutable after this point, including optional request-field presence.
     for (const entry of run.manifest) {
@@ -245,7 +274,15 @@ class Worker {
       const beforeSeal = await this.guard();
       const fresh = await this.db.Run.findById(run._id).lean();
       if (fresh.stopMode || beforeSeal.stopIntent?.runId === run._id) return;
-      await diagnosticOperation('gateway.run_seal', () => this.gateway.start(run._id));
+      let seal;
+      if (run.wire.schema_version === 2) {
+        seal = { operations: run.manifest.map(entry => {
+          const op = remote.operations.find(o => o.id === entry.id);
+          if (op.schema_version !== 2 || op.request_digest !== digest(entry.body)) throw problem('operation_digest_mismatch', 409);
+          return { operation_id: entry.id, request_digest: op.request_digest };
+        }) };
+      }
+      await diagnosticOperation('gateway.run_seal', () => this.gateway.start(run._id, seal));
       await this.runSet(run, { state: 'sealed' });
     } catch (error) {
       if ([401, 403, 409, 413, 422, 507].includes(error.status)) {

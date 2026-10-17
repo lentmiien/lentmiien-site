@@ -24,7 +24,7 @@ window.localAiBatch = (() => {
     const result = await response.json();
     if (!response.ok) {
       if (response.status < 500) sessionStorage.removeItem(storageKey);
-      const error = new Error(result.error?.code || 'Submission response uncertain; retry the same request.');
+      const error = new Error(response.status === 507 ? 'Private storage or retained-input quota is full. Contact the operator; retry with the same key after capacity is available.' : result.error?.code || 'Submission response uncertain; retry the same request.');
       error.definitive = response.status < 500;
       throw error;
     }
@@ -36,5 +36,17 @@ window.localAiBatch = (() => {
     if (!record) throw new Error('No uncertain submission in this tab.');
     return submit(JSON.parse(record.serialized));
   }
-  return { load, submit, retryPending };
+  async function upload(file, key) {
+    if (!config) await load();
+    if (!config.mediaEnabled) throw new Error('Local batch media is disabled by the operator.');
+    if (file.size > 33554432) throw new Error('Batch input limit is 32 MiB.');
+    const bytes = await file.arrayBuffer();
+    const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map(n => n.toString(16).padStart(2, '0')).join('');
+    const form = new FormData(); form.append('file', file);
+    const response = await fetch('/local-ai/api/v1/inputs', { method: 'POST', headers: { 'X-CSRF-Token': config.csrfToken, 'Idempotency-Key': key, 'X-Content-SHA256': sha256 }, body: form });
+    const result = await response.json();
+    if (!response.ok) throw new Error(response.status === 507 ? 'Private input storage quota is full; retry the same key after operator review.' : result.error?.code || 'Input response uncertain; look up the same key.');
+    return result;
+  }
+  return { load, submit, retryPending, upload };
 })();

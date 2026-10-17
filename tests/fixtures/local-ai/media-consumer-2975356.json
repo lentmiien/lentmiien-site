@@ -1,0 +1,15 @@
+{
+  "transport": {"protocol": "durable-local-ai", "version": 1},
+  "required_features": ["immutable_inputs", "ollama_image_refs"],
+  "unsupported_features": ["registered_comfy_workflows", "artifact_manifests"],
+  "upload_manifest": {"schema_version": 2},
+  "input_id": "in_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "run": {"schema_version": 2, "operation_ids": ["op_fixture"], "mode": "manual"},
+  "operation": {
+    "schema_version": 2, "logical_job_id": "job_fixture", "type": "llm.chat",
+    "request": {"model": "gemma3:12b", "messages": [{"role": "user", "content": "Describe this image.", "images": []}], "max_tokens": 128}
+  },
+  "seal": {"operations": [{"operation_id": "op_fixture", "request_digest": "SERVER_RESPONSE_DIGEST"}]},
+  "input_content_methods": ["GET", "HEAD"],
+  "maximum_operation_json_bytes": 1048576
+}

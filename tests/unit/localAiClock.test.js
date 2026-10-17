@@ -112,3 +112,14 @@ protocol('exact d566158 Gateway router and SQLite journal (offline)', () => {
     expect(responses.at(-1)).toMatchObject({ status: 409, body: { detail: { code: 'immutable_run_conflict' } } });
   });
 });
+
+test('normal Uvicorn Date lag of 1.6 seconds remains conservatively enclosed', () => {
+  const { clockEvidence, boundedRunWire } = require('../../services/localAi/clock');
+  const actual = Date.parse('2026-10-17T17:30:01.600Z');
+  const evidence = clockEvidence({ date: 'Sat, 17 Oct 2026 17:30:00 GMT' }, actual - 30, actual, 30, 1000);
+  expect(evidence.lower).toBeLessThan(actual);
+  expect(evidence.upper).toBeGreaterThan(actual);
+  const wire = boundedRunWire('automatic', new Date(actual), evidence, 1000);
+  expect(+new Date(wire.not_before)).toBeGreaterThan(actual);
+  expect(+new Date(wire.deadline)).toBeLessThan(Date.parse('2026-10-17T21:00:00Z'));
+});

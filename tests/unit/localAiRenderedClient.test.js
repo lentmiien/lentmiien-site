@@ -10,13 +10,13 @@ const models = ['smollm2:360m', 'qwen3:0.6b', 'cydonia:24b-q6'].map(api_model =>
 const metadata = { model: models[0].api_model, contextPrompt: '', maxMessages: 25, tools: [], reasoning: 'none', mode: 'standard', verbosity: 'medium', outputFormat: 'text' };
 const base = { loggedIn: true, permissions: ['chat5'], htmlPaths: [], bookmarks: [] };
 let dom, requests, reply;
-async function render(page, locals, enabled = true) {
+async function render(page, locals, enabled = true, mediaEnabled = false) {
   dom = new JSDOM(pug.renderFile(page, { ...base, ...locals }), { url: 'https://site.test/chat5/chat/' + id, runScripts: 'outside-only' });
   await new Promise(resolve => dom.window.addEventListener('load', resolve, { once: true }));
   requests = [];
   reply = async () => ({ ok: true, status: 202, json: async () => ({ id: 'job', url: '/local-ai/queue/job' }) });
   dom.window.fetch = jest.fn(async (url, options = {}) => {
-    if (url === '/local-ai/api/v1/config') return { ok: true, headers: { get: () => 'application/json' }, json: async () => ({ enabled, ownerId: 'synthetic-owner', csrfToken: 'test-csrf' }) };
+    if (url === '/local-ai/api/v1/config') return { ok: true, headers: { get: () => 'application/json' }, json: async () => ({ enabled, mediaEnabled, ownerId: 'synthetic-owner', csrfToken: 'test-csrf' }) };
     if (url === '/local-ai/api/v1/jobs') { requests.push(options); return reply(); }
     if (url === '/image_gen/api/workflows') return { ok: true, headers: { get: () => 'application/json' }, json: async () => ({ workflows: [{ key: 'qwen', name: 'Qwen' }, { key: 'uncensored', name: 'Qwen uncensored' }, { key: 'edit', name: 'Unsupported edit' }] }) };
     if (url.startsWith('/image_gen/api/workflows/')) {
@@ -31,11 +31,11 @@ async function render(page, locals, enabled = true) {
   return dom.window;
 }
 function script(name) { dom.window.eval(fs.readFileSync('public/js/' + name, 'utf8')); }
-async function chat({ conversationId = id, source = 'conversation5', settings = {}, enabled = true } = {}) {
+async function chat({ conversationId = id, source = 'conversation5', settings = {}, enabled = true, mediaEnabled = false } = {}) {
   const window = await render('views/chat5_chat.pug', {
     conversation: { _id: conversationId, title: 'Synthetic conversation', summary: '', category: 'test', tags: [], members: ['test'], messages: [], metadata: { ...metadata, ...settings } },
     conversationSource: source, messages: [], chat_models: models, templates: [], personalities: [], responseTypes: [], ttsVoices: {},
-  }, enabled);
+  }, enabled, mediaEnabled);
   window.chatModels = models;
   window.io = () => ({ on: () => {}, emit: () => {} });
   window.toastui = { Editor: class { on() {} getMarkdown() { return 'synthetic prompt'; } } };
@@ -136,4 +136,32 @@ test('image request remains frozen and disabled through workflow changes until i
   resolve({ ok: true, status: 202, json: async () => ({ url: '/local-ai/queue/job' }) }); await flush();
   expect(button.disabled).toBe(true); expect(requests[0].body).toBe(body);
   expect(() => parseSubmission(JSON.parse(body))).not.toThrow();
+});
+
+
+test('real rendered upload handler blocks batch through FileReader and server ack, then sends refs via trusted history', async () => {
+  const { window, button, status } = await chat({ mediaEnabled: true });
+  Object.defineProperty(window.crypto, 'subtle', { value: require('crypto').webcrypto.subtle });
+  const input = window.document.getElementById('fileInput');
+  let selected = [new window.File(['synthetic image bytes'], 'image.png')];
+  Object.defineProperty(input, 'files', { configurable: true, get: () => selected });
+  Object.defineProperty(input, 'value', { configurable: true, set: value => { if (value === '') selected = []; } });
+  let acknowledge;
+  window.socket.emit = jest.fn((event, payload, ack) => {
+    if (event === 'chat5-uploadImage') { expect(payload.csrfToken).toBe('test-csrf'); expect(payload.uploadKey).toBeTruthy(); acknowledge = ack; }
+  });
+  input.dispatchEvent(new window.Event('change'));
+  expect(button.disabled).toBe(true); button.dispatchEvent(new window.Event('click')); await flush(); expect(requests).toHaveLength(0);
+  for (let i = 0; i < 30 && !acknowledge; i++) await new Promise(resolve => setTimeout(resolve, 5));
+  expect(acknowledge).toBeDefined(); expect(status.textContent).toContain('acknowledged');
+  expect(Object.keys(window.sessionStorage).some(k => k.startsWith('chat5-upload-pending:'))).toBe(true);
+  button.dispatchEvent(new window.Event('click')); await flush(); expect(requests).toHaveLength(0);
+  acknowledge({ ok: true, artifact: { artifact_id: 'in_' + 'a'.repeat(32) } }); await flush();
+  expect(button.disabled).toBe(false); button.click(); await flush(); expect(requests).toHaveLength(1);
+  expect(Object.keys(window.sessionStorage).some(k => k.startsWith('chat5-upload-pending:'))).toBe(false);
+  expect(JSON.stringify(window.sessionStorage)).not.toContain('synthetic image bytes');
+  window.sessionStorage.setItem('chat5-upload-pending:uncertain', id);
+  window.chat5UploadBarrier.failed = true;
+  window.dispatchEvent(new window.Event('chat5-upload-state'));
+  expect(button.disabled).toBe(true);
 });

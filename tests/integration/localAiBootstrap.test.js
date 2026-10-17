@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 require('../../database');
 const { service, worker } = require('../../services/localAi');
 const logger = require('../../utils/logger');
-const { Job, Run, Control, Token } = service.db;
+const { Job, Run, Control, Token, Input, InputQuota } = service.db;
 const suite = process.env.LOCAL_AI_TEST_MONGO_URI ? describe : describe.skip;
 const settle = async () => {
   const deadline = Date.now() + 5000;
@@ -34,7 +34,7 @@ suite('actual Local AI bootstrap with preconnection model compilation and standa
   });
   beforeEach(async () => {
     worker.stop(); service.initializing = null;
-    await Promise.all([Job, Run, Control, Token].map(model => model.deleteMany({})));
+    await Promise.all([Job, Run, Control, Token, Input, InputQuota].map(model => model.deleteMany({})));
     commands.length = 0;
   });
   afterAll(async () => {
@@ -53,6 +53,11 @@ suite('actual Local AI bootstrap with preconnection model compilation and standa
     expect(await Control.countDocuments()).toBe(1);
     expect((await Control.findById('scheduler')).fence).toBe(2);
     expect(await Job.findById('accepted-history').lean()).toMatchObject({ key: 'same-key', digest: 'same-digest', request: { frozen: 'synthetic' }, result: { text: 'synthetic retained result' } });
+    for (const model of [Input, InputQuota]) {
+      expect(model.schema.options.autoCreate).toBe(false); expect(model.schema.options.autoIndex).toBe(false);
+      expect(model.schema.options.bufferCommands).toBe(false);
+    }
+    expect((await Input.collection.indexes()).find(index => index.key.ownerId && index.key.key)).toMatchObject({ unique: true });
     const indexes = await Job.collection.indexes();
     for (const [name, field] of [['admission_slot_unique', 'slot'], ['admission_owner_slot_unique', 'ownerSlot']]) {
       expect(indexes.find(index => index.name === name)).toMatchObject({ unique: true, partialFilterExpression: { [field]: { $type: 'number' } } });
