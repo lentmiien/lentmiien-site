@@ -13,7 +13,7 @@ class Gateway {
     this.http = http; this.getConfig = getConfig; this.now = now; this.monotonic = monotonic;
   }
   configured() { const c = this.getConfig(); return c.token.length >= 32 && ID.test(c.client); }
-  async request(method, path, data, binary = false, clock = false, multipart = false) {
+  async request(method, path, data, binary = false, clock = false, multipart = false, authority = {}) {
     const c = this.getConfig();
     if (!this.configured()) throw problem('batch_auth_unconfigured', 503);
     let url;
@@ -24,7 +24,7 @@ class Gateway {
     try {
       response = await this.http.request({ method, url: new URL(path, url).href, data,
         headers: { Authorization: `Bearer ${c.token}`, 'X-Batch-Client': c.client,
-          ...(multipart ? data.getHeaders() : {}),
+          ...authority, ...(multipart ? data.getHeaders() : {}),
           ...(clock ? { 'Cache-Control': 'no-cache, no-store', Pragma: 'no-cache' } : {}) },
         timeout: multipart || binary ? 65000 : 15000, maxRedirects: 0, maxBodyLength: multipart ? 33554432 + 65536 : 1048576,
         maxContentLength: binary ? 33554432 : 20 * 1024 * 1024,
@@ -35,13 +35,16 @@ class Gateway {
       if (binary === 'stream') error.response?.data?.destroy?.();
       const raw = error.response?.data?.detail?.code;
       throw Object.assign(problem(typeof raw === 'string' && /^[a-z0-9_]{1,80}$/.test(raw) ? raw : 'gateway_unreachable', error.response?.status || 502),
-        { httpStatus: error.response?.status, gatewayResponse: !!error.response });
+        { httpStatus: error.response?.status, gatewayResponse: !!error.response, retryAfter: Number(error.response?.headers?.['retry-after']) || null });
     }
     if (clock) {
       const ended = this.monotonic();
       try {
         return { capabilities: response.data, clock: clockEvidence(response.headers, sent, this.now(), ended - started, ended) };
       } catch (error) { error.httpStatus = response.status; throw error; }
+    }
+    if (!binary && response.data && typeof response.data === 'object') {
+      Object.defineProperty(response.data, '_timing', { value: { received: this.monotonic(), rtt: this.monotonic() - started }, enumerable: false });
     }
     return binary ? response : response.data;
   }
@@ -64,10 +67,10 @@ class Gateway {
   readiness() { return this.request('GET', '/batch/readiness'); }
   catalog() { return this.request('GET', '/llm/models'); }
   run(id) { return this.request('GET', `/batch/runs/${id}`); }
-  putRun(id, body) { return this.request('PUT', `/batch/runs/${id}`, body); }
-  putOperation(run, id, body) { return this.request('PUT', `/batch/runs/${run}/operations/${id}`, body); }
-  start(id, body) { return this.request('POST', `/batch/runs/${id}/start`, body); }
-  stop(id, mode) { return this.request('POST', `/batch/runs/${id}/stop`, { mode }); }
+  putRun(id, body, headers) { return this.request('PUT', `/batch/runs/${id}`, body, false, false, false, headers); }
+  putOperation(run, id, body, headers) { return this.request('PUT', `/batch/runs/${run}/operations/${id}`, body, false, false, false, headers); }
+  start(id, body, headers) { return this.request('POST', `/batch/runs/${id}/start`, body, false, false, false, headers); }
+  stop(id, mode, headers) { return this.request('POST', `/batch/runs/${id}/stop`, { mode }, false, false, false, headers); }
   ack(id, result_digest) { return this.request('POST', `/batch/operations/${id}/ack`, { result_digest }); }
   artifact(operation, id) {
     if (!ID.test(operation) || !/^out_[a-f0-9]{32}_\d+$/.test(id)) throw problem('invalid_artifact_id');

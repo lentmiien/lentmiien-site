@@ -41,6 +41,9 @@ function createRouter({ service, worker }, { machine = false } = {}) {
     router.use((req, res, next) => ['GET', 'HEAD'].includes(req.method) ? next() : csrf.requireToken(req, res, next));
   }
   const api = machine ? '' : '/api/v1';
+  const sessionStatus = async control => control?.activeSession
+    ? require('../services/localAi/sessions').publicSession(await service.db.Session.findById(control.activeSession).lean())
+    : control?.lastSession || null;
   const serialize = (job, control) => ({ ...publicJob(job, control), artifacts: publicJob(job, control).artifacts.map(a => ({ ...a, url: `${machine ? '/api/local-ai/v1' : '/local-ai/api/v1'}/jobs/${job._id}/outputs/${a.slot}` })), result_url: `${machine ? '/api/local-ai/v1' : '/local-ai/api/v1'}/jobs/${job._id}/result` });
   const wrap = fn => async (req, res, next) => { try { await fn(req, res); } catch (error) { next(error); } };
   router.get(`${api}/workflows`, wrap(async (req, res) => res.json(await service.workflows.catalog())));
@@ -73,7 +76,7 @@ function createRouter({ service, worker }, { machine = false } = {}) {
     if (!Number.isInteger(offset) || offset < 0 || offset > 1000) throw problem('invalid_offset');
     const jobs = await service.db.Job.find({ ownerId: req.localAiActor.ownerId }).sort({ createdAt: -1, _id: -1 }).skip(offset).limit(50).lean();
     const control = await service.db.Control.findById('scheduler').lean();
-    res.json({ jobs: jobs.map(job => serialize(job, control)), next_offset: jobs.length === 50 ? offset + 50 : null });
+    res.json({ session: await sessionStatus(control), jobs: jobs.map(job => serialize(job, control)), next_offset: jobs.length === 50 ? offset + 50 : null });
   }));
   router.get(`${api}/jobs/:id`, wrap(async (req, res) => res.json(serialize(await service.get(req.localAiActor, req.params.id), await service.db.Control.findById('scheduler').lean()))));
   router.get(`${api}/jobs/:id/result`, wrap(async (req, res) => {
@@ -95,11 +98,11 @@ function createRouter({ service, worker }, { machine = false } = {}) {
     router.get('/queue', wrap(async (req, res) => {
       const jobs = await service.db.Job.find({ ownerId: req.localAiActor.ownerId }).sort({ createdAt: -1 }).limit(100).lean();
       const control = await service.db.Control.findById('scheduler').lean();
-      res.render('local_ai_queue', { jobs: jobs.map(job => publicJob(job, control)), job: null, config: { enabled: config().enabled, auto: config().auto } });
+      res.render('local_ai_queue', { jobs: jobs.map(job => publicJob(job, control)), job: null, session: await sessionStatus(control), config: { enabled: config().enabled, auto: config().auto } });
     }));
     router.get('/queue/:id', wrap(async (req, res) => {
       const job = await service.get(req.localAiActor, req.params.id);
-      res.render('local_ai_queue', { jobs: [], job: { ...publicJob(job, await service.db.Control.findById('scheduler').lean()), request: job.request, result: job.published ? job.result : null }, config: { enabled: config().enabled, auto: config().auto } });
+      res.render('local_ai_queue', { session: await sessionStatus(await service.db.Control.findById('scheduler').lean()), jobs: [], job: { ...publicJob(job, await service.db.Control.findById('scheduler').lean()), request: job.request, result: job.published ? job.result : null }, config: { enabled: config().enabled, auto: config().auto } });
     }));
     router.get('/api/v1/config', wrap(async (req, res) => {
       let workflowEnabled = false, workflowReason = null;
@@ -117,7 +120,19 @@ function createRouter({ service, worker }, { machine = false } = {}) {
       const control = await service.db.Control.findById('scheduler').lean();
       const run = control?.activeRun ? await service.db.Run.findById(control.activeRun).lean() : null;
       const activities = await service.gateway.request('GET', '/batch/activities').catch(() => ({ error: 'gateway_unreachable' }));
-      res.json({ enabled: config().enabled, auto: config().auto, reason: control?.reason, next_attempt_at: control?.nextAttemptAt, manual_deadline: control?.manualDeadline, manual_requested_at: control?.manualRequestedAt,
+      const rows = await service.db.Job.aggregate([{ $match: { slot: { $type: 'number' } } }, { $group: {
+        _id: '$state', count: { $sum: 1 }, blocked: { $sum: { $cond: [{ $or: [
+          { $eq: ['$state', 'needs_review'] }, { $eq: ['$reason', 'cohort_preparation_blocked'] }, { $gt: ['$blockedUntil', new Date()] },
+        ] }, 1, 0] } }, eligible: { $sum: { $cond: [{ $and: [
+          { $eq: ['$state', 'queued'] }, { $eq: ['$runId', null] },
+          ...(!config().media ? [{ $ne: ['$schemaVersion', 2] }] : []),
+          { $or: [{ $eq: [{ $ifNull: ['$blockedUntil', null] }, null] }, { $lte: ['$blockedUntil', new Date()] }] },
+          ...(control?.manualDeadline > new Date() ? [] : [{ $lte: ['$nextAttemptAt', new Date()] }]),
+        ] }, 1, 0] } },
+      } }]);
+      const counts = { intakes: control?.intakes?.length || 0, ...Object.fromEntries(rows.map(row => [row._id, row.count])),
+        blocked: rows.reduce((sum, row) => sum + row.blocked, 0), remaining_eligible: rows.reduce((sum, row) => sum + row.eligible, 0) };
+      res.json({ session: await sessionStatus(control), counts, enabled: config().enabled, auto: config().auto, reason: control?.reason, next_attempt_at: control?.nextAttemptAt, manual_deadline: control?.manualDeadline, manual_requested_at: control?.manualRequestedAt,
         readiness: control?.readiness, coordinator: control ? { holder: control.holder, host: control.ownerHost, pid: control.ownerPid, lease_until: control.leaseUntil } : null, suppressed_window: control?.suppressedWindow,
         run: run ? { id: run._id, mode: run.wire.mode, deadline: run.wire.deadline, state: run.state,
           remote_status: run.remote?.status, admission: run.admission?.state || (run.remote ? 'accepted' : 'unconfirmed'),
@@ -127,7 +142,7 @@ function createRouter({ service, worker }, { machine = false } = {}) {
           completed_operations: run.remote?.operations?.filter(op => op.status === 'succeeded').length || 0 } : null, activities });
     }));
     router.post('/api/v1/scheduler/:action', admin, wrap(async (req, res) => {
-      await worker.manage(req.localAiActor, req.params.action);
+      await worker.manage(req.localAiActor, req.params.action, req.params.action === 'start' ? req.get('Idempotency-Key') : undefined);
       res.status(202).json({ accepted: true });
     }));
   }

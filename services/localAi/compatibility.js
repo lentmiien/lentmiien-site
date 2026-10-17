@@ -1,6 +1,7 @@
 const { problem } = require('./policy');
 async function assertRollbackCompatible(db, target) {
   if (!['v1', 'phase1'].includes(target)) throw problem('invalid_rollback_target');
+  if ((db.Session && await db.Session.exists({})) || (db.SessionRequest && await db.SessionRequest.exists({}))) throw problem('rollback_requires_site_sessions', 409);
   // Inspect retained content as well as unfinished work. Flags and successful
   // ACKs do not make an older reader understand a newer record or private file.
   const workflow = await db.Job.exists({ $or: [{ type: 'comfy.workflow' }, { 'result.artifacts.0': { $exists: true } }] });

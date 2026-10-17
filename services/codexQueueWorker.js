@@ -880,6 +880,7 @@ class CodexQueueWorker {
 
     let batchActivity = null;
     let batchTerminationProven = false;
+    let batchRunnerEntered = false;
     try {
       if (usesOllama) {
         batchActivity = await this.batchActivity.begin(String(turn._id), this.workerId);
@@ -901,6 +902,7 @@ class CodexQueueWorker {
           severity: 'info',
         });
       }
+      batchRunnerEntered = true;
       const result = await this.runner.runTurn({
         turn,
         session,
@@ -1025,7 +1027,7 @@ class CodexQueueWorker {
           },
         });
       });
-      await this.batchActivity.finish(batchActivity, batchTerminationProven).catch(error => {
+      await this.batchActivity.finish(batchActivity, batchTerminationProven || !batchRunnerEntered).catch(error => {
         logger.warning('Codex durable activity release pending reconciliation', { category: 'local_ai', metadata: { turnId: String(turn._id), code: error.code || 'storage_failure' } });
       });
       this.activeTurns.delete(String(turn._id));

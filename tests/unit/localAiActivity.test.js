@@ -22,7 +22,8 @@ describe('durable Codex activity ownership', () => {
   test('registration failure fails closed and no guessed release follows', async () => {
     gateway.request.mockRejectedValueOnce(new Error('batch_active'));
     await expect(activity.begin('turn', 'coordinator')).rejects.toThrow('batch_active');
-    expect(turnModel.findOneAndUpdate).toHaveBeenCalledTimes(1); expect(gateway.request).toHaveBeenCalledTimes(1);
+    expect(turnModel.findOneAndUpdate).toHaveBeenCalledTimes(1); expect(gateway.request).toHaveBeenCalledTimes(2);
+    expect(gateway.request).toHaveBeenLastCalledWith('GET', '/batch/activities');
   });
   test('SSH loss or unproven children retain ownership; heartbeat expiry never releases', async () => {
     jest.useFakeTimers(); const state = await activity.begin('turn', 'coordinator');
@@ -30,6 +31,12 @@ describe('durable Codex activity ownership', () => {
     await activity.finish(state, false);
     expect(gateway.request.mock.calls.some(c => c[1].endsWith('/release'))).toBe(false);
     expect(turnModel.updateOne).toHaveBeenLastCalledWith(expect.any(Object), { $set: { 'batchActivity.state': 'needs_review' } }, expect.any(Object));
+  });
+  test('definitive session busy leaves no ghost active activity or guessed release', async () => {
+    gateway.request.mockRejectedValueOnce(Object.assign(new Error('busy'), { code: 'gpu_batch_session_busy', httpStatus: 409 }));
+    await expect(activity.begin('turn', 'coordinator')).rejects.toThrow('GPU is reserved');
+    expect(turnModel.updateOne).toHaveBeenCalledWith(expect.objectContaining({ 'batchActivity.state': 'registering' }), { $set: { 'batchActivity.state': 'not_admitted', 'batchActivity.terminationProven': true } }, expect.any(Object));
+    expect(gateway.request).toHaveBeenCalledTimes(1);
   });
   test('disabled feature leaves existing launch path alone', async () => {
     process.env.LOCAL_AI_BATCH_ENABLED = 'false'; expect(await activity.begin('turn', 'coordinator')).toBeNull(); expect(gateway.request).not.toHaveBeenCalled();

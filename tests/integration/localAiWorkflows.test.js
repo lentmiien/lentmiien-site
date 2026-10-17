@@ -19,6 +19,7 @@ const policies = require('../fixtures/local-ai/workflows-8105a1b.json');
 const mapper = require('../../public/js/local-ai-workflows');
 const suite = process.env.LOCAL_AI_TEST_MONGO_URI && process.env.LOCAL_AI_GATEWAY_SOURCE && process.env.LOCAL_AI_PROTOCOL_PYTHON ? describe : describe.skip;
 suite('registered workflow durability and private HTTP with real Mongo and exact CPU Gateway output fixtures', () => {
+  let sessionFixture;
   const env = { ...process.env };
   let root, fixtures, service, gateway, worker, actor, user, other, server, origin, runs, fault, calls;
   const clock = new Date('2026-10-17T17:30:00Z');
@@ -66,12 +67,14 @@ suite('registered workflow durability and private HTTP with real Mongo and exact
     };
     // Real clock evidence shape; no production clock/Gateway queried.
     gateway.admissionClock = async () => ({ capabilities: await gateway.capabilities(), clock: require('../../services/localAi/clock').clockEvidence({ date: clock.toUTCString() }, +clock, +clock, 0, 100) });
+    sessionFixture = require('../helpers/localAiSessionGateway').installObject(gateway, () => clock);
     service = new LocalAiService({ gateway }); await service.initialize();
     const app = express(); app.set('view engine', 'pug'); app.set('views', path.resolve(__dirname, '../../views')); app.use((req, res, next) => { req.isAuthenticated = () => true; req.user = user; req.session = { csrfToken: 's'.repeat(43) }; next(); });
     app.use('/local-ai', createRouter({ service, worker: {} })); app.use('/api/local-ai/v1', createRouter({ service, worker: {} }, { machine: true }));
     server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); }); origin = `http://127.0.0.1:${server.address().port}`;
   }, 90000);
   beforeEach(async () => {
+    sessionFixture.reset();
     await Promise.all([...Object.values(db), User, Role].map(m => m.deleteMany({})));
     await fs.rm(path.join(root, 'outputs'), { recursive: true, force: true });
     process.env.LOCAL_AI_OUTPUT_DATA_DIR = path.join(root, 'outputs'); process.env.LOCAL_AI_INPUT_DATA_DIR = path.join(root, 'inputs');

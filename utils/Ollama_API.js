@@ -1773,6 +1773,7 @@ const postChatPayload = async (payload, functionName) => {
     });
     return normalizedResponse;
   } catch (error) {
+    if (require('../services/localAi/busy').sessionBusy(error)) { error.message = require('../services/localAi/busy').MESSAGE; throw error; }
     if (shouldRetryWithToolRoleFallback(error, payload)) {
       const fallbackPayload = {
         ...payload,
@@ -1895,6 +1896,7 @@ const postChatJobPayload = async (payload, functionName, options = {}) => {
   try {
     return await sendChatJobPayload(payload, functionName, options);
   } catch (error) {
+    if (require('../services/localAi/busy').sessionBusy(error)) { error.message = require('../services/localAi/busy').MESSAGE; throw error; }
     if (shouldRetryWithToolRoleFallback(error, payload)) {
       const fallbackPayload = {
         ...payload,

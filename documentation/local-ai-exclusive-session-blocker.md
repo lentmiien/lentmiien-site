@@ -1,7 +1,12 @@
-# Exclusive batch sessions: continuing-coordinator restart blocker
+# Exclusive batch sessions: historical continuing-coordinator restart blocker
 
-Status on 2026-10-17: **the Site exclusive-session release is not implemented or
-ready for rollout**. This change adds an executable protocol reproduction and
+The blocker below is fixed by Gateway `e20a437775bcf292d062d987c7850cd7d63a2a1a`.
+The old-pin reproduction remains intentionally unchanged. Current Site implementation,
+initialization and rollout instructions are in [the session runbook](local-ai-exclusive-sessions.md).
+The historical status and evidence below describe diagnostic commit `cb575ae` only.
+
+Historical status at diagnostic commit `cb575ae`: **the Site exclusive-session release was not implemented or
+ready for rollout**. That diagnostic change adds an executable protocol reproduction and
 this report only. It does not add a session coordinator, persistence models,
 caller handling, UI, configuration or migration. Existing v1/v2 Site behavior
 and accepted history are unchanged.

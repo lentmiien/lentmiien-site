@@ -19,6 +19,17 @@ html(lang='en')
       h1 Local AI queue
       p Durable local generation, 01:00–06:00 Asia/Tokyo. Completed outputs are collected at any time. Every prompt uses an independent frozen snapshot.
       p= config.enabled ? (config.auto ? 'Automatic dispatch enabled.' : 'Automatic dispatch disabled; reconciliation remains active.') : 'New submissions disabled; reconciliation remains active.'
+      if typeof session !== 'undefined' && session
+        section.session-panel(aria-label='GPU session')
+          h2 GPU session
+          p= `${session.state === 'held' ? 'GPU reserved across cohorts' : ['closing', 'stopping', 'release_failed'].includes(session.state) ? 'Release pending (' + session.state + ')' : session.state.replace(/_/g, ' ')}`
+          p= `Deadline: ${session.deadline || 'Pending'} · Lease: ${session.lease_deadline || 'Not acquired'} · Cohort: ${session.cohort || 0}`
+          if !job
+            p= `Your displayed jobs: ${jobs.filter(j => j.state === 'queued').length} queued · ${jobs.filter(j => ['claimed', 'exporting'].includes(j.state)).length} staging · ${jobs.filter(j => j.state === 'needs_review' || j.reason === 'cohort_preparation_blocked').length} blocked · ${jobs.filter(j => j.state === 'collecting').length} collecting`
+          if session.reason
+            p= session.reason
+          if session.next_attempt_at
+            p= `Retry ${session.retry_stage}: ${session.next_attempt_at}`
       p#local-ai-status(role='status')
       if job
         h2= job.type

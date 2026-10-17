@@ -501,6 +501,11 @@ class EmbeddingQueueService {
   async isGpuBusy() {
     let check = 'reservation';
     try {
+      if (require('../middleware/databaseReadiness').isDatabaseReady()) {
+        check = 'batch_session';
+        const session = await require('../models/local_ai').Session.findOne({ activeSlot: 1 }).select('state remote').lean();
+        if (session?.remote && session.state !== 'released') return true;
+      }
       const rawReservation = await this.getReservation();
       const reservation = normalizeAiGatewayReservation(rawReservation);
       if (typeof reservation?.active !== 'boolean') throw new Error('AI Gateway reservation state is unknown.');
@@ -1226,6 +1231,7 @@ class EmbeddingQueueService {
   }
 
   async processClaimedJob(job) {
+    let remoteAttemptStarted = false;
     try {
       if (job.operation === 'delete') {
         const verifySourceState = job.options?.verifySourceState !== false;
@@ -1273,6 +1279,7 @@ class EmbeddingQueueService {
         return 'superseded';
       }
       job = attemptedJob;
+      remoteAttemptStarted = true;
 
       const response = job.mode === 'high_quality'
         ? await this.embeddingService.embedHighQuality(
@@ -1313,6 +1320,16 @@ class EmbeddingQueueService {
       });
       return completed ? 'completed' : 'superseded';
     } catch (error) {
+      if (require('./localAi/busy').sessionBusy(error)) {
+        // Gateway's exact 409 is definitive nonadmission. Undo only this claim's
+        // provisional execution attempt; a newer source revision must win.
+        await this.jobModel.updateOne(this.claimFilter(job), {
+          $set: { status: 'pending', retryable: true, completedAt: null,
+            nextAttemptAt: new Date(+this.now() + require('./localAi/busy').retryMs(error)), lastError: null },
+          ...(remoteAttemptStarted ? { $inc: { attempts: -1 } } : {}), $unset: { claimToken: 1, leaseExpiresAt: 1, startedAt: 1 },
+        });
+        return 'deferred';
+      }
       await this.failClaim(job, error);
       return 'failed';
     }

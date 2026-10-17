@@ -26,6 +26,7 @@ const suite = process.env.LOCAL_AI_TEST_MONGO_URI ? describe : describe.skip;
 const listen = app => new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
 suite('Phase 1 immutable inputs with real standalone Mongo and bounded HTTP transport', () => {
   let root, gatewayServer, site, origin, service, actor, other, user, bytes, runs, inputs, fault, worker, model, bearer;
+  let sessionFixture;
   const env = { ...process.env };
   const clock = new Date('2026-10-17T17:30:01.600Z');
   const newWorker = () => { const w = new Worker(service, { ready: () => true, now: () => clock, terminated: async () => true }); w.running = true; return w; };
@@ -47,6 +48,7 @@ suite('Phase 1 immutable inputs with real standalone Mongo and bounded HTTP tran
     const app = express(); app.use(express.json());
     app.use((req, res, next) => { res.set('Date', 'Sat, 17 Oct 2026 17:30:00 GMT');
       if (req.get('Authorization') !== `Bearer ${process.env.BATCH_SERVER_TOKEN}` || req.get('X-Batch-Client') !== 'site-test') return res.sendStatus(401); next(); });
+    sessionFixture = require('../helpers/localAiSessionGateway').installHttp(app, () => new Date('2026-10-17T17:30:00Z'));
     app.get('/llm/models', (_req, res) => res.json({ models: [model] }));
     app.get('/batch/capabilities', (_req, res) => res.json({ ...fixture.transport, enabled: true, constraints: { seal_required: true },
       operation_schema_versions: [1, 2], features: { immutable_inputs: true, ollama_image_refs: true, shared_library_import: true },
@@ -107,6 +109,9 @@ suite('Phase 1 immutable inputs with real standalone Mongo and bounded HTTP tran
     site = await listen(siteApp); origin = `http://127.0.0.1:${site.address().port}`;
   });
   beforeEach(async () => {
+    sessionFixture.reset();
+    await require('../../models/local_ai').Session.deleteMany({});
+    await require('../../models/local_ai').SessionMutation.deleteMany({});
     await Promise.all([...Object.values(db), User, Role, Conversation, Message, Card].map(m => m.deleteMany({})));
     user = await User.create({ name: 'owner', email: 'synthetic@example.test', type_user: 'admin', hash_password: 'unused' });
     other = await User.create({ name: 'other', email: 'other@example.test', type_user: 'admin', hash_password: 'unused' });

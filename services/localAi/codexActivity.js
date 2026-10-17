@@ -12,7 +12,21 @@ class CodexActivity {
     const association = { id: `codex_${randomUUID()}`, coordinatorId, generation: 1, state: 'registering' };
     const turn = await this.Turn.findOneAndUpdate({ _id: turnId, batchActivity: null }, { $set: { batchActivity: association } }, { returnDocument: 'after', ...DURABLE }).lean();
     if (!turn) throw problem('codex_activity_requires_reconciliation', 409);
-    const activity = await this.gateway.request('PUT', `/batch/activities/${association.id}`, { coordinator_id: coordinatorId });
+    let activity;
+    try { activity = await this.gateway.request('PUT', `/batch/activities/${association.id}`, { coordinator_id: coordinatorId }); }
+    catch (error) {
+      if (require('./busy').sessionBusy(error)) {
+        await this.Turn.updateOne({ _id: turnId, 'batchActivity.id': association.id, 'batchActivity.state': 'registering' },
+          { $set: { 'batchActivity.state': 'not_admitted', 'batchActivity.terminationProven': true } }, DURABLE);
+        error.message = require('./busy').MESSAGE;
+        throw error;
+      }
+      // Lost registration replies retain the original activity ID. A lookup can
+      // prove admission without issuing a second GPU launch or registration.
+      const list = await this.gateway.request('GET', '/batch/activities').catch(() => null);
+      activity = list?.activities?.find(a => a.id === association.id);
+      if (!activity) throw error;
+    }
     if (activity.status !== 'active' || activity.coordinator_id !== coordinatorId || activity.generation !== 1) throw problem('activity_owner_conflict', 409);
     await this.Turn.updateOne({ _id: turnId, 'batchActivity.id': association.id }, { $set: { 'batchActivity.state': 'active' } }, DURABLE);
     let busy = false;

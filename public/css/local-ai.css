@@ -9,3 +9,5 @@ table { width: 100%; border-collapse: collapse; } td, th { padding: .7rem; text-
 
 main, dd, td { overflow-wrap: anywhere; }
 @media (max-width: 600px) { main { margin: .5rem; padding: .8rem; } table { display: block; overflow-x: auto; } td, th { padding: .4rem; } }
+
+.session-panel { background: var(--surface-1); border: 1px solid var(--border); border-left: 4px solid var(--brand); padding: 1rem; color: var(--text); }

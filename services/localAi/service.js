@@ -196,10 +196,19 @@ class LocalAiService {
       return job;
     };
     const job = await admission.admit(this.db, actor.ownerId, async slots => {
-      const created = await this.db.Job.create({ _id: id, ownerId: actor.ownerId, tokenId: actor.tokenId, key, digest: hash,
-        ...frozen, projection, ...slots, affinity: frozen.source.affinity || (frozen.schemaVersion === 2 ? `vision:${digest([this.catalogPolicy(frozen.source.catalog), Object.fromEntries(Object.entries(frozen.request).filter(([k]) => k !== 'messages'))])}` : frozen.source.catalog ? `llm:${frozen.source.catalog.upstream_model}` : affinity(frozen.type, frozen.request)),
-        nextAttemptAt: windowAt().inside ? new Date() : windowAt().next });
-      return created.toObject();
+      const intake = { id, holder: `intake_${process.pid}`, ...await require('./coordinator').ownerIdentity() };
+      await this.db.Control.updateOne({ _id: 'scheduler' }, { $setOnInsert: { leaseUntil: new Date(0) } }, { upsert: true });
+      const registered = await this.db.Control.updateOne({ _id: 'scheduler', 'intakes.999': { $exists: false } },
+        { $push: { intakes: intake }, $inc: { queueRevision: 1 } });
+      if (!registered.matchedCount) throw problem('intake_busy', 503);
+      try {
+        const created = await this.db.Job.create({ _id: id, ownerId: actor.ownerId, tokenId: actor.tokenId, key, digest: hash,
+          ...frozen, projection, ...slots, affinity: frozen.source.affinity || (frozen.schemaVersion === 2 ? `vision:${digest([this.catalogPolicy(frozen.source.catalog), Object.fromEntries(Object.entries(frozen.request).filter(([k]) => k !== 'messages'))])}` : frozen.source.catalog ? `llm:${frozen.source.catalog.upstream_model}` : affinity(frozen.type, frozen.request)),
+          nextAttemptAt: windowAt().inside ? new Date() : windowAt().next });
+        return created.toObject();
+      } finally {
+        await this.db.Control.updateOne({ _id: 'scheduler' }, { $pull: { intakes: { id } }, $inc: { queueRevision: 1 } });
+      }
     }, replay);
     // The acceptance document is authoritative; projection failure cannot reject it.
     await this.project(job).catch(() => logger.warning('Local AI Chat5 projection pending repair', { category: 'local_ai', metadata: { jobId: job._id } }));
@@ -254,12 +263,20 @@ class LocalAiService {
     if (job.runId || job.attempts.length >= 5 || !['failed', 'needs_review'].includes(job.state) || !safeReplacement(latest?.remote)
       || !await admission.detachedFromRun(this.db, job)) throw problem('replacement_not_safe', 409);
     const write = async slots => {
-      const updated = await this.db.Job.findOneAndUpdate({ _id: id, ownerId: actor.ownerId, version: job.version, runId: null }, {
-        $set: { ...slots, state: 'queued', reason: 'explicit_retry', nextAttemptAt: windowAt().inside ? new Date() : windowAt().next },
-        $unset: { admissionReleasedAt: 1 }, $inc: { version: 1 },
-      }, { returnDocument: 'after' });
-      if (!updated) throw problem('job_changed', 409);
-      return updated;
+      const intakeId = randomUUID();
+      await this.db.Control.updateOne({ _id: 'scheduler' }, { $setOnInsert: { leaseUntil: new Date(0) } }, { upsert: true });
+      const registered = await this.db.Control.updateOne({ _id: 'scheduler', 'intakes.999': { $exists: false } }, { $push: { intakes: { id: intakeId, holder: `intake_${process.pid}`, ...await require('./coordinator').ownerIdentity() } }, $inc: { queueRevision: 1 } });
+      if (!registered.matchedCount) throw problem('intake_busy', 503);
+      try {
+        const updated = await this.db.Job.findOneAndUpdate({ _id: id, ownerId: actor.ownerId, version: job.version, runId: null }, {
+          $set: { ...slots, state: 'queued', reason: 'explicit_retry', nextAttemptAt: windowAt().inside ? new Date() : windowAt().next },
+          $unset: { admissionReleasedAt: 1, blockedUntil: 1 }, $inc: { version: 1 },
+        }, { returnDocument: 'after' });
+        if (!updated) throw problem('job_changed', 409);
+        return updated;
+      } finally {
+        await this.db.Control.updateOne({ _id: 'scheduler' }, { $pull: { intakes: { id: intakeId } }, $inc: { queueRevision: 1 } });
+      }
     };
     if (typeof job.slot === 'number') return write({});
     // Both slots and dispatchability change in the SAME journaled document write.

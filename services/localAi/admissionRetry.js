@@ -4,6 +4,7 @@ const { problem, digest } = require('./policy');
 const REJECTIONS = new Set(['invalid_manual_deadline', 'invalid_run_bounds', 'outside_automatic_window', 'utc_timestamp_required']);
 const RUN_STATUSES = new Set(['open', 'ready', 'running', 'stopping', 'drained', 'needs_review', 'stopped', 'expired']);
 function verifyReceipt(run, remote) {
+  if (run.sessionId && (remote?.session_id !== run.sessionId || remote?.session_sequence !== run.sessionSequence)) throw problem('gateway_run_mismatch', 503);
   if (run.wire.schema_version === 2 && (remote?.schema_version !== 2 || digest(remote.operation_ids) !== digest(run.wire.operation_ids))) throw problem('gateway_run_mismatch', 503);
   if (!remote || remote.id !== run._id || remote.mode !== run.wire.mode
     || !RUN_STATUSES.has(remote.status) || !Array.isArray(remote.operations)

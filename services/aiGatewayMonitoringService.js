@@ -124,6 +124,8 @@ function createMonitoringService({ baseUrl, headers = () => ({}), http = axios, 
   let inFlight;
   let lastProblems = '';
   let lastDegradation = '';
+  let sessionLookupFailed = false;
+  let hadActiveSession = false;
   const observe = raw => {
     cached = normalizeMonitoring(raw, now());
     const problems = cached.sources.filter(source => !source.available).map(source => source.key).join(',');
@@ -172,7 +174,27 @@ function createMonitoringService({ baseUrl, headers = () => ({}), http = axios, 
     })();
     try { return await inFlight; } finally { inFlight = null; }
   };
-  return { get, observe };
+  const getWithSession = async () => {
+    const snapshot = await get();
+    const unknown = () => ({ ...snapshot, status: 'Session ownership unknown', services: snapshot.services.map(service =>
+      /GPU role: (resident|heavy);/.test(service.policy) ? { ...service, availability: 'Session ownership unknown', tone: 'unknown' } : service) });
+    if (!require('../middleware/databaseReadiness').isDatabaseReady()) return hadActiveSession || require('./localAi/gateway').config().enabled ? unknown() : snapshot;
+    try {
+      const { Session } = require('../models/local_ai');
+      const active = await Session.findOne({ activeSlot: 1 }).select('state remote').lean();
+      sessionLookupFailed = false;
+      hadActiveSession = Boolean(active?.remote && active.state !== 'released');
+      if (!hadActiveSession) return snapshot;
+      return { ...snapshot, status: 'GPU reserved by local AI session', services: snapshot.services.map(service =>
+        /GPU role: (resident|heavy);/.test(service.policy)
+          ? { ...service, availability: 'GPU reserved by local AI session', owner: 'Local AI session', guidance: 'queue' } : service) };
+    } catch (_) {
+      if (!sessionLookupFailed) log.warning('AI Gateway session ownership lookup unavailable', { category: 'local_ai', metadata: { code: 'session_lookup_failed' } });
+      sessionLookupFailed = true;
+      return unknown();
+    }
+  };
+  return { get: getWithSession, observe };
 }
 
 module.exports = { normalizeMonitoring, createMonitoringService };

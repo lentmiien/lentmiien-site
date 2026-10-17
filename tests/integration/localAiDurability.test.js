@@ -28,6 +28,7 @@ const HOUR = 3600000;
 const suite = process.env.LOCAL_AI_TEST_MONGO_URI ? describe : describe.skip;
 suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
   let server, origin, service, worker, owner, other, actor, clock, runs, fault, readiness, root;
+  let sessionFixture;
   const env = { ...process.env };
   const listen = app => new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
   const text = model => ({ type: 'llm.chat', request: { model: model || 'a', messages: [{ role: 'user', content: 'hello' }], max_tokens: 32 } });
@@ -50,6 +51,8 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
       if (fault.offline) return res.status(503).json({ detail: { code: 'persistence_unavailable' } });
       next();
     });
+    sessionFixture = require('../helpers/localAiSessionGateway').installHttp(app, () => clock, () => readiness, () => runs);
+
     app.get('/llm/models', (req, res) => res.json({ models: ['a', 'b'].map(id => ({ id, provider: 'ollama', upstream_model: id, limits: { max_output_tokens: 8192, max_context_tokens: 131072, max_prompt_chars: 100000 } })) }));
     app.get('/batch/capabilities', (req, res) => res.json({ protocol: 'durable-local-ai', version: 1, enabled: true, constraints: { seal_required: true } }));
     app.get('/batch/activities', (req, res) => res.json({ activities: [] }));
@@ -107,6 +110,9 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     service = new LocalAiService({ gateway: makeGateway() }); await service.initialize();
   });
   beforeEach(async () => {
+    sessionFixture.reset();
+    await require('../../models/local_ai').Session.deleteMany({});
+    await require('../../models/local_ai').SessionMutation.deleteMany({});
     await Promise.all([Job, Run, Control, Token, User, Role, Conversation, Message, ModelCard].map(m => m.deleteMany({})));
     clock = new Date(); clock.setTime(Date.parse('2026-10-16T16:30:00Z'));
     runs = new Map(); fault = {}; readiness = { healthy: true, idle: true, idle_proven: true, blockers: [] };
@@ -193,7 +199,7 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     }
     await Control.updateOne({ _id: 'scheduler' }, { $unset: { retry: 1 } });
     process.env.LOCAL_AI_BATCH_ENABLED = 'false'; await tick();
-    expect((await Control.findById('scheduler')).reason).toBeNull();
+    expect((await Control.findById('scheduler')).reason).toBe('dispatch_disabled');
     expect(runs.get(run._id).operations).toHaveLength(0); expect(fault.starts).toBeUndefined();
     process.env.LOCAL_AI_BATCH_ENABLED = 'true';
     await worker.manage(actor, 'cancel_active'); await tick();
@@ -211,8 +217,8 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
   });
   test('404 after an acknowledged run never demotes acceptance or replaces its immutable bounds', async () => {
     const { run } = await rejectedManual(); acceptEmpty(run);
-    process.env.LOCAL_AI_BATCH_ENABLED = 'false'; await tick(); runs.delete(run._id);
-    process.env.LOCAL_AI_BATCH_ENABLED = 'true'; await tick();
+    await Control.updateOne({ _id: 'scheduler' }, { $set: { retry: { stage: 'operation_upload' }, reason: 'operation_upload_pending' } });
+    await tick(); runs.delete(run._id); await tick();
     expect(fault.putRuns).toBe(1); expect(fault.starts).toBeUndefined();
     expect(await Run.findById(run._id).lean()).toMatchObject({ admission: { state: 'accepted' }, wire: run.wire, manifest: run.manifest });
     expect((await Control.findById('scheduler')).reason).toBe('gateway_accepted_run_missing');
@@ -231,12 +237,13 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     process.env.LOCAL_AI_BATCH_AUTO_DISPATCH = 'false';
     const job = await enqueue(); await worker.manage(actor, 'start');
     const budget = (await Control.findById('scheduler')).manualDeadline;
-    fault.date = 'invalid'; await tick();
+    const capability = service.gateway.capabilities.bind(service.gateway);
+    service.gateway.capabilities = async () => ({ ...await capability(), server_now: 'invalid' }); await tick();
     expect(await Run.countDocuments()).toBe(0); expect((await load(job._id)).state).toBe('queued');
     expect((await Control.findById('scheduler')).reason).toBe('gateway_clock_uncertain');
-    delete fault.date; clock = new Date(+clock + 1800000); await tick();
+    service.gateway.capabilities = capability; clock = new Date(+clock + 1800000); await tick();
     expect(+new Date([...runs.values()][0].deadline)).toBeLessThanOrEqual(+budget);
-    expect((await Control.findById('scheduler')).reason).toBeNull();
+    expect((await Control.findById('scheduler')).reason).toBe('session_held');
   });
   test('old live coordinator blocks takeover and cannot send after a fenced restart', async () => {
     const { run } = await rejectedManual(); acceptEmpty(run);
@@ -437,7 +444,7 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
   });
   test('readiness requires healthy AND proven idle; 30-minute delay survives restart', async () => {
     await enqueue(); readiness.idle_proven = false; await tick();
-    const delay = (await Control.findById('scheduler').lean()).nextAttemptAt;
+    const delay = (await require('../../models/local_ai').Session.findOne().lean()).nextAttemptAt;
     expect(+delay).toBe(+clock + 1800000); expect(runs.size).toBe(0);
     worker.stop(); await expireLease(); worker = makeWorker(); readiness.idle_proven = true;
     clock = new Date(+clock + 1799000); await tick(); expect(runs.size).toBe(0);
@@ -585,19 +592,20 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     complete([...runs.values()][0]); await tick(); await tick();
     expect(+new Date([...runs.values()][1].deadline)).toBeLessThanOrEqual(+deadline);
     expect([...runs.values()][1].deadline).toBe([...runs.values()][0].deadline);
-    complete([...runs.values()][1]); await tick(); await tick();
+    complete([...runs.values()][1]); await tick(); await tick(); await tick();
     expect((await Control.findById('scheduler')).manualDeadline).toBeNull();
   });
   test('safe retry retains logical identity and references the latest accepted attempt', async () => {
     const job = await enqueue(); await tick(); const run = [...runs.values()][0]; run.status = 'expired';
     Object.assign(run.operations[0], { status: 'interrupted', termination_proven: true, cleanup: 'verified' });
-    await tick(); clock = new Date('2026-10-17T16:30:00Z'); await tick();
+    await tick(); clock = new Date('2026-10-17T16:30:00Z'); await tick(); await tick();
     const replacement = [...runs.values()][1].operations[0];
     expect(replacement.logical_job_id).toBe(job._id); expect(replacement.id).not.toBe(run.operations[0].id);
     expect(replacement.body.retry_of).toBe(run.operations[0].id);
   });
   test('terminal run label cannot turn an unresolved queued operation into a retry', async () => {
     const job = await enqueue(); await tick(); const run = [...runs.values()][0]; run.status = 'needs_review';
+    Object.assign(run.operations[0], { status: 'outcome_unknown', termination_proven: false, cleanup: 'uncertain' });
     await tick(); await tick(); expect((await load(job._id)).state).toBe('needs_review'); expect(runs.size).toBe(1);
     complete(run); await tick(); expect((await load(job._id)).published).toBe(true); expect(runs.size).toBe(1);
   });

@@ -803,6 +803,21 @@ describe('EmbeddingQueueService', () => {
     );
   });
 
+  test.each([1, 0])('session busy admission race restores attempt budget with revision CAS (matched=%s)', async matched => {
+    const job = createJob({ attempts: 3, status: 'processing', claimToken: 'claim-private', revision: 7 });
+    job.desiredHash = buildDesiredHash({ operation: 'upsert', text: 'Current text', options: { autoChunk: true }, mode: 'default' });
+    const jobModel = { findOne: jest.fn().mockResolvedValue(job), updateOne: jest.fn().mockResolvedValue({ matchedCount: matched }) };
+    const embeddingService = createEmbeddingService();
+    embeddingService.embed.mockRejectedValue(Object.assign(new Error('busy'), { status: 409, responseBody: { detail: { code: 'gpu_batch_session_busy' } }, responseHeaders: { 'retry-after': '15' } }));
+    const sourceStateUpdater = jest.fn();
+    const service = new EmbeddingQueueService({ jobModel, embeddingService, sourceResolver: async () => ({ exists: true, enabled: true, text: 'Current text' }), sourceStateUpdater, loggerImpl: createLogger() });
+    service.markRemoteAttempt = jest.fn().mockResolvedValue({ ...job, attempts: 4 });
+    await expect(service.processClaimedJob(job)).resolves.toBe('deferred');
+    expect(jobModel.updateOne).toHaveBeenCalledWith(expect.objectContaining({ claimToken: 'claim-private', revision: 7, desiredHash: job.desiredHash }),
+      expect.objectContaining({ $inc: { attempts: -1 }, $set: expect.objectContaining({ status: 'pending', lastError: null }) }));
+    expect(sourceStateUpdater).not.toHaveBeenCalled(); expect(embeddingService.persistEmbeddings).not.toHaveBeenCalled();
+  });
+
   test('normalizes CRLF consistently while guarding completion with the raw stored text', async () => {
     const embeddingService = createEmbeddingService();
     const rawText = 'First line\r\nSecond line';

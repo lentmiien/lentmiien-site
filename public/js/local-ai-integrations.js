@@ -63,6 +63,7 @@
   if (panel) {
     const state = document.getElementById('localAiSchedulerState');
     let csrf;
+    let startKey;
     async function refresh() {
       try {
         const conf = await fetch('/local-ai/api/v1/config');
@@ -70,15 +71,24 @@
         csrf = (await conf.json()).csrfToken;
         const response = await fetch('/local-ai/api/v1/scheduler');
         if (!response.ok) throw new Error('Scheduler management permission required.');
-        state.textContent = JSON.stringify(await response.json(), null, 2);
+        const data = await response.json();
+        state.textContent = JSON.stringify(data, null, 2);
+        const summary = document.getElementById('localAiSessionSummary');
+        if (summary) {
+          const session = data.session;
+          const phase = session?.state === 'held' ? (data.run ? 'GPU reserved — running cohort' : 'GPU reserved — between cohorts') : ['closing', 'stopping', 'release_failed'].includes(session?.state) ? `Release pending (${session.state})` : session?.state?.replace(/_/g, ' ');
+          summary.textContent = session ? `${phase}. Deadline ${session.deadline || 'pending'}; lease ${session.lease_deadline || 'pending'}; cohort ${session.cohort || 0}. Queued ${data.counts?.queued || 0}, eligible ${data.counts?.remaining_eligible || 0}, staging ${(data.counts?.claimed || 0) + (data.counts?.exporting || 0) + (data.counts?.intakes || 0)}, blocked ${data.counts?.blocked || 0}, collecting ${data.counts?.collecting || 0}. ${session.reason || ''}${session.next_attempt_at ? ` Retry ${session.retry_stage}: ${session.next_attempt_at}` : ''}` : `No active session. ${data.reason || ''}`;
+        }
       } catch (error) { state.textContent = error.message; }
     }
     panel.querySelectorAll('[data-batch-control]').forEach(control => control.addEventListener('click', async () => {
       control.disabled = true;
+      if (control.dataset.batchControl === 'start' && !startKey) startKey = crypto.randomUUID();
       try {
-        const response = await fetch(`/local-ai/api/v1/scheduler/${control.dataset.batchControl}`, { method: 'POST', headers: { 'X-CSRF-Token': csrf, Accept: 'application/json' } });
+        const response = await fetch(`/local-ai/api/v1/scheduler/${control.dataset.batchControl}`, { method: 'POST', headers: { 'X-CSRF-Token': csrf, Accept: 'application/json', ...(control.dataset.batchControl === 'start' ? { 'Idempotency-Key': startKey } : {}) } });
         const body = await response.json();
         if (!response.ok) throw new Error(body.error?.code || 'Request failed');
+        if (control.dataset.batchControl === 'start') startKey = null;
         await refresh();
       } catch (error) { state.textContent = error.message; }
       finally { control.disabled = false; }

@@ -240,6 +240,7 @@ function gatewayLogMetadata(error, extra = {}) {
 }
 
 function gatewayClientMessage(error) {
+  if (require('./localAi/busy').sessionBusy(error)) return require('./localAi/busy').MESSAGE;
   const status = gatewayHttpStatus(error);
   if (status === 504) return 'The ComfyUI Gateway request timed out.';
   if (status === 503) return 'The ComfyUI Gateway is unavailable.';

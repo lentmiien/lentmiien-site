@@ -3788,7 +3788,8 @@ exports.ai_gateway_dashboard = async (req, res) => {
   });
 
   const dashboard = buildAiGatewayDashboard(rawData);
-  dashboard.monitoring = getGatewayMonitoring().observe(rawData);
+  getGatewayMonitoring().observe(rawData);
+  dashboard.monitoring = await getGatewayMonitoring().get();
 
   return res.set('Cache-Control', 'private, no-store, max-age=0').render('admin_ai_gateway', {
     dashboard,

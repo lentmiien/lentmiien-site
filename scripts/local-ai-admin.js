@@ -41,7 +41,7 @@ async function main(argv) {
   } else if (command === 'fence-coordinator') {
     if (!ID.test(subject) || argument !== '--old-coordinator-terminated' || proof !== 'CONFIRMED') throw problem('operator_must_prove_old_coordinator_terminated');
     const result = await service.db.Control.updateOne({ _id: 'scheduler', holder: subject }, {
-      $set: { holder: null, leaseUntil: new Date(0), ownerHost: null, ownerPid: null, ownerProcessStart: null }, $inc: { fence: 1 },
+      $set: { operatorFence: { holder: subject, confirmedAt: new Date(), actorId }, holder: null, leaseUntil: new Date(0), ownerHost: null, ownerPid: null, ownerProcessStart: null }, $inc: { fence: 1 },
     });
     if (!result.matchedCount) throw problem('coordinator_changed', 409);
     process.stdout.write('Terminated coordinator fenced; existing manifest retained.\n');
