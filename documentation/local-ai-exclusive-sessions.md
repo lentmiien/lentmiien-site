@@ -1,21 +1,49 @@
 # Durable exclusive Local AI sessions
 
-## Current handoff — 2026-10-17
+## Final status — 2026-10-17
 
 Site runtime **`d9059a4e19a5354e9759455761c4b4251989d9c6` is complete and
 human-deployed**, with no deployment issue reported. The human ran image and text
 work after one manual Start and reported completion and release without errors.
-Continuous reservation appeared to hold; no competing AI request was attempted.
-Gateway's separate passive physical capture is authoritative for GPU/container
-behavior; its final findings are not assumed here. Physical busy rejection,
-Codex exclusion/tool gaps, live restart/resume, cutoff, vision/all-20-workflow
-execution and the first automatic overnight run are **not established by this
-canary**. CPU/synthetic verification is recorded separately below.
 
-**AUTO enablement: PENDING HUMAN.** Reported settings are
+**AUTO: HUMAN-ENABLED at approximately 2026-10-17 23:40 JST.** The human confirmed
+`LOCAL_AI_BATCH_AUTO_DISPATCH=true` and live authenticated scheduler `auto: true`
+after restarting LennartWeb, via
+[/admin/ask-lennart#request-771ee9ff-65ab-409d-8aec-7b218d9de484](/admin/ask-lennart#request-771ee9ff-65ab-409d-8aec-7b218d9de484).
+The console worker was left as-is. Reported settings remain
 `LOCAL_AI_BATCH_ENABLED=true`, `LOCAL_AI_BATCH_MEDIA_ENABLED=true`,
-`LOCAL_AI_BATCH_AUTO_DISPATCH=false`, with Gateway sessions enabled. This wrap-up
-changes documentation only; no production settings, processes or data are changed.
+with Gateway sessions enabled. This closeout changes documentation only; deployed
+runtime remains the full hash above. No runtime/configuration changes, production
+actions, new tests, redeploy or additional cleanup are part of this closeout.
+New-install flags and repository configuration samples remain default OFF.
+
+**Reserved canary: independently VERIFIED by Gateway's passive physical capture.**
+
+- One parent session held ownership across two cohorts: Qwen text-to-image
+  (`image_qwen_image_2_1_t2i`, schema 2), then `smollm2:360m` text (schema 1).
+  Both operations succeeded and were acknowledged (**2/2 success + ACK**).
+- Generation and hard deadline stayed stable across **8 renewals**. Reclaim and
+  cohort handoff were verified, with **no intermediate resident warming**.
+- Final state was `released` with cleanup `verified`, followed by one warm
+  restoration cycle for the resident services. GPU baseline/peak/final VRAM was
+  **2.793 / 18.131 / 2.731 GiB**. Three transient health failures during startup
+  and restoration recovered; no failed operations or cleanup uncertainty were observed.
+
+Evidence: [Gateway capture report](/home/lennart/.local/state/ai-services-dev-diagnostics/passive-canary-20261017T1357Z/report.json)
+and [Gateway closeout result](/codex/sessions/tool-session-5965729b5ea94dc1c8fc4653c60a810ea547af06ff0155eedc87e6680f460f66).
+The capture's earlier pending-AUTO decision is superseded by the later human
+confirmation above. The capture is sampled evidence, not continuous tracing.
+
+Competing-request busy rejection, Codex exclusion/tool gaps, live restart/resume
+during a held session, the 06:00 cutoff and the **first unattended overnight run
+remain physically unverified**. Restarting LennartWeb to enable AUTO does not prove
+held-session recovery. Site-loss/cancel/failed-reclaim fault paths and a
+Comfy-to-vision-to-Comfy sequence also remain unverified physically. Previously
+documented basic Qwen image/reference and Gemma 3 vision human passes remain valid;
+they do not establish those session scenarios or physical coverage of other GPU
+workflows/all 20 registered workflows. CPU/synthetic verification is separate below.
+The separate final production read-only verification has no result recorded in
+this closeout; no new runtime-health conclusion is inferred from it.
 
 Release dependency: Gateway runtime `e20a437775bcf292d062d987c7850cd7d63a2a1a`,
 documentation `f19366e2451104bba90ec564e3553b4690f4fda9`, image
@@ -56,7 +84,9 @@ same-coordinator resume contract. Retained legacy results remain readable.
 
 ## Enable AUTO — minimal human procedure
 
-For the already deployed Windows checkout `C:\Projects\lentmiien-site`:
+**Completed by the human at approximately 2026-10-17 23:40 JST**, with authenticated
+`auto: true` confirmed after the web restart. Retained as an operational reference
+for `C:\Projects\lentmiien-site`; no further human action is requested by this closeout.
 
 1. Change **only** `LOCAL_AI_BATCH_AUTO_DISPATCH=true` in the web service's effective
    configuration. Normally this is the checkout's `.env`; if WinSW XML
@@ -97,11 +127,11 @@ lack of due jobs can delay it. Manual release normally suppresses its current JS
 date; a restart/AUTO toggle does not reset that control. `windowAt().next` always
 means the next opening, even while the current window is open.
 
-At the wrap-up clock reading **2026-10-17 23:28 JST**, the next nominal window is
+At the reported AUTO enablement time **2026-10-17 approximately 23:40 JST**, the next nominal window was
 **2026-10-18 01:00–06:00 JST** (`2026-10-17T16:00:00Z`–`21:00:00Z`), subject to
-the separate production control/clock check. Recalculate if enabling later.
-Optionally queue one tiny job and leave it for AUTO without pressing Start; its
-first overnight result remains unverified until observed. To disable future
+persisted controls and the separate production control/clock check. This is a
+schedule expectation, not evidence of an automatic start or a first overnight
+result; both remain unverified until observed. To disable future
 automatic starts, set AUTO false and restart only LennartWeb; this does not stop
 an already held session (use the existing stop control if needed).
 
@@ -125,9 +155,10 @@ stop/drain races and nonadmission handling alongside existing media/auth tests.
 
 ## Configuration
 
-Until the human performs the enable procedure, keep AUTO false. Acceptance uses the existing
+The current host has human-enabled AUTO; new installations and repository samples
+retain default-OFF acceptance/media/AUTO flags. Acceptance uses the existing
 `LOCAL_AI_BATCH_ENABLED` switch; media/Comfy acceptance additionally requires
-`LOCAL_AI_BATCH_MEDIA_ENABLED`. This change does not enable either switch.
+`LOCAL_AI_BATCH_MEDIA_ENABLED`. This documentation change does not change any switch.
 Keep `AI_GATEWAY_BASE_URL`, stable `BATCH_CLIENT_ID`, and the dedicated
 `BATCH_SERVER_TOKEN` configured as before. Session tokens are generated privately
 and need no environment variable. Preserve `LOCAL_AI_BATCH_DATA_DIR`,
@@ -200,7 +231,7 @@ and fence cases against the fixed pin. `tests/integration/localAiSessions.test.j
 exercises production model compilation/bootstrap and the actual Site coordinator
 with synthetic transport and real standalone persistence. Physical container
 warming and Windows process incarnation are not proved by these tests. Human live
-observations and remaining unknowns are recorded in the current handoff above.
+observations and remaining unknowns are recorded in the final status above.
 
 `node tests/browser/localAiSessions.smoke.js` renders synthetic Pug pages only.
 It needs development-only Playwright/Chromium; optional `PLAYWRIGHT_MODULE` and

@@ -3,8 +3,10 @@
 > Current complete media release: [Site Phase 2 explanation and rollout steps](local-ai-media-release.md). This document retains the earlier stage history; use the Phase 2 runbook for registered workflows, optional-revision shared imports, output storage and rollback compatibility.
 
 > Exclusive full-queue sessions are implemented and human-deployed at `d9059a4`.
-> Use the [current session runbook and minimal AUTO enable procedure](local-ai-exclusive-sessions.md)
-> for this host. AUTO remains pending human action. The installation/checklists below
+> Use the [current session runbook and verified canary evidence](local-ai-exclusive-sessions.md)
+> for this host. AUTO was human-enabled on 2026-10-17 at approximately 23:40 JST,
+> with authenticated scheduler `auto: true` confirmed after the LennartWeb restart;
+> the first unattended night remains unverified. The installation/checklists below
 > are historical; the [old restart blocker](local-ai-exclusive-session-blocker.md) is resolved.
 
 Security contract: logged-in/private. Interactive principals are users with explicit

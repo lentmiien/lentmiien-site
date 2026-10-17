@@ -2,8 +2,10 @@
 
 > Media/API reference and historical rollout evidence. Site `d9059a4` is now
 > human-deployed with exclusive sessions. See the [current operational runbook](local-ai-exclusive-sessions.md)
-> for human canary evidence, remaining unknowns and pending web-only AUTO enablement.
-> Do not repeat the installation steps below solely to enable AUTO.
+> for the independently verified reserved canary, remaining physical unknowns and
+> human-confirmed AUTO enablement (2026-10-17 approximately 23:40 JST). The first
+> unattended night remains unverified. The historical steps/default-OFF samples
+> below are not the current host status; no repeat installation is needed.
 
 ## Explanation
 

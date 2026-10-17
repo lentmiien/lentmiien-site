@@ -2,8 +2,11 @@
 
 > Historical installation procedure. The current host is already human-deployed at
 > `d9059a4` with acceptance/media/session support enabled. Use the
-> [minimal web-only AUTO procedure](local-ai-exclusive-sessions.md#enable-auto--minimal-human-procedure);
-> do not repeat this installation or stop the console worker just for AUTO.
+> [current runbook and completed AUTO procedure](local-ai-exclusive-sessions.md#enable-auto--minimal-human-procedure).
+> AUTO was human-enabled on 2026-10-17 at approximately 23:40 JST, with authenticated
+> scheduler `auto: true` confirmed after the LennartWeb restart; the console worker
+> was left as-is. The first unattended night remains unverified. No repeat
+> installation or further enablement action is requested.
 
 > Current complete media release: [Site Phase 2 explanation and rollout steps](local-ai-media-release.md). This document retains the earlier stage history; use the Phase 2 runbook for registered workflows, optional-revision shared imports, output storage and rollback compatibility.
 
