@@ -1,6 +1,8 @@
 jest.mock('../../utils/logger', () => ({ warning: jest.fn(), error: jest.fn(), notice: jest.fn(), info: jest.fn() }));
 jest.mock('dotenv', () => ({ config: jest.fn() }));
 const mongoose = require('mongoose');
+// Production compiles all models with buffering off BEFORE opening Mongo.
+require('../../database');
 const express = require('express');
 const os = require('os');
 const fs = require('fs/promises');
@@ -22,6 +24,7 @@ const admission = require('../../services/localAi/admission');
 const { readImage } = require('../../services/localAi/artifacts');
 const qwen = require('../fixtures/local-ai/qwen.json');
 const clone = x => JSON.parse(JSON.stringify(x));
+const HOUR = 3600000;
 const suite = process.env.LOCAL_AI_TEST_MONGO_URI ? describe : describe.skip;
 suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
   let server, origin, service, worker, owner, other, actor, clock, runs, fault, readiness, root;
@@ -29,6 +32,7 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
   const listen = app => new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
   const text = model => ({ type: 'llm.chat', request: { model: model || 'a', messages: [{ role: 'user', content: 'hello' }], max_tokens: 32 } });
   const load = id => Job.findById(id).lean();
+  const makeGateway = () => new Gateway({ now: () => +clock, monotonic: () => +clock });
   const makeWorker = () => { const w = new Worker(service, { ready: () => mongoose.connection.readyState === 1, now: () => new Date(clock), terminated: async () => true }); w.running = true; return w; };
   const expireLease = () => Control.updateOne({ _id: 'scheduler' }, { $set: { leaseUntil: new Date(0) } });
   const tick = async () => { await worker.tick(); };
@@ -41,6 +45,7 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     process.env.BATCH_SERVER_TOKEN = 'x'.repeat(40); process.env.BATCH_CLIENT_ID = 'site-test';
     const app = express(); app.use(express.json({ limit: '2mb' }));
     app.use((req, res, next) => {
+      res.set('Date', fault.date || new Date(+clock + (fault.skew || 0)).toUTCString());
       if (req.headers.authorization !== `Bearer ${process.env.BATCH_SERVER_TOKEN}` || req.headers['x-batch-client'] !== 'site-test') return res.sendStatus(401);
       if (fault.offline) return res.status(503).json({ detail: { code: 'persistence_unavailable' } });
       next();
@@ -50,9 +55,13 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     app.get('/batch/activities', (req, res) => res.json({ activities: [] }));
     app.get('/batch/readiness', (req, res) => res.json(readiness));
     app.put('/batch/runs/:id', (req, res) => {
+      fault.putRuns = (fault.putRuns || 0) + 1;
+      if (fault.rejectRun) return res.status(422).json({ detail: { code: 'invalid_manual_deadline' } });
       const prior = runs.get(req.params.id);
       if (prior && JSON.stringify(prior.wire) !== JSON.stringify(req.body)) return res.status(409).json({ detail: { code: 'immutable_run_conflict' } });
       if (!prior) runs.set(req.params.id, { id: req.params.id, ...req.body, wire: clone(req.body), status: 'open', operations: [], stop_mode: null });
+      if (fault.lostRun) { fault.lostRun = false; return req.socket.destroy(); }
+      if (fault.badRunReply) return res.json({ ...runs.get(req.params.id), id: 'mismatched-reply' });
       res.json(runs.get(req.params.id));
     });
     app.get('/batch/runs/:id', (req, res) => {
@@ -95,7 +104,7 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     });
     server = await listen(app); origin = `http://127.0.0.1:${server.address().port}`;
     process.env.AI_GATEWAY_BASE_URL = origin;
-    service = new LocalAiService({ gateway: new Gateway() }); await service.initialize();
+    service = new LocalAiService({ gateway: makeGateway() }); await service.initialize();
   });
   beforeEach(async () => {
     await Promise.all([Job, Run, Control, Token, User, Role, Conversation, Message, ModelCard].map(m => m.deleteMany({})));
@@ -115,6 +124,128 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
   function complete(run, result = { done: true, message: { content: 'finished' } }) {
     run.status = 'drained'; for (const op of run.operations) Object.assign(op, { status: 'succeeded', result, result_digest: 'opaque-not-site-digest', cleanup: 'verified' });
   }
+  async function rejectedManual() {
+    clock = new Date('2026-10-17T00:35:04.135Z');
+    process.env.LOCAL_AI_BATCH_AUTO_DISPATCH = 'false';
+    const jobs = [await enqueue('admission-a'), await enqueue('admission-b')];
+    await worker.manage(actor, 'start'); fault.rejectRun = true; await tick();
+    const run = await Run.findOne({ state: 'uploading' }).lean();
+    expect(run.admission).toMatchObject({ state: 'rejected', reason: 'invalid_manual_deadline', httpStatus: 422 });
+    expect(run.manifest).toHaveLength(2);
+    return { jobs, run };
+  }
+  function acceptEmpty(run) {
+    const receipt = { id: run._id, ...clone(run.wire), status: 'open', operations: [], stop_mode: null };
+    runs.set(run._id, { ...receipt, wire: clone(run.wire) });
+    return receipt;
+  }
+  test('run PUT rejection is gated across active ticks/restart; identical wire later succeeds', async () => {
+    const { run, jobs } = await rejectedManual();
+    const originalJobs = await Promise.all(jobs.map(job => load(job._id)));
+    await tick(); await tick(); expect(fault.putRuns).toBe(1);
+    worker.stop(); await expireLease(); worker = makeWorker(); fault.rejectRun = false;
+    await tick(); expect(fault.putRuns).toBe(1); expect(runs.size).toBe(0);
+    clock = new Date(+clock + 1800000); await tick();
+    expect(fault.putRuns).toBe(2); expect(fault.starts).toBe(1); expect(runs.size).toBe(1);
+    expect((await Run.findById(run._id)).wire).toEqual(run.wire);
+    expect((await Run.findById(run._id)).manifest).toEqual(run.manifest);
+    expect((await Control.findById('scheduler')).reason).toBeNull();
+    for (const original of originalJobs) expect((await load(original._id)).attempts.map(a => a.id)).toEqual(original.attempts.map(a => a.id));
+  });
+  test('pre-fix unacknowledged rejected run also respects its existing scheduler delay', async () => {
+    const { run } = await rejectedManual();
+    await Run.updateOne({ _id: run._id }, { $unset: { admission: 1 } });
+    await Control.updateOne({ _id: 'scheduler' }, { $set: { manualRequestedAt: null }, $unset: { retry: 1 } });
+    fault.rejectRun = false; await tick(); await tick();
+    expect(fault.putRuns).toBe(1); expect(runs.size).toBe(0);
+    clock = new Date(+clock + 1800000); await tick();
+    expect(fault.putRuns).toBe(2); expect(runs.get(run._id).wire).toEqual(run.wire);
+    expect((await Control.findById('scheduler')).reason).toBeNull();
+  });
+  test.each([false, true])('matching fresh/persisted pre-fix open receipt resolves ONLY admission delay (persisted=%s)', async persisted => {
+    const { run, jobs } = await rejectedManual();
+    const receipt = acceptEmpty(run);
+    await Run.updateOne({ _id: run._id }, { $unset: { admission: 1 }, ...(persisted ? { $set: { remote: receipt } } : {}) });
+    await Control.updateOne({ _id: 'scheduler' }, { $set: { manualRequestedAt: null }, $unset: { retry: 1 } });
+    worker.stop(); await expireLease(); worker = makeWorker();
+    await tick();
+    expect(fault.putRuns).toBe(1); expect(fault.starts).toBe(1);
+    expect(runs.get(run._id).operations).toHaveLength(2);
+    expect(await Control.findById('scheduler').lean()).toMatchObject({ reason: null, nextAttemptAt: null });
+    expect(await Run.findById(run._id).lean()).toMatchObject({ wire: run.wire, manifest: run.manifest, admission: { state: 'accepted' } });
+    complete(runs.get(run._id)); await tick(); await tick();
+    for (const job of jobs) expect(await load(job._id)).toMatchObject({ published: true, acknowledged: true, state: 'succeeded' });
+    expect(fault.acks).toBe(2); expect(fault.starts).toBe(1); expect(await Job.countDocuments()).toBe(2);
+  });
+  test.each(['gateway_not_proven_idle', 'storage_quota', 'persistence_unavailable', 'gateway_unreachable', 'cancel_active'])('legacy unrelated %s deferral survives matching open receipt', async reason => {
+    const { run } = await rejectedManual(); acceptEmpty(run);
+    await Control.updateOne({ _id: 'scheduler' }, { $set: { reason }, $unset: { retry: 1 } });
+    const delay = (await Control.findById('scheduler')).nextAttemptAt;
+    await tick(); expect(fault.starts).toBeUndefined();
+    expect(await Control.findById('scheduler').lean()).toMatchObject({ reason, nextAttemptAt: delay });
+    expect(runs.get(run._id).operations).toHaveLength(0);
+  });
+  test('matching receipt cannot clear another stage/run retry or override stop/suppression/disabled dispatch', async () => {
+    const { run } = await rejectedManual(); acceptEmpty(run);
+    for (const retry of [{ stage: 'operation_upload', runId: run._id }, { stage: 'run_admission', runId: 'other-run' }]) {
+      await Control.updateOne({ _id: 'scheduler' }, { $set: { retry: { ...retry, reason: 'invalid_manual_deadline', nextAttemptAt: new Date(+clock + 1800000) } } });
+      await tick(); expect((await Control.findById('scheduler')).reason).toBe('invalid_manual_deadline');
+    }
+    await Control.updateOne({ _id: 'scheduler' }, { $unset: { retry: 1 } });
+    process.env.LOCAL_AI_BATCH_ENABLED = 'false'; await tick();
+    expect((await Control.findById('scheduler')).reason).toBeNull();
+    expect(runs.get(run._id).operations).toHaveLength(0); expect(fault.starts).toBeUndefined();
+    process.env.LOCAL_AI_BATCH_ENABLED = 'true';
+    await worker.manage(actor, 'cancel_active'); await tick();
+    expect(runs.get(run._id).status).toBe('stopped'); expect(fault.starts).toBeUndefined();
+    expect((await Control.findById('scheduler')).manualDeadline).toBeNull();
+    expect((await Control.findById('scheduler')).suppressedWindow).toBeTruthy();
+  });
+  test.each(['lostRun', 'badRunReply'])('%s is uncertain; GET acknowledges same IDs without duplicate PUT or execution', async failure => {
+    await enqueue(); fault[failure] = true; await tick();
+    const run = await Run.findOne().lean(); expect(run.admission.state).toBe('uncertain');
+    expect(fault.putRuns).toBe(1); expect(runs.get(run._id).operations).toHaveLength(0);
+    worker.stop(); await expireLease(); worker = makeWorker(); await tick(); await tick();
+    expect(fault.putRuns).toBe(1); expect(fault.starts).toBe(1);
+    expect(runs.get(run._id).operations.map(o => o.id)).toEqual(run.manifest.map(e => e.id));
+  });
+  test('404 after an acknowledged run never demotes acceptance or replaces its immutable bounds', async () => {
+    const { run } = await rejectedManual(); acceptEmpty(run);
+    process.env.LOCAL_AI_BATCH_ENABLED = 'false'; await tick(); runs.delete(run._id);
+    process.env.LOCAL_AI_BATCH_ENABLED = 'true'; await tick();
+    expect(fault.putRuns).toBe(1); expect(fault.starts).toBeUndefined();
+    expect(await Run.findById(run._id).lean()).toMatchObject({ admission: { state: 'accepted' }, wire: run.wire, manifest: run.manifest });
+    expect((await Control.findById('scheduler')).reason).toBe('gateway_accepted_run_missing');
+  });
+  test('mismatched receipt cannot clear rejection or upload; an expired rejected manifest is retained', async () => {
+    const { run } = await rejectedManual(); const receipt = acceptEmpty(run);
+    runs.get(run._id).deadline = new Date(+clock + 1000).toISOString(); await tick();
+    expect((await Control.findById('scheduler')).reason).toBe('gateway_run_mismatch');
+    expect(fault.starts).toBeUndefined();
+    runs.delete(receipt.id); clock = new Date(+new Date(run.wire.deadline) + 1); await tick();
+    expect(await Run.findById(run._id).lean()).toMatchObject({ state: 'needs_review', reason: 'rejected_run_bounds_expired', wire: run.wire, manifest: run.manifest });
+    expect(await Job.countDocuments({ state: 'needs_review', runId: run._id })).toBe(2);
+    expect(fault.putRuns).toBe(1);
+  });
+  test('bad clock leaves jobs queued and manual budget intact; later fresh clock never extends budget', async () => {
+    process.env.LOCAL_AI_BATCH_AUTO_DISPATCH = 'false';
+    const job = await enqueue(); await worker.manage(actor, 'start');
+    const budget = (await Control.findById('scheduler')).manualDeadline;
+    fault.date = 'invalid'; await tick();
+    expect(await Run.countDocuments()).toBe(0); expect((await load(job._id)).state).toBe('queued');
+    expect((await Control.findById('scheduler')).reason).toBe('gateway_clock_uncertain');
+    delete fault.date; clock = new Date(+clock + 1800000); await tick();
+    expect(+new Date([...runs.values()][0].deadline)).toBeLessThanOrEqual(+budget);
+    expect((await Control.findById('scheduler')).reason).toBeNull();
+  });
+  test('old live coordinator blocks takeover and cannot send after a fenced restart', async () => {
+    const { run } = await rejectedManual(); acceptEmpty(run);
+    const old = worker; await expireLease(); worker = makeWorker(); worker.terminated = async () => false;
+    await tick(); expect(fault.starts).toBeUndefined(); expect((await Control.findById('scheduler')).holder).toBe(old.id);
+    old.stop(); worker.terminated = async () => true; await tick();
+    await expect(old.guard()).rejects.toMatchObject({ code: 'coordinator_fenced' });
+    expect(fault.starts).toBe(1); expect(runs.size).toBe(1);
+  });
   test('trusted initializer resolves exact admin names and refuses legacy duplicate names', async () => {
     const { main } = require('../../scripts/local-ai-admin');
     process.env.MONGOOSE_URL = process.env.LOCAL_AI_TEST_MONGO_URI;
@@ -209,7 +340,7 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
       await update(...args); throw new Error('lost retry reply');
     });
     try { await expect(service.retry(actor, failed._id)).rejects.toThrow('lost retry reply'); } finally { spy.mockRestore(); }
-    service = new LocalAiService({ gateway: new Gateway() }); await service.initialize();
+    service = new LocalAiService({ gateway: makeGateway() }); await service.initialize();
     const replay = await service.submit(actor, 'failed', text());
     expect(replay.state).toBe('queued'); expect(typeof replay.slot).toBe('number'); expect(typeof replay.ownerSlot).toBe('number');
     await expect(service.retry(actor, failed._id)).rejects.toMatchObject({ code: 'replacement_not_safe' });
@@ -244,7 +375,7 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     });
     try { expect((await service.cancel(actor, job._id)).state).toBe('cancelled'); } finally { spy.mockRestore(); }
     const held = await load(job._id); expect(held.slot).toBe(job.slot);
-    service = new LocalAiService({ gateway: new Gateway() }); await service.initialize();
+    service = new LocalAiService({ gateway: makeGateway() }); await service.initialize();
     await service.reconcileCapacity(); await service.reconcileCapacity();
     expect((await load(job._id)).slot).toBeUndefined();
     expect((await load(job._id)).request).toEqual(job.request);
@@ -290,11 +421,11 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     await Job.collection.createIndex({ ownerId: 1, ownerSlot: 1 }, { unique: true, sparse, name: 'ownerId_1_ownerSlot_1' });
     await Job.collection.dropIndex('admission_slot_unique'); await Job.collection.dropIndex('admission_owner_slot_unique');
     const drop = jest.spyOn(Job.collection, 'dropIndex').mockRejectedValueOnce(new Error('initializer interrupted'));
-    const restarted = new LocalAiService({ gateway: new Gateway() });
+    const restarted = new LocalAiService({ gateway: makeGateway() });
     try { await expect(restarted.initialize()).rejects.toThrow('initializer interrupted'); } finally { drop.mockRestore(); }
     expect((await Job.collection.indexes()).filter(i => i.name.startsWith('admission_'))).toHaveLength(2);
     await restarted.initialize();
-    await new LocalAiService({ gateway: new Gateway() }).initialize();
+    await new LocalAiService({ gateway: makeGateway() }).initialize();
     const indexes = await Job.collection.indexes();
     expect(indexes.some(i => ['slot_1', 'ownerId_1_ownerSlot_1'].includes(i.name))).toBe(false);
     expect(indexes.find(i => i.name === 'admission_slot_unique')).toMatchObject({ unique: true, partialFilterExpression: { slot: { $type: 'number' } } });
@@ -398,6 +529,39 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     await Conversation.updateOne({ _id: conv._id }, { $set: { members: [other.name] } });
     await expect(service.get(actor, job._id)).rejects.toMatchObject({ code: 'source_access_revoked' });
   });
+  test('two Chat5 jobs in a pre-fix open empty run upload, seal, import and append exactly once with AUTO off', async () => {
+    clock = new Date('2026-10-17T00:35:04.135Z');
+    await ModelCard.create({ model_name: 'A', provider: 'Local', api_model: 'a', input_1m_token_cost: 0, output_1m_token_cost: 0, model_type: 'chat', in_modalities: ['text'], out_modalities: ['text'], max_tokens: 8192, max_out_tokens: 100, added_date: new Date(), batch_use: true, context_type: 'system' });
+    const message = await Message.create({ user_id: owner.name, category: 'test', contentType: 'text', content: { text: 'synthetic history' } });
+    const conv = await Conversation.create({ title: 'test', category: 'test', members: [owner.name], messages: [String(message._id)], metadata: { model: 'a', reasoning: 'none' } });
+    const jobs = [];
+    for (let i = 0; i < 2; i += 1) jobs.push(await enqueue(`chat-recovery-${i}`, { type: 'chat5.response', conversation_id: String(conv._id), prompt: `synthetic prompt ${i}` }));
+    const historical = await Run.create({ _id: 'historical-closed', wire: { mode: 'manual', not_before: new Date(+clock - HOUR).toISOString(), deadline: clock.toISOString() }, manifest: [], state: 'closed', stopConfirmed: true });
+    await Job.updateOne({ _id: jobs[0]._id }, { $set: { attempts: [{ id: 'historical-operation', runId: historical._id, body: { logical_job_id: jobs[0]._id } }] } });
+    process.env.LOCAL_AI_BATCH_AUTO_DISPATCH = 'false'; await worker.manage(actor, 'start'); fault.rejectRun = true; await tick();
+    const run = await Run.findOne({ state: 'uploading' }).lean();
+    const receipt = acceptEmpty(run);
+    await Run.updateOne({ _id: run._id }, { $set: { remote: receipt }, $unset: { admission: 1 } });
+    await Control.updateOne({ _id: 'scheduler' }, { $set: { manualRequestedAt: null }, $unset: { retry: 1 } });
+    const frozen = await Promise.all(jobs.map(job => load(job._id)));
+    worker.stop(); await expireLease(); worker = makeWorker(); await tick();
+    expect(runs.get(run._id).operations).toHaveLength(2); expect(fault.starts).toBe(1);
+    complete(runs.get(run._id)); await tick();
+    worker.stop(); await expireLease(); worker = makeWorker(); await tick();
+    for (const original of frozen) {
+      const saved = await load(original._id); await service.project(saved); await service.project(original);
+      expect(saved).toMatchObject({ published: true, acknowledged: true, result: { text: 'finished' } });
+      expect(saved.attempts.map(a => a.id)).toEqual(original.attempts.map(a => a.id));
+      expect(saved.request).toEqual(original.request);
+      expect(await Message.countDocuments({ localBatchJobId: original._id })).toBe(2);
+      expect((await Message.findById(original.projection.responseId)).content.text).toBe('finished');
+    }
+    expect((await Conversation.findById(conv._id)).messages).toHaveLength(5);
+    expect(await Run.countDocuments()).toBe(2); expect(await Job.countDocuments()).toBe(2);
+    expect((await Run.findById(historical._id)).toObject()).toEqual(historical.toObject());
+    expect(fault.putRuns).toBe(1); expect(fault.starts).toBe(1); expect(fault.acks).toBe(2);
+    expect(process.env.LOCAL_AI_BATCH_AUTO_DISPATCH).toBe('false');
+  });
   test('late unexported claim outside a frozen manifest is repaired after coordinator restart', async () => {
     const job = await enqueue();
     await Run.create({ _id: 'old-closed', wire: { mode: 'automatic' }, manifest: [], state: 'closed', fence: 1 });
@@ -418,7 +582,8 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     expect(deadline.toISOString()).toBe('2026-10-16T08:00:00.000Z');
     readiness.idle = true; clock = new Date(+clock + 1800000); await tick();
     complete([...runs.values()][0]); await tick(); await tick();
-    expect([...runs.values()][1].deadline).toBe(deadline.toISOString());
+    expect(+new Date([...runs.values()][1].deadline)).toBeLessThanOrEqual(+deadline);
+    expect([...runs.values()][1].deadline).toBe([...runs.values()][0].deadline);
     complete([...runs.values()][1]); await tick(); await tick();
     expect((await Control.findById('scheduler')).manualDeadline).toBeNull();
   });

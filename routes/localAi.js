@@ -80,7 +80,11 @@ function createRouter({ service, worker }, { machine = false } = {}) {
       res.json({ enabled: config().enabled, auto: config().auto, reason: control?.reason, next_attempt_at: control?.nextAttemptAt, manual_deadline: control?.manualDeadline, manual_requested_at: control?.manualRequestedAt,
         readiness: control?.readiness, coordinator: control ? { holder: control.holder, host: control.ownerHost, pid: control.ownerPid, lease_until: control.leaseUntil } : null, suppressed_window: control?.suppressedWindow,
         run: run ? { id: run._id, mode: run.wire.mode, deadline: run.wire.deadline, state: run.state,
-          remote_status: run.remote?.status, stop_mode: run.stopMode, reason: run.reason, operations: run.manifest.length } : null, activities });
+          remote_status: run.remote?.status, admission: run.admission?.state || (run.remote ? 'accepted' : 'unconfirmed'),
+          admission_reason: run.admission?.reason, admission_http_status: run.admission?.httpStatus,
+          stop_mode: run.stopMode, reason: run.reason, operations: run.manifest.length,
+          accepted_operations: run.remote?.operations?.length || 0,
+          completed_operations: run.remote?.operations?.filter(op => op.status === 'succeeded').length || 0 } : null, activities });
     }));
     router.post('/api/v1/scheduler/:action', admin, wrap(async (req, res) => {
       await worker.manage(req.localAiActor, req.params.action);

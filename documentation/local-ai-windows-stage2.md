@@ -1,5 +1,9 @@
 # Windows Site stage 2 — install with batching OFF
 
+For the already initialized `059f45b` deployment with batching enabled and AUTO
+off, use [manual admission recovery](local-ai-admission-recovery.md#human-windows-update-only).
+That update requires neither the installation procedure below nor an initializer.
+
 ## Postdeploy correction after `9ef5833`
 
 Explanation: the web bootstrap disables Mongoose command buffering globally and

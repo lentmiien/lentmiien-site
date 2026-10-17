@@ -6,7 +6,9 @@ const { ownerIdentity, previousCoordinatorTerminated } = require('./coordinator'
 const { CodexActivity } = require('./codexActivity');
 const { isDatabaseReady } = require('../../middleware/databaseReadiness');
 const logger = require('../../utils/logger');
-const { errorDiagnostic } = require('./diagnostics');
+const { errorDiagnostic, operation: diagnosticOperation } = require('./diagnostics');
+const { boundedRunWire } = require('./clock');
+const { verifyReceipt, rejected, resolvedRetry } = require('./admissionRetry');
 const TERMINAL = new Set(['drained', 'needs_review', 'stopped', 'expired']);
 const OP_TERMINAL = new Set(['succeeded', 'failed', 'interrupted', 'deferred', 'outcome_unknown']);
 const LEASE_MS = 90000;
@@ -107,18 +109,26 @@ class Worker {
       if (!(readiness.healthy && readiness.idle && readiness.idle_proven)) {
         await this.controlSet({ readiness, reason: 'gateway_not_proven_idle', nextAttemptAt: new Date(+this.now() + 1800000) }); return;
       }
-      const caps = await this.gateway.capabilities();
+      operation = 'gateway.admission_clock';
+      const { capabilities: caps, clock } = await this.gateway.admissionClock();
       if (caps.protocol !== 'durable-local-ai' || caps.version !== 1 || !caps.enabled || !caps.constraints?.seal_required) throw problem('gateway_protocol_unavailable', 503);
       // Oldest affinity gets a bounded cohort; other affinities retain their age for fairness.
       const selected = await this.db.Job.find({ ...due, affinity: first.affinity }).sort({ createdAt: 1, slot: 1 }).limit(Math.max(1, Math.min(8, current.cohortLimit || 8))).lean();
-      const wire = runWire(manual ? 'manual' : 'automatic', this.now());
-      if (manual) wire.deadline = new Date(Math.min(+new Date(wire.deadline), +current.manualDeadline)).toISOString();
+      const wire = boundedRunWire(manual ? 'manual' : 'automatic', this.now(), clock, this.gateway.monotonic(), current.manualDeadline, current.manualGatewayDeadline);
+      if (manual && !current.manualGatewayDeadline) {
+        // Anchor before creating the first immutable wire, even if we crash here.
+        await this.guard();
+        const anchored = await this.db.Control.updateOne({ _id: 'scheduler', holder: this.id, fence: this.fence,
+          manualDeadline: current.manualDeadline, manualRequestedAt: current.manualRequestedAt, manualGatewayDeadline: null },
+        { $set: { manualGatewayDeadline: new Date(wire.deadline) } });
+        if (!anchored.matchedCount) return;
+      }
       const run = { _id: randomUUID(), wire, fence: this.fence, state: 'building', manifest: [] };
       await this.guard(); await this.db.Run.create(run);
       await this.guard();
       const activated = await this.db.Control.updateOne({ _id: 'scheduler', holder: this.id, fence: this.fence, activeRun: null,
         ...(manual ? { manualDeadline: current.manualDeadline } : { suppressedWindow: { $ne: w.key } }) },
-      { $set: { activeRun: run._id, readiness, manualRequestedAt: null, reason: null, nextAttemptAt: null } });
+      { $set: { activeRun: run._id, readiness, reason: null, nextAttemptAt: null, retry: null } });
       if (!activated.matchedCount) return; // A concurrent stop won; the unexported run has no claims.
 
       for (const job of selected) {
@@ -134,11 +144,14 @@ class Worker {
     } catch (error) {
       if (error.code !== 'coordinator_fenced') {
         this.warn('Local AI coordinator requires retry or review', { code: Number.isInteger(error.code) ? error.code : 'coordinator_failure', ...errorDiagnostic(error, operation) });
-        if (this.fence !== null && this.ready()) await this.controlSet({ reason: error.code || 'storage_failure', nextAttemptAt: new Date(+this.now() + 1800000) }).catch(() => {});
+        if (this.fence !== null && this.ready()) await this.controlSet({ reason: error.code || 'storage_failure', nextAttemptAt: new Date(+this.now() + 1800000), retry: null }).catch(() => {});
       }
     } finally { this.busy = false; }
   }
   async drive(run) {
+    // Migrate an already persisted receipt without changing wire/manifest/IDs.
+    // It proves admission only; fresh remote state still gates upload and seal.
+    if (run.remote) await this.acceptRun(run, run.remote);
     if (run.state === 'building') {
       const jobs = await this.db.Job.find({ runId: run._id }).sort({ createdAt: 1, slot: 1 }).lean();
       const manifest = jobs.map(job => {
@@ -157,28 +170,53 @@ class Worker {
       }
     }
     let remote;
-    try { remote = await this.gateway.run(run._id); }
+    try { remote = await diagnosticOperation('gateway.run_lookup', () => this.gateway.run(run._id)); }
     catch (error) {
       if (error.status !== 404) throw error;
       // 404 is not termination. Only an entirely unexported, expired manifest may be locally closed.
       if (+new Date(run.wire.deadline) <= +this.now()) {
         if (!run.putStarted) { await this.finishRun(run, { status: 'expired', operations: [] }); return; }
-        await this.runSet(run, { reason: 'remote_run_missing_after_deadline', state: 'needs_review' });
+        const reason = run.admission?.state === 'rejected' ? 'rejected_run_bounds_expired' : 'remote_run_missing_after_deadline';
+        this.warn('Local AI expired manifest retained pending remote evidence', { code: reason, operation: 'gateway.run_lookup', httpStatus: 404 });
+        await this.runSet(run, { reason, state: 'needs_review' });
+        await this.controlSet({ reason });
         for (const entry of run.manifest) {
           const job = await this.db.Job.findById(entry.jobId).lean();
-          await this.jobSet(job, { state: 'needs_review', reason: 'remote_run_missing_after_deadline' });
+          await this.jobSet(job, { state: 'needs_review', reason });
         }
         return;
       }
-      await this.runSet(run, { putStarted: true });
-      await this.guard(); remote = await this.gateway.putRun(run._id, run.wire);
+      if (run.admission?.state === 'accepted') throw problem('gateway_accepted_run_missing', 503);
+      const control = await this.guard();
+      if ((run.admission?.nextAttemptAt && +new Date(run.admission.nextAttemptAt) > +this.now())
+        || (control.nextAttemptAt && +control.nextAttemptAt > +this.now())) return;
+      // Persist uncertain submission BEFORE sending. A lost response or process
+      // never permits retiming, retirement, or a replacement execution identity.
+      const nextAttemptAt = new Date(+this.now() + 1800000);
+      await this.runSet(run, { putStarted: true, admission: { state: 'uncertain', nextAttemptAt } });
+      try {
+        await this.guard();
+        remote = await diagnosticOperation('gateway.run_admission', async () => {
+          const receipt = await this.gateway.putRun(run._id, run.wire);
+          verifyReceipt(run, receipt);
+          return receipt;
+        });
+      } catch (failure) {
+        const state = rejected(failure) ? 'rejected' : 'uncertain';
+        await this.runSet(run, { admission: { state, reason: failure.code, httpStatus: failure.httpStatus, nextAttemptAt } });
+        await this.controlSet({ reason: failure.code, nextAttemptAt,
+          retry: { stage: 'run_admission', runId: run._id, reason: failure.code, nextAttemptAt } });
+        this.warn('Local AI run admission deferred; immutable manifest retained', { code: 'run_admission_deferred', ...errorDiagnostic(failure, 'gateway.run_admission') });
+        return;
+      }
     }
+    await this.acceptRun(run, remote);
     const scheduler = await this.guard();
     const latestRun = await this.db.Run.findById(run._id).lean();
     const stopMode = scheduler.stopIntent?.runId === run._id ? scheduler.stopIntent.mode : latestRun.stopMode;
     if (stopMode && !TERMINAL.has(remote.status)) {
       await this.runSet(run, { stopMode, state: 'stop_pending' });
-      await this.guard(); remote = await this.gateway.stop(run._id, stopMode);
+      await this.guard(); remote = await diagnosticOperation('gateway.run_stop', () => this.gateway.stop(run._id, stopMode));
       await this.runSet(run, { stopConfirmed: true, state: 'stopping' });
     }
     await this.reconcileRun(run, remote);
@@ -197,25 +235,38 @@ class Worker {
         const job = await this.db.Job.findById(entry.jobId).lean();
         await this.service.validateFrozen(job);
         if (!remote.operations.some(op => op.id === entry.id)) {
-          await this.guard(); await this.gateway.putOperation(run._id, entry.id, entry.body);
+          await this.guard(); await diagnosticOperation('gateway.operation_upload', () => this.gateway.putOperation(run._id, entry.id, entry.body));
         }
       }
-      remote = await this.gateway.run(run._id);
+      remote = await diagnosticOperation('gateway.seal_verification', () => this.gateway.run(run._id));
+      verifyReceipt(run, remote);
       if (remote.operations.length !== run.manifest.length || !run.manifest.every(e => remote.operations.some(o => o.id === e.id && o.logical_job_id === e.jobId))) throw problem('manifest_incomplete', 503);
       for (const e of run.manifest) await this.service.validateFrozen(await this.db.Job.findById(e.jobId).lean());
       const beforeSeal = await this.guard();
       const fresh = await this.db.Run.findById(run._id).lean();
       if (fresh.stopMode || beforeSeal.stopIntent?.runId === run._id) return;
-      await this.gateway.start(run._id);
+      await diagnosticOperation('gateway.run_seal', () => this.gateway.start(run._id));
       await this.runSet(run, { state: 'sealed' });
     } catch (error) {
       if ([401, 403, 409, 413, 422, 507].includes(error.status)) {
+        this.warn('Local AI operation acceptance rejected; run stop required', { code: 'operation_acceptance_rejected', ...errorDiagnostic(error, 'gateway.operation_upload') });
         // Seal nothing after partial quota/validation rejection. Stop intent is durable first.
         await this.runSet(run, { stopMode: 'cancel_active', state: 'stop_pending', reason: error.code || 'acceptance_rejected' });
-        await this.guard(); await this.gateway.stop(run._id, 'cancel_active');
-        await this.controlSet({ nextAttemptAt: new Date(+this.now() + 1800000), reason: error.code, ...(error.status === 507 ? { cohortLimit: Math.max(1, Math.floor(run.manifest.length / 2)) } : {}) });
+        await this.guard(); await diagnosticOperation('gateway.run_stop', () => this.gateway.stop(run._id, 'cancel_active'));
+        await this.controlSet({ nextAttemptAt: new Date(+this.now() + 1800000), reason: error.code, retry: null, ...(error.status === 507 ? { cohortLimit: Math.max(1, Math.floor(run.manifest.length / 2)) } : {}) });
       } else throw error;
     }
+  }
+  async acceptRun(run, remote) {
+    verifyReceipt(run, remote);
+    if (run.admission?.state !== 'accepted') await this.runSet(run, { admission: { state: 'accepted', acceptedAt: this.now() } });
+    const control = await this.guard();
+    if (!resolvedRetry(control, run)) return;
+    // Compare-and-set so an intervening stop or unrelated deferral wins.
+    await this.db.Control.updateOne({ _id: 'scheduler', holder: this.id, fence: this.fence,
+      activeRun: run._id, reason: control.reason, nextAttemptAt: control.nextAttemptAt,
+      retry: control.retry || null, stopIntent: control.stopIntent || null },
+    { $set: { reason: null, nextAttemptAt: null, retry: null } });
   }
   async reconcileRun(run, remote) {
     await this.runSet(run, { remote: { ...remote, operations: remote.operations.map(({ result, ...op }) => op) } });
@@ -322,7 +373,7 @@ class Worker {
     await this.db.Control.updateOne({ _id: 'scheduler' }, { $setOnInsert: { leaseUntil: new Date(0), fence: 0 } }, { upsert: true });
     if (action === 'start') {
       if (!config().enabled) throw problem('batch_dispatch_disabled', 503);
-      const updated = await this.db.Control.findOneAndUpdate({ _id: 'scheduler', activeRun: null }, { $set: { manualRequestedAt: this.now(), manualDeadline: new Date(runWire('manual', this.now()).deadline), nextAttemptAt: null } }, { returnDocument: 'after' }).lean();
+      const updated = await this.db.Control.findOneAndUpdate({ _id: 'scheduler', activeRun: null }, { $set: { manualRequestedAt: this.now(), manualDeadline: new Date(runWire('manual', this.now()).deadline), manualGatewayDeadline: null, nextAttemptAt: null, retry: null } }, { returnDocument: 'after' }).lean();
       if (!updated) throw problem('run_already_active', 409);
       return updated;
     }

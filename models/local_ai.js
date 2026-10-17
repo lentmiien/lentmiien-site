@@ -21,15 +21,15 @@ job.index({ state: 1, nextAttemptAt: 1, affinity: 1, slot: 1 });
 const run = new Schema({
   _id: String, wire: Schema.Types.Mixed, manifest: { type: [Schema.Types.Mixed], default: [] },
   state: { type: String, default: 'building' }, fence: Number, putStarted: { type: Boolean, default: false },
-  remote: Schema.Types.Mixed, reason: String, stopMode: { type: String, default: null },
+  remote: Schema.Types.Mixed, admission: Schema.Types.Mixed, reason: String, stopMode: { type: String, default: null },
   stopConfirmed: { type: Boolean, default: false },
 }, options);
 const control = new Schema({
   _id: String, holder: String, ownerHost: String, ownerPid: Number, ownerProcessStart: String, fence: { type: Number, default: 0 }, leaseUntil: Date,
   cohortLimit: { type: Number, default: 8 },
   activeRun: { type: String, default: null }, nextAttemptAt: Date, suppressedWindow: String,
-  stopIntent: Schema.Types.Mixed,
-  manualRequestedAt: Date, manualDeadline: Date, reason: String, readiness: Schema.Types.Mixed,
+  stopIntent: Schema.Types.Mixed, retry: Schema.Types.Mixed,
+  manualRequestedAt: Date, manualDeadline: Date, manualGatewayDeadline: Date, reason: String, readiness: Schema.Types.Mixed,
 }, options);
 const token = new Schema({
   _id: String, hash: { type: String, unique: true, required: true }, ownerId: { type: String, required: true },
