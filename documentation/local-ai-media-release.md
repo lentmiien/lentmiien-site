@@ -1,5 +1,10 @@
 # Local AI registered media release — Site Phase 2
 
+> Media/API reference and historical rollout evidence. Site `d9059a4` is now
+> human-deployed with exclusive sessions. See the [current operational runbook](local-ai-exclusive-sessions.md)
+> for human canary evidence, remaining unknowns and pending web-only AUTO enablement.
+> Do not repeat the installation steps below solely to enable AUTO.
+
 ## Explanation
 
 This is the complete Site consumer for the **finished** Gateway contract at

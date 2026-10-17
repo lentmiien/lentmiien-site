@@ -1,5 +1,10 @@
 # Windows Site stage 2 — install with batching OFF
 
+> Historical installation procedure. The current host is already human-deployed at
+> `d9059a4` with acceptance/media/session support enabled. Use the
+> [minimal web-only AUTO procedure](local-ai-exclusive-sessions.md#enable-auto--minimal-human-procedure);
+> do not repeat this installation or stop the console worker just for AUTO.
+
 > Current complete media release: [Site Phase 2 explanation and rollout steps](local-ai-media-release.md). This document retains the earlier stage history; use the Phase 2 runbook for registered workflows, optional-revision shared imports, output storage and rollback compatibility.
 
 For the already initialized `059f45b` deployment with batching enabled and AUTO
