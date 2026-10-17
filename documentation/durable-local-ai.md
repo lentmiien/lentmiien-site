@@ -2,6 +2,10 @@
 
 > Current complete media release: [Site Phase 2 explanation and rollout steps](local-ai-media-release.md). This document retains the earlier stage history; use the Phase 2 runbook for registered workflows, optional-revision shared imports, output storage and rollback compatibility.
 
+> Exclusive full-queue sessions are not yet implemented on Site. The exact Gateway
+> contract has a [continuing-coordinator restart blocker and CPU reproduction](local-ai-exclusive-session-blocker.md).
+> Do not treat that diagnostic test as session-release approval; keep AUTO off.
+
 Security contract: logged-in/private. Interactive principals are users with explicit
 `local_ai.jobs.use` (admin bundle only initially); machine principals are hashed,
 revocable, expiring bearer tokens with a fixed user ID and that scope. Jobs and
