@@ -153,6 +153,9 @@
   };
 
   window.addEventListener('resize', scheduleResize);
+  document.querySelectorAll('.gateway-disclosure').forEach(panel => {
+    panel.addEventListener('toggle', () => { if (panel.open) scheduleResize(); });
+  });
 
   const showEmpty = (container, message) => {
     if (!container) return;
@@ -1182,6 +1185,10 @@
     }
 
     const form = document.getElementById('reservationForm');
+    form?.addEventListener('invalid', event => {
+      const details = event.target.closest('details');
+      if (details) details.open = true;
+    }, true);
     const serviceEl = document.getElementById('reservationService');
     const timeoutEl = document.getElementById('reservationIdleTimeout');
     const waitEl = document.getElementById('reservationWait');

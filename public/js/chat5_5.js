@@ -937,6 +937,12 @@ function SwitchConversation(new_id) {
   updateMessageLoadControls();
 }
 
+document.getElementById('sendAndResponse')?.addEventListener('click', () => {
+  Append(Boolean(editor.getMarkdown().trim()), true);
+});
+document.getElementById('chat5Append')?.addEventListener('click', () => Append(true, false));
+document.getElementById('chat5AppendBot')?.addEventListener('click', () => Append(true, false, 'bot'));
+
 function Append(send, resp, userId) {
   showLoadingPopup();
   const conversation_id = document.getElementById("id").textContent;
@@ -1142,7 +1148,10 @@ function QueueBatch(includePrompt) {
   const prompt = includePrompt ? editor.getMarkdown() : null;
   const settings = collectChatSettings();
   socket.emit('chat5-batch', { conversation_id, prompt, includePrompt, settings });
-  if (includePrompt) editor.reset();
+  if (includePrompt) {
+    editor.reset();
+    updatePromptCharCounter();
+  }
 }
 
 function HideLastMessage() {

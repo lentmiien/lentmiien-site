@@ -34,17 +34,25 @@
     status.textContent = `${data.status}. Observed: ${new Date(data.fetchedAt).toLocaleString()}. ${data.complete ? '' : 'Partial monitoring — unavailable sources: ' + data.sources.filter(source => !source.available).map(source => source.key).join(', ') + '.'}`;
     context.replaceChildren();
     data.context.forEach(line => addText(context, 'p', line));
+    const expanded = new Set(Array.from(cards.querySelectorAll('details[open]'), card => card.dataset.serviceId));
     cards.replaceChildren();
     data.services.forEach(service => {
-      const card = addText(cards, 'article', '', `health-card monitoring-card--${['normal', 'failure', 'unknown'].includes(service.tone) ? service.tone : 'unknown'}`);
-      addText(card, 'h3', service.id, 'health-card__title');
-      addText(card, 'strong', service.availability);
+      const card = addText(cards, 'details', '', `health-card monitoring-card--${['normal', 'failure', 'unknown'].includes(service.tone) ? service.tone : 'unknown'}`);
+      card.dataset.serviceId = service.id;
+      card.open = expanded.has(service.id);
+      const summary = addText(card, 'summary', '', 'gateway-service-summary');
+      addText(summary, 'span', service.id, 'health-card__title');
+      addText(summary, 'strong', service.availability);
+
       addText(card, 'p', `Container: ${service.state} · Model: ${service.model}`);
       addText(card, 'p', `GPU ownership: ${service.owner}`);
       addText(card, 'p', service.policy, 'health-card__meta');
       (service.evidence || []).forEach(line => addText(card, 'p', line, 'health-card__meta'));
       const link = addText(card, 'a', 'Recovery / interpretation');
-      link.addEventListener('click', () => { document.querySelector('.gateway-runbook').open = true; });
+      link.addEventListener('click', () => {
+        document.querySelector('.gateway-monitoring-details').open = true;
+        document.querySelector('.gateway-runbook').open = true;
+      });
       link.href = '#recovery-' + (['voicevox', 'idle', 'cpu', 'probe', 'missing', 'monitoring', 'queue', 'preparation'].includes(service.guidance) ? service.guidance : 'monitoring');
     });
     if (!data.services.length) addText(cards, 'p', 'No usable service catalog. Service availability is unknown.');

@@ -29,10 +29,17 @@ Implementation and operator instructions follow below.
 ## What ships
 
 - Owner queue: `/local-ai/queue` and `/local-ai/queue/{job_id}`; account navigation
-  includes Local AI queue for authorized accounts. Detail shows frozen input,
-  attempts, certainty, next eligibility, private result, safe cancellation/retry.
-- Chat5 `/chat5/chat/{id}`: **Queue local batch**, independent from the old cloud
-  batch buttons. A saved, non-template conversation is required. A deterministic
+  includes Local AI queue for authorized accounts. The list shows up to 100 jobs
+  created in the last five days, with media previews for the first 24 hours after
+  creation and no GPU session panel. These are display limits, not deletion or
+  API retention limits. Direct job pages retain previews and current details.
+  Detail shows frozen input, attempts, certainty, next eligibility, private result, safe cancellation/retry.
+- Chat5 `/chat5/chat/{id}`: **Batch** in the send dropdown routes Local models
+  to the durable local queue and batch-enabled OpenAI models to the cloud handler.
+  It includes a non-empty prompt; an empty/whitespace prompt requests only a
+  response. **Send & Response** likewise responds without appending an empty
+  message. Append, Append as bot, and Generate TTS audio share the dropdown.
+  Local batching requires a saved, non-template conversation. A deterministic
   user message and hidden queued placeholder are repaired from the acceptance
   document; completion updates that same response ID. Reload the conversation to
   see results. Batch publication never broadcasts through the legacy socket API.

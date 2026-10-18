@@ -424,26 +424,31 @@ block content
     #message.chat5-editor
       // Editor is initialized via JS
     p#chat5CharCounter.small.text-muted.mt-1 0 chars
-    .local-ai-batch
-      button#localAiChatBatch.btn.btn-primary(type='button' disabled) Queue local batch
-      a.ms-2(href='/local-ai/queue') Local queue
-      button#localAiRecover.btn.btn-outline-secondary(type='button') Recover uncertain submission
-      p.small Select a Local model, reasoning “none”, standard mode, medium verbosity, text output and no tools. With batch media enabled, vision models accept acknowledged image uploads within catalog limits. Older images require reupload. Queued prompts use independent snapshots. Save a new conversation first.
+    .chat5-send-controls.d-flex.flex-wrap.align-items-center.gap-2
+      .btn-group
+        button#sendAndResponse.btn.btn-primary(type='button') Send & Response
+        button.btn.btn-primary.dropdown-toggle.dropdown-toggle-split(type='button', data-bs-toggle='dropdown', aria-expanded='false', aria-label='More send actions')
+          span.visually-hidden More send actions
+        ul.dropdown-menu
+          li
+            button#chat5Append.dropdown-item(type='button') Append
+          li
+            button#localAiChatBatch.dropdown-item(type='button' disabled) Batch
+          li
+            button#chat5AppendBot.dropdown-item(type='button') Append as bot
+          li
+            button#generateTtsBtn.dropdown-item(type='button') Generate TTS audio
+      a(href='/local-ai/queue') Local queue
+      button.btn.btn-outline-secondary.btn-sm(type='button', data-bs-toggle='modal', data-bs-target='#ttsKeywordsModal') Voice & tags
+    p#localAiBatchStatus.small(role='status')
+    details.local-ai-batch.mb-3
+      summary Batch details & recovery
+      p.small Local models use the durable local queue; supported OpenAI models use the cloud batch queue. A non-empty prompt is included with the request. With an empty prompt, Batch requests a response to the existing conversation.
+      p.small Local batches require a saved conversation, reasoning “none”, standard mode, medium verbosity, text output and no tools. With batch media enabled, vision models accept acknowledged image uploads within catalog limits. Older images require reupload. Queued prompts use independent snapshots.
       p.small.text-muted Chat image originals remain public; private batch snapshots do not change that.
-      p#localAiBatchStatus(role='status')
+      button#localAiRecover.btn.btn-outline-secondary.btn-sm(type='button') Recover uncertain local submission
     script(src='/js/local-ai-client.js' defer)
     script(src='/js/local-ai-integrations.js' defer)
-    .chat5-send-controls.d-flex.justify-content-evenly.flex-wrap.gap-2
-      button.btn.btn-success(type="button", onclick="Append(true, false)") Append
-      button.btn.btn-outline-success(type="button", onclick="Append(true, false, 'bot')") Append as bot
-      button.btn.btn-success#sendAndResponse(type="button", onclick="Append(true, true)") Send & Response
-      button.btn.btn-success#respondOnly(type="button", onclick="Append(false, true)") Response
-      button.btn.btn-outline-success#batchSendResponse(type="button", onclick="QueueBatch(true)") Batch Send & Response
-      button.btn.btn-outline-success#batchResponse(type="button", onclick="QueueBatch(false)") Batch Response
-    .chat5-tts-controls.d-flex.flex-wrap.gap-2.align-items-center.mb-3
-      button#generateTtsBtn.btn.btn-outline-primary(type="button") Generate TTS audio
-      button.btn.btn-outline-secondary(type="button", data-bs-toggle="modal", data-bs-target="#ttsKeywordsModal") Emotions & tags
-      small.text-muted Pick a voice in the tags modal and generate speech. Output is saved to public/mp3.
     .chat5-history-actions.d-flex.justify-content-evenly.flex-wrap.gap-2
       button#hideLastMessageBtn.btn.btn-outline-warning(type="button", onclick="HideLastMessage()", title="Mark the most recent visible message as hidden") Hide last message
       button#removeLastMessageBtn.btn.btn-outline-danger(type="button", onclick="RemoveLastMessage()", title="Remove the latest visible message and any trailing hidden messages") Remove last message

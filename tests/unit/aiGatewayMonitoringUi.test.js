@@ -94,3 +94,28 @@ test('returning from back-forward cache expires old observations and resumes ref
   expect(dom.window.fetch).toHaveBeenCalledTimes(1);
   expect(d.getElementById('serviceMonitoringCards').textContent).toContain('Responsive');
 });
+
+test('controls and service summaries precede the GPU graph, with statistics collapsed', () => {
+  const d = setup();
+  const before = (a, b) => Boolean(a.compareDocumentPosition(b) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+  const controls = d.querySelector('.gateway-controls');
+  const services = d.getElementById('serviceMonitoringCards');
+  const graph = d.getElementById('gpuTimelineChart');
+  expect(before(controls, services)).toBe(true);
+  expect(before(services, graph)).toBe(true);
+  expect(before(graph, d.querySelector('.gateway-statistics'))).toBe(true);
+  expect(d.querySelectorAll('.gateway-statistics > details').length).toBeGreaterThan(5);
+  expect(d.querySelectorAll('.gateway-statistics > details[open]')).toHaveLength(0);
+  expect(d.querySelectorAll('.gateway-controls details[open]')).toHaveLength(0);
+  expect(d.querySelector('#serviceMonitoringCards details').open).toBe(false);
+  expect(d.querySelector('#serviceMonitoringCards summary').textContent).toContain('voicevoxResponsive');
+});
+
+test('service expansion survives refreshed observations and recovery opens its parent disclosure', async () => {
+  const d = setup();
+  d.querySelector('#serviceMonitoringCards details').open = true;
+  d.getElementById('refreshServiceMonitoring').click(); await flush();
+  expect(d.querySelector('#serviceMonitoringCards details').open).toBe(true);
+  d.querySelector('#serviceMonitoringCards a').click();
+  expect(d.querySelector('.gateway-monitoring-details').open).toBe(true);
+});

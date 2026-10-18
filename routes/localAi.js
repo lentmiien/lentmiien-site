@@ -96,9 +96,10 @@ function createRouter({ service, worker }, { machine = false } = {}) {
   for (const action of ['cancel', 'retry']) router.post(`${api}/jobs/:id/${action}`, wrap(async (req, res) => res.json(serialize(await service[action](req.localAiActor, req.params.id)))));
   if (!machine) {
     router.get('/queue', wrap(async (req, res) => {
-      const jobs = await service.db.Job.find({ ownerId: req.localAiActor.ownerId }).sort({ createdAt: -1 }).limit(100).lean();
+      const now = Date.now();
+      const jobs = await service.db.Job.find({ ownerId: req.localAiActor.ownerId, createdAt: { $gte: new Date(now - 5 * 86400000) } }).sort({ createdAt: -1 }).limit(100).lean();
       const control = await service.db.Control.findById('scheduler').lean();
-      res.render('local_ai_queue', { jobs: jobs.map(job => publicJob(job, control)), job: null, session: await sessionStatus(control), config: { enabled: config().enabled, auto: config().auto } });
+      res.render('local_ai_queue', { jobs: jobs.map(job => ({ ...publicJob(job, control), show_preview: +new Date(job.createdAt) > now - 86400000 })), job: null, config: { enabled: config().enabled, auto: config().auto } });
     }));
     router.get('/queue/:id', wrap(async (req, res) => {
       const job = await service.get(req.localAiActor, req.params.id);

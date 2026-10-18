@@ -37,3 +37,14 @@ After deployment, sign in as admin and open `/admin/ai-gateway`. Verify fresh ti
 - This document: security contract, limits, release and acceptance instructions.
 
 Validation commands: `npm test -- tests/unit/aiGatewayMonitoring.test.js tests/unit/aiGatewayMonitoringIntegration.test.js tests/unit/aiGatewayMonitoringUi.test.js --coverage=false --runInBand`, broader affected admin/Gateway/music suites, `npm test -- --runInBand`, and `git diff --check`. Browser behavior is exercised in JSDOM; no interactive browser was available for visual screenshots. All Gateway traffic in these tests is mocked. No application startup, deployment, production probe, TTS generation or service mutation is part of validation.
+
+## Dashboard layout
+
+Durable local batches and GPU Reservation appear first as compact controls with
+core status and collapsed diagnostics/settings. Services appear as expandable
+name/state rows; open rows remain expanded across refreshes. Management controls
+and recovery instructions are available in disclosures next to the list. The GPU
+graph follows, then statistics grouped into closed sections. Charts resize when
+a statistics section opens. This presentation update reuses the existing
+admin-managed, capability-checked and CSRF-protected handlers. It adds no new
+API operations or changes to authorization, private media delivery, or retention.

@@ -37,7 +37,7 @@ async function chat({ conversationId = id, source = 'conversation5', settings = 
   }, enabled, mediaEnabled);
   window.chatModels = models;
   window.io = () => ({ on: () => {}, emit: () => {} });
-  window.toastui = { Editor: class { on() {} getMarkdown() { return 'synthetic prompt'; } } };
+  window.toastui = { Editor: class { on() {} getMarkdown() { return this.prompt ?? 'synthetic prompt'; } reset() { this.prompt = ''; } } };
   window.bootstrap = { Modal: class {} };
   script('chat5_5.js'); // Real collectChatSettings and rendered select controls.
   script('local-ai-client.js'); script('local-ai-integrations.js');
@@ -222,4 +222,84 @@ test('a later oversized immediate overwrite cannot reuse an older private receip
   window.document.getElementById('inputTargetField').value = '11::image'; window.document.getElementById('btnUseInput').click(); await flush();
   expect(window.document.getElementById('inputUploadStatus').textContent).toContain('batch_input_limit_32_mib');
   expect(button.disabled).toBe(true); expect(requests).toHaveLength(0);
+});
+
+
+test.each(['hello', '', '   '])('split send action includes only a non-empty prompt: %p', async prompt => {
+  const { window } = await chat();
+  window.editor.prompt = prompt;
+  window.socket.emit = jest.fn();
+  window.document.getElementById('sendAndResponse').click();
+  expect(window.socket.emit).toHaveBeenCalledWith('chat5-append', expect.objectContaining({
+    prompt: prompt.trim() ? prompt : null, response: true,
+  }));
+});
+
+test('send menu orders append, batch, bot and TTS, and keeps append roles', async () => {
+  const { window } = await chat();
+  const document = window.document;
+  expect(Array.from(document.querySelectorAll('.chat5-send-controls .dropdown-item'), el => el.textContent))
+    .toEqual(['Append', 'Batch', 'Append as bot', 'Generate TTS audio']);
+  window.socket.emit = jest.fn();
+  document.getElementById('chat5Append').click();
+  expect(window.socket.emit).toHaveBeenLastCalledWith('chat5-append', expect.objectContaining({ prompt: 'synthetic prompt', response: false }));
+  window.editor.prompt = 'bot draft';
+  document.getElementById('chat5AppendBot').click();
+  expect(window.socket.emit).toHaveBeenLastCalledWith('chat5-append', expect.objectContaining({ prompt: 'bot draft', response: false, user_id: 'bot' }));
+});
+
+test.each(['hello', '', '   '])('unified batch routes OpenAI with optional prompt %p even when local batching is disabled', async prompt => {
+  const { window, button } = await chat({ enabled: false });
+  window.chatModels = [{ ...models[0], provider: 'OpenAI', batch_use: true }];
+  window.document.getElementById('model').dispatchEvent(new window.Event('change'));
+  window.editor.prompt = prompt;
+  window.socket.emit = jest.fn();
+  expect(button.disabled).toBe(false);
+  button.click(); await flush();
+  expect(requests).toHaveLength(0);
+  expect(window.socket.emit).toHaveBeenCalledWith('chat5-batch', expect.objectContaining({
+    prompt: prompt.trim() ? prompt : null, includePrompt: Boolean(prompt.trim()),
+  }));
+});
+
+test.each(['', '   '])('local batch treats whitespace as response-only: %p', async prompt => {
+  const { window, button } = await chat();
+  window.editor.prompt = prompt;
+  window.socket.emit = jest.fn();
+  button.click(); await flush();
+  expect(JSON.parse(requests[0].body).prompt).toBe('');
+  expect(window.socket.emit).not.toHaveBeenCalledWith('chat5-batch', expect.anything());
+  expect(window.editor.getMarkdown()).toBe('');
+});
+
+test('local batch keeps changed drafts and failed submissions in the editor', async () => {
+  const { window, button } = await chat();
+  let resolve;
+  reply = () => new Promise(r => { resolve = r; });
+  button.click(); await flush();
+  window.editor.prompt = 'next draft';
+  resolve({ ok: true, status: 202, json: async () => ({ url: '/local-ai/queue/job' }) }); await flush();
+  expect(window.editor.getMarkdown()).toBe('next draft');
+  reply = async () => { throw new Error('network unavailable'); };
+  button.click(); await flush();
+  expect(window.editor.getMarkdown()).toBe('next draft');
+});
+
+test.each([{ provider: 'OpenAI', batch_use: false }, { provider: 'OpenAI' }, { provider: 'Other' }])('unsupported batch model never queues: %p', async model => {
+  const { window, button } = await chat();
+  window.chatModels = [{ ...models[0], ...model }];
+  window.socket.emit = jest.fn();
+  button.dispatchEvent(new window.Event('click')); await flush();
+  expect(requests).toHaveLength(0);
+  expect(window.socket.emit).not.toHaveBeenCalled();
+  expect(button.disabled).toBe(true);
+});
+
+
+test('TTS remains available from the send menu', async () => {
+  const { window } = await chat();
+  window.document.dispatchEvent(new window.Event('DOMContentLoaded'));
+  window.socket.emit = jest.fn();
+  window.document.getElementById('generateTtsBtn').click();
+  expect(window.socket.emit).toHaveBeenCalledWith('chat5-tts', expect.objectContaining({ prompt: 'synthetic prompt' }), expect.any(Function));
 });

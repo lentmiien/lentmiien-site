@@ -31,19 +31,6 @@ block content
     .ai-gateway__header
       .ai-gateway__heading
         h1 AI Gateway
-        section#localAiScheduler
-          h2 Durable local batches
-          p Daily 01:00–06:00 Asia/Tokyo. Manual start drains the queue or stops at the earlier of five hours and next 06:00. Stop intent persists while Gateway is unreachable.
-          a(href='/local-ai/queue') Your private queue
-          .d-flex.flex-wrap.gap-2
-            button.btn.btn-primary(type='button' data-batch-control='start') Start local batch
-            button.btn.btn-outline-warning(type='button' data-batch-control='finish_current') Stop after current
-            button.btn.btn-outline-danger(type='button' data-batch-control='cancel_active') Stop now
-          p#localAiSessionSummary(aria-live='polite') Loading session…
-          details
-            summary Session and cohort diagnostics
-            pre#localAiSchedulerState Loading…
-        script(src='/js/local-ai-integrations.js' defer)
         p.text-muted Monitor gateway health, GPU load, limits, and live logs.
       .ai-gateway__meta
         span.meta-chip Fetched: #{new Date(dashboard.fetchedAt || Date.now()).toLocaleString()}
@@ -60,169 +47,152 @@ block content
           each key in errorKeys
             li= `${key}: ${dashboard.errors[key]}`
 
-    if dashboard.summaryCards && dashboard.summaryCards.length
-      .stat-grid
-        each card in dashboard.summaryCards
-          .stat-card
-            .stat-card__label= card.label
-            .stat-card__value= card.value
-            if card.helper
-              .stat-card__helper= card.helper
-
-    include includes/aiGatewayMonitoring
-
-    .ai-gateway__hero-grid
-      .panel
-        .panel__header
-          h2.panel__title GPU Pressure
-          p.panel__subtitle Live /gpu samples for busy %, VRAM usage, and temperature, refreshed every second.
-        .chart-shell.chart-shell--hero#gpuTimelineChart
-      .panel
-        .panel__header
-          h2.panel__title Route Latency & Queue
-          p.panel__subtitle= logWindow.count ? `Average and p95 request times across the latest ${formatNumber(logWindow.count)} log entries.` : 'Average and p95 request times from recent gateway logs.'
-        .chart-shell.chart-shell--hero#routeLatencyChart
-
-    .ai-gateway__grid
-      .panel
-        .panel__header
-          h2.panel__title Workload Mix & Errors
-          p.panel__subtitle= logWindow.count ? `Recent request counts by route and status from the latest ${formatNumber(logWindow.count)} log entries.` : 'Recent request counts by route and status from gateway logs.'
-        .chart-shell#requestVolumeChart
-      .panel
-        .panel__header
-          h2.panel__title VRAM Footprint by Route
-          p.panel__subtitle Average and largest before-to-peak VRAM jumps seen per route in recent logs.
-        .chart-shell#vramPressureChart
-      if hasLlmChart
-        .panel
-          .panel__header
-            h2.panel__title LLM Throughput by Model
-            p.panel__subtitle Prompt and generation token rates from recent LLM logs (log scale).
-          .chart-shell#llmThroughputChart
-      if hasOcrTimingChart
-        .panel
-          .panel__header
-            h2.panel__title OCR Pipeline Timing
-            p.panel__subtitle Average and p95 timings from Hunyuan OCR job summaries (log scale).
-          .chart-shell#ocrTimingChart
-      if hasTtsChart
-        .panel
-          .panel__header
-            h2.panel__title TTS Real-Time Factor
-            p.panel__subtitle Average and p95 real-time factor by backend.
-          .chart-shell#ttsRtfChart
-
-    .ai-gateway__details
-      .panel
-        .panel__header
-          h2.panel__title GPU Reservation
-          p.panel__subtitle Keep one managed GPU service ready for an interactive or bulk session. Manual GPU start/restart creates an exclusive reservation; it is not a health check.
+    .gateway-controls
+      section.panel.gateway-control#localAiScheduler(aria-labelledby='localAiSchedulerTitle')
+        .gateway-control__heading
+          h2.panel__title#localAiSchedulerTitle Durable local batches
+          a(href='/local-ai/queue') Private queue
+        p#localAiSessionSummary.gateway-control__stats(aria-live='polite') Loading session…
+        .d-flex.flex-wrap.gap-2
+          button.btn.btn-primary.btn-sm(type='button' data-batch-control='start') Start local batch
+          button.btn.btn-outline-warning.btn-sm(type='button' data-batch-control='finish_current') Stop after current
+          button.btn.btn-outline-danger.btn-sm(type='button' data-batch-control='cancel_active') Stop now
+        details.gateway-control__details
+          summary Details
+          p Daily 01:00–06:00 Asia/Tokyo. Manual start drains the queue or stops at the earlier of five hours and next 06:00. Stop intent persists while Gateway is unreachable.
+          pre#localAiSchedulerState Loading…
+      section.panel.gateway-control(aria-labelledby='reservationTitle')
+        h2.panel__title#reservationTitle GPU Reservation
         .reservation-controls#reservationControls
           .reservation-controls__summary
-            div
-              span.reservation-controls__eyebrow Reservation status
-              strong#reservationStatus.reservation-controls__status= (reservation && reservation.statusDisplay) || 'Unknown'
+            strong#reservationStatus.reservation-controls__status= (reservation && reservation.statusDisplay) || 'Unknown'
             span#reservationBadge.reservation-controls__badge(class=reservationReleaseFailed ? 'reservation-controls__badge--error' : (reservationActive ? 'reservation-controls__badge--active' : 'reservation-controls__badge--idle'))= reservationReleaseFailed ? 'Attention' : (reservationActive ? 'Exclusive' : (reservationKnown ? 'Open' : 'Unknown'))
+          .gateway-control__stats
+            span Owner:#{' '}
+              strong#reservationOwner= (reservation && (reservation.serviceLabel || reservation.service)) || 'None'
+            span Remaining:#{' '}
+              strong#reservationRemaining= (reservation && reservation.remainingDisplay) || '—'
           form#reservationForm.reservation-controls__form
-            .reservation-controls__fields
-              .reservation-controls__field
-                label.form-label(for='reservationService') GPU service
-                select#reservationService.form-select(required, disabled=reservationActive || !reservableContainers.length)
-                  option(value='') Select a reservable service
-                  each container in reservableContainers
-                    option(value=container.id, selected=reservation && reservation.service === container.id)= `${container.label || container.name || container.id} · ${container.gpuRoleDisplay || 'GPU'}`
+            .gateway-control__actions
+              label.visually-hidden(for='reservationService') GPU service
+              select#reservationService.form-select.form-select-sm(required, disabled=reservationActive || !reservableContainers.length)
+                option(value='') Select a GPU service
+                each container in reservableContainers
+                  option(value=container.id, selected=reservation && reservation.service === container.id)= `${container.label || container.name || container.id} · ${container.gpuRoleDisplay || 'GPU'}`
+              button#reservationReserve.btn.btn-primary.btn-sm(type='submit', disabled=reservationActive || !reservableContainers.length) Reserve GPU
+              button#reservationRelease.btn.btn-outline-danger.btn-sm(type='button', disabled=!reservationActive) Release
+              button#reservationRefresh.btn.btn-outline-light.btn-sm(type='button') Refresh
+            span#reservationFeedback.reservation-controls__feedback.text-muted(role='status', aria-live='polite')
+            details.gateway-control__details
+              summary Details & settings
+              p Keep one managed GPU service ready. Only work for the reserved service can enter the GPU scheduler until release or inactivity expiry.
               .reservation-controls__field
                 label.form-label(for='reservationIdleTimeout') Inactivity timeout (seconds)
                 input#reservationIdleTimeout.form-control(type='number', min='1', step='1', required, value=reservationTimeoutValue, disabled=reservationActive)
-            .form-check
-              input#reservationWait.form-check-input(type='checkbox', checked=true, disabled=reservationActive)
-              label.form-check-label(for='reservationWait') Wait until the service is ready
-            p.reservation-controls__hint Only work for the reserved service can enter the GPU scheduler until release or inactivity expiry.
-            .reservation-controls__actions
-              button#reservationReserve.btn.btn-primary(type='submit', disabled=reservationActive || !reservableContainers.length) Reserve GPU
-              button#reservationRelease.btn.btn-outline-danger(type='button', disabled=!reservationActive) Release
-              button#reservationRefresh.btn.btn-outline-light(type='button') Refresh
-              span#reservationFeedback.reservation-controls__feedback.text-muted(role='status', aria-live='polite')
-          .reservation-controls__status-grid
-            .reservation-controls__metric
-              span Owner
-              strong#reservationOwner= (reservation && (reservation.serviceLabel || reservation.service)) || 'None'
-            .reservation-controls__metric
-              span Phase
-              strong#reservationPhase= (reservation && reservation.phaseDisplay) || 'Unknown'
-            .reservation-controls__metric
-              span Time remaining
-              strong#reservationRemaining= (reservation && reservation.remainingDisplay) || '—'
-            .reservation-controls__metric
-              span Expires
-              strong#reservationExpires= (reservation && reservation.expiresAtDisplay) || '—'
-            .reservation-controls__metric
-              span Last activity
-              strong#reservationLastActivity= (reservation && reservation.lastActivityAtDisplay) || '—'
-            .reservation-controls__metric
-              span Container
-              strong#reservationContainer= (reservation && reservation.containerStateDisplay) || 'Unknown'
-            .reservation-controls__metric
-              span Blocked queue
-              strong#reservationBlockedQueue= reservation && reservation.blockedQueueDepth !== null ? reservation.blockedQueueDepth : '—'
+              .form-check
+                input#reservationWait.form-check-input(type='checkbox', checked=true, disabled=reservationActive)
+                label.form-check-label(for='reservationWait') Wait until the service is ready
+              .reservation-controls__status-grid
+                .reservation-controls__metric
+                  span Phase
+                  strong#reservationPhase= (reservation && reservation.phaseDisplay) || 'Unknown'
+                .reservation-controls__metric
+                  span Expires
+                  strong#reservationExpires= (reservation && reservation.expiresAtDisplay) || '—'
+                .reservation-controls__metric
+                  span Last activity
+                  strong#reservationLastActivity= (reservation && reservation.lastActivityAtDisplay) || '—'
+                .reservation-controls__metric
+                  span Container
+                  strong#reservationContainer= (reservation && reservation.containerStateDisplay) || 'Unknown'
+                .reservation-controls__metric
+                  span Blocked queue
+                  strong#reservationBlockedQueue= reservation && reservation.blockedQueueDepth !== null ? reservation.blockedQueueDepth : '—'
           p#reservationError.reservation-controls__error(hidden=!(reservation && reservation.lastError))= (reservation && reservation.lastError) || ''
           if !reservableContainers.length
             p.reservation-controls__empty No GPU-reservable managed services were returned by the Gateway.
-      .panel
-        .panel__header
-          h2.panel__title Managed Services
-          p.panel__subtitle Start, stop, and restart gateway-managed containers.
-        if containers.length
-          .container-controls#containerControls
-            .container-controls__toolbar
-              .container-controls__summary
-                strong#containerSummary= containerSummary.display || `${containers.filter((container) => container.running === true).length}/${containers.length} running`
-                span.text-muted#containerSummaryDetail= `${containerSummary.defaultRunning || 0} default-running · ${containerSummary.stopped || 0} stopped`
-              .container-controls__actions
-                button#containersRefresh.btn.btn-outline-light.btn-sm(type='button') Refresh
-                button#containersResetDefaults.btn.btn-outline-warning.btn-sm(type='button') Reset defaults
-                span#containersFeedback.container-controls__feedback.text-muted
-            .service-grid#containerList
-              each container in containers
-                .service-card(data-container-id=container.id)
-                  .service-card__top
-                    div
-                      .service-card__name= container.label || container.name || container.id
-                      .service-card__id= container.name && container.name !== container.label ? container.name : container.id
-                    span.service-card__badge(class=container.running === true ? 'service-card__badge--running' : (container.running === false ? 'service-card__badge--stopped' : ''))= container.stateDisplay || 'Unknown'
-                  ul.service-card__meta
-                    li
-                      span Status
-                      strong= container.statusDisplay || 'Unknown'
-                    li
-                      span Default
-                      strong= container.defaultStateDisplay || 'Unknown'
-                    if container.meta && container.meta.length
-                      each line in container.meta
-                        li
-                          span= line.split(': ')[0]
-                          strong= line.split(': ').slice(1).join(': ') || 'N/A'
-                  .service-card__actions
-                    button.btn.btn-outline-success.btn-sm(type='button', data-container-action='start', disabled=container.running === true) Start
-                    button.btn.btn-outline-danger.btn-sm(type='button', data-container-action='stop', disabled=container.running === false) Stop
-                    button.btn.btn-outline-warning.btn-sm(type='button', data-container-action='restart', disabled=container.running === false) Restart
-        else
-          .container-controls#containerControls
-            .container-controls__toolbar
-              .container-controls__summary
-                strong#containerSummary No containers
-                span.text-muted#containerSummaryDetail Gateway did not return managed container data.
-              .container-controls__actions
-                button#containersRefresh.btn.btn-outline-light.btn-sm(type='button') Refresh
-                button#containersResetDefaults.btn.btn-outline-warning.btn-sm(type='button') Reset defaults
-                span#containersFeedback.container-controls__feedback.text-muted
-            .service-grid#containerList
-              p.text-muted.mb-0 No managed services are available.
-      .panel
-        .panel__header
-          h2.panel__title Auto-stop Policy
-          p.panel__subtitle ComfyUI auto-stop settings from /comfy/auto_stop.
+    script(src='/js/local-ai-integrations.js' defer)
+
+    include includes/aiGatewayMonitoring
+
+    details.panel.gateway-disclosure
+      summary.panel__title Managed Services
+      p.panel__subtitle Start, stop, and restart gateway-managed containers.
+      if containers.length
+        .container-controls#containerControls
+          .container-controls__toolbar
+            .container-controls__summary
+              strong#containerSummary= containerSummary.display || `${containers.filter((container) => container.running === true).length}/${containers.length} running`
+              span.text-muted#containerSummaryDetail= `${containerSummary.defaultRunning || 0} default-running · ${containerSummary.stopped || 0} stopped`
+            .container-controls__actions
+              button#containersRefresh.btn.btn-outline-light.btn-sm(type='button') Refresh
+              button#containersResetDefaults.btn.btn-outline-warning.btn-sm(type='button') Reset defaults
+              span#containersFeedback.container-controls__feedback.text-muted
+          .service-grid#containerList
+            each container in containers
+              .service-card(data-container-id=container.id)
+                .service-card__top
+                  div
+                    .service-card__name= container.label || container.name || container.id
+                    .service-card__id= container.name && container.name !== container.label ? container.name : container.id
+                  span.service-card__badge(class=container.running === true ? 'service-card__badge--running' : (container.running === false ? 'service-card__badge--stopped' : ''))= container.stateDisplay || 'Unknown'
+                ul.service-card__meta
+                  li
+                    span Status
+                    strong= container.statusDisplay || 'Unknown'
+                  li
+                    span Default
+                    strong= container.defaultStateDisplay || 'Unknown'
+                  if container.meta && container.meta.length
+                    each line in container.meta
+                      li
+                        span= line.split(': ')[0]
+                        strong= line.split(': ').slice(1).join(': ') || 'N/A'
+                .service-card__actions
+                  button.btn.btn-outline-success.btn-sm(type='button', data-container-action='start', disabled=container.running === true) Start
+                  button.btn.btn-outline-danger.btn-sm(type='button', data-container-action='stop', disabled=container.running === false) Stop
+                  button.btn.btn-outline-warning.btn-sm(type='button', data-container-action='restart', disabled=container.running === false) Restart
+      else
+        .container-controls#containerControls
+          .container-controls__toolbar
+            .container-controls__summary
+              strong#containerSummary No containers
+              span.text-muted#containerSummaryDetail Gateway did not return managed container data.
+            .container-controls__actions
+              button#containersRefresh.btn.btn-outline-light.btn-sm(type='button') Refresh
+              button#containersResetDefaults.btn.btn-outline-warning.btn-sm(type='button') Reset defaults
+              span#containersFeedback.container-controls__feedback.text-muted
+          .service-grid#containerList
+            p.text-muted.mb-0 No managed services are available.
+
+    section.panel(aria-labelledby='gpuPressureTitle')
+      .panel__header
+        h2.panel__title#gpuPressureTitle GPU Pressure
+        p.panel__subtitle Live GPU utilization, VRAM usage, and temperature, refreshed every second.
+      .chart-shell.chart-shell--hero#gpuTimelineChart
+
+    .gateway-statistics
+      details.panel.gateway-disclosure
+        summary.panel__title Overview
+        .stat-grid
+          each card in dashboard.summaryCards || []
+            .stat-card
+              .stat-card__label= card.label
+              .stat-card__value= card.value
+              if card.helper
+                .stat-card__helper= card.helper
+      details.panel.gateway-disclosure
+        summary.panel__title Request statistics
+        h3.h5 Route Latency & Queue
+        p.panel__subtitle= logWindow.count ? `Average and p95 times across the latest ${formatNumber(logWindow.count)} log entries.` : 'Average and p95 times from recent gateway logs.'
+        .chart-shell#routeLatencyChart
+        h3.h5 Workload Mix & Errors
+        .chart-shell#requestVolumeChart
+        h3.h5 VRAM Footprint by Route
+        .chart-shell#vramPressureChart
+      details.panel.gateway-disclosure
+        summary.panel__title Auto-stop Policy
+        p.panel__subtitle ComfyUI auto-stop settings from /comfy/auto_stop.
         if autoStop
           .auto-stop
             .auto-stop__summary
@@ -245,10 +215,9 @@ block content
                 span#autoStopContainer.auto-stop__value= autoStop.containerStateDisplay || 'Unknown'
         else
           p.text-muted.mb-0 Auto-stop status unavailable.
-      .panel
-        .panel__header
-          h2.panel__title Lentmiien LM
-          p.panel__subtitle TensorBoard access, checkpoints, and training monitor control.
+      details.panel.gateway-disclosure
+        summary.panel__title Lentmiien LM
+        p.panel__subtitle TensorBoard access, checkpoints, and training monitor control.
         if checkpoints && checkpoints.length
           h4.limits-title Checkpoints
           .table-responsive
@@ -297,10 +266,9 @@ block content
             span.text-muted Last update:
             strong#monitorUpdated —
           p.text-muted.mb-0 Monitor status updates after you set it (no GET /lentmiienlm/monitor).
-      .panel
-        .panel__header
-          h2.panel__title Music capabilities
-          p.panel__subtitle= dashboard.musicDiscoveryNote || 'Music discovery has not been checked.'
+      details.panel.gateway-disclosure
+        summary.panel__title Music capabilities
+        p.panel__subtitle= dashboard.musicDiscoveryNote || 'Music discovery has not been checked.'
         if dashboard.musicCatalog
           each model in dashboard.musicCatalog.models
             h3.h5= `${model.id} · ${model.provider}`
@@ -316,10 +284,9 @@ block content
             pre= JSON.stringify(dashboard.musicLimits, null, 2)
         else
           p.text-muted Gateway did not publish music limits.
-      .panel
-        .panel__header
-          h2.panel__title Limits
-          p.panel__subtitle Gateway guardrails from /limits.
+      details.panel.gateway-disclosure
+        summary.panel__title Limits
+        p.panel__subtitle Gateway guardrails from /limits.
         if dashboard.limits
           if dashboard.limits.ocr
             h4.limits-title OCR
@@ -357,10 +324,9 @@ block content
                       .model-card__badge.model-card__badge--muted Text only
         else
           p.text-muted.mb-0 No limit data available.
-      .panel
-        .panel__header
-          h2.panel__title Recent Logs
-          p.panel__subtitle Latest entries from /logs/tail?n=500.
+      details.panel.gateway-disclosure
+        summary.panel__title Recent Logs
+        p.panel__subtitle Latest entries from /logs/tail?n=500.
         if recentLogs && recentLogs.length
           .table-responsive
             table.table.table-dark.table-sm.mb-0
@@ -389,10 +355,11 @@ block content
                         span  · #{entry.voiceId}
         else
           p.text-muted.mb-0 No recent logs returned.
-      .panel
-        .panel__header
-          h2.panel__title TTS Real-Time Factor
-          p.panel__subtitle Backend rtf plus input-length trends from recent logs.
+      details.panel.gateway-disclosure
+        summary.panel__title TTS Real-Time Factor
+        if hasTtsChart
+          .chart-shell#ttsRtfChart
+        p.panel__subtitle Backend rtf plus input-length trends from recent logs.
         if logInsights.tts && logInsights.tts.backends && logInsights.tts.backends.length
           .table-responsive
             table.table.table-dark.table-sm.mb-2
@@ -438,10 +405,11 @@ block content
                             td= bucket.count
         else
           p.text-muted.mb-0 No TTS log entries yet.
-      .panel
-        .panel__header
-          h2.panel__title LLM Throughput & VRAM
-          p.panel__subtitle Model-level token/sec plus VRAM deltas per request.
+      details.panel.gateway-disclosure
+        summary.panel__title LLM Throughput & VRAM
+        if hasLlmChart
+          .chart-shell#llmThroughputChart
+        p.panel__subtitle Model-level token/sec plus VRAM deltas per request.
         if logInsights.llm && logInsights.llm.models && logInsights.llm.models.length
           .table-responsive
             table.table.table-dark.table-sm.mb-2
@@ -508,10 +476,11 @@ block content
                       td= formatFixed(entry.durationSec, 2)
         else
           p.text-muted.mb-0 No LLM log entries yet.
-      .panel
-        .panel__header
-          h2.panel__title OCR VRAM Usage
-          p.panel__subtitle VRAM change against pixels processed and max tokens.
+      details.panel.gateway-disclosure
+        summary.panel__title OCR VRAM Usage
+        if hasOcrTimingChart
+          .chart-shell#ocrTimingChart
+        p.panel__subtitle VRAM change against pixels processed and max tokens.
         if logInsights.ocr
           ul.limits-list
             li Avg VRAM delta: #{logInsights.ocr.avgVramDeltaDisplay || 'N/A'}
@@ -590,13 +559,12 @@ block content
                       td= formatFixed(timing.p95, 3)
         else
           p.text-muted.mb-0 No OCR log entries yet.
-      .panel
-        .panel__header
-          h2.panel__title Music generation VRAM usage
-          if logInsights.music && logInsights.music.models
-            each item in logInsights.music.models
-              p= `${item.model}: ${item.count} requests`
-          p.panel__subtitle Recent /music/generate and legacy /music/acestep15/generate requests across models, with start-to-peak deltas and absolute peak usage.
+      details.panel.gateway-disclosure
+        summary.panel__title Music generation VRAM usage
+        if logInsights.music && logInsights.music.models
+          each item in logInsights.music.models
+            p= `${item.model}: ${item.count} requests`
+        p.panel__subtitle Recent /music/generate and legacy /music/acestep15/generate requests across models, with start-to-peak deltas and absolute peak usage.
         if logInsights.music
           ul.limits-list
             li Requests sampled: #{formatNumber(logInsights.music.sampleCount)}
@@ -612,10 +580,9 @@ block content
               li Success rate: #{formatPercent(logInsights.music.successRate)}
         else
           p.text-muted.mb-0 No music generate log entries yet.
-      .panel
-        .panel__header
-          h2.panel__title ComfyUI VRAM Usage
-          p.panel__subtitle VRAM deltas for ComfyUI runs.
+      details.panel.gateway-disclosure
+        summary.panel__title ComfyUI VRAM Usage
+        p.panel__subtitle VRAM deltas for ComfyUI runs.
         if logInsights.comfy
           ul.limits-list
             li Avg VRAM delta: #{logInsights.comfy.avgVramDeltaDisplay || 'N/A'}

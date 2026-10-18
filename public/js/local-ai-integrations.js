@@ -12,15 +12,21 @@
   });
   if (button) {
     let enabled = false;
+    let configError = '';
     let mediaEnabled = false;
     let submitting = false;
     const conversationId = () => document.getElementById('id')?.textContent.trim() || '';
     const outputFormat = () => document.getElementById('outputFormat')?.value || document.getElementById('id')?.dataset.outputFormat || 'text';
+    const selectedModel = settings => (window.chatModels || []).find(model => model.api_model === settings.model);
     function ineligible(settings) {
-      if (!enabled) return 'Local batch submissions are disabled by the operator.';
+      const model = selectedModel(settings);
+      if (model?.provider !== 'Local') {
+        return model?.provider === 'OpenAI' && model.batch_use === true
+          ? '' : 'Batch is available for Local and batch-enabled OpenAI models.';
+      }
+      if (!enabled) return configError || 'Local batch submissions are disabled by the operator.';
       if (!/^[a-f\d]{24}$/i.test(conversationId())) return 'Save this conversation before batching.';
       if (document.getElementById('id')?.dataset.source !== 'conversation5') return 'Shared templates cannot be batched.';
-      if (!(window.chatModels || []).some(model => model.api_model === settings.model && model.provider === 'Local')) return 'Select a Local model for local batching.';
       if (settings.tools.length) return 'Local batching does not support tools.';
       if (settings.reasoning !== 'none' || settings.mode !== 'standard' || settings.verbosity !== 'medium' || outputFormat() !== 'text') return 'Use reasoning none, standard mode, medium verbosity and text output.';
       if (window.chat5UploadBarrier?.pending) return 'Wait for all image uploads to be acknowledged.';
@@ -36,11 +42,12 @@
     button.disabled = true;
     window.addEventListener('chat5-upload-state', () => eligible());
     window.addEventListener('load', () => {
+      document.querySelectorAll('select, input').forEach(input => input.addEventListener('change', () => eligible()));
+      eligible();
       window.localAiBatch.load().then(config => {
         enabled = config.enabled === true; mediaEnabled = config.mediaEnabled === true;
-        document.querySelectorAll('select, input').forEach(input => input.addEventListener('change', () => eligible()));
         eligible();
-      }).catch(error => { status.textContent = error.message; });
+      }).catch(error => { configError = error.message; eligible(); });
     });
     button.addEventListener('click', async () => {
       if (submitting) return;
@@ -50,11 +57,22 @@
         const settings = collectChatSettings();
         const reason = ineligible(settings);
         if (reason) throw new Error(reason);
+        const prompt = window.editor.getMarkdown();
+        if (selectedModel(settings)?.provider === 'OpenAI') {
+          QueueBatch(Boolean(prompt.trim()));
+          status.textContent = 'Requesting cloud batch response…';
+          return;
+        }
         const job = await window.localAiBatch.submit({ type: 'chat5.response', conversation_id: conversationId(),
-          prompt: window.editor.getMarkdown(), settings: { model: settings.model, contextPrompt: settings.context,
+          prompt: prompt.trim() ? prompt : '', settings: { model: settings.model, contextPrompt: settings.context,
             maxMessages: settings.maxMessages, tools: settings.tools, reasoning: settings.reasoning,
             mode: settings.mode, verbosity: settings.verbosity, outputFormat: outputFormat() } });
         showJob(job);
+        // Preserve any new draft typed while the durable submission was in flight.
+        if (window.editor.getMarkdown() === prompt) {
+          window.editor.reset();
+          updatePromptCharCounter();
+        }
       } catch (error) { status.textContent = error.message; }
       finally { submitting = false; eligible(false); }
     });
@@ -77,9 +95,12 @@
         if (summary) {
           const session = data.session;
           const phase = session?.state === 'held' ? (data.run ? 'GPU reserved — running cohort' : 'GPU reserved — between cohorts') : ['closing', 'stopping', 'release_failed'].includes(session?.state) ? `Release pending (${session.state})` : session?.state?.replace(/_/g, ' ');
-          summary.textContent = session ? `${phase}. Deadline ${session.deadline || 'pending'}; lease ${session.lease_deadline || 'pending'}; cohort ${session.cohort || 0}. Queued ${data.counts?.queued || 0}, eligible ${data.counts?.remaining_eligible || 0}, staging ${(data.counts?.claimed || 0) + (data.counts?.exporting || 0) + (data.counts?.intakes || 0)}, blocked ${data.counts?.blocked || 0}, collecting ${data.counts?.collecting || 0}. ${session.reason || ''}${session.next_attempt_at ? ` Retry ${session.retry_stage}: ${session.next_attempt_at}` : ''}` : `No active session. ${data.reason || ''}`;
+          summary.textContent = `${phase || 'No active session'} · Queued ${data.counts?.queued || 0} · Eligible ${data.counts?.remaining_eligible || 0}`;
         }
-      } catch (error) { state.textContent = error.message; }
+      } catch (error) {
+        state.textContent = error.message;
+        document.getElementById('localAiSessionSummary').textContent = error.message;
+      }
     }
     panel.querySelectorAll('[data-batch-control]').forEach(control => control.addEventListener('click', async () => {
       control.disabled = true;
@@ -90,7 +111,10 @@
         if (!response.ok) throw new Error(body.error?.code || 'Request failed');
         if (control.dataset.batchControl === 'start') startKey = null;
         await refresh();
-      } catch (error) { state.textContent = error.message; }
+      } catch (error) {
+        state.textContent = error.message;
+        document.getElementById('localAiSessionSummary').textContent = error.message;
+      }
       finally { control.disabled = false; }
     }));
     refresh(); setInterval(refresh, 15000);

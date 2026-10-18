@@ -19,7 +19,7 @@ const { parseSubmission } = require('../../services/localAi/policy');
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
       window.io = () => ({ on() {}, emit() {} });
-      window.toastui = { Editor: class { on() {} getMarkdown() { return 'synthetic prompt'; } } };
+      window.toastui = { Editor: class { on() {} getMarkdown() { return 'synthetic prompt'; } reset() {} } };
       window.bootstrap = { Modal: class {}, Tooltip: class {}, Tab: { getOrCreateInstance: () => ({ show() {} }) } };
     });
     await page.route('**/*', async route => {
@@ -37,14 +37,14 @@ const { parseSubmission } = require('../../services/localAi/policy');
     });
     await page.goto('https://fixture.test/fixture');
     assert.equal(await page.locator('#id').evaluate(el => el.tagName), 'P');
-    await page.getByRole('button', { name: 'Queue local batch', exact: true }).click();
+    await page.getByRole('button', { name: 'Batch', exact: true }).click();
     await page.getByText('Durably queued.').waitFor();
     assert.equal(submissions.length, 1);
     assert.equal(submissions[0].conversation_id, id);
     assert.equal(submissions[0].settings.model, model.api_model);
     parseSubmission(submissions[0]);
     await page.locator('#id').evaluate(el => { el.textContent = 'NEW'; });
-    await page.getByRole('button', { name: 'Queue local batch', exact: true }).click();
+    await page.getByRole('button', { name: 'Batch', exact: true }).click();
     await page.getByText('Save this conversation before batching.').waitFor();
     assert.equal(submissions.length, 1);
     assert.equal(await page.locator('#localAiChatBatch').isDisabled(), true);

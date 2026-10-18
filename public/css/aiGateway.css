@@ -696,3 +696,49 @@
 .gateway-runbook h3 { font-size: 1.1rem; margin-top: 1.5rem; scroll-margin-top: 5rem; }
 .gateway-runbook pre { background: var(--bg); color: var(--text); padding: 1rem; border: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
 .gateway-runbook button:focus-visible, .gateway-runbook summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+
+/* Keep everyday controls visible and reveal diagnostics on demand. */
+.gateway-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.gateway-control { min-width: 0; }
+.gateway-control__heading,
+.gateway-control__stats,
+.gateway-control__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+}
+.gateway-control__heading { justify-content: space-between; }
+.gateway-control__stats { color: var(--text-secondary); margin: 0.5rem 0; font-size: 0.9rem; }
+.gateway-control__actions .form-select { flex: 1 1 12rem; width: auto; }
+.gateway-control .reservation-controls { gap: 0.4rem; }
+.gateway-control .reservation-controls__form { gap: 0.5rem; }
+.gateway-control .reservation-controls__summary { margin: 0.4rem 0 0; }
+.gateway-control__details { margin-top: 0.6rem; }
+.ai-gateway summary { cursor: pointer; }
+.ai-gateway summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.ai-gateway details[open] > summary { margin-bottom: 1rem; }
+.ai-gateway details > summary::marker { color: var(--accent); }
+.gateway-statistics { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
+.gateway-disclosure { min-width: 0; }
+.ai-gateway .chart-shell { min-width: 0; padding-inline: 0; }
+.gateway-monitoring .panel__header { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+#serviceMonitoringStatus { color: var(--text-secondary); font-size: 0.85rem; }
+.gateway-disclosure > summary { font-size: 1.05rem; }
+.gateway-disclosure:not([open]) { padding-top: 1rem; padding-bottom: 1rem; }
+.gateway-service-list { display: grid; gap: 0.4rem; }
+.gateway-service-list .health-card { padding: 0.65rem 1rem; border-radius: 8px; }
+.gateway-service-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.gateway-service-summary::before { content: '▸'; color: var(--accent); }
+.gateway-service-list details[open] > summary::before { content: '▾'; }
+.gateway-service-summary .health-card__title { margin: 0; flex: 1; font-size: 0.95rem; }
+.gateway-service-summary strong { font-size: 0.85rem; font-weight: 500; text-align: right; }
+.gateway-monitoring-details { margin-top: 1rem; }
+.gateway-control pre { max-height: 28rem; overflow: auto; }
+@media (max-width: 900px) {
+  .gateway-controls { grid-template-columns: minmax(0, 1fr); }
+}
