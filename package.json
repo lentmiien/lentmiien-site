@@ -33,7 +33,9 @@
     "codex-worker": "node scripts/codex-worker.js",
     "codex-update": "npm install -g @openai/codex@latest",
     "codex-todo": "codex --yolo \"In 'todo.txt', I've listed an update I want to do for this project, please check the 'todo.txt' and start coding the changes.\"",
-    "codex-commit": "codex --yolo \"Create a git commit for all the pending changes.\""
+    "codex-commit": "codex --yolo \"Create a git commit for all the pending changes.\"",
+    "update-start": "node scripts/maintenance.js start 60 deployment",
+    "update-end": "node scripts/maintenance.js end"
   },
   "repository": {
     "type": "git",
