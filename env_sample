@@ -98,6 +98,13 @@ RUNPOD_API_KEY=
 RUNPOD_API_TIMEOUT_MS=10000
 RUNPOD_API_BUDGET_MS=30000
 # Shared within this Node process, not across workers, external CLIs, or other account users.
+# Owner-supplied provider email: limits effective Oct 19, 2026 (public notice still says Oct 27).
+# Same per-user quotas on GraphQL and REST v2; this does not establish a shared bucket.
+# Rolling fallback attempts, including retries, without headers. May lower, never raise above these caps.
+# State resets on restart; external processes/CLIs also consume provider capacity.
+RUNPOD_API_MINUTE_LIMIT=180
+RUNPOD_API_HOUR_LIMIT=3600
+RUNPOD_API_DAY_LIMIT=43200
 RUNPOD_API_CONCURRENCY=4
 RUNPOD_API_QUEUE_LIMIT=64
 RUNPOD_API_READ_RETRIES=2

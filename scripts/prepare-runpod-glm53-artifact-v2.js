@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const { withStandaloneCreationReporting } = require('./lib/runpodStandaloneSafety');
 
 require('dotenv').config({ quiet: true });
 
@@ -165,6 +166,7 @@ async function main({
     return 1;
   }
 
+  service = withStandaloneCreationReporting(service, { stdout, stderr });
   let providerPodId = null;
   let podDeleted = true;
   try {
@@ -244,6 +246,8 @@ async function main({
         stdout('Cleanup verified: the temporary preparation Pod was deleted; the network volume remains.');
       } catch (cleanupError) {
         stderr(`URGENT: automatic preparation Pod cleanup failed: ${safeCode(cleanupError)}`);
+        stderr(`Reconcile exact Pod ${providerPodId}; it may still be billing.`);
+        return 1;
       }
     }
   }

@@ -64,7 +64,8 @@ class RunpodCreationIntentService {
     this.active.delete(intent.token);
     // A received rejection is definitive; timeouts, malformed success, 5xx and
     // local persistence errors are not. Never resubmit the original mutation.
-    const rejected = !intent.providerId && [400, 401, 402, 403, 404, 409, 413, 422, 429].includes(error?.status);
+    const rejected = !intent.providerId && ([400, 401, 402, 403, 404, 409, 413, 422, 429].includes(error?.status)
+      || ['RUNPOD_COOLDOWN', 'RUNPOD_QUEUE_FULL', 'RUNPOD_BUDGET_EXCEEDED'].includes(error?.code));
     try { await this.update(intent, { state: rejected ? 'resolved' : 'unknown' }); }
     catch (_) { /* The durable pending record still blocks new creations. */ }
     if (!rejected) this.logger.error('Runpod resource creation outcome unknown; reconciliation required', {

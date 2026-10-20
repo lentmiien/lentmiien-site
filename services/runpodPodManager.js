@@ -1871,6 +1871,7 @@ class RunpodPodManager {
         action,
         errorCode: safeString(error?.code, 80) || 'RUNPOD_MANAGEMENT_ERROR',
         providerStatus: providerStatusForError(error),
+        ...(Number.isSafeInteger(error?.retryAt) ? { retryAt: error.retryAt } : {}),
         ...context,
       },
     });
@@ -3455,6 +3456,7 @@ class RunpodPodManager {
         } catch (error) {
           if (!error.retryable && ![408, 429, 500, 502, 503, 504].includes(error.status)
             && !['RUNPOD_TIMEOUT', 'RUNPOD_NETWORK_ERROR'].includes(error.code)) throw error;
+          if ((error.retryAt || 0) - Date.now() > 30_000) throw error;
           await this.sleep(Math.min(Math.max(this.pollIntervalMs, (error.retryAt || 0) - Date.now()), Math.max(1, deadline - Date.now())));
           continue;
         }
@@ -3558,6 +3560,7 @@ class RunpodPodManager {
             { code: 'RUNPOD_ARTIFACT_POD_TERMINAL_STATE', status: 502 }
           );
         }
+        if ((logObservation.error?.retryAt || 0) - Date.now() > 30_000) throw logObservation.error;
         await this.sleep(Math.min(Math.max(this.pollIntervalMs, (logObservation.error?.retryAt || 0) - Date.now()), Math.max(1, deadline - Date.now())));
       }
       throw new RunpodManagementError('Model-artifact preparation exceeded its time limit.', {
@@ -3952,6 +3955,7 @@ class RunpodPodManager {
           }
         } catch (error) {
           if (error instanceof RunpodManagementError) throw error;
+          if ((error.retryAt || 0) - Date.now() > 30_000) throw error;
           lastError = error;
         }
       }
@@ -4135,6 +4139,7 @@ class RunpodPodManager {
       } catch (error) {
         if (!error.retryable && !['RUNPOD_TIMEOUT', 'RUNPOD_NETWORK_ERROR'].includes(error.code)
           && ![408, 429, 500, 502, 503, 504].includes(error.status)) throw error;
+        if ((error.retryAt || 0) - Date.now() > 30_000) throw error;
         await this.sleep(Math.min(Math.max(this.pollIntervalMs, (error.retryAt || 0) - Date.now()), Math.max(1, deadline - Date.now())));
         continue;
       }
@@ -4834,7 +4839,7 @@ class RunpodPodManager {
       const now = this.now();
       const stopped = ['EXITED', 'ERROR', 'TERMINATED'].includes(providerStatus);
       const updateResult = await this.podModel.updateOne(
-        { _id: pod._id, archivedAt: null },
+        { _id: pod._id, archivedAt: null, lastActionAt: actionAt, autoStopAt },
         {
           $set: {
             ...reconciledProviderPodFields(pod, providerPod, now),
@@ -4848,7 +4853,7 @@ class RunpodPodManager {
           },
         }
       );
-      if (updateResult?.matchedCount === 0) {
+      if (updateResult?.matchedCount !== 1 || updateResult?.acknowledged === false) {
         throw new RunpodManagementError('The local pod record changed during the provider action.', {
           code: 'RUNPOD_ACTION_CONFLICT', status: 409,
         });
@@ -5232,6 +5237,8 @@ class RunpodPodManager {
             archivedAt: null,
             lifecycleGroup: 'running',
             autoStopAt: pod.autoStopAt,
+            lastActionAt: pod.lastActionAt || null,
+            stopRequestedAt: pod.stopRequestedAt || null,
             $or: [
               { autoStopClaimedAt: null },
               {
@@ -5249,6 +5256,11 @@ class RunpodPodManager {
           }
         );
         if (claimResult?.matchedCount === 0) continue;
+        if (claimResult?.matchedCount !== 1 || claimResult?.acknowledged === false) {
+          throw new RunpodManagementError('Automatic stop claim was not acknowledged; retry after database recovery.', {
+            code: 'RUNPOD_GUARD_PERSIST_FAILED',
+          });
+        }
         const current = await this.getProviderPodForCleanup(pod.providerPodId);
         const currentStatus = normalizeProviderStatus(current.status);
         if (normalizeActions(current.actions).includes('stop')) {
@@ -5258,12 +5270,13 @@ class RunpodPodManager {
               code: 'RUNPOD_STOP_PENDING', status: 409,
             });
           }
-          await this.podModel.updateOne(
-            { _id: pod._id, archivedAt: null },
+          const saved = await this.podModel.updateOne(
+            { _id: pod._id, archivedAt: null, autoStopClaimedAt: claimTime, lastActionAt: pod.lastActionAt || null },
             {
               $set: {
                 ...reconciledProviderPodFields(pod, providerPod, now),
                 autoStopAt: null,
+                stopRequestedAt: null,
                 autoStopClaimedAt: null,
                 lastOperationError: null,
                 lastActionAt: now,
@@ -5271,6 +5284,9 @@ class RunpodPodManager {
               },
             }
           );
+          if (saved?.matchedCount !== 1 || saved?.acknowledged === false) {
+            throw new RunpodManagementError('The Pod changed during automatic stop confirmation.', { code: 'RUNPOD_ACTION_CONFLICT' });
+          }
           stopped += 1;
           await this.recordEvent({
             resourceType: 'pod',
@@ -5282,12 +5298,13 @@ class RunpodPodManager {
         } else if (['EXITED', 'ERROR', 'TERMINATED'].includes(currentStatus)) {
           const archivedAt = currentStatus === 'TERMINATED' ? now : null;
           await this.podModel.updateOne(
-            { _id: pod._id, archivedAt: null },
+            { _id: pod._id, archivedAt: null, autoStopClaimedAt: claimTime, lastActionAt: pod.lastActionAt || null },
             {
               $set: {
                 ...reconciledProviderPodFields(pod, current, now, { archivedAt }),
                 ...(archivedAt ? { archivedAt } : {}),
                 autoStopAt: null,
+                stopRequestedAt: null,
                 autoStopClaimedAt: null,
                 lastOperationError: null,
                 updatedBy: actor,

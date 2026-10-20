@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const { withStandaloneCreationReporting } = require('./lib/runpodStandaloneSafety');
 
 require('dotenv').config({ quiet: true });
 
@@ -128,6 +129,7 @@ async function main({
     return 0;
   }
 
+  service = withStandaloneCreationReporting(service, { stdout, stderr });
   let podId = null;
   let deleted = false;
   try {
@@ -214,9 +216,12 @@ async function main({
     if (podId && !deleted) {
       try {
         await service.deletePod(podId);
+        await waitForDeletion(service, podId, { sleepImpl });
         stdout('Cleanup: the test Pod was permanently deleted.');
       } catch (cleanupError) {
         stderr(`URGENT: automatic test Pod cleanup failed: ${safeCode(cleanupError)}${Number.isSafeInteger(cleanupError?.status) ? ` (HTTP ${cleanupError.status})` : ''}`);
+        stderr(`Reconcile exact Pod ${podId}; it may still be billing.`);
+        return 1;
       }
     }
   }

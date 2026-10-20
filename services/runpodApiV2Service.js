@@ -142,6 +142,8 @@ function publicRunpodError(error) {
       code: error.code,
       status: error.status,
       message: error.message,
+      ...(error.retryable === true ? { retryable: true } : {}),
+      ...(Number.isSafeInteger(error.retryAt) && error.retryAt > 0 ? { retryAt: error.retryAt } : {}),
     };
   }
   return {
@@ -343,14 +345,16 @@ async function readProviderErrorDetails(response, maxResponseBytes, operation, s
   }
 }
 
-function ensureCollection(body, propertyName, operation, maxItems) {
+function ensureCollection(body, propertyName, operation, maxItems, requirePagination = false) {
   if (!body || typeof body !== 'object' || !Array.isArray(body[propertyName])) {
     throw new RunpodApiError(`Runpod returned an invalid response for ${operation}.`, {
       code: 'RUNPOD_INVALID_RESPONSE',
       operation,
     });
   }
-  if (body.pagination && (body.pagination.hasNextPage !== false || body.pagination.nextCursor != null)) {
+  if ((requirePagination || Object.hasOwn(body, 'pagination'))
+    && (!body.pagination || typeof body.pagination !== 'object' || Array.isArray(body.pagination)
+      || body.pagination.hasNextPage !== false || body.pagination.nextCursor !== null)) {
     throw new RunpodApiError(`Runpod returned an incomplete list for ${operation}.`, { code: 'RUNPOD_INCOMPLETE_RESPONSE', operation });
   }
   if (body[propertyName].length > maxItems) {
@@ -577,7 +581,7 @@ class RunpodApiV2Service {
           operation,
           status: response.status,
           ...rate,
-          ...(suppressProviderDetails ? {} : providerError),
+          ...(suppressProviderDetails || body?.env ? {} : providerError),
         });
       }
 
@@ -775,7 +779,7 @@ class RunpodApiV2Service {
       operation: 'the pod list',
       ...options,
     });
-    const pods = ensureCollection(body, 'pods', 'the pod list', MAX_PODS);
+    const pods = ensureCollection(body, 'pods', 'the pod list', MAX_PODS, true);
     pods.forEach((pod) => ensureResource(pod, 'the pod list'));
     return pods;
   }
@@ -989,7 +993,7 @@ class RunpodApiV2Service {
       operation: 'the network volume list',
       ...options,
     });
-    const volumes = ensureCollection(body, 'networkVolumes', 'the network volume list', MAX_NETWORK_VOLUMES);
+    const volumes = ensureCollection(body, 'networkVolumes', 'the network volume list', MAX_NETWORK_VOLUMES, true);
     volumes.forEach((volume) => ensureResource(volume, 'the network volume list'));
     return volumes;
   }
@@ -1037,7 +1041,8 @@ class RunpodApiV2Service {
       body,
       'templates',
       'account templates',
-      MAX_ACCOUNT_TEMPLATES
+      MAX_ACCOUNT_TEMPLATES,
+      true
     );
   }
 

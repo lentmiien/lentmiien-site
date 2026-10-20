@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const { withStandaloneCreationReporting } = require('./lib/runpodStandaloneSafety');
 
 require('dotenv').config({ quiet: true });
 
@@ -202,6 +203,7 @@ async function runProviderOnlyTest({
   stdout,
   stderr,
 }) {
+  service = withStandaloneCreationReporting(service, { stdout, stderr });
   let providerPodId = null;
   try {
     const [providerPods, volumes, secureGpus] = await Promise.all([
@@ -325,6 +327,8 @@ async function runProviderOnlyTest({
         stdout('Cleanup: the remaining test Pod was deleted; the network volume was kept.');
       } catch (cleanupError) {
         stderr(`URGENT: provider test Pod cleanup failed: ${safeCode(cleanupError)}${Number.isSafeInteger(cleanupError?.status) ? ` (HTTP ${cleanupError.status})` : ''}`);
+        stderr(`Reconcile exact Pod ${providerPodId}; it may still be billing.`);
+        return 1;
       }
     }
   }
@@ -510,11 +514,13 @@ async function main({
     stderr(`Runpod model downloader test failed: ${safeCode(error)}${Number.isSafeInteger(error?.status) ? ` (HTTP ${error.status})` : ''}`);
     return 1;
   } finally {
+    let cleanupFailed = false;
     if (manager) {
       for (const recordId of [servingRecordId, downloadRecordId]) {
         try {
           await deleteManagedTestPod(manager, podModel, recordId, actor);
         } catch (cleanupError) {
+          cleanupFailed = true;
           stderr(`URGENT: managed test Pod cleanup failed: ${safeCode(cleanupError)}${Number.isSafeInteger(cleanupError?.status) ? ` (HTTP ${cleanupError.status})` : ''}`);
         }
       }
@@ -528,12 +534,14 @@ async function main({
           stdout('Cleanup: a remaining test Pod was permanently deleted; the network volume was kept.');
         }
       } catch (cleanupError) {
+        cleanupFailed = true;
         stderr(`URGENT: provider test Pod cleanup failed: ${safeCode(cleanupError)}${Number.isSafeInteger(cleanupError?.status) ? ` (HTTP ${cleanupError.status})` : ''}`);
       }
     }
     if (mongooseInstance.connection.readyState !== 0) {
       await mongooseInstance.disconnect().catch(() => {});
     }
+    if (cleanupFailed) return 1;
   }
 }
 

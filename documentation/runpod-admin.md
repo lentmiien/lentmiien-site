@@ -40,13 +40,21 @@ write-only and an existing name is never overwritten. Workload paths such as
 `/v1/chat/completions` belong to llama.cpp's OpenAI-compatible API and are unrelated
 to retirement of the Runpod management API.
 
-Verified against public documentation and the OpenAPI schema on 2026-10-20:
-[Runpod's Q3 announcement](https://www.runpod.io/blog/runpod-q3-2026-releases)
-says management REST v1 stops on November 15, 2026, GraphQL rate limits start on
-October 27, and GraphQL stops in January 2027. The claimed October 19 acceleration
-and quoted GraphQL quotas were not independently confirmed. They are **not** REST
-v2 configuration values. REST v2 limits are per user across multiple windows;
-the implementation reads `RateLimit-Policy`, `RateLimit`, and `Retry-After`.
+The account owner supplied Runpod's provider email confirming **Monday October 19,
+2026** as the start of GraphQL limits, explicitly eight days earlier than the
+previous October 27 notice: **180 requests/minute, 3,600/hour, 43,200/day per user**.
+The email states that the same limits apply to REST v2 and recommends exponential
+backoff on HTTP 429. Equal quotas do **not** establish whether GraphQL and REST v2
+consume one shared bucket. It also confirms management REST v1 stops November 15,
+2026 and external GraphQL ends January 2027, and links the
+[agent skills](https://docs.runpod.io/get-started/agent-skills).
+
+The older [public Q3 announcement](https://www.runpod.io/blog/runpod-q3-2026-releases),
+retrieved again on 2026-10-20, still says October 27; this is public-document lag,
+not uncertainty about the owner's provider notice. The public OpenAPI schema was
+also retrieved on 2026-10-20 to verify correlation fields and pagination contracts.
+REST v2 limits are per user across multiple windows; the transport reads
+`RateLimit-Policy`, `RateLimit`, and `Retry-After` and retains the known local ceilings.
 References: [rate limits](https://docs.runpod.io/api-reference-v2/rate-limits),
 [public schema](https://api.runpod.io/v2/openapi.json),
 [secret creation](https://docs.runpod.io/api-reference-v2/account/create-a-secret),
@@ -58,11 +66,26 @@ All default clients share a bounded priority queue and cooldown in the same Node
 process. Stop/termination requests and pod reconciliation reads precede catalog,
 billing and log work that has not started. Urgent work can displace a queued
 lower-priority request when the bounded queue is full. Already running requests are bounded
-but not preempted. Every request respects the longest exhausted quota window or
+but not preempted. After eight urgent admissions, the oldest ready background
+request gets a turn; each class is FIFO. Every request respects the longest exhausted quota window or
 Retry-After delay, including HTTP dates. Valid long delays are never shortened to
 fit a local budget. Malformed metadata receives a conservative 60-second cooldown
 and a bounded warning. A request whose cooldown exceeds its budget fails with
-`RUNPOD_COOLDOWN` and a retry timestamp instead of sleeping indefinitely.
+`RUNPOD_COOLDOWN`, `retryable`, `retryAt` (epoch milliseconds), and `retryAfterMs`
+instead of sleeping indefinitely. Operation polling propagates cooldowns longer
+than 30 seconds rather than sleeping for hours; saved lifecycle deadlines remain.
+
+Independent rolling windows cap all admitted attempts at 180 in 60 seconds,
+3,600 in 3,600 seconds, and 43,200 in 86,400 seconds, even without headers.
+Reservations are atomic within this coordinator and include retries, all methods,
+and SSE connections; local validation failures may conservatively count too.
+Fixed timestamp rings use at most 46,980 entries (about 367 KiB).
+Server remaining counts additionally restrict admission and are decremented locally;
+concurrent or out-of-order responses cannot replenish a still-active restriction.
+Longer server cooldowns win. Higher server allowances do not raise the conservative
+local ceilings; lower configuration can leave headroom for external tools.
+No exhausted window is bypassed for a stop. An hour/day exhaustion returns a defer
+immediately when it cannot fit the request budget (30 seconds by default).
 
 Only GET reads retry 429, 408, 500, 502, 503, 504 and transport timeout/network
 failures. The default is two retries, with exponential backoff starting at 250 ms
@@ -83,6 +106,9 @@ bounded and Secret bootstrap errors suppress them entirely.
 | `RUNPOD_API_CONCURRENCY` | 4 | 1–16 active requests |
 | `RUNPOD_API_QUEUE_LIMIT` | 64 | 1–256 waiting requests |
 | `RUNPOD_API_READ_RETRIES` | 2 | 0–4 retries |
+| `RUNPOD_API_MINUTE_LIMIT` | 180 | 1–180 attempts / rolling 60 seconds |
+| `RUNPOD_API_HOUR_LIMIT` | 3600 | 1–3600 attempts / rolling hour |
+| `RUNPOD_API_DAY_LIMIT` | 43200 | 1–43200 attempts / rolling day |
 | `RUNPOD_POLL_INTERVAL_MS` | 5000 | 2000–60000 ms |
 | `CODEX_RUNPOD_STATE_MAX_AGE_MS` | 180000 | 120000–600000 ms |
 
@@ -96,11 +122,15 @@ The guard still runs at startup and every 60 seconds, including when idle. This
 change does not reduce the approximately 1,440 idle pod-list reads per day.
 
 The admin page exposes aggregate request, HTTP status, retry, failure, and queue
-counts. Counters reset on process restart; there are no per-success request logs.
+counts. Counters and rolling windows reset on process restart; there are no per-success request logs.
 Throttling warnings include bounded aggregates at most once a minute. These are
 **in-process controls**, not an account-wide quota guarantee: other Node processes,
-CLI invocations and other account users have independent queues. The production
-review found one Node process but did not establish exclusive account use. No
+CLI invocations and clients with a different injected fetch/coordinator have
+independent queues and may consume the same user/account capacity. Restarts do not
+recover earlier local consumption; server headers/cooldowns remain essential for
+usage outside this process. Same-process default clients share limits even across
+keys, conservatively assuming those keys could belong to one user. The earlier implementation
+review reported one Node process but did not establish exclusive account use. No
 Runpod Gateway change is part of this work.
 
 ## Durable creation and cost-guard recovery
@@ -127,8 +157,17 @@ list corroborate absence after a persisted deletion request. A known create ID
 missing from a list alone never proves rollback succeeded.
 There is no fuzzy-name deletion or automatic create replay. This durable gate
 covers application-managed creates. Standalone `--execute` smoke/provisioning
-scripts and external account tools remain operator-owned and do not participate
-in the MongoDB gate; do not use them to bypass an unresolved application intent.
+provider-only scripts and external account tools remain operator-owned and do not
+participate in the MongoDB gate (the downloader/gateway scripts use it when running
+through the application manager with MongoDB). Provider-only scripts print a random
+exact pod environment/volume-name correlation **before** each create and the provider
+ID when observed. Save the output: these are operator records, not durable claims.
+There is no automatic create retry. Unknown outcomes explicitly warn that billing
+may have started and require reconciliation before rerun; failed cleanup exits
+nonzero and identifies the resource. A process kill can still prevent cleanup.
+Retained network volumes/templates are intentional and reported, not proof of zero
+remaining storage charges. Never delete by a similar name or use a standalone
+script to bypass an unresolved application intent.
 
 If no ID was ever observed and no exact match exists, the dashboard continues to
 show **unknown**. Absence at one instant cannot prove that a delayed create will
@@ -163,24 +202,77 @@ Application safeguards still depend on a functioning database, process, provider
 API and account authority. Provider outages or long account cooldowns can delay
 stops; they cannot be guaranteed while the app is down. Pending failures remain
 visible for operator follow-up. No paid-resource test was performed for this
-release; remote eventual consistency and actual account quotas remain untested.
+release; remote eventual consistency and live quota enforcement were not exercised.
+
+## Follow-up release validation (2026-10-20)
+
+Independent follow-up review corrected the missing multi-window fallback, tightened
+pagination validation and concurrent lifecycle updates, propagated long cooldowns,
+and made standalone unknown/cleanup outcomes explicit. Exact pod correlation uses
+`env.LENTMIIEN_CREATION_OPERATION`; the public schema says template environment is
+merged per key, so adding correlation preserves inherited settings. Volume
+correlation uses its exact UUID-suffixed name. Existing mounted authentication,
+semantic capabilities, admin scope, CSRF, bounded forms and private-cache controls
+remain in place and their negative tests pass.
+
+Node 24.20.0 validation: 28 focused suites / 399 tests passed; full coverage run:
+409 suites / 5,333 tests passed, 17 suites / 261 tests skipped. Final lifecycle and
+index-schema assertions also passed (2 suites / 106 tests). Skips cover disposable
+MongoDB integrations, pinned external gateway/Python fixtures (including one
+partially skipped clock suite), and Windows-only storage prerequisites; they did
+not run. Configured coverage thresholds passed. No paid-resource test, secret
+bootstrap, production mutation, or live MongoDB index/restart validation was run.
+No local `mongod` was available; actual deployment index readiness remains an
+operator check below. No concrete code findings remain open from this review.
 
 ## Safe deployment verification
 
-1. Deploy the reviewed commit using Node 24.20.0 and the usual application release
-   procedure. Do not use `npm start` as a smoke test: prestart performs maintenance.
+1. Fetch `origin`, review and merge `origin/fix/runpod-review-safeguards` into the
+   normal release branch (PR or your normal reviewed merge), then update the deployment
+   checkout to that resulting release commit with a clean fast-forward. If a host
+   intentionally tracks the fix branch, use `git switch fix/runpod-review-safeguards`
+   and `git pull --ff-only origin fix/runpod-review-safeguards`. Verify the checkout
+   with `git rev-parse HEAD` and confirm `git merge-base --is-ancestor <reviewed-sha> HEAD`
+   exits zero before restarting. Use Node 24.20.0 and
+   `npm ci` for the normal release build; restart through the existing service manager.
+   Do not use `npm start` as a smoke test: prestart performs maintenance.
    No existing secrets need to be replaced. Keep the new defaults unless measured
-   behavior justifies a change.
+   behavior justifies a change. Existing `RUNPOD_API_KEY`, application MongoDB and
+   session configuration are required; there are no new required secret values.
+   New quota variables are optional and default to the confirmed ceilings above.
+   Leave the existing cost/runtime ceilings and semantic capability assignments in
+   place. Do not print `.env` or secret values during checks.
 2. Confirm MongoDB readiness and permission to create/write
    `runpod_creation_intents`, and that the existing pod collection accepts nullable
    `stopRequestedAt`. The creation gate relies on MongoDB's automatic `_id` index;
-   no manual backfill, destructive migration or paid resource is required.
+   no manual backfill or destructive migration is required. Mongoose adds the
+   non-unique `{ stopRequestedAt: 1 }` index named `stopRequestedAt_1` on
+   `runpod_pods`. If automatic index creation is disabled, have the DBA create that
+   additive index with `db.runpod_pods.createIndex({stopRequestedAt: 1},
+   {name: "stopRequestedAt_1"})` during the release; do not run `syncIndexes()` or
+   drop existing indexes. Verify `db.runpod_creation_intents.getIndexes()` contains
+   `_id_` (the collection can be provisioned by the DBA when creation permission is
+   restricted) and `db.runpod_pods.getIndexes()` contains `stopRequestedAt_1` and
+   existing `runpod_provider_pod_id_1`. No new unique secondary index is required.
+   External MongoDB JSON-schema validators, if installed, must allow the intent
+   model's fields and nullable Date `stopRequestedAt`; Mongoose-only deployments
+   accept the additive fields without migration. Stop claims use existing
+   `autoStopClaimedAt` with a five-minute stale lease; pending creation recovery
+   waits ten minutes after a crash, then uses exact correlation. No TTL expires
+   unresolved intents. These code paths have mocked restart/race regression tests;
+   an actual MongoDB restart/index build was not exercised in this review.
 3. Open `/admin/runpod` with an authorized session. Review the bounded request
    counters, any unknown intents, and the next two guard observations in logs.
    With no active pods, leave them absent; do not create a resource to test this.
 4. Optionally run each Secret bootstrap with **`--check` only** to verify metadata
    and read permission. It never returns values or creates/overwrites a secret.
-   Do not run the provisioning scripts with `--execute` as release verification.
+   Exact read-only commands (use the deployment's existing secret injection):
+   `npm run bootstrap:runpod-cloudflare-secret -- --check` and
+   `npm run bootstrap:runpod-llm-api-secret -- --check`.
+   `npm run test:runpod-api-v2` is an optional read-only catalog/billing connectivity
+   check without Express/DB startup. None of these creates a paid resource, but
+   they consume API quota. Do not run provisioning scripts with `--execute` or
+   either bootstrap without `--check` as release verification.
 5. Confirm stale or stopped Runpod models are unavailable in Codex and that an
    account without Runpod capabilities cannot access the monitor. Investigate
    pending cleanup/cooldown warnings before authorizing new billable work.

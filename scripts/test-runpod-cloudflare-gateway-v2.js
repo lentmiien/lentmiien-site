@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const { withStandaloneCreationReporting } = require('./lib/runpodStandaloneSafety');
 
 require('dotenv').config({ quiet: true });
 
@@ -185,6 +186,7 @@ async function runProviderOnlyTest({
   stderr,
   managerOptions = {},
 }) {
+  service = withStandaloneCreationReporting(service, { stdout, stderr });
   let providerPodId = null;
   try {
     const helper = new RunpodPodManager({
@@ -299,6 +301,8 @@ async function runProviderOnlyTest({
         stdout('Cleanup: the provider-only gateway test Pod was deleted; the network volume and private template remain.');
       } catch (cleanupError) {
         stderr(`URGENT: gateway test Pod cleanup failed: ${safeCode(cleanupError)}`);
+        stderr(`Reconcile exact Pod ${providerPodId}; it may still be billing.`);
+        return 1;
       }
     }
   }

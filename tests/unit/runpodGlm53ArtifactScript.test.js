@@ -120,3 +120,23 @@ describe('Runpod GLM-5.3 artifact preparation script', () => {
     ]);
   });
 });
+
+test('successful preparation still fails the command if paid Pod cleanup is unconfirmed', async () => {
+  const service = {
+    listPods: jest.fn().mockResolvedValue([]),
+    listNetworkVolumes: jest.fn().mockResolvedValue([{ id: 'volume-1', name: 'test-volume', size: 1000, dataCenter: 'EU-RO-1' }]),
+    getGpuTypes: jest.fn().mockResolvedValue([gpu()]),
+    getAccountTemplates: jest.fn().mockResolvedValue([]),
+    createTemplate: jest.fn().mockResolvedValue({ id: 'template-1' }),
+    createPod: jest.fn().mockResolvedValue({ id: 'paid-pod-1', cost: 0.72 }),
+    getPod: jest.fn().mockResolvedValue({ id: 'paid-pod-1', status: 'RUNNING' }),
+    getPodLogSnapshot: jest.fn().mockResolvedValue({ events: [{ line: 'RUNPOD_ARTIFACT_READY slug=x' }] }),
+    deletePod: jest.fn().mockRejectedValue({ code: 'RUNPOD_COOLDOWN' }),
+  };
+  const stdout = jest.fn();
+  const stderr = jest.fn();
+  await expect(main({ argv: ['--execute', '--volume-id=volume-1'], service, stdout, stderr })).resolves.toBe(1);
+  expect(service.createPod).toHaveBeenCalledTimes(1);
+  expect(stdout.mock.calls.some(([line]) => line.startsWith('Verified '))).toBe(true);
+  expect(stderr.mock.calls.some(([line]) => line.includes('paid-pod-1') && line.includes('billing'))).toBe(true);
+});

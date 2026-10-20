@@ -81,7 +81,8 @@ function withAbort(promise, signal, cancel = () => {}) {
 class RunpodRequestCoordinator {
   constructor({ concurrency = process.env.RUNPOD_API_CONCURRENCY,
     queueLimit = process.env.RUNPOD_API_QUEUE_LIMIT, appLogger = logger, now = Date.now,
-    random = Math.random } = {}) {
+    random = Math.random, minuteLimit = process.env.RUNPOD_API_MINUTE_LIMIT,
+    hourLimit = process.env.RUNPOD_API_HOUR_LIMIT, dayLimit = process.env.RUNPOD_API_DAY_LIMIT } = {}) {
     this.concurrency = boundedInteger(concurrency, 4, 1, 16);
     this.queueLimit = boundedInteger(queueLimit, 64, 1, 256);
     this.logger = appLogger;
@@ -92,12 +93,47 @@ class RunpodRequestCoordinator {
     this.cooldownUntil = 0;
     this.timer = null;
     this.lastWarning = -Infinity;
+    // Fixed-size rings bound memory even over a full day. Reserve every admitted
+    // attempt (including retries); local validation failures may overcount safely.
+    this.localWindows = [
+      ['minute', 60_000, boundedInteger(minuteLimit, 180, 1, 180)],
+      ['hour', 3_600_000, boundedInteger(hourLimit, 3600, 1, 3600)],
+      ['day', 86_400_000, boundedInteger(dayLimit, 43200, 1, 43200)],
+    ].map(([name, duration, quota]) => ({ name, duration, quota, times: new Float64Array(quota), head: 0, count: 0 }));
+    this.serverWindows = new Map();
+    this.urgentStreak = 0;
     this.stats = { requests: 0, responses: 0, retries: 0, failures: 0, throttled: 0, statuses: {}, windows: [] };
   }
 
   diagnostics() {
+    const cooldownUntil = this.quotaReadyAt(this.now());
     return { ...this.stats, statuses: { ...this.stats.statuses }, windows: this.stats.windows.map((w) => ({ ...w })),
-      active: this.active, queued: this.queue.length, cooldownUntil: this.cooldownUntil };
+      localWindows: this.localWindows.map(({ name, quota, count }) => ({ name, quota, reserved: count })),
+      active: this.active, queued: this.queue.length, cooldownUntil };
+  }
+
+  quotaReadyAt(now) {
+    let readyAt = this.cooldownUntil;
+    for (const window of this.localWindows) {
+      while (window.count && window.times[window.head] + window.duration <= now) {
+        window.head = (window.head + 1) % window.quota;
+        window.count -= 1;
+      }
+      if (window.count === window.quota) readyAt = Math.max(readyAt, window.times[window.head] + window.duration);
+    }
+    for (const [name, window] of this.serverWindows) {
+      if (window.resetAt <= now) this.serverWindows.delete(name);
+      else if (window.remaining === 0) readyAt = Math.max(readyAt, window.resetAt);
+    }
+    return readyAt;
+  }
+
+  reserve(now) {
+    for (const window of this.localWindows) {
+      window.times[(window.head + window.count) % window.quota] = now;
+      window.count += 1;
+    }
+    for (const window of this.serverWindows.values()) window.remaining = Math.max(0, window.remaining - 1);
   }
 
   observe(response) {
@@ -106,11 +142,26 @@ class RunpodRequestCoordinator {
     const status = Number.isInteger(response.status) && response.status >= 100 && response.status <= 599 ? response.status : 'unknown';
     this.stats.statuses[status] = (this.stats.statuses[status] || 0) + 1;
     if (rate.windows.length) this.stats.windows = rate.windows;
+    this.quotaReadyAt(this.now());
+    for (const window of rate.windows) {
+      const existing = this.serverWindows.get(window.name);
+      if (!existing && this.serverWindows.size >= 32) {
+        // Do not evict a known restriction to accommodate a changing header name.
+        rate.retryAt = Math.max(rate.retryAt, ...[...this.serverWindows.values()].map((w) => w.resetAt));
+        continue;
+      }
+      this.serverWindows.set(window.name, {
+        // Concurrent/out-of-order responses must not replenish consumed capacity.
+        remaining: Math.min(existing?.remaining ?? Infinity, Math.max(0, window.remaining - Math.max(0, this.active - 1))),
+        resetAt: Math.max(existing?.resetAt || 0, Math.min(Number.MAX_SAFE_INTEGER, this.now() + window.resetSeconds * 1000)),
+      });
+    }
     if (status === 429) {
       this.stats.throttled += 1;
       rate.retryAt = Math.max(rate.retryAt, this.now() + 1000);
     }
     this.cooldownUntil = Math.max(this.cooldownUntil, rate.retryAt);
+    this.drain();
     if ((status === 429 || rate.invalid) && this.now() - this.lastWarning >= 60_000) {
       this.lastWarning = this.now();
       this.logger.warning('Runpod control-plane throttling requires delayed requests', {
@@ -144,24 +195,42 @@ class RunpodRequestCoordinator {
     clearTimeout(this.timer);
     this.timer = null;
     const now = this.now();
-    this.queue.sort((a, b) => a.priority - b.priority);
-    for (const entry of [...this.queue]) {
-      const readyAt = Math.max(this.cooldownUntil, entry.notBefore);
+    // FIFO within each class; after eight urgent admissions give the oldest
+    // ready background request a turn so recurring observation cannot starve it.
+    while (this.queue.length) {
+      const quotaAt = this.quotaReadyAt(now);
+      const expired = this.queue.find((e) => now >= e.deadline || Math.max(quotaAt, e.notBefore) >= e.deadline);
+      const ready = this.queue.filter((e) => Math.max(quotaAt, e.notBefore) <= now);
+      const urgent = ready.find((e) => e.priority === 0);
+      const background = ready.find((e) => e.priority !== 0);
+      const entry = expired || (this.active < this.concurrency
+        ? ((this.urgentStreak >= 8 && background) || urgent || background) : null);
+      if (!entry) break;
+      const readyAt = Math.max(quotaAt, entry.notBefore);
       if (now >= entry.deadline || readyAt >= entry.deadline) {
         this.queue.splice(this.queue.indexOf(entry), 1);
         entry.signal?.removeEventListener('abort', entry.abort);
         entry.reject(new RunpodApiError('Runpod request cannot complete within its budget. Retry after the provider cooldown.', {
-          code: readyAt >= entry.deadline ? 'RUNPOD_COOLDOWN' : 'RUNPOD_BUDGET_EXCEEDED', retryable: true, retryAt: readyAt,
+          code: readyAt >= entry.deadline ? 'RUNPOD_COOLDOWN' : 'RUNPOD_BUDGET_EXCEEDED',
+          retryable: true, retryAt: Math.max(now, readyAt), retryAfterMs: Math.max(0, readyAt - now),
         }));
+        if (readyAt > now && now - this.lastWarning >= 60_000) {
+          this.lastWarning = now;
+          this.logger.warning('Runpod requests deferred by quota or cooldown; retry after the reported time', {
+            category: 'runpod_api', metadata: { retryAt: readyAt, ...this.diagnostics() },
+          });
+        }
       } else if (this.active < this.concurrency && readyAt <= now) {
         this.queue.splice(this.queue.indexOf(entry), 1);
         entry.signal?.removeEventListener('abort', entry.abort);
         this.active += 1;
+        this.reserve(now);
+        this.urgentStreak = entry.priority === 0 ? Math.min(8, this.urgentStreak + 1) : 0;
         entry.resolve(() => { this.active -= 1; this.drain(); });
       }
     }
     if (this.queue.length) {
-      const wake = Math.min(...this.queue.map((e) => Math.min(e.deadline, Math.max(this.cooldownUntil, e.notBefore))));
+      const wake = Math.min(...this.queue.map((e) => Math.min(e.deadline, Math.max(this.quotaReadyAt(now), e.notBefore))));
       // Active completions wake ready queues. A timer still enforces queued deadlines.
       const delay = wake <= now ? Math.min(...this.queue.map((e) => e.deadline)) - now : wake - now;
       this.timer = setTimeout(() => this.drain(), Math.max(1, Math.min(delay, 2 ** 31 - 1)));

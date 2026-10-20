@@ -183,3 +183,77 @@ test('an already-cancelled request never reaches the transport', async () => {
   await expect(service.getPod('pod-1', { signal: controller.signal })).rejects.toMatchObject({ code: 'RUNPOD_CANCELLED' });
   expect(fetchImpl).not.toHaveBeenCalled();
 });
+
+describe('Confirmed provider quota fallbacks', () => {
+  test.each([
+    ['minute', 180, 0, 60_000],
+    ['hour', 3600, 400, 3_600_000],
+    ['day', 43200, 2000, 86_400_000],
+  ])('enforces the real %s ceiling without headers and releases only at expiry', async (name, limit, spacing, duration) => {
+    let now = 0;
+    const coordinator = new RunpodRequestCoordinator({ now: () => now, appLogger: appLogger() });
+    const attempt = jest.fn().mockResolvedValue('ok');
+    for (let index = 0; index < limit; index += 1) {
+      now = index * spacing;
+      await coordinator.run(attempt);
+    }
+    await expect(coordinator.run(attempt, { budgetMs: 1 })).rejects.toMatchObject({
+      code: 'RUNPOD_COOLDOWN', retryable: true, retryAt: duration,
+    });
+    expect(attempt).toHaveBeenCalledTimes(limit);
+    expect(coordinator.localWindows.find((w) => w.name === name).times.length).toBe(limit);
+    expect(coordinator.timer).toBeNull();
+    now = duration;
+    await expect(coordinator.run(attempt)).resolves.toBe('ok');
+  }, 30_000);
+
+  test('server remaining capacity is consumed and stale responses cannot replenish it', async () => {
+    const coordinator = new RunpodRequestCoordinator({ now: () => 0, appLogger: appLogger() });
+    coordinator.observe(json({}, 200, { RateLimit: '"hour";r=1;t=3600' }));
+    await coordinator.run(async () => {});
+    coordinator.observe(json({}, 200, { RateLimit: '"hour";r=10;t=3600' }));
+    await expect(coordinator.run(jest.fn())).rejects.toMatchObject({ code: 'RUNPOD_COOLDOWN', retryAt: 3_600_000 });
+  });
+
+  test('retries consume local capacity and JSON writes and SSE share it', async () => {
+    const coordinator = new RunpodRequestCoordinator({ minuteLimit: 1, appLogger: appLogger() });
+    const fetchImpl = jest.fn().mockResolvedValue(json({}, 503));
+    const service = new RunpodApiV2Service({ apiKey: 'key', fetchImpl, coordinator });
+    await expect(service.getPod('pod-1')).rejects.toMatchObject({ code: 'RUNPOD_COOLDOWN' });
+    await expect(service.createPod({})).rejects.toMatchObject({ code: 'RUNPOD_COOLDOWN' });
+    await expect(service.getPodLogSnapshot('pod-1')).rejects.toMatchObject({ code: 'RUNPOD_COOLDOWN' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('background FIFO gets a turn after eight urgent requests', async () => {
+    const coordinator = new RunpodRequestCoordinator({ concurrency: 1, appLogger: appLogger() });
+    let finish;
+    const order = [];
+    const running = coordinator.run(() => new Promise((resolve) => { finish = resolve; }));
+    await new Promise(setImmediate);
+    const background = coordinator.run(async () => order.push('background'), { priority: 2 });
+    const urgent = Array.from({ length: 12 }, () => coordinator.run(async () => order.push('urgent'), { priority: 0 }));
+    finish();
+    await Promise.all([running, background, ...urgent]);
+    expect(order.indexOf('background')).toBe(8);
+  });
+
+  test.each([undefined, null, false, 0, '', [], {}, { hasNextPage: false }, { hasNextPage: 'false', nextCursor: null }])(
+    'rejects missing or malformed pagination %p before any absence inference', async (pagination) => {
+      const fetchImpl = jest.fn().mockImplementation(async () => json({ pods: [], networkVolumes: [], templates: [], pagination }));
+      const service = new RunpodApiV2Service({ apiKey: 'key', fetchImpl });
+      for (const method of ['listPods', 'listNetworkVolumes', 'getAccountTemplates']) {
+        await expect(service[method]()).rejects.toMatchObject({ code: 'RUNPOD_INCOMPLETE_RESPONSE' });
+      }
+    }
+  );
+
+  test('suppresses echoed environment values in provider write errors', async () => {
+    const secret = 'synthetic-private-value';
+    const fetchImpl = jest.fn().mockResolvedValue(json({ detail: `Invalid value ${secret}` }, 422));
+    const service = new RunpodApiV2Service({ apiKey: 'key', fetchImpl });
+    const error = await service.createPod({ env: { PASSWORD: secret } }).catch((e) => e);
+    expect(error.status).toBe(422);
+    expect(JSON.stringify(error)).not.toContain(secret);
+  });
+});

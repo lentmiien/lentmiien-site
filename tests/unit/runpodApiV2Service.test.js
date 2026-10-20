@@ -28,7 +28,7 @@ function responseForUrl(url) {
   if (pathname === '/v2/catalog/gpus') return jsonResponse({ gpus: [{ id: 'gpu-1' }] });
   if (pathname === '/v2/catalog/cpus') return jsonResponse({ cpus: [{ id: 'cpu-1' }] });
   if (pathname === '/v2/catalog/datacenters') return jsonResponse({ dataCenters: [{ id: 'dc-1' }] });
-  if (pathname === '/v2/catalog/templates') return jsonResponse({ templates: [{ id: 'template-1' }] });
+  if (pathname === '/v2/catalog/templates') return jsonResponse({ templates: [{ id: 'template-1' }], pagination: { hasNextPage: false, nextCursor: null } });
   if (pathname === '/v2/billing') {
     return jsonResponse({
       records: [],
@@ -348,7 +348,7 @@ describe('RunpodApiV2Service', () => {
   test('uses only v2 pod endpoints and explicit methods for lifecycle operations', async () => {
     const fetchImpl = jest.fn(async (url, options) => {
       if (url.pathname === '/v2/pods' && options.method === 'GET') {
-        return jsonResponse({ pods: [{ id: 'pod-1' }] });
+        return jsonResponse({ pods: [{ id: 'pod-1' }], pagination: { hasNextPage: false, nextCursor: null } });
       }
       if (url.pathname === '/v2/pods' && options.method === 'POST') {
         return jsonResponse({ id: 'pod-1', status: 'PROVISIONING' }, { status: 201 });
@@ -454,7 +454,7 @@ describe('RunpodApiV2Service', () => {
   test('creates and updates private account templates through v2', async () => {
     const fetchImpl = jest.fn(async (url, options) => {
       if (url.pathname === '/v2/templates' && options.method === 'GET') {
-        return jsonResponse({ templates: [{ id: 'template-1' }] });
+        return jsonResponse({ templates: [{ id: 'template-1' }], pagination: { hasNextPage: false, nextCursor: null } });
       }
       return jsonResponse({ id: 'template-1', name: 'Ollama' });
     });
@@ -482,7 +482,7 @@ describe('RunpodApiV2Service', () => {
     };
     const fetchImpl = jest.fn(async (url, options) => {
       if (url.pathname === '/v2/network-volumes' && options.method === 'GET') {
-        return jsonResponse({ networkVolumes: [volume] });
+        return jsonResponse({ networkVolumes: [volume], pagination: { hasNextPage: false, nextCursor: null } });
       }
       if (options.method === 'DELETE') return jsonResponse(null, { status: 204 });
       return jsonResponse(volume, { status: options.method === 'POST' ? 201 : 200 });

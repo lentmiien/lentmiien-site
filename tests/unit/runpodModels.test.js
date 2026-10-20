@@ -15,6 +15,9 @@ describe('Runpod persistence models', () => {
     expect(intent.toObject()).not.toHaveProperty('env');
     expect(RunpodCreationIntent.collection.collectionName).toBe('runpod_creation_intents');
     expect(RunpodPod.schema.path('stopRequestedAt').options.default).toBe(null);
+    expect(RunpodPod.schema.indexes()).toContainEqual([{ stopRequestedAt: 1 }, {}]);
+    expect(RunpodCreationIntent.schema.indexes()).toEqual([]); // Atomic gate uses MongoDB's built-in _id index, with no TTL.
+
     await expect(new RunpodCreationIntent({ _id: 'invalid', state: 'resolved' }).validate()).rejects.toThrow();
   });
 

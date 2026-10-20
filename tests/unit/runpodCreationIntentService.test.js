@@ -169,3 +169,11 @@ describe('durable Runpod creation recovery', () => {
     await expect(f.service.begin('pod', 'name')).resolves.toHaveProperty('token');
   });
 });
+
+test.each(['RUNPOD_COOLDOWN', 'RUNPOD_QUEUE_FULL', 'RUNPOD_BUDGET_EXCEEDED'])('a pre-dispatch %s does not leave a false unknown creation', async (code) => {
+  const f = fixture();
+  const intent = await f.service.begin('pod', 'name');
+  await f.service.failed(intent, { code });
+  expect(f.rows.get('pod').state).toBe('resolved');
+  await expect(f.service.begin('pod', 'new')).resolves.toMatchObject({ state: 'pending' });
+});

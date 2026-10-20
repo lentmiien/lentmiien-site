@@ -2105,7 +2105,7 @@ describe('RunpodPodManager', () => {
     );
 
     expect(fixture.podModel.updateOne).toHaveBeenCalledWith(
-      { _id: POD_RECORD_ID, archivedAt: null },
+      { _id: POD_RECORD_ID, archivedAt: null, lastActionAt: new Date('2026-09-01T00:00:00.000Z'), autoStopAt: new Date('2026-09-01T04:00:00.000Z') },
       { $set: expect.objectContaining({
         autoStopMinutes: 240,
         autoStopAt: new Date('2026-09-01T04:00:00.000Z'),
@@ -2339,8 +2339,8 @@ describe('RunpodPodManager', () => {
 
     expect(fixture.runpodService.transitionPod).not.toHaveBeenCalled();
     expect(fixture.podModel.updateOne).toHaveBeenCalledWith(
-      { _id: POD_RECORD_ID, archivedAt: null },
-      { $set: expect.objectContaining({ lifecycleGroup: 'stopped', autoStopAt: null }) }
+      { _id: POD_RECORD_ID, archivedAt: null, autoStopClaimedAt: new Date('2026-09-01T00:00:00.000Z'), lastActionAt: null },
+      { $set: expect.objectContaining({ lifecycleGroup: 'stopped', autoStopAt: null, stopRequestedAt: null }) }
     );
   });
 
@@ -2792,4 +2792,26 @@ test('finishing long llama.cpp setup cannot refresh an old RUNNING observation',
   const completed = f.podModel.updateOne.mock.calls.find(([, update]) => update.$set.setupStatus === 'ready');
   expect(completed[1].$set).not.toHaveProperty('lastProviderSyncAt');
   expect(completed[1].$set).not.toHaveProperty('providerStatus');
+});
+
+test('hour/day cooldown returns from readiness immediately without sleeping or dropping defer metadata', async () => {
+  const f = createFixture();
+  const error = new RunpodApiError('deferred', { code: 'RUNPOD_COOLDOWN', retryable: true, retryAt: Date.now() + 86_400_000 });
+  f.runpodService.getPod.mockRejectedValue(error);
+  await expect(f.manager.waitForRunningPod('pod-123')).rejects.toBe(error);
+  expect(f.manager.sleep).not.toHaveBeenCalled();
+  expect(f.runpodService.getPod).toHaveBeenCalledTimes(1);
+  f.manager.llamaCppRequest = jest.fn();
+  await expect(f.manager.waitForLlamaCpp('https://example.test', { providerPodId: 'pod-123' })).rejects.toBe(error);
+  expect(f.manager.llamaCppRequest).not.toHaveBeenCalled();
+  expect(f.manager.sleep).not.toHaveBeenCalled();
+});
+
+test('unacknowledged stop claim cannot trigger a remote action', async () => {
+  const f = createFixture();
+  f.podModel.find.mockReturnValue(queryResult([{ _id: POD_RECORD_ID, autoStopAt: FIXED_NOW, providerPodId: 'pod-123' }]));
+  f.podModel.updateOne.mockResolvedValue({ acknowledged: false });
+  await expect(f.manager.stopExpiredPods()).resolves.toBe(0);
+  expect(f.runpodService.getPod).not.toHaveBeenCalled();
+  expect(f.runpodService.transitionPod).not.toHaveBeenCalled();
 });

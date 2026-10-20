@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const { withStandaloneCreationReporting } = require('./lib/runpodStandaloneSafety');
 
 require('dotenv').config({ quiet: true });
 
@@ -166,6 +167,7 @@ async function main({
     return 0;
   }
 
+  service = withStandaloneCreationReporting(service, { stdout, stderr });
   let podId = null;
   let volumeId = null;
   let podDeleted = true;
@@ -266,15 +268,23 @@ async function main({
         stdout('Cleanup: the remaining test Pod was permanently deleted.');
       } catch (cleanupError) {
         stderr(`URGENT: automatic test Pod cleanup failed: ${safeCode(cleanupError)}${Number.isSafeInteger(cleanupError?.status) ? ` (HTTP ${cleanupError.status})` : ''}`);
+        stderr(`Reconcile exact Pod ${podId} and volume ${volumeId}; volume cleanup deferred while Pod absence is unconfirmed. Both may still be billing.`);
+        return 1;
       }
     }
     if (volumeId && !volumeDeleted) {
+      if (service.standaloneUnresolvedCreates.has('pod')) {
+        stderr(`URGENT: retain volume ${volumeId} while the unknown Pod creation is reconciled; storage may still be billing. Do not rerun this test.`);
+        return 1;
+      }
       try {
         await service.deleteNetworkVolume(volumeId);
         await waitForVolumeDeletion(service, volumeId, { sleepImpl });
         stdout('Cleanup: the disposable test volume was permanently deleted.');
       } catch (cleanupError) {
         stderr(`URGENT: automatic test volume cleanup failed: ${safeCode(cleanupError)}${Number.isSafeInteger(cleanupError?.status) ? ` (HTTP ${cleanupError.status})` : ''}`);
+        stderr(`Reconcile exact volume ${volumeId}; it may still be billing.`);
+        return 1;
       }
     }
   }

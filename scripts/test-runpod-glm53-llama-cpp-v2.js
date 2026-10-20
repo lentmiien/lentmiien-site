@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const { withStandaloneCreationReporting } = require('./lib/runpodStandaloneSafety');
 
 require('dotenv').config({ quiet: true });
 
@@ -218,6 +219,7 @@ async function waitForGateway(service, fetchImpl, providerPodId, gatewayUrl, env
       ]);
     } catch (error) {
       if (!error.retryable && error.status !== 429) throw error;
+      if ((error.retryAt || 0) - Date.now() > 30_000) throw error;
       await sleepImpl(Math.min(Math.max(2000, pollIntervalMs, (error.retryAt || 0) - Date.now()), Math.max(1, deadline - Date.now())));
       continue;
     }
@@ -375,6 +377,7 @@ async function main({
     stdout(`Cost guard: no more than $${DEFAULT_MAX_HOURLY_COST_USD.toFixed(2)}/hour; container disk: 40 GB; model and runtime remain on the network volume.`);
     return 0;
   }
+  service = withStandaloneCreationReporting(service, { stdout, stderr });
   let providerPodId = null;
   let podDeleted = true;
   const startedAt = Date.now();
@@ -492,10 +495,17 @@ async function main({
         stdout('Cleanup verified: the temporary 2-GPU Pod was deleted; the GLM network volume remains.');
       } catch (cleanupError) {
         if (cleanupError?.status === 404) {
-          podDeleted = true;
-          stdout('Cleanup verified: the temporary 2-GPU Pod was already absent; the GLM network volume remains.');
+          try {
+            await waitForPodDeletion(service, providerPodId, { sleepImpl });
+            podDeleted = true;
+            stdout('Cleanup verified: the temporary 2-GPU Pod was already absent; the GLM network volume remains.');
+          } catch (_) {
+            stderr(`URGENT: deletion 404 could not be corroborated for Pod ${providerPodId}; reconcile it before rerunning.`);
+            return 1;
+          }
         } else {
           stderr(`URGENT: automatic GLM test Pod cleanup failed: ${safeCode(cleanupError)} (Pod ${providerPodId}).`);
+          return 1;
         }
       }
     }
