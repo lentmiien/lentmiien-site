@@ -6,7 +6,7 @@ const Role = require('../models/role');
 const logger = require('../utils/logger');
 const { hasCapabilities } = require('../utils/authorization');
 const { IMPORT, ROLE_BUNDLES } = require('../utils/amiamiUploadPolicy');
-const { attemptMissingItemScrape } = require('./amiamiItemFallbackService');
+const { attemptMissingItemScrape, retryFailedItemScrape } = require('./amiamiItemFallbackService');
 const { createAmiAmiUploadService } = require('./amiamiUploadService');
 
 async function authorizeCreator(id) {
@@ -16,5 +16,5 @@ async function authorizeCreator(id) {
 }
 
 module.exports = createAmiAmiUploadService({ jobModel: Job, itemModel: Item,
-  attemptMissingItemScrape, authorizeCreator, logger,
+  attemptMissingItemScrape, retryFailedItemScrape, authorizeCreator, logger,
   ready: () => mongoose.connection.readyState === 1 });

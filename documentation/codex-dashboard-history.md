@@ -12,7 +12,9 @@
 - Cache: private, no-store. No analytics added. No outbound calls or file storage added.
 - Logs: operational query failures use the shared logger, with error name only; no query, title, identity or database error payloads.
 - Retention: unchanged. Negative tests cover authentication/capabilities, owner scope, malformed/oversized input, injection, error privacy and safe rendering.
-- Legacy dependency: existing dashboard stats, queue, detail and list APIs retain their behavior. This is an additive scoped read API, not a migration of the legacy feature.
+- Legacy dependency: the history API is additive. As of the 2026-10-20 production
+  report follow-up, dashboard stats, queue, detail and older list APIs also enforce
+  owner scope with the declared admin override; see `codex-turn-activity-security.md`.
 
 ## Behavior and release
 

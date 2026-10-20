@@ -1,5 +1,6 @@
 const HumanToolRequestService = require('./humanToolRequestService');
 const logger = require('../utils/logger');
+const { isDatabaseReady } = require('../middleware/databaseReadiness');
 
 const DEFAULT_RECOVERY_INTERVAL_MS = 60 * 1000;
 
@@ -44,11 +45,12 @@ function scheduleHumanToolRequestRecovery({
   log = logger,
   env = process.env,
   setIntervalFn = setInterval,
+  ready = isDatabaseReady,
 } = {}) {
   const intervalMs = recoveryInterval(env);
   let running = false;
   const tick = async () => {
-    if (running) return;
+    if (running || !ready()) return;
     running = true;
     try {
       await recoverInterruptedHumanToolResponses({ service, log });

@@ -18,13 +18,72 @@ function deliver(req, res, bytes, descriptor) {
   res.set('Content-Length', String(end - start + 1));
   if (req.method === 'HEAD') res.end(); else res.send(bytes.subarray(start, end + 1));
 }
-let readers = 0;
-async function readAndDeliver(req, res, load, descriptor) {
-  if (readers >= 2) throw problem('private_media_delivery_busy', 503);
-  readers++;
-  let released = false;
-  const release = () => { if (!released) { released = true; readers--; } };
-  res.once('finish', release); res.once('close', release);
-  try { deliver(req, res, await load(), descriptor); } catch (error) { release(); throw error; }
+function createDelivery({ concurrency = 2, maxPending = 32, waitMs = 15000 } = {}) {
+  let readers = 0;
+  const pending = [];
+  const drain = () => {
+    while (readers < concurrency && pending.length) pending.shift()();
+  };
+  return function readAndDeliver(req, res, load, descriptor) {
+    return new Promise((resolve, reject) => {
+      if (res.destroyed || req.aborted) return resolve();
+      if (readers >= concurrency && pending.length >= maxPending) {
+        res.set('Retry-After', '2');
+        return reject(problem('private_media_delivery_busy', 503));
+      }
+      let started = false, loading = false, finished = false, released = false, timer;
+      const cleanup = () => {
+        clearTimeout(timer);
+        res.removeListener('finish', complete); res.removeListener('close', complete);
+        req.removeListener?.('aborted', complete);
+      };
+      const release = () => {
+        // A disconnect cannot free a buffer slot while its disk read is still pending.
+        if (released || loading) return;
+        released = true;
+        cleanup();
+        if (started) readers--;
+        drain();
+      };
+      const complete = () => {
+        finished = true;
+        if (!started) {
+          const index = pending.indexOf(start);
+          if (index >= 0) pending.splice(index, 1);
+          resolve();
+        }
+        release();
+      };
+      const start = async () => {
+        started = true; readers++; loading = true; clearTimeout(timer);
+        try {
+          const bytes = await load();
+          if (!finished && !res.destroyed && !req.aborted) deliver(req, res, bytes, descriptor);
+          else finished = true;
+          resolve();
+        } catch (error) {
+          finished = true;
+          reject(error);
+        } finally {
+          loading = false;
+          if (finished) release();
+        }
+      };
+      res.once('finish', complete); res.once('close', complete);
+      req.once?.('aborted', complete);
+      if (readers < concurrency) start();
+      else {
+        pending.push(start);
+        timer = setTimeout(() => {
+          const index = pending.indexOf(start);
+          if (index >= 0) pending.splice(index, 1);
+          cleanup();
+          res.set('Retry-After', '2');
+          reject(problem('private_media_delivery_busy', 503));
+        }, waitMs);
+        timer.unref?.();
+      }
+    });
+  };
 }
-module.exports = { deliver, readAndDeliver };
+module.exports = { deliver, createDelivery, readAndDeliver: createDelivery() };

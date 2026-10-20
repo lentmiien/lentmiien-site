@@ -9,6 +9,15 @@ function sample(minute, probes, extra = {}) {
 }
 const ok = (latencyMs, name = 'internet') => ({ name, outcome: 'ok', statusCode: 204, latencyMs });
 const timeout = { name: 'internet', outcome: 'timeout', latencyMs: 5000, failurePhase: 'dns', errorCode: 'DEADLINE_EXCEEDED' };
+test('maintenance is explicit context and suppression, never reclassified as successful transport or an alert attempt', () => {
+  const result = aggregateConnectivity([sample(2, [timeout], { notification: 'maintenance',
+    maintenance: { id: 'window-1', reason: 'host', startedAt: since, endsAt: until, private: 'secret' } })], config, { since, until });
+  expect(result.notifications.maintenance).toBe(1);
+  expect(result.alertAttempts).toEqual([]);
+  expect(result.probes[0].counts.timeout).toBe(1);
+  expect(result.samples[0].maintenance).toEqual({ id: 'window-1', reason: 'host', startedAt: since.toISOString(), endsAt: until.toISOString() });
+  expect(JSON.stringify(result)).not.toContain('secret');
+});
 
 test('percentiles include only successful responses, count slow separately and distinguish HTTP reachability', () => {
   const result = aggregateConnectivity([sample(0, [ok(10)]), sample(2, [ok(2000)]), sample(4, [timeout]),

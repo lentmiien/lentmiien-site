@@ -16,6 +16,7 @@ class Worker {
   constructor(service, { ready = isDatabaseReady, now = () => new Date(), terminated = previousCoordinatorTerminated } = {}) {
     this.service = service; this.db = service.db; this.gateway = service.gateway;
     this.ready = ready; this.now = now; this.terminated = terminated; this.id = randomUUID(); this.running = false; this.busy = false; this.fence = null; this.warnings = new Map(); this.sessions = new Sessions(this); this.heartbeatBusy = false;
+    this.authorityChain = Promise.resolve();
   }
   warn(message, metadata) {
     const key = `${metadata.code}:${metadata.operation || ''}:${metadata.reasonClass || ''}:${metadata.reasonCode || ''}:${metadata.mongoCode || ''}:${metadata.systemCode || ''}:${metadata.jobId || ''}`;
@@ -43,12 +44,46 @@ class Worker {
       this.warn('Local AI session heartbeat requires reconciliation', { code: error.code || 'heartbeat_failed' });
     } finally { this.heartbeatBusy = false; }
   }
-  async guard() {
-    if (!this.running || !this.ready() || this.fence === null) throw problem('coordinator_fenced', 409);
-    const control = await this.db.Control.findOneAndUpdate({ _id: 'scheduler', holder: this.id, fence: this.fence, leaseUntil: { $gt: this.now() } },
-      { $set: { leaseUntil: new Date(+this.now() + LEASE_MS) } }, { returnDocument: 'after' }).lean();
-    if (!control) { this.fence = null; throw problem('coordinator_fenced', 409); }
-    return control;
+  withAuthority(action) {
+    // Serialize only authority reads/writes, never Gateway calls or reconciliation.
+    // The independent heartbeat must still renew during long scheduler work.
+    const result = this.authorityChain.then(action);
+    this.authorityChain = result.catch(() => {});
+    return result;
+  }
+  guard() {
+    return this.withAuthority(async () => {
+      if (!this.running || !this.ready() || this.fence === null) throw problem('coordinator_fenced', 409);
+      const fence = this.fence;
+      const control = await this.db.Control.findOneAndUpdate({ _id: 'scheduler', holder: this.id, fence, leaseUntil: { $gt: this.now() } },
+        { $set: { leaseUntil: new Date(+this.now() + LEASE_MS) } }, { returnDocument: 'after' }).lean();
+      if (!control || !this.running || !this.ready() || this.fence !== fence) {
+        if (this.fence === fence) this.fence = null;
+        throw problem('coordinator_fenced', 409);
+      }
+      return control;
+    });
+  }
+  acquire() {
+    return this.withAuthority(async () => {
+      if (!this.running || !this.ready()) return null;
+      const previous = await this.db.Control.findById('scheduler').lean();
+      if (previous.holder !== this.id) {
+        if (+previous.leaseUntil > +this.now()) return null;
+        // Gateway takeover still requires proof that the prior process terminated.
+        if (!await this.terminated(previous)) {
+          this.warn('Local AI coordinator takeover blocked until old process is fenced', { code: 'coordinator_termination_unproven' });
+          return null;
+        }
+      }
+      const identity = await ownerIdentity();
+      if (!this.running || !this.ready()) return null;
+      const control = await this.db.Control.findOneAndUpdate({ _id: 'scheduler', fence: previous.fence, holder: previous.holder },
+        { $set: { holder: this.id, ...identity, leaseUntil: new Date(+this.now() + LEASE_MS) }, $inc: { fence: 1, ownershipEpoch: previous.holder === this.id ? 0 : 1 } }, { returnDocument: 'after' }).lean();
+      if (!control || !this.running || !this.ready()) return null;
+      this.fence = control.fence;
+      return control;
+    });
   }
   async controlSet(set) {
     await this.guard();
@@ -75,25 +110,9 @@ class Worker {
       await this.service.initialize();
       operation = 'Control.upsert';
       await this.db.Control.updateOne({ _id: 'scheduler' }, { $setOnInsert: { leaseUntil: new Date(0), fence: 0 } }, { upsert: true });
-      operation = 'Control.read';
-      const previous = await this.db.Control.findById('scheduler').lean();
-      if (previous.holder !== this.id) {
-        if (+previous.leaseUntil > +this.now()) return;
-        // The v1 Gateway has no coordinator fence token. Never steal a lease from
-        // a paused/live process: it could still send a late seal. Require OS proof.
-        operation = 'coordinator.termination_check';
-        if (!await this.terminated(previous)) {
-          this.warn('Local AI coordinator takeover blocked until old process is fenced', { code: 'coordinator_termination_unproven' });
-          return;
-        }
-      }
-      operation = 'coordinator.identity';
-      const identity = await ownerIdentity();
       operation = 'Control.acquire';
-      const control = await this.db.Control.findOneAndUpdate({ _id: 'scheduler', fence: previous.fence, holder: previous.holder },
-        { $set: { holder: this.id, ...identity, leaseUntil: new Date(+this.now() + LEASE_MS) }, $inc: { fence: 1, ownershipEpoch: previous.holder === this.id ? 0 : 1 } }, { returnDocument: 'after' }).lean();
+      const control = await this.acquire();
       if (!control) return;
-      this.fence = control.fence;
       operation = 'coordinator.reconcile';
       await this.service.reconcileCapacity();
       await this.repairClaims();

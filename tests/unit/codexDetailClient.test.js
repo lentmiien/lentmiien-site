@@ -4,7 +4,7 @@ const { detailFixture } = require('../fixtures/codexDetails');
 let dom;
 afterEach(() => dom?.window.close());
 const flush = async () => { for (let i = 0; i < 40; i += 1) await Promise.resolve(); };
-function setup(page = 'session') {
+function setup(page = 'session', respond) {
   const fixture = detailFixture();
   dom = new JSDOM(fixture.html(page), { url: `http://localhost/codex/${page}s/${page}-1`, runScripts: 'outside-only', pretendToBeVisual: true });
   const win = dom.window;
@@ -14,7 +14,7 @@ function setup(page = 'session') {
   win.clearInterval = (delay) => intervals.delete(delay);
   win.CSS = { escape: (value) => value };
   const events = [{ id: 'event-1', seq: 1, category: 'message', kind: 'agent_message', summary: 'Working on the request', timestamp: '2026-09-19T10:00:02Z' }];
-  win.fetch = jest.fn(async (url) => ({ ok: true, text: async () => JSON.stringify(url.includes('/events') || url.includes('/raw-events')
+  win.fetch = jest.fn(async (url) => respond?.(url) || ({ ok: true, text: async () => JSON.stringify(url.includes('/events') || url.includes('/raw-events')
     ? { events, lastSeq: events.at(-1).seq }
     : { ok: true, ...fixture.payload(page) }) }));
   win.eval(fs.readFileSync('public/js/codex.js', 'utf8'));
@@ -24,6 +24,47 @@ function setup(page = 'session') {
     async pollActivity() { intervals.get(2000)?.(); await flush(); },
   };
 }
+
+test.each([401, 403, 404])('terminal activity HTTP %s triggers one access refresh and cannot be re-added by stale session polling', async status => {
+  const h = setup('session', url => url.includes('/events') ? {
+    ok: false, status, text: async () => JSON.stringify({ ok: false, error: 'Unavailable' }),
+  } : null);
+  await flush();
+  expect(h.win.fetch.mock.calls.filter(([url]) => url.includes('/events'))).toHaveLength(1);
+  expect(h.win.fetch.mock.calls.some(([url]) => url === '/codex/api/sessions/session-1')).toBe(true);
+  for (let i = 0; i < 5; i++) { await h.poll(); await h.pollActivity(); }
+  expect(h.win.fetch.mock.calls.filter(([url]) => url.includes('/events'))).toHaveLength(1);
+  expect(h.doc.querySelector('[data-polling-unavailable]').textContent).toContain('Reload Codex');
+  expect(h.doc.querySelector('[data-activity-heading]').textContent).toBe('Activity unavailable');
+});
+test.each([401, 403, 404])('removed/inaccessible detail page HTTP %s stops page and activity polling', async status => {
+  let removed = false;
+  const h = setup('turn', () => removed ? { ok: false, status, text: async () => '{"ok":false,"error":"Unavailable"}' } : null);
+  await flush(); removed = true;
+  await h.poll();
+  const calls = h.win.fetch.mock.calls.length;
+  for (let i = 0; i < 10; i++) { await h.poll(); await h.pollActivity(); }
+  expect(h.win.fetch).toHaveBeenCalledTimes(calls);
+  expect(h.doc.querySelector('[data-polling-unavailable]')).not.toBeNull();
+});
+test('transient activity failures back off, then resume after a successful response', async () => {
+  let failing = false;
+  const h = setup('turn', url => failing && url.includes('/events') ? {
+    ok: false, status: 503, text: async () => '{"ok":false,"error":"Try later"}',
+  } : null);
+  let now = 100000;
+  h.win.Date.now = () => now;
+  await flush(); failing = true;
+  await h.pollActivity();
+  const failed = h.win.fetch.mock.calls.length;
+  await h.pollActivity(); now += 3999; await h.pollActivity();
+  expect(h.win.fetch).toHaveBeenCalledTimes(failed);
+  now += 1; failing = false; await h.pollActivity();
+  expect(h.win.fetch).toHaveBeenCalledTimes(failed + 1);
+  await h.pollActivity();
+  expect(h.win.fetch).toHaveBeenCalledTimes(failed + 2);
+  expect(h.doc.querySelector('[data-polling-unavailable]')).toBeNull();
+});
 
 test('session starts collapsed with response, links, status and live indicator visible; process details absent', async () => {
   const { doc } = setup(); await flush();

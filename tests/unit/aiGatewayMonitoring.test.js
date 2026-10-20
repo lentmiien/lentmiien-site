@@ -10,6 +10,22 @@ function fixture(container = {}, probe = {}) {
   };
 }
 const first = raw => normalizeMonitoring(raw, NOW).services[0];
+test('monitoring records transport codes separately from upstream HTTP status without payloads', async () => {
+  const log = { warning: jest.fn(), notice: jest.fn() };
+  const http = { get: jest.fn(async url => {
+    if (url.endsWith('/containers')) throw Object.assign(new Error('secret body/path'), { code: 'ECONNRESET', config: { password: 'secret' } });
+    if (url.endsWith('/gpu/queue')) throw { response: { status: 502, data: 'secret body' }, code: 'ERR_BAD_RESPONSE' };
+    return { data: url.endsWith('/health') ? fixture().health : fixture().reservation };
+  }) };
+  await createMonitoringService({ baseUrl: 'http://gateway.test', http, log, now: () => NOW }).get();
+  expect(log.warning).toHaveBeenCalledWith(expect.stringContaining('monitoring incomplete'), expect.objectContaining({
+    metadata: { endpoints: 'containers,queue', failures: [
+      { endpoint: 'containers', failureKind: 'transport', upstreamStatus: null, transportCode: 'ECONNRESET' },
+      { endpoint: 'queue', failureKind: 'http', upstreamStatus: 502, transportCode: 'ERR_BAD_RESPONSE' },
+    ] },
+  }));
+  expect(JSON.stringify(log.warning.mock.calls)).not.toContain('secret');
+});
 test('stopped required Voicevox is unavailable despite degraded HTTP 200 and repeated evidence', () => {
   const raw = fixture({ state: 'exited', running: false }, { ok: false, error: 'private error' });
   raw.health.ok = false;

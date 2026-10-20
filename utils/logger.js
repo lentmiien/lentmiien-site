@@ -3,6 +3,7 @@ const path = require('path');
 const util = require('util');
 const { execFileSync } = require('child_process');
 const { validRevision, readGitRevision } = require('./runtimeRevision');
+const { getActiveMaintenance } = require('./maintenanceWindow');
 
 // Jest can be invoked with NODE_ENV=production. Neither form may write app logs.
 const isTestRuntime = () => process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined;
@@ -249,6 +250,8 @@ async function writeLog(level, message, ...args) {
     message: formatMessage(message),
     runtime: getRuntimeIdentity(),
   };
+  const maintenance = getActiveMaintenance();
+  if (maintenance) entry.maintenance = maintenance;
 
   if (options.category) {
     entry.category = typeof options.category === 'string' ? sanitizeLogText(options.category).slice(0, 100) : 'unspecified';

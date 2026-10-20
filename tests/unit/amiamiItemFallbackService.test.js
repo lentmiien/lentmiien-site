@@ -33,6 +33,13 @@ function createItemModel(initialItems = []) {
       async () => items.get(gcode) || null,
     )),
     findOneAndUpdate: jest.fn((filter, update) => createQuery(async () => {
+      if (update.$set) {
+        const existing = items.get(filter.gcode);
+        if (!existing || existing.source !== filter.source || existing.detailStatus !== filter.detailStatus
+          || existing.details != null || +(existing.detailError?.at || 0) !== +(filter['detailError.at'] || 0)) return null;
+        Object.assign(existing, update.$set);
+        return existing;
+      }
       if (!items.has(filter.gcode)) {
         items.set(filter.gcode, update.$setOnInsert);
       }
@@ -72,6 +79,63 @@ function createService({
 }
 
 describe('amiamiItemFallbackService', () => {
+  test('explicit recovery repairs an error placeholder and preserves its original first-seen date', async () => {
+    const firstSeenAt = new Date(1);
+    const f = createService({ initialItems: [{ gcode: 'FIGURE-404', source: 'amiami-api-lookup',
+      detailStatus: 'error', details: null, firstSeenAt, detailError: { at: new Date(5) } }],
+    fetchDetail: jest.fn(async () => ({ item: {} })), normalize: jest.fn(() => ({ itemName: 'Recovered' })) });
+    expect((await f.service.attemptMissingItemScrape('FIGURE-404')).status).toBe('existing');
+    expect(f.fetchDetail).not.toHaveBeenCalled();
+    const result = await f.service.retryFailedItemScrape('FIGURE-404');
+    expect(result).toMatchObject({ status: 'fetched', item: { detailStatus: 'fetched', details: { itemName: 'Recovered' }, firstSeenAt } });
+    await f.service.retryFailedItemScrape('FIGURE-404');
+    expect(f.fetchDetail).toHaveBeenCalledTimes(1);
+  });
+  test.each(['fetched', 'failed'])('a concurrent scraper update wins over a %s recovery result', async outcome => {
+    const f = createService({ initialItems: [{ gcode: 'FIGURE-404', source: 'amiami-api-lookup',
+      detailStatus: 'error', details: null, detailError: { at: new Date(5) } }],
+    normalize: jest.fn(() => ({ itemName: 'Retry result' })) });
+    f.fetchDetail.mockImplementation(async () => {
+      f.items.set('FIGURE-404', { gcode: 'FIGURE-404', detailStatus: 'fetched', details: { itemName: 'Concurrent winner' } });
+      if (outcome === 'failed') throw new Error('upstream rejection');
+      return { item: {} };
+    });
+    expect(await f.service.retryFailedItemScrape('FIGURE-404')).toMatchObject({
+      status: 'existing', item: { detailStatus: 'fetched', details: { itemName: 'Concurrent winner' } },
+    });
+  });
+  test('failed recovery remains retryable, deduplicated in flight, and shares the existing fetch budget', async () => {
+    const f = createService({ initialItems: [{ gcode: 'FIGURE-404', source: 'amiami-api-lookup',
+      detailStatus: 'error', details: null, detailError: { at: new Date(5) } }],
+    fetchDetail: jest.fn(async () => { throw new Error('HTTP 400'); }), maxScrapesPerWindow: 1 });
+    const one = f.service.retryFailedItemScrape('FIGURE-404');
+    expect(f.service.retryFailedItemScrape('FIGURE-404')).toBe(one);
+    expect(await one).toMatchObject({ status: 'failed', item: { details: null, detailStatus: 'error' } });
+    expect(await f.service.retryFailedItemScrape('FIGURE-404')).toMatchObject({ status: 'rate-limited' });
+    expect(f.fetchDetail).toHaveBeenCalledTimes(1);
+  });
+  test('a concurrent newer error is preserved and reported as incomplete, not an existing success', async () => {
+    const f = createService({ initialItems: [{ gcode: 'FIGURE-404', source: 'amiami-api-lookup',
+      detailStatus: 'error', details: null, detailError: { at: new Date(5) } }],
+    normalize: jest.fn(() => ({ itemName: 'Retry result' })) });
+    f.fetchDetail.mockImplementation(async () => {
+      f.items.set('FIGURE-404', { gcode: 'FIGURE-404', source: 'amiami-api-lookup',
+        detailStatus: 'error', details: null, detailError: { at: new Date(6) } });
+      return { item: {} };
+    });
+    expect(await f.service.retryFailedItemScrape('FIGURE-404')).toMatchObject({
+      status: 'failed', item: { detailStatus: 'error', details: null, detailError: { at: new Date(6) } },
+    });
+  });
+  test.each([
+    { detailStatus: 'fetched', details: {} },
+    { detailStatus: 'error', details: { itemName: 'Retained' } },
+    { detailStatus: 'pending', details: null },
+    { source: 'other', detailStatus: 'error', details: null },
+  ])('explicit recovery preserves non-placeholder records %j', record => {
+    const f = createService({ initialItems: [{ source: 'amiami-api-lookup', ...record, gcode: 'FIGURE-1' }] });
+    return expect(f.service.retryFailedItemScrape('FIGURE-1')).resolves.toMatchObject({ status: 'existing' });
+  });
   test('scrapes once without retries and saves a fetched AmiAmi item', async () => {
     const apiData = {
       RSuccess: true,

@@ -1232,6 +1232,7 @@ module.exports = async function registerChat5_5Handlers({
     let conversationId = 'NEW';
     let tempFilePath = null;
     let acknowledged = false;
+    const { operation: uploadOperation } = require('../../services/localAi/diagnostics');
     const media = require('../../services/localAi/gateway').config().media;
     const completeUpload = value => { acknowledged = true; if (typeof ack === 'function') ack(value); };
     try {
@@ -1253,10 +1254,10 @@ module.exports = async function registerChat5_5Handlers({
         if (!safeEqual(socket.request?.session?.csrfToken, raw.csrfToken)) throw Object.assign(new Error('csrf_rejected'), { code: 'csrf_rejected' });
         const service = require('../../services/localAi').service;
         if (conversationId === 'NEW') {
-          conversationId = await require('../../services/localAi/chatUpload').startConversation({ service, actor: { ownerId: String(principal._id) }, key: raw.uploadKey });
+          conversationId = await uploadOperation('chat5.upload.conversation', () => require('../../services/localAi/chatUpload').startConversation({ service, actor: { ownerId: String(principal._id) }, key: raw.uploadKey }));
           createdNewConversation = true;
         }
-        await service.sourceAccess({ ownerId: String(principal._id), source: { conversationId } });
+        await uploadOperation('chat5.upload.authorize', () => service.sourceAccess({ ownerId: String(principal._id), source: { conversationId } }));
       }
       const fileName = normalizeStringOption(raw.name, '', 'name', adjustments);
       if (!fileName) {
@@ -1298,20 +1299,20 @@ module.exports = async function registerChat5_5Handlers({
       const uniqueName = createSafeUploadName(fileName);
       tempFilePath = path.join(TEMP_DIR, uniqueName);
 
-      await fs.promises.writeFile(tempFilePath, fileBuffer);
+      await uploadOperation('chat5.upload.stage_file', () => fs.promises.writeFile(tempFilePath, fileBuffer));
       if (media) {
         const { upload } = require('../../services/localAi/chatUpload');
         const { userMessage, artifact } = await upload({ service: require('../../services/localAi').service,
           actor: { ownerId: String(principal._id) }, key: raw.uploadKey, conversationId, bytes: fileBuffer,
           normalize: options => ProcessUploadedImage(tempFilePath, options) });
-        await fs.promises.unlink(tempFilePath); tempFilePath = null;
+        await uploadOperation('chat5.upload.cleanup', () => fs.promises.unlink(tempFilePath)); tempFilePath = null;
         const payload = { id: conversationId, messages: [serializeChat5Message(userMessage)].filter(Boolean) };
         if (createdNewConversation) socket.emit('chat5-messages', payload);
         else io.to(convRoom).emit('chat5-messages', payload);
         completeUpload({ ok: true, conversationId, messageId: String(userMessage._id), artifact });
         return;
       }
-      const uploadFile = await ProcessUploadedImage(tempFilePath);
+      const uploadFile = await uploadOperation('chat5.upload.normalize_publish', () => ProcessUploadedImage(tempFilePath));
       try {
         await fs.promises.unlink(tempFilePath);
       } catch (cleanupError) {

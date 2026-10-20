@@ -13,7 +13,7 @@ const PROBES = [
 const OUTCOMES = new Set(['ok', 'timeout', 'unsafe_address', 'http_status', 'oversized',
   'connection_error', 'unexpected_response', 'dns_error', 'unavailable']);
 const PHASES = new Set(['dns', 'tcp', 'tls', 'headers', 'body', 'contract', 'database']);
-const NOTIFICATIONS = new Set(['none', 'attempted', 'sent', 'failed', 'deferred']);
+const NOTIFICATIONS = new Set(['none', 'attempted', 'sent', 'failed', 'deferred', 'maintenance']);
 const finite = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const date = (value) => value && Number.isFinite(+new Date(value)) ? new Date(value).toISOString() : null;
 const safeId = (value) => typeof value === 'string' && /^[a-zA-Z0-9-]{1,64}$/.test(value) ? value : null;
@@ -111,6 +111,10 @@ function aggregateConnectivity(input, config, { since, until, truncated = false 
     return { sampledAt: date(sample.sampledAt), configId: configs.get(key).id,
       monitorVersion: safeId(sample.monitorVersion) || 'legacy',
       notification: NOTIFICATIONS.has(sample.notification) ? sample.notification : 'none',
+      maintenance: sample.maintenance && safeId(sample.maintenance.id) ? {
+        id: safeId(sample.maintenance.id), startedAt: date(sample.maintenance.startedAt), endsAt: date(sample.maintenance.endsAt),
+        reason: ['deployment', 'host', 'database', 'network', 'other'].includes(sample.maintenance.reason) ? sample.maintenance.reason : 'other',
+      } : null,
       lastAttemptAt: date(sample.lastAttemptAt), runId: safeId(sample.runId), processId: safeId(sample.processId),
       processStartedAt: date(sample.processStartedAt), scheduledAt: date(sample.scheduledAt),
       startedAt: date(sample.startedAt), endedAt: date(sample.endedAt),
@@ -234,7 +238,7 @@ function aggregateConnectivity(input, config, { since, until, truncated = false 
     configurations: [...configs.values()], probes: summaries, bins, gaps: gaps.slice(-MAX_STRETCHES), gapCount: gaps.length,
     incidents: incidents.slice(0, MAX_STRETCHES), incidentCount: incidents.length,
     notifications: notificationCounts,
-    alertAttempts: samples.filter((sample) => sample.notification !== 'none').reverse().slice(0, MAX_STRETCHES)
+    alertAttempts: samples.filter((sample) => !['none', 'maintenance'].includes(sample.notification)).reverse().slice(0, MAX_STRETCHES)
       .map(({ sampledAt, notification, lastAttemptAt }) => ({ sampledAt, notification, lastAttemptAt })),
     detailLimit: DETAIL_LIMIT, detailsTruncated: samples.length > DETAIL_LIMIT,
     samples: samples.slice(-DETAIL_LIMIT).reverse() };

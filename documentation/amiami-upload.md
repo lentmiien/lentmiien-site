@@ -26,11 +26,23 @@ HTML remains the default input format for compatibility.
 
 The server extracts unique `gcode` values from AmiAmi `/eng/detail` anchors or
 the plain-text list, filters codes already in `amiamiitems`, and queues the rest.
-Existing error or pending records also count as existing and are not retried. The existing
+Existing error or pending records also count as existing by default. Skipped error
+records are reported separately and are not presented as complete. The existing
 missing-item fallback checks existence again immediately before fetching;
 it performs one detail request and inserts either a fetched record or its
 usual failed placeholder. Failed items do not block subsequent queued codes.
 A temporary fallback rate limit keeps the same code queued for a later attempt.
+
+For controlled recovery, check representative failed codes on AmiAmi, then enable
+**Retry empty records from failed lookups in this list** when uploading that list.
+Only `source: amiami-api-lookup`, `detailStatus: error`, `details: null` records
+are eligible. Each gets one attempt through the same bounded fetch budget and
+60-second pacing. Ordinary API lookups do not opt in. Successful recovery preserves
+the original first-seen time; a conditional update cannot overwrite another
+writer's fetched record or newer failure. An unsuccessful retry remains an error
+placeholder. Re-uploading with the option is an explicit new attempt, not an
+automatic retry loop. HTTP 400 alone does not establish an invalid item code or a
+changed upstream contract; the API request contract is unchanged by this repair.
 
 Only one import can be active across users/tabs/web processes. Closing the page
 does not cancel it. Return to the same URL to see counts, the current code, timing
@@ -83,6 +95,9 @@ fallback errors retain `amiami-items-api`.
   MongoDB. The next accepted upload replaces the last job; no job history or files.
 - Mutations: POST with shared session CSRF header checked before multipart allocation.
   No GET writes. Strict same-origin CSP, no analytics, private/no-store responses.
+  The optional `retryFailed` boolean is limited to this authorized import operation,
+  persisted with the job, and subject to the same per-item capability recheck.
+  No new role, endpoint, automatic recovery process or catalog-deletion step is added.
 - Limits: 2 MiB UTF-8 text, one file or pasted text, at most 1,000 distinct valid
   item codes, five submissions/minute/principal, 120 status/page reads per minute.
   HTML mode accepts only AmiAmi HTTPS `/eng/detail` links or root-relative equivalents,

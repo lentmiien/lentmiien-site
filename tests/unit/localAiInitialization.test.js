@@ -17,7 +17,7 @@ test.each([
   const indexes = valid(); mutate(indexes[0]); const models = db(indexes);
   const error = await initializeIndexes(models).catch(value => value);
   expect(error.code).toBe('admission_index_invalid');
-  expect(errorDiagnostic(error, 'initialize')).toEqual({ operation: 'Job.verify_indexes', reasonClass: 'application_error', reasonCode: 'admission_index_invalid' });
+  expect(errorDiagnostic(error, 'initialize')).toEqual({ operation: 'Job.verify_indexes', reasonClass: 'application_error', reasonCode: 'admission_index_invalid', applicationStatus: 503 });
   expect(models.Job.collection.dropIndex).not.toHaveBeenCalled();
 });
 test('explicit provisioning retries a failure and drops only legacy slot constraints after verifying replacements', async () => {

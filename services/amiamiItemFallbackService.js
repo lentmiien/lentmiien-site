@@ -10,6 +10,9 @@ const {
 const DEFAULT_MAX_SCRAPES_PER_WINDOW = 20;
 const DEFAULT_SCRAPE_WINDOW_MS = 60 * 1000;
 const FALLBACK_SOURCE = 'amiami-api-lookup';
+function isRetryablePlaceholder(item) {
+  return item?.detailStatus === 'error' && item.details == null && item.source === FALLBACK_SOURCE;
+}
 
 function createAmiAmiItemFallbackService({
   itemModel,
@@ -65,13 +68,23 @@ function createAmiAmiItemFallbackService({
     }
   }
 
-  async function scrapeAndPersist(gcode) {
+  async function scrapeAndPersist(gcode, retryFailed) {
     const existing = await findExisting(gcode);
-    if (existing) {
+    if (existing && !(retryFailed && isRetryablePlaceholder(existing))) {
       return {
         status: 'existing',
         item: existing,
       };
+    }
+
+    async function persist(record) {
+      if (!existing) return { item: await persistIfMissing(record), written: true };
+      const filter = { gcode, source: FALLBACK_SOURCE, detailStatus: 'error', details: null,
+        'detailError.at': existing.detailError?.at || null, ...(existing._id ? { _id: existing._id } : {}) };
+      // Never replace a fetched record or race a scraper's newer update.
+      const { firstSeenAt, ...values } = record;
+      const item = await execLean(itemModel.findOneAndUpdate(filter, { $set: values }, { new: true }));
+      return { item: item || await findExisting(gcode), written: Boolean(item) };
     }
 
     const scrapeStartedAtMs = now();
@@ -91,33 +104,33 @@ function createAmiAmiItemFallbackService({
       details = normalize(apiData, { includeRaw: false });
     } catch (error) {
       const failedAt = new Date(now());
-      const failedItem = await persistIfMissing(buildFailedRecord(gcode, error, failedAt));
+      const { item: failedItem, written } = await persist(buildFailedRecord(gcode, error, failedAt));
       serviceLogger.warning('AmiAmi API fallback scrape failed', {
         category: 'amiami-items-api',
         metadata: { gcode, error },
       });
       return {
-        status: 'failed',
+        status: written || !failedItem || failedItem.detailStatus === 'error' ? 'failed' : 'existing',
         item: failedItem,
       };
     }
 
     const fetchedAt = new Date(now());
-    const fetchedItem = await persistIfMissing(buildFetchedRecord(gcode, details, fetchedAt));
+    const { item: fetchedItem, written } = await persist(buildFetchedRecord(gcode, details, fetchedAt));
     return {
-      status: 'fetched',
+      status: written ? 'fetched' : !fetchedItem || fetchedItem.detailStatus === 'error' ? 'failed' : 'existing',
       item: fetchedItem,
     };
   }
 
-  function attemptMissingItemScrape(gcode) {
+  function attemptItemScrape(gcode, retryFailed = false) {
     const inFlight = inFlightByGcode.get(gcode);
     if (inFlight) {
       return inFlight;
     }
 
     let sharedOperation;
-    sharedOperation = scrapeAndPersist(gcode)
+    sharedOperation = scrapeAndPersist(gcode, retryFailed)
       .finally(() => {
         if (inFlightByGcode.get(gcode) === sharedOperation) {
           inFlightByGcode.delete(gcode);
@@ -128,7 +141,8 @@ function createAmiAmiItemFallbackService({
   }
 
   return {
-    attemptMissingItemScrape,
+    attemptMissingItemScrape: gcode => attemptItemScrape(gcode),
+    retryFailedItemScrape: gcode => attemptItemScrape(gcode, true),
   };
 }
 
@@ -231,5 +245,7 @@ const defaultService = createAmiAmiItemFallbackService({
 
 module.exports = {
   attemptMissingItemScrape: defaultService.attemptMissingItemScrape,
+  retryFailedItemScrape: defaultService.retryFailedItemScrape,
+  isRetryablePlaceholder,
   createAmiAmiItemFallbackService,
 };

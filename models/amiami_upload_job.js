@@ -13,6 +13,8 @@ const AmiAmiUploadJobSchema = new mongoose.Schema({
   fetched: { type: Number, default: 0 },
   failed: { type: Number, default: 0 },
   skippedExisting: { type: Number, default: 0 },
+  skippedErrors: { type: Number, default: 0 },
+  retryFailed: { type: Boolean, default: false },
   currentCode: { type: String, default: null },
   failures: [{ _id: false, itemCode: String, message: String }],
   message: { type: String, default: null },

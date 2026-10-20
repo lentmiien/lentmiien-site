@@ -1,5 +1,6 @@
 jest.mock('fs', () => ({ promises: { mkdir: jest.fn(), appendFile: jest.fn() } }));
 jest.mock('child_process', () => ({ execFileSync: jest.fn() }));
+jest.mock('../../utils/maintenanceWindow', () => ({ getActiveMaintenance: jest.fn(() => null) }));
 
 describe('application log sink and process attribution', () => {
   const originalEnvironment = process.env.NODE_ENV;
@@ -13,6 +14,7 @@ describe('application log sink and process attribution', () => {
     require('fs').promises.mkdir.mockResolvedValue();
     require('fs').promises.appendFile.mockResolvedValue();
     require('child_process').execFileSync.mockReturnValue('a'.repeat(40) + '\n');
+    require('../../utils/maintenanceWindow').getActiveMaintenance.mockReturnValue(null);
   });
 
   afterEach(() => {
@@ -66,5 +68,16 @@ describe('application log sink and process attribution', () => {
     const entry = JSON.parse(require('fs').promises.appendFile.mock.calls[0][1]);
     expect(entry.runtime.revision).toBe('b'.repeat(40));
     expect(require('child_process').execFileSync).not.toHaveBeenCalled();
+  });
+  test('maintenance context tags unrelated failures without downgrading them', async () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.JEST_WORKER_ID;
+    const window = { id: 'synthetic-window', startedAt: '2026-10-20T00:00:00Z', endsAt: '2026-10-20T01:00:00Z', reason: 'deployment' };
+    require('../../utils/maintenanceWindow').getActiveMaintenance.mockReturnValue(window);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    await require('../../utils/logger').error('Synthetic storage failure');
+    expect(JSON.parse(require('fs').promises.appendFile.mock.calls[0][1])).toMatchObject({
+      level: 'error', message: 'Synthetic storage failure', maintenance: window,
+    });
   });
 });

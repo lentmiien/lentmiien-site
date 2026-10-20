@@ -7,7 +7,7 @@ const config = getConnectivityConfig({});
 const start = new Date('2026-09-05T00:00:00Z');
 const result = (degraded = true, name = 'internet') => ({ name, outcome: degraded ? 'timeout' : 'ok', latencyMs: 5000, degraded });
 
-function harness() {
+function harness(overrides = {}) {
   let time = +start;
   const saved = [];
   const store = {
@@ -17,12 +17,26 @@ function harness() {
   };
   const send = jest.fn(async () => {});
   const runProbe = jest.fn(async (target) => result(true, target.name));
-  const log = { warning: jest.fn() };
-  const options = { config, store, send, runProbe, runDiagnostics: jest.fn(async () => []), log, clock: () => new Date(time) };
+  const log = { warning: jest.fn(), notice: jest.fn() };
+  const options = { config, store, send, runProbe, runDiagnostics: jest.fn(async () => []), log, clock: () => new Date(time), ...overrides };
   const monitor = createConnectivityMonitor(options);
   return { ...options, saved, monitor, options, setTime: (ms) => { time = +start + ms; },
     tickAt: async (ms) => { time = +start + ms; return monitor.tick(); } };
 }
+
+test('maintenance retains degraded samples and suppresses alerts only until expiry', async () => {
+  const window = { id: 'synthetic', startedAt: start.toISOString(), endsAt: new Date(+start + 12 * 60000).toISOString(), reason: 'network' };
+  const h = harness({ maintenance: at => +at < Date.parse(window.endsAt) ? window : null });
+  for (let minute = 0; minute <= 10; minute += 2) await h.tickAt(minute * 60000);
+  expect(h.saved).toHaveLength(6);
+  expect(h.saved.at(-1)).toMatchObject({ notification: 'maintenance', maintenance: window, lastAttemptAt: null });
+  expect(h.send).not.toHaveBeenCalled();
+  expect(h.log.warning).not.toHaveBeenCalled();
+  expect(h.log.notice).toHaveBeenCalled();
+  await h.tickAt(12 * 60000);
+  expect(h.send).toHaveBeenCalledTimes(1);
+  expect(h.log.warning).toHaveBeenCalled();
+});
 
 test('configuration defaults, bounded overrides and TTL schema', () => {
   expect(config).toMatchObject({ intervalMs: 120000, retentionDays: 3, sustainedMs: 600000,

@@ -8,6 +8,7 @@ const Sample = require('../models/connectivity_sample');
 const logger = require('../utils/logger');
 const { sendPushoverNotification } = require('../utils/pushover');
 const { probe, probeTargets } = require('./connectivityProbe');
+const { getActiveMaintenance } = require('../utils/maintenanceWindow');
 
 const DB_OPTIONS = { timeoutMS: 3000, maxTimeMS: 2000 };
 function probeSummary(items = []) {
@@ -26,7 +27,7 @@ const repository = {
   ready: () => mongoose.connection.readyState === 1,
   latest: () => Sample.findOne().sort({ sampledAt: -1 }).setOptions(DB_OPTIONS).lean(),
   save: (sample) => Sample.collection.insertOne(sample, { ...DB_OPTIONS, writeConcern: { w: 1, j: true } }),
-  mark: (id, notification) => Sample.updateOne({ _id: id }, { $set: { notification } }, DB_OPTIONS),
+  mark: (id, notification, context = {}) => Sample.updateOne({ _id: id }, { $set: { notification, ...context } }, DB_OPTIONS),
   history: (since, limit, before = new Date()) => Sample.find({ sampledAt: { $gte: since, $lt: before }, expiresAt: { $gt: new Date() } })
     .select('-__v').sort({ sampledAt: -1 }).limit(limit).setOptions(DB_OPTIONS).lean(),
 };
@@ -52,7 +53,8 @@ function advance(previous, results, sampledAt, config) {
 
 function createConnectivityMonitor({ config, store = repository, runProbe = probe,
   send = sendPushoverNotification, log = logger, clock = () => new Date(),
-  runDiagnostics = defaultDiagnostics, localPort = () => null, monotonic = () => performance.now() }) {
+  runDiagnostics = defaultDiagnostics, localPort = () => null, monotonic = () => performance.now(),
+  maintenance = getActiveMaintenance }) {
   let running = false;
   let previous = null;
   let restored = false;
@@ -61,9 +63,15 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
   const warnings = new Map();
   function warn(key, message, metadata) {
     const now = +clock();
-    if (warnings.has(key) && now - warnings.get(key) < config.cooldownMs) return;
-    warnings.set(key, now);
-    Promise.resolve(log.warning(message, { category: 'connectivity_monitor', ...(metadata ? { metadata } : {}) })).catch(() => {});
+    const window = maintenance(clock());
+    const expected = window && ['db', 'degraded', 'diagnostics'].includes(key);
+    const warningKey = `${key}:${expected ? window.id : 'unplanned'}`;
+    if (warnings.has(warningKey) && now - warnings.get(warningKey) < config.cooldownMs) return;
+    warnings.set(warningKey, now);
+    if (warnings.size > 32) warnings.delete(warnings.keys().next().value);
+    Promise.resolve(log[expected ? 'notice' : 'warning'](message, {
+      category: 'connectivity_monitor', metadata: { ...metadata, ...(window ? { maintenance: window } : {}) },
+    })).catch(() => {});
   }
   function waitingForInitialReadiness() {
     return !observedDatabaseReady && +clock() < initialReadinessUntil;
@@ -103,6 +111,8 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
       const diagnostics = tasks.at(-1).value;
       const results = tasks.slice(0, -1).map((task) => task.value);
       const sample = advance(previous, results, sampledAt, config);
+      const maintenanceWindow = maintenance(clock());
+      if (maintenanceWindow) sample.maintenance = maintenanceWindow;
       Object.assign(sample, { diagnostics, runId: randomUUID(), processId: PROCESS_ID,
         processStartedAt: PROCESS_STARTED_AT, scheduledAt, startedAt, endedAt: clock(),
         runDurationMs: Math.max(0, monotonic() - started), schedulerLatenessMs });
@@ -116,8 +126,9 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
       }
       const sustained = sample.probes.filter((item) => item.degradedSince
         && sampledAt - new Date(item.degradedSince) >= config.sustainedMs);
-      const due = sustained.length > 0 && (!sample.lastAttemptAt
+      const due = !maintenanceWindow && sustained.length > 0 && (!sample.lastAttemptAt
         || sampledAt - new Date(sample.lastAttemptAt) >= config.cooldownMs);
+      if (maintenanceWindow) sample.notification = 'maintenance';
       if (sustained.length) warn('degraded', 'Connectivity monitor observed sustained degradation; inspect connectivity history', {
         runId: sample.runId, probes: probeSummary(sample.probes), diagnostics: probeSummary(diagnostics),
       });
@@ -147,7 +158,14 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
         sample.notification = 'deferred';
       }
       previous = sample;
-      if (due && persisted && restored) {
+      const beforeSendMaintenance = maintenance(clock());
+      if (due && persisted && restored && beforeSendMaintenance) {
+        sample.lastAttemptAt = oldAttempt;
+        sample.notification = 'maintenance';
+        sample.maintenance = beforeSendMaintenance;
+        try { await store.mark(id, sample.notification, { lastAttemptAt: oldAttempt, maintenance: beforeSendMaintenance }); }
+        catch { warn('db', 'Connectivity monitor cannot persist maintenance notification suppression'); }
+      } else if (due && persisted && restored) {
         try {
           await send({ title: 'Lentmiien Site connectivity degraded',
             message: `Repeated slow or failed small HTTPS probes for at least ${Math.floor(config.sustainedMs / 60000)} minutes: ${sustained.map((item) => `${item.name} (${item.outcome}${item.statusCode ? ` HTTP ${item.statusCode}` : ''})`).join(', ')}. HTTP errors still mean an HTTP response arrived. Check connectivity analytics. This does not identify Wi-Fi, ISP or tunnel as the cause.` });

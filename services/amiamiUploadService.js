@@ -9,12 +9,12 @@ function publicJob(job) {
   if (!job) return null;
   // Never return creator IDs, the pending code array or worker ownership tokens.
   const fields = ['jobId', 'state', 'totalCodes', 'queuedCount', 'cursor', 'fetched', 'failed',
-    'skippedExisting', 'currentCode', 'failures', 'message', 'startedAt', 'finishedAt', 'nextFetchAt'];
+    'skippedExisting', 'skippedErrors', 'retryFailed', 'currentCode', 'failures', 'message', 'startedAt', 'finishedAt', 'nextFetchAt'];
   const result = Object.fromEntries(fields.map(field => [field, job[field]]));
   return { ...result, active: ACTIVE_STATES.includes(job.state), delaySeconds: DELAY_MS / 1000 };
 }
 
-function createAmiAmiUploadService({ jobModel, itemModel, attemptMissingItemScrape,
+function createAmiAmiUploadService({ jobModel, itemModel, attemptMissingItemScrape, retryFailedItemScrape,
   authorizeCreator, logger, ready = () => true, now = Date.now }) {
   let timer = null;
   let busy = false;
@@ -26,7 +26,8 @@ function createAmiAmiUploadService({ jobModel, itemModel, attemptMissingItemScra
   }).lean().exec();
   const log = (level, message, metadata) => logger[level](message, { category: 'amiami-upload', metadata });
 
-  async function submit(input, creator, format = 'html') {
+  async function submit(input, creator, format = 'html', { retryFailed = false } = {}) {
+    if (typeof retryFailed !== 'boolean') throw new AmiAmiUploadError('INVALID_RETRY', 'Choose whether to retry failed placeholders.');
     if (!/^[a-f\d]{24}$/i.test(String(creator || '')) || !await authorizeCreator(String(creator))) {
       throw new AmiAmiUploadError('FORBIDDEN', 'Import permission is required.', 403);
     }
@@ -35,15 +36,22 @@ function createAmiAmiUploadService({ jobModel, itemModel, attemptMissingItemScra
       throw new AmiAmiUploadError('JOB_ACTIVE', 'An import is already running. Wait for it to finish.', 409);
     }
     const codes = parseItemCodes(input, format);
-    const existing = await itemModel.find({ gcode: { $in: codes } }).select('gcode').maxTimeMS(MAX_TIME_MS).lean().exec();
-    const known = new Set(existing.map(item => item.gcode));
+    const existing = await itemModel.find({ gcode: { $in: codes } }).select('gcode detailStatus').maxTimeMS(MAX_TIME_MS).lean().exec();
+    // Check eligibility in MongoDB without loading up to 1,000 full product payloads.
+    const retryable = retryFailed ? await itemModel.find({ gcode: { $in: codes }, source: 'amiami-api-lookup',
+      detailStatus: 'error', details: null }).select('gcode').maxTimeMS(MAX_TIME_MS).lean().exec() : [];
+    const retryCodes = new Set(retryable.map(item => item.gcode));
+    const known = new Set(existing.filter(item => !retryCodes.has(item.gcode)).map(item => item.gcode));
     const pending = codes.filter(code => !known.has(code));
+    const skippedErrors = existing.filter(item => item.detailStatus === 'error' && known.has(item.gcode)).length;
     const at = now();
     const values = {
       jobId: randomUUID(), creator, state: pending.length ? 'queued' : 'completed', codes: pending,
       totalCodes: codes.length, queuedCount: pending.length, cursor: 0, fetched: 0, failed: 0,
-      skippedExisting: codes.length - pending.length, failures: [], currentCode: null,
-      message: pending.length ? null : 'All item codes are already in the catalog.',
+      skippedExisting: codes.length - pending.length, skippedErrors, retryFailed, failures: [], currentCode: null,
+      message: pending.length ? null : skippedErrors
+        ? `${skippedErrors} skipped records still have fetch errors. Review their codes and enable retry for failed placeholders.`
+        : 'All item codes are already in the catalog.',
       startedAt: new Date(at), finishedAt: pending.length ? null : new Date(at),
       expiresAt: new Date(at + JOB_LIFETIME_MS),
       nextFetchAt: new Date(Math.max(at, new Date(previous?.nextFetchAt || 0).getTime())),
@@ -105,9 +113,9 @@ function createAmiAmiUploadService({ jobModel, itemModel, attemptMissingItemScra
         });
         return;
       }
-      // The fallback rechecks existence just before fetching and inserts only
-      // missing records, so another writer cannot cause existing data to refresh.
-      const result = await attemptMissingItemScrape(code);
+      // Opt-in recovery rechecks and atomically replaces only empty error placeholders.
+      // Ordinary API lookups and imports retain their no-refresh behavior.
+      const result = await (job.retryFailed ? retryFailedItemScrape(code) : attemptMissingItemScrape(code));
       if (!['fetched', 'failed', 'existing', 'rate-limited'].includes(result?.status)) {
         throw new Error('Unexpected fallback outcome');
       }
@@ -123,6 +131,7 @@ function createAmiAmiUploadService({ jobModel, itemModel, attemptMissingItemScra
         fetched: job.fetched + (result.status === 'fetched' ? 1 : 0),
         failed: job.failed + (result.status === 'failed' ? 1 : 0),
         skippedExisting: job.skippedExisting + (result.status === 'existing' ? 1 : 0), failures,
+        skippedErrors: (job.skippedErrors || 0) + (result.status === 'existing' && result.item?.detailStatus === 'error' ? 1 : 0),
         message: rateLimited ? 'Waiting for the existing item-fetch budget.' : null,
         nextFetchAt: new Date(now() + DELAY_MS), finishedAt: complete ? new Date(now()) : null,
         currentCode: null, leaseToken: null, leaseUntil: null, ...(complete ? { codes: [] } : {}),

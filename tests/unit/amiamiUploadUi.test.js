@@ -19,6 +19,21 @@ async function open(job) {
 }
 afterEach(() => dom?.window.close());
 
+test('retrying failed placeholders requires explicit selection and skipped errors remain visible', async () => {
+  await open({ ...progress, active: false, state: 'completed', skippedErrors: 2 });
+  expect(doc.querySelector('#job-state').textContent).toBe('Completed with errors');
+  expect(doc.querySelector('#job-skipped-errors').textContent).toContain('not complete');
+  expect(doc.querySelector('#retry-failed').checked).toBe(false);
+  doc.querySelector('#retry-failed').checked = true;
+  doc.querySelector('#html-input').value = '<a href="/eng/detail?gcode=FIGURE-1">Item</a>';
+  dom.window.fetch.mockResolvedValueOnce(reply(progress));
+  doc.querySelector('#upload-form').dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+  await new Promise(setImmediate);
+  const options = dom.window.fetch.mock.calls.find(([, value]) => value.method === 'POST')[1];
+  expect(options.body.get('retryFailed')).toBe('true');
+  expect(doc.querySelector('#retry-failed').checked).toBe(false);
+});
+
 test('empty state exposes paste/file form and submits with CSRF header; accepted active job hides form', async () => {
   await open(null);
   expect(doc.querySelector('#upload-panel').hidden).toBe(false);

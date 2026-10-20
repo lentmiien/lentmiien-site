@@ -11,6 +11,7 @@ p { color: var(--text-secondary); }
 section { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; margin-bottom: 1.5rem; }
 label { display: block; font-weight: 600; margin-bottom: .5rem; }
 input, textarea, select { box-sizing: border-box; width: 100%; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: .8rem; font: inherit; }
+input[type='checkbox'] { width: 1.1rem; height: 1.1rem; padding: 0; margin: 0 .5rem 0 0; vertical-align: middle; accent-color: var(--brand); }
 select { margin-bottom: 1.25rem; }
 textarea { font: .9rem/1.5 ui-monospace, monospace; resize: vertical; }
 textarea::placeholder { color: var(--text-muted); }

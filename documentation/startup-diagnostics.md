@@ -23,6 +23,83 @@ After the configured grace period, the primary web process submits one emergency
 
 If Pushover is not configured or delivery fails, database retries continue and the failure is written through `utils/logger`. The local incident contains only bounded, redacted operational fields; connection strings and credentials are never stored in it.
 
+## Planned maintenance
+
+Before work that may interrupt the app, run these commands **in the deployed checkout**:
+
+```sh
+node scripts/maintenance.js start 60 deployment
+node scripts/maintenance.js status
+# End the window as soon as the work is finished:
+node scripts/maintenance.js end
+```
+
+The duration is 1–1,440 minutes; reasons are `deployment`, `host`, `database`,
+`network`, or `other`. No environment change or application restart is needed.
+The flag is stored atomically in ignored `private_data/operations/maintenance.json`,
+outside static mounts and independently of MongoDB. Keep this directory across
+deployments; processes using separate checkout copies need the flag in each copy.
+It survives Node/MongoDB restarts and expires based on its persisted UTC deadline.
+An unreadable or invalid flag **does not disable alerts** and produces an actionable
+warning. Correct or remove an invalid local file before setting another window.
+
+While active, the database unavailable transition and connectivity availability
+warnings are recorded at notice level, and new database/connectivity Pushover
+outage alerts are deferred. Probes, incident recording, readiness gating, retries,
+and recovery continue. Expiry/early end restores database alerts within 30 seconds
+and connectivity alerts on the next monitor round if the outage persists.
+Suppression does not consume notification attempts or a new connectivity cooldown.
+An emergency already sent before maintenance still follows its existing
+acknowledgement/recovery lifecycle.
+
+Every application log entry during the window carries a top-level `maintenance`
+object (opaque ID, start/end, reason). Other warnings/errors keep their original
+severity: the tag is context for investigation, not proof that maintenance caused
+them. Connectivity analytics retain actual failures and show maintenance rounds
+separately from alert attempts. This flag is not an application traffic switch or
+a replacement for external monitoring when the entire host is down.
+
+Security contract: local operator tooling only, no HTTP/Socket.IO entry point,
+browser mutation, public principal or outbound request. OS access to the deployed
+checkout is required; no application role grants this command. The fixed private
+file contains only bounded operational metadata (no free-text reason or secrets),
+is written with mode 0600 and expires within 24 hours. Start/end are logged; the
+file is deleted on explicit end or replaced after expiry. No schema migration or
+new environment variables are required. Tests cover persistence, expiry, invalid
+state, bounds, log context, alert suppression/resumption and retained failures.
+
+The recurring human-tool response reconciler also checks database readiness on
+each tick. It skips disconnected periods and resumes on the next interval without
+overlapping its own recovery work.
+
+### Production report follow-up (2026-10-20)
+
+Workflow `83cbac45-9be4-421b-bbe7-02a0fa7f2ca7` was checked against checkout
+`9d9e302`, which includes the report's `a60f43b` deployment and subsequent Runpod
+safeguards. The October 14 outage's host cause remains unproven; no restart or
+startup-policy change is justified from the app logs alone. The Local AI
+preconnection initialization fix (`autoCreate/autoIndex: false`, explicit
+readiness-time provisioning) is already present and retains its regression tests.
+TARIC intentionally separates request/benchmark/reprocessing outcomes and rejects
+missing evidence and out-of-catalog proposals; those validation gates are unchanged.
+Production data/catalog/model quality needs a separate measured review.
+
+Confirmed fixes address the Local AI guard/acquisition overlap, bounded private
+media waiting, upload-stage diagnostics, Codex scope/polling mismatch, controlled
+AmiAmi placeholder recovery, and database readiness gating. Gateway monitoring
+now distinguishes a real `upstreamStatus` from the controller's `responseStatus`
+fallback and includes only allowlisted transport codes, without upstream payloads.
+No claim is made that earlier Gateway failures were maintenance-related or that
+silence proves recovery. No production actions, catalog retries, alerts, index
+reinitialization, or deployment are performed by this verification work.
+
+Verification used the pinned Node 24.20.0: 540 focused tests passed, then the full
+Jest run passed 414 suites / 5,395 tests with coverage thresholds satisfied
+(17 suites / 261 tests skipped). After final AmiAmi concurrent-error accounting
+and review-prompt/UI refinements, all 138 affected focused tests passed.
+`git diff --check` passed. This does not replace the opt-in disposable MongoDB,
+Gateway or Windows host integration checks that were skipped.
+
 ## Configurable Checks
 
 | Variable | Purpose |

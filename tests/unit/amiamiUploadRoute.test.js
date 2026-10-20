@@ -32,6 +32,23 @@ beforeEach(() => {
 const body = (html = '<a href="/eng/detail?gcode=TOY-RBT-9417">x</a>') => { const form = new FormData(); form.append('html', html); return form; };
 const post = (form = body(), headers = {}) => fetch(base, { method: 'POST', headers: { Accept: 'application/json', 'X-CSRF-Token': token, ...headers }, body: form });
 
+test('explicit retry option uses the same capability and CSRF protected import path', async () => {
+  const form = body(); form.append('retryFailed', 'true');
+  expect((await post(form)).status).toBe(202);
+  expect(service.submit.mock.calls[0][3]).toEqual({ retryFailed: true });
+  service.submit.mockClear();
+  expect((await post(form, { 'X-CSRF-Token': 'wrong' })).status).toBe(403);
+  expect(service.submit).not.toHaveBeenCalled();
+  user = { ...user, type_user: 'user' };
+  expect((await post(form)).status).toBe(403);
+  expect(service.submit).not.toHaveBeenCalled();
+});
+test.each(['yes', '{"$ne":false}', '1'])('rejects invalid retry option %s', async value => {
+  const form = body(); form.append('retryFailed', value);
+  expect((await post(form)).status).toBe(400);
+  expect(service.submit).not.toHaveBeenCalled();
+});
+
 test('GET renders a private themed form and never submits work', async () => {
   const response = await fetch(base);
   const html = await response.text();
@@ -76,13 +93,13 @@ test.each([
 test('accepts pasted fragments and forwards only the authenticated creator', async () => {
   const html = '<div><a href="/eng/detail?gcode=TOY-RBT-9417">x</a></div>';
   expect((await post(body(html))).status).toBe(202);
-  expect(service.submit).toHaveBeenCalledWith(html, user._id, 'html');
+  expect(service.submit).toHaveBeenCalledWith(html, user._id, 'html', { retryFailed: false });
 });
 
 test('accepts a saved UTF-8 HTML file', async () => {
   const form = new FormData(); form.append('file', new Blob(['<body>sample HTML</body>'], { type: 'text/html' }), 'items.html');
   expect((await post(form)).status).toBe(202);
-  expect(service.submit).toHaveBeenCalledWith('<body>sample HTML</body>', user._id, 'html');
+  expect(service.submit).toHaveBeenCalledWith('<body>sample HTML</body>', user._id, 'html', { retryFailed: false });
 });
 
 test.each(['paste', 'file'])('accepts an explicit code-list %s and forwards the selected format', async mode => {
@@ -91,7 +108,7 @@ test.each(['paste', 'file'])('accepts an explicit code-list %s and forwards the 
   if (mode === 'paste') form.append('html', input);
   else form.append('file', new Blob([input], { type: 'text/plain' }), 'items.txt');
   expect((await post(form)).status).toBe(202);
-  expect(service.submit).toHaveBeenCalledWith(input, user._id, 'codes');
+  expect(service.submit).toHaveBeenCalledWith(input, user._id, 'codes', { retryFailed: false });
 });
 
 test.each(['unknown-format', 'duplicate-format', 'duplicate-input', 'wrong-extension', 'both', 'invalid-encoding'])('rejects invalid code-list uploads: %s', async mode => {

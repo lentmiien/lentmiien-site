@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
+const { gatewayTransportDiagnostic } = require('../utils/gatewayTransportDiagnostic');
 
 const PATHS = { health: '/health', containers: '/containers', queue: '/gpu/queue', reservation: '/gpu/reservation' };
 const CACHE_MS = 15000;
@@ -126,10 +127,14 @@ function createMonitoringService({ baseUrl, headers = () => ({}), http = axios, 
   let lastDegradation = '';
   let sessionLookupFailed = false;
   let hadActiveSession = false;
-  const observe = raw => {
+  const observe = (raw, failuresByEndpoint = {}) => {
     cached = normalizeMonitoring(raw, now());
     const problems = cached.sources.filter(source => !source.available).map(source => source.key).join(',');
-    if (problems && problems !== lastProblems) log.warning('AI Gateway service monitoring incomplete; check endpoint availability and schema', { category: 'ai_gateway', metadata: { endpoints: problems } });
+    if (problems && problems !== lastProblems) log.warning('AI Gateway service monitoring incomplete; check endpoint availability and schema', {
+      category: 'ai_gateway', metadata: { endpoints: problems, failures: cached.sources.filter(source => !source.available)
+        .map(source => ({ endpoint: source.key, ...(failuresByEndpoint[source.key]
+          ? gatewayTransportDiagnostic(failuresByEndpoint[source.key]) : { failureKind: 'schema_or_missing' }) })) },
+    });
     if (!problems && lastProblems) log.notice('AI Gateway service monitoring endpoints recovered', { category: 'ai_gateway', metadata: { endpoints: lastProblems } });
     lastProblems = problems;
     const failed = cached.services.filter(service => service.tone === 'failure');
@@ -169,8 +174,12 @@ function createMonitoringService({ baseUrl, headers = () => ({}), http = axios, 
         validateStatus: status => (status >= 200 && status < 300) || (key === 'health' && status === 503),
       })));
       const raw = {};
-      results.forEach((result, index) => { if (result.status === 'fulfilled') raw[keys[index]] = result.value.data; });
-      return observe(raw);
+      const failures = {};
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') raw[keys[index]] = result.value.data;
+        else failures[keys[index]] = result.reason;
+      });
+      return observe(raw, failures);
     })();
     try { return await inFlight; } finally { inFlight = null; }
   };

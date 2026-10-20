@@ -44,6 +44,8 @@ describe('Codex production log review workflow', () => {
     expect(prompt).toContain('2026-08-14');
     expect(prompt).toContain('2026-08-21');
     expect(prompt).toContain('Do not edit any files');
+    expect(prompt).toContain('actual end or expiry boundary');
+    expect(prompt).toContain('potentially maintenance-related without dismissing them or claiming causation');
     expect(prompt).toContain('under 12,000 characters');
     expect(prompt).toContain('Workflow run reference: run-analysis');
   });

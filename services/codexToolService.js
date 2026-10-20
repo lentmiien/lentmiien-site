@@ -369,13 +369,22 @@ async function assertCodexCapability(user, capability, message) {
   }
 }
 
-function buildTurnOwnerScope(turnId, user) {
-  const query = { _id: turnId };
+function buildOwnerScope(user) {
+  const query = {};
   if (user?.type_user === 'admin') return query;
   const principalId = getPrincipalId(user);
   if (!principalId) throw createHttpError(403, 'Your account cannot access Codex turns.');
   query['createdBy.id'] = principalId;
   return query;
+}
+function buildTurnOwnerScope(turnId, user) {
+  return { _id: turnId, ...buildOwnerScope(user) };
+}
+async function sessionScope(sessionId, user, capability = CODEX_CAPABILITIES.sessionRead) {
+  const id = normalizeOptionalString(sessionId, 160);
+  if (!id) throw createHttpError(400, 'Session id is required.');
+  await assertCodexCapability(user, capability, 'You do not have permission to access Codex sessions.');
+  return { _id: id, ...buildOwnerScope(user) };
 }
 
 async function findAuthorizedTurn(turnIdInput, user, capability, deniedMessage) {
@@ -2145,7 +2154,7 @@ async function getNextSessionSequence(sessionId) {
 }
 
 async function createFollowupTurn(sessionId, payload = {}, user) {
-  const session = await CodexSession.findById(sessionId).exec();
+  const session = await CodexSession.findOne(await sessionScope(sessionId, user, CODEX_CAPABILITIES.sessionWrite)).exec();
   if (!session) {
     throw createHttpError(404, 'Session not found.');
   }
@@ -2494,9 +2503,10 @@ function normalizePermissionForWorkspace(value, fallback) {
 }
 
 async function listSessions(options = {}) {
+  await assertCodexCapability(options.user, CODEX_CAPABILITIES.sessionRead, 'Session access is required.');
   await ensureDefaultData();
   const limit = Math.max(1, Math.min(Number.parseInt(options.limit, 10) || 12, 100));
-  const query = {};
+  const query = buildOwnerScope(options.user);
   if (!options.includeArchived) {
     query.status = { $ne: 'archived' };
   }
@@ -2581,7 +2591,7 @@ function buildSessionStats(turns = [], pricing) {
   return stats;
 }
 
-async function annotatePeriodTurnsWithUsageDeltas(turns = []) {
+async function annotatePeriodTurnsWithUsageDeltas(turns = [], scope = {}) {
   if (!Array.isArray(turns) || !turns.length) {
     return [];
   }
@@ -2594,7 +2604,7 @@ async function annotatePeriodTurnsWithUsageDeltas(turns = []) {
     return annotateTurnsWithTokenUsage(turns);
   }
 
-  const sessionTurns = await CodexTurn.find({ sessionId: { $in: sessionIds } })
+  const sessionTurns = await CodexTurn.find({ sessionId: { $in: sessionIds }, ...scope })
     .sort({ sessionId: 1, sequence: 1 })
     .lean()
     .exec();
@@ -2608,6 +2618,9 @@ async function annotatePeriodTurnsWithUsageDeltas(turns = []) {
 }
 
 async function getDashboardStats(options = {}) {
+  await assertCodexCapability(options.user, CODEX_CAPABILITIES.turnRead, 'Turn access is required.');
+  await assertCodexCapability(options.user, CODEX_CAPABILITIES.sessionRead, 'Session access is required.');
+  const scope = buildOwnerScope(options.user);
   const pricing = options.pricingByProvider || options.pricing || await getTokenPricingByProvider();
   const currentMonthStart = startOfMonth(new Date());
   const oldestStart = addMonths(currentMonthStart, -2);
@@ -2631,6 +2644,7 @@ async function getDashboardStats(options = {}) {
 
   const [turns, sessions, workspaces] = await Promise.all([
     CodexTurn.find({
+      ...scope,
       $or: [
         { startedAt: { $gte: oldestStart, $lt: nextMonthStart } },
         { startedAt: null, queuedAt: { $gte: oldestStart, $lt: nextMonthStart } },
@@ -2638,7 +2652,7 @@ async function getDashboardStats(options = {}) {
         { startedAt: null, queuedAt: null, createdAt: { $gte: oldestStart, $lt: nextMonthStart } },
       ],
     }).lean().exec(),
-    CodexSession.find({ createdAt: { $gte: oldestStart, $lt: nextMonthStart } }).lean().exec(),
+    CodexSession.find({ ...scope, createdAt: { $gte: oldestStart, $lt: nextMonthStart } }).lean().exec(),
     CodexWorkspace.find({}).lean().exec(),
   ]);
 
@@ -2670,7 +2684,7 @@ async function getDashboardStats(options = {}) {
     recordSessionInBucket(getWorkspaceBucket(session.workspaceId), session);
   });
 
-  const usageTurns = await annotatePeriodTurnsWithUsageDeltas(turns);
+  const usageTurns = await annotatePeriodTurnsWithUsageDeltas(turns, scope);
   usageTurns.forEach((turn) => {
     const startedAt = getTurnStartedDate(turn);
     const startedDate = startedAt ? new Date(startedAt) : null;
@@ -2714,17 +2728,19 @@ async function getDashboardStats(options = {}) {
 }
 
 async function getDashboardState(options = {}) {
+  await assertCodexCapability(options.user, CODEX_CAPABILITIES.turnRead, 'Turn access is required.');
+  const scope = buildOwnerScope(options.user);
   await ensureDefaultData();
   const [workspaces, queuedTurns, runningTurns, sessions, pricingByProvider, requestProfiles, config] = await Promise.all([
     listWorkspaces(),
-    CodexTurn.find({ status: 'queued' }).sort({ queuedAt: 1 }).limit(20).lean().exec(),
-    CodexTurn.find({ status: 'running' }).sort({ startedAt: 1 }).limit(20).lean().exec(),
-    listSessions({ limit: 12 }),
+    CodexTurn.find({ ...scope, status: 'queued' }).sort({ queuedAt: 1 }).limit(20).lean().exec(),
+    CodexTurn.find({ ...scope, status: 'running' }).sort({ startedAt: 1 }).limit(20).lean().exec(),
+    listSessions({ limit: 12, user: options.user }),
     getTokenPricingByProvider(),
     listRequestProfiles(),
     publicConfig(options),
   ]);
-  const stats = await getDashboardStats({ pricingByProvider });
+  const stats = await getDashboardStats({ pricingByProvider, user: options.user });
   const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
   return {
     config,
@@ -2740,14 +2756,14 @@ async function getDashboardState(options = {}) {
 }
 
 async function getSessionDetail(sessionId, options = {}) {
-  const session = await CodexSession.findById(sessionId).lean().exec();
+  const session = await CodexSession.findOne(await sessionScope(sessionId, options.user)).lean().exec();
   if (!session) {
     throw createHttpError(404, 'Session not found.');
   }
   const [workspace, target, turns, pricingByProvider, requestProfiles, config] = await Promise.all([
     CodexWorkspace.findById(session.workspaceId).lean().exec(),
     CodexExecutionTarget.findById(session.targetId).lean().exec(),
-    CodexTurn.find({ sessionId }).sort({ sequence: 1 }).lean().exec(),
+    CodexTurn.find({ sessionId, ...buildOwnerScope(options.user) }).sort({ sequence: 1 }).lean().exec(),
     getTokenPricingByProvider(),
     listRequestProfiles(),
     publicConfig(options),
@@ -2864,12 +2880,14 @@ async function listTurnEvents(turnId, options = {}) {
   return page.events;
 }
 
-async function getQueueState() {
+async function getQueueState(options = {}) {
+  await assertCodexCapability(options.user, CODEX_CAPABILITIES.turnRead, 'Turn access is required.');
+  const scope = buildOwnerScope(options.user);
   await ensureDefaultData();
   const [queuedTurns, runningTurns, locks, workspaces] = await Promise.all([
-    CodexTurn.find({ status: 'queued' }).sort({ queuedAt: 1 }).limit(50).lean().exec(),
-    CodexTurn.find({ status: 'running' }).sort({ startedAt: 1 }).limit(50).lean().exec(),
-    CodexWorkspaceLock.find({}).sort({ acquiredAt: 1 }).lean().exec(),
+    CodexTurn.find({ ...scope, status: 'queued' }).sort({ queuedAt: 1 }).limit(50).lean().exec(),
+    CodexTurn.find({ ...scope, status: 'running' }).sort({ startedAt: 1 }).limit(50).lean().exec(),
+    options.user.type_user === 'admin' ? CodexWorkspaceLock.find({}).sort({ acquiredAt: 1 }).lean().exec() : [],
     CodexWorkspace.find({}).lean().exec(),
   ]);
   const workspaceById = new Map(workspaces.map((workspace) => [String(workspace._id), workspace]));
@@ -3091,14 +3109,14 @@ async function retryTurn(turnId, user) {
   };
 }
 
-async function archiveSession(sessionId) {
-  const session = await CodexSession.findById(sessionId).exec();
+async function archiveSession(sessionId, user) {
+  const session = await CodexSession.findOneAndUpdate(
+    await sessionScope(sessionId, user, CODEX_CAPABILITIES.sessionArchive),
+    { $set: { status: 'archived', archivedAt: new Date() } }, { new: true }
+  ).exec();
   if (!session) {
     throw createHttpError(404, 'Session not found.');
   }
-  session.status = 'archived';
-  session.archivedAt = new Date();
-  await session.save();
   return serializeSession(session);
 }
 

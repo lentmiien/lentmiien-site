@@ -118,6 +118,44 @@ function immediateTimer(callback) {
 }
 
 describe('DatabaseLifecycleService', () => {
+  test('planned downtime retains incident evidence, defers alerts, and alerts after expiry or early end', async () => {
+    let window = { id: 'maintenance', endsAt: '2026-10-20T01:00:00Z' };
+    let time = new Date('2026-10-20T00:00:00Z');
+    const timers = [], store = createIncidentStore(), log = createLogger(), send = jest.fn(async () => ({}));
+    const lifecycle = new DatabaseLifecycleService({
+      mongooseLib: createMongoose(), incidentStore: store, log, notificationSender: send,
+      maintenance: () => window && +time < Date.parse(window.endsAt) ? window : null,
+      now: () => time, setTimeoutFn: (callback, delay) => { timers.push({ callback, delay }); return { unref() {} }; },
+      clearTimeoutFn: jest.fn(),
+    });
+    await lifecycle.handleUnavailable(new Error('synthetic disconnect'), { recordAttempt: true });
+    expect(store.beginOrResume).toHaveBeenCalled();
+    expect(log.error).not.toHaveBeenCalled();
+    expect(log.notice).toHaveBeenCalledWith('Application paused after losing MongoDB', expect.objectContaining({ metadata: expect.objectContaining({ maintenance: window }) }));
+    await timers.shift().callback();
+    expect(send).not.toHaveBeenCalled();
+    expect(store.markNotificationAttempt).not.toHaveBeenCalled();
+    expect(timers[0].delay).toBe(30000);
+    // A command ending maintenance early restores the alert on the next recheck.
+    window = null;
+    await timers.shift().callback();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(store.markNotificationAttempt).toHaveBeenCalledTimes(1);
+    await lifecycle.stop();
+  });
+
+  test('an expired maintenance flag does not suppress an ongoing outage', async () => {
+    const send = jest.fn(async () => ({})), store = createIncidentStore();
+    const lifecycle = new DatabaseLifecycleService({
+      mongooseLib: createMongoose(), incidentStore: store, log: createLogger(), notificationSender: send,
+      maintenance: () => null, now: () => new Date('2026-10-20T02:00:00Z'),
+      setTimeoutFn: () => ({ unref() {} }), clearTimeoutFn: jest.fn(),
+    });
+    await lifecycle.handleUnavailable(new Error('synthetic'), { recordAttempt: true });
+    await lifecycle.sendEmergencyAlert();
+    expect(send).toHaveBeenCalledTimes(1);
+    await lifecycle.stop();
+  });
   test('retries with bounded backoff, sends one emergency, and resumes once', async () => {
     const mongooseLib = createMongoose([
       async () => { throw Object.assign(new Error('connect refused'), { code: 'ECONNREFUSED' }); },

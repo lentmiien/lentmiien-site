@@ -30,6 +30,21 @@ GPU work has begun. **`/local-ai/queue`** and **`/local-ai/queue/:id`** show all
 images and playable videos with their original audio, independent of public
 image galleries/favorites.
 
+Private delivery retains the two-active-buffer limit and admits up to 32 waiting
+requests for at most 15 seconds. Waiting requests do not load bytes; disconnected
+waiters are removed, and an active disconnected read keeps its slot until that
+read settles. Excess or expired waits return 503 with `Retry-After: 2`. Range and
+HEAD behavior, owner checks, integrity verification and private/no-store responses
+remain intact. The queue handles ordinary preview bursts without increasing the
+buffer memory limit; it is not an unbounded delivery guarantee.
+
+Chat5 upload failures log the failing operation (authorization, file staging,
+validation, private capture, normalization/publication, message upsert or
+conversation linking), plus allowlisted application/system codes and status.
+No image bytes, filenames, paths, original error messages or provider replies are
+included in those diagnostics. Retrying the same upload key reuses its frozen
+bytes and deterministic message/file IDs, including after an uncertain link reply.
+
 Eligibility comes from authenticated Gateway registry discovery and schema-2
 feature negotiation. The server retains the exact opaque `template_sha256`;
 JavaScript never recomputes Python policy digests. The shared browser/server mapper

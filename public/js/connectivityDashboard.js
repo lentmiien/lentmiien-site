@@ -141,6 +141,7 @@
     table('history', ['Sample / run', ...data.probes.map((probe) => probe.label)], slice.map((sample) => {
       const meta = element('div', formatTime(sample.sampledAt));
       meta.append(element('small', `${sample.configId} · monitor ${sample.monitorVersion} · alert ${sample.notification}`));
+      if (sample.maintenance) meta.append(element('small', `Planned maintenance · ${sample.maintenance.reason} · until ${formatTime(sample.maintenance.endsAt)}`));
       const details = element('details'); details.append(element('summary', 'Run timing'));
       details.append(element('small', `Scheduled ${formatTime(sample.scheduledAt)}; start ${formatTime(sample.startedAt)}; end ${formatTime(sample.endedAt)}; run ${ms(sample.runDurationMs)}; lateness ${ms(sample.schedulerLatenessMs)}; process started ${formatTime(sample.processStartedAt)}; process ${sample.processId || 'legacy'}; run ${sample.runId || 'legacy'}`));
       meta.append(details);
@@ -168,7 +169,7 @@
     $('coverage-detail').textContent = `${data.coverage.occupiedSlots} of ${data.coverage.expectedRounds} expected time slots contain a round at the current ${data.intervalMs / 60000}-minute cadence. This is sample coverage, not uptime.`;
     const n = data.notifications;
     $('alert-value').textContent = `${(n.attempted || 0) + (n.sent || 0) + (n.failed || 0)} attempts`;
-    $('alert-detail').textContent = `${n.sent || 0} sent · ${n.failed || 0} failed · ${n.attempted || 0} unknown delivery · ${n.deferred || 0} deferred rounds`;
+    $('alert-detail').textContent = `${n.sent || 0} sent · ${n.failed || 0} failed · ${n.attempted || 0} unknown delivery · ${n.deferred || 0} deferred rounds · ${n.maintenance || 0} maintenance rounds`;
     $('config-note').textContent = `Monitor ${data.monitorVersion}. Slow ≥ ${data.slowMs} ms; external deadline ${data.timeoutMs} ms; sustained alert ${data.sustainedMs / 60000} min; cooldown ${data.cooldownMs / 60000} min; retention ${data.retentionDays} days. ${data.configurations.map((c) => `${c.id}: ${c.current ? 'current' : 'historical'} v${c.monitorVersion}, cadence ${c.intervalMs == null ? 'unknown' : c.intervalMs / 60000 + ' min'}`).join('; ')}. Historical HEAD Cloudflare errors are retained, not reclassified. ${data.coverage.cadenceChanged ? 'Historical or unknown cadence: coverage uses current cadence as an estimate.' : ''} ${data.truncated ? 'Query limit reached: only the newest 5,000 rounds are represented; coverage and counts are incomplete.' : ''} ${data.coverage.percent < 90 ? 'Limited coverage: these samples cannot support reliable daily attribution.' : ''}`;
     $('timeline-range').textContent = `${formatTime(data.since)} – ${formatTime(data.until)} · browser timezone ${zone}`;
     $('performance-link').href = `/admin/performance?range=${$('connectivity-window').value}`;

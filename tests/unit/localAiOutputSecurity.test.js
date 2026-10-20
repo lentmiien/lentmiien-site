@@ -23,9 +23,13 @@ test('private media delivery bounds concurrent buffers until response completion
   const req = { get: () => undefined, method: 'GET' }, a = response(), b = response(), c = response();
   await readAndDeliver(req, a, async () => Buffer.from('a'), { media_type: 'image/png', sha256: 'a'.repeat(64) });
   await readAndDeliver(req, b, async () => Buffer.from('b'), { media_type: 'image/png', sha256: 'b'.repeat(64) });
-  await expect(readAndDeliver(req, c, async () => Buffer.from('c'), {})).rejects.toMatchObject({ status: 503 });
-  a.emit('finish'); b.emit('close');
-  await readAndDeliver(req, c, async () => Buffer.from('c'), { media_type: 'image/png', sha256: 'c'.repeat(64) }); c.emit('finish');
+  const load = jest.fn(async () => Buffer.from('c'));
+  const third = readAndDeliver(req, c, load, { media_type: 'image/png', sha256: 'c'.repeat(64) });
+  expect(load).not.toHaveBeenCalled();
+  a.emit('finish');
+  await third;
+  expect(load).toHaveBeenCalledTimes(1);
+  b.emit('close'); c.emit('finish');
 });
 test('retained workflow/input/budget records forbid older binary rollback even with flags OFF', async () => {
   const db = Object.fromEntries(['Job', 'Run', 'Input', 'OutputQuota'].map(k => [k, { exists: jest.fn(async () => null) }]));

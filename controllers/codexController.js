@@ -240,6 +240,7 @@ exports.listSessionHistory = async (req, res) => {
 exports.listSessions = async (req, res) => {
   try {
     const sessions = await codexToolService.listSessions({
+      user: req.user,
       limit: req.query.limit,
       workspaceId: req.query.workspaceId,
       includeArchived: req.query.includeArchived === '1',
@@ -261,7 +262,7 @@ exports.getSession = async (req, res) => {
 
 exports.archiveSession = async (req, res) => {
   try {
-    const session = await codexToolService.archiveSession(req.params.sessionId);
+    const session = await codexToolService.archiveSession(req.params.sessionId, req.user);
     return res.json({ ok: true, session });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to archive Codex session.');
@@ -399,7 +400,7 @@ exports.retryTurn = async (req, res) => {
 
 exports.getQueue = async (req, res) => {
   try {
-    const state = await codexToolService.getQueueState();
+    const state = await codexToolService.getQueueState({ user: req.user });
     return res.json({ ok: true, ...state });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to load Codex queue.');
@@ -409,7 +410,7 @@ exports.getQueue = async (req, res) => {
 exports.getStats = async (req, res) => {
   try {
     const pricingByProvider = await codexToolService.getTokenPricingByProvider();
-    const stats = await codexToolService.getDashboardStats({ pricingByProvider });
+    const stats = await codexToolService.getDashboardStats({ pricingByProvider, user: req.user });
     return res.json({
       ok: true,
       pricing: pricingByProvider.openai,
@@ -425,7 +426,7 @@ exports.updatePricing = async (req, res) => {
   try {
     const pricing = await codexToolService.updateTokenPricing(req.body || {}, req.user);
     const pricingByProvider = await codexToolService.getTokenPricingByProvider();
-    const stats = await codexToolService.getDashboardStats({ pricingByProvider });
+    const stats = await codexToolService.getDashboardStats({ pricingByProvider, user: req.user });
     return res.json({ ok: true, pricing, pricingByProvider, stats });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to update Codex token prices.');

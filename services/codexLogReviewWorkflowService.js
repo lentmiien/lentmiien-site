@@ -146,6 +146,8 @@ function buildAnalysisPrompt({ logWindowStart, logWindowEnd, runId }) {
     '',
     'If you see errors, repeated warnings, suspicious behavior, regressions, or other concerning content, inspect the relevant application code to determine the likely cause. Correlate related messages, distinguish actionable application issues from expected operational noise, and explain the evidence for each conclusion.',
     '',
+    'Check structured maintenance context and the planned-maintenance start/end records. Downtime within an explicitly recorded maintenance window is expected operational activity, not a new availability defect. Use the actual end or expiry boundary; investigate degradation that persists beyond it. Tag other overlapping issues as potentially maintenance-related without dismissing them or claiming causation. A maintenance flag is not proof of host health or recovery.',
+    '',
     'Do not edit any files, change configuration, restart services, or attempt fixes. This is a read-only investigation even though the Codex turn has Yolo permission. Give concrete, prioritized suggestions for fixes instead.',
     '',
     'Structure the response as:',

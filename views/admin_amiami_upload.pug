@@ -31,7 +31,7 @@ html(lang='en')
             dt Distinct item codes
             dd#job-total 0
           div
-            dt Already in catalog
+            dt Skipped records
             dd#job-existing 0
           div
             dt Fetched
@@ -41,6 +41,7 @@ html(lang='en')
             dd#job-failed 0
         p#job-timing
         p#job-current
+        p#job-skipped-errors
         p#background-note You can close this page. The import continues in the background; reopen it to see progress. Only one import can run at a time.
         details#failure-panel(hidden)
           summary Items that could not be fetched
@@ -48,7 +49,7 @@ html(lang='en')
         p.job-reference#job-reference
       section#upload-panel(hidden aria-labelledby='upload-heading')
         h2#upload-heading Add an item list
-        p Existing items are skipped, including items with a previous fetch error. Missing items are fetched one at a time, with a 60-second pause after each attempt.
+        p Existing records are skipped by default. Missing items are fetched one at a time, with a 60-second pause after each attempt.
         form#upload-form
           label(for='input-format') Input format
           select#input-format
@@ -61,5 +62,9 @@ html(lang='en')
           textarea#html-input(rows='10' spellcheck='false' placeholder='<a href="/eng/detail?gcode=TOY-RBT-9417">…</a>')
           p.help#format-help HTML is parsed as text and discarded; it is never displayed or executed.
           p.help Up to 2 MiB of UTF-8 text and 1,000 distinct item codes. Duplicates are skipped.
+          label
+            input#retry-failed(type='checkbox')
+            |  Retry empty records from failed lookups in this list
+          p.help Before retrying, check that these item codes still open on AmiAmi. Each selected placeholder gets one attempt; records with fetched details are preserved.
           button#upload-submit(type='submit') Start import
       button#refresh-status.secondary(type='button') Refresh status

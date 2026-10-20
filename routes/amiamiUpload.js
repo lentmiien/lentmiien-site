@@ -11,7 +11,7 @@ function createAmiAmiUploadRouter(service, { roleModel = Role, appLogger = logge
   const router = express.Router();
   const csrf = createSessionCsrf({ appLogger });
   const upload = multer({ storage: multer.memoryStorage(), limits: {
-    fileSize: MAX_HTML_BYTES, fieldSize: MAX_HTML_BYTES, files: 1, fields: 2, parts: 4,
+    fileSize: MAX_HTML_BYTES, fieldSize: MAX_HTML_BYTES, files: 1, fields: 3, parts: 5,
   } }).single('file');
   router.use((req, res, next) => {
     res.set({
@@ -40,7 +40,7 @@ function createAmiAmiUploadRouter(service, { roleModel = Role, appLogger = logge
         ? new AmiAmiUploadError('INVALID_UPLOAD', 'The upload could not be read. Try uploading it again.') : error));
     }, async (req, res) => {
       try {
-        if (Object.keys(req.body || {}).some(key => !['html', 'format'].includes(key))
+        if (Object.keys(req.body || {}).some(key => !['html', 'format', 'retryFailed'].includes(key))
           || (req.body?.html !== undefined && typeof req.body.html !== 'string')) {
           throw new AmiAmiUploadError('INVALID_UPLOAD', 'Choose one file or paste text.');
         }
@@ -48,13 +48,16 @@ function createAmiAmiUploadRouter(service, { roleModel = Role, appLogger = logge
         if (!['html', 'codes'].includes(format)) {
           throw new AmiAmiUploadError('INVALID_FORMAT', 'Choose HTML or item codes as the input format.');
         }
+        if (req.body?.retryFailed !== undefined && !['true', 'false'].includes(req.body.retryFailed)) {
+          throw new AmiAmiUploadError('INVALID_RETRY', 'Choose whether to retry failed placeholders.');
+        }
         const pasted = req.body?.html || '';
         const extension = format === 'codes' ? /\.txt$/i : /\.html?$/i;
         if (req.file && (pasted.trim() || !extension.test(req.file.originalname))) {
           throw new AmiAmiUploadError('INVALID_UPLOAD', `Choose one ${format === 'codes' ? '.txt' : '.html/.htm'} file or paste text, not both.`);
         }
         const input = req.file ? new TextDecoder('utf-8', { fatal: true }).decode(req.file.buffer) : pasted;
-        const job = await service.submit(input, String(req.user._id), format);
+        const job = await service.submit(input, String(req.user._id), format, { retryFailed: req.body.retryFailed === 'true' });
         res.status(202).json({ job });
       } catch (error) {
         if (error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA') {

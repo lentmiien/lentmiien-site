@@ -33,7 +33,8 @@ const ConnectivitySampleSchema = new mongoose.Schema({
   runDurationMs: Number,
   schedulerLatenessMs: Number,
   lastAttemptAt: { type: Date, default: null },
-  notification: { type: String, enum: ['none', 'attempted', 'sent', 'failed', 'deferred'], default: 'none' },
+  maintenance: { id: String, startedAt: Date, endsAt: Date, reason: String },
+  notification: { type: String, enum: ['none', 'attempted', 'sent', 'failed', 'deferred', 'maintenance'], default: 'none' },
 }, { collection: 'connectivity_samples', bufferCommands: false, autoIndex: false, versionKey: false });
 
 ConnectivitySampleSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });

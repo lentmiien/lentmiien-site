@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 
 const DatabaseAvailabilityIncident = require('../models/database_availability_incident');
 const logger = require('../utils/logger');
+const { getActiveMaintenance } = require('../utils/maintenanceWindow');
 const {
   PUSHOVER_PRIORITIES,
   cancelPushoverEmergency,
@@ -82,6 +83,7 @@ class DatabaseLifecycleService extends EventEmitter {
     setTimeoutFn = setTimeout,
     clearTimeoutFn = clearTimeout,
     sleep = null,
+    maintenance = getActiveMaintenance,
   } = {}) {
     super();
     this.mongoose = mongooseLib;
@@ -103,6 +105,7 @@ class DatabaseLifecycleService extends EventEmitter {
     this.setTimeoutFn = setTimeoutFn;
     this.clearTimeoutFn = clearTimeoutFn;
     this.sleep = sleep || ((delayMs) => delayWithTimer(delayMs, this.setTimeoutFn));
+    this.maintenance = maintenance;
     this.state = this.mongoose?.connection?.readyState === 1 ? 'ready' : 'idle';
     this.started = false;
     this.stopped = false;
@@ -255,7 +258,8 @@ class DatabaseLifecycleService extends EventEmitter {
       });
     }
     if (!wasUnavailable) {
-      await this.log.error(
+      const maintenance = this.maintenance(this.now());
+      await this.log[maintenance ? 'notice' : 'error'](
         startupFailure
           ? 'Application paused while waiting for MongoDB'
           : 'Application paused after losing MongoDB',
@@ -264,6 +268,7 @@ class DatabaseLifecycleService extends EventEmitter {
           metadata: {
             incidentId: incident?.incidentId || null,
             error: sanitizeConnectionError(error),
+            ...(maintenance ? { maintenance } : {}),
           },
         }
       );
@@ -284,7 +289,11 @@ class DatabaseLifecycleService extends EventEmitter {
     const retryDueAt = notification.attemptedAt
       ? new Date(notification.attemptedAt).getTime() + this.notificationRetryMs
       : firstDueAt;
-    const delayMs = Math.max(0, retryDueAt - this.now().getTime());
+    const maintenance = this.maintenance(this.now());
+    // Recheck at least every 30 seconds so an early end also restores alerts.
+    const delayMs = maintenance
+      ? Math.max(1, Math.min(30000, Date.parse(maintenance.endsAt) - +this.now()))
+      : Math.max(0, retryDueAt - this.now().getTime());
     this.alertTimer = this.setTimeoutFn(() => {
       this.alertTimer = null;
       this.alertPromise = this.sendEmergencyAlert().finally(() => {
@@ -306,6 +315,10 @@ class DatabaseLifecycleService extends EventEmitter {
       if (!incident || incident.recoveredAt || incident.notification?.sentAt
         || attemptCount >= this.notificationMaxAttempts) return;
       if (this.state === 'ready' || this.mongoose?.connection?.readyState === 1) return;
+      if (this.maintenance(this.now())) {
+        this.scheduleEmergencyAlert(incident);
+        return;
+      }
       incident = await this.incidentStore.markNotificationAttempt(this.now());
       if (this.state === 'ready' || this.mongoose?.connection?.readyState === 1) return;
     } catch (error) {
@@ -318,7 +331,7 @@ class DatabaseLifecycleService extends EventEmitter {
     try {
       const response = await this.notificationSender({
         title: 'Database unavailable - application paused',
-        message: 'The web application cannot reach MongoDB and is in maintenance mode. The Windows host may require a login before Docker starts. Please check the host and database.',
+        message: 'The web application cannot reach MongoDB and is paused. The Windows host may require a login before Docker starts. Please check the host and database.',
         priority: PUSHOVER_PRIORITIES.EMERGENCY,
         retry: 120,
         expire: 10_800,

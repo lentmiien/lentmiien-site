@@ -3782,7 +3782,7 @@ exports.ai_gateway_dashboard = async (req, res) => {
       rawData.errors[key] = message;
       logger.warning('Failed to fetch AI gateway endpoint', {
         category: 'ai_gateway',
-        metadata: { key, error: message },
+        metadata: { key, ...require('../utils/gatewayTransportDiagnostic').gatewayTransportDiagnostic(result.reason) },
       });
     }
   });
@@ -3822,7 +3822,7 @@ exports.ai_gateway_gpu = async (req, res) => {
 
     logger.warning('Failed to fetch AI gateway GPU data', {
       category: 'ai_gateway',
-      metadata: { error: message, status },
+      metadata: { responseStatus: status, ...require('../utils/gatewayTransportDiagnostic').gatewayTransportDiagnostic(error) },
     });
 
     return res
@@ -3913,7 +3913,7 @@ exports.ai_gateway_reservation = async (req, res) => {
 
     logger.warning('Failed to fetch AI gateway reservation state', {
       category: 'ai_gateway',
-      metadata: { error: message, status },
+      metadata: { responseStatus: status, ...require('../utils/gatewayTransportDiagnostic').gatewayTransportDiagnostic(error) },
     });
 
     return res
@@ -4055,7 +4055,7 @@ exports.ai_gateway_containers = async (req, res) => {
 
     logger.warning('Failed to fetch AI gateway containers', {
       category: 'ai_gateway',
-      metadata: { error: message, status },
+      metadata: { responseStatus: status, ...require('../utils/gatewayTransportDiagnostic').gatewayTransportDiagnostic(error) },
     });
 
     return res.status(status).json({ ok: false, error: message });

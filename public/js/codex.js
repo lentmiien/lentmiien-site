@@ -364,6 +364,7 @@
   let liveActivityTurns = [];
   let liveActivityTimer = null;
   let syncPageAutoRefresh = null;
+  const pagePolling = { blocked: false, loading: false, failures: 0, nextAttemptAt: 0 };
 
   function formatDate(value) {
     if (!value) return '-';
@@ -499,7 +500,14 @@
     });
     const payload = await readJsonResponse(response);
     if (!response.ok || payload.ok === false) {
-      throw new Error(payload.error || 'Request failed.');
+      const error = new Error(payload.error || 'Request failed.');
+      error.status = response.status;
+      if (response.redirected && response.url && !new URL(response.url, window.location.href).pathname.startsWith('/codex')) {
+        error.status = 401;
+      }
+      const retryAfter = Number(response.headers?.get('Retry-After'));
+      if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterMs = Math.min(60000, retryAfter * 1000);
+      throw error;
     }
     return payload;
   }
@@ -519,6 +527,8 @@
         loading: false,
         detailsOpen: false,
         failureCount: 0,
+        unavailable: false,
+        nextAttemptAt: 0,
         errorMessage: '',
         highlightUntil: 0,
         viewMode: 'activity',
@@ -618,6 +628,8 @@
   }
 
   function liveActivityDisplay(state) {
+    if (state.unavailable) return { heading: 'Activity unavailable',
+      summary: 'This turn is no longer available to your account. Reload Codex to refresh access.' };
     const latest = state.latestEvent;
     const latestTimestamp = latest && (latest.timestamp || latest.completedAt || latest.startedAt);
     let heading = 'Codex is working';
@@ -653,7 +665,7 @@
     const wrapper = createEl('div', {
       className: `codex-live-activity${state.highlightUntil > Date.now() ? ' codex-live-activity--updated' : ''}`,
       'data-turn-activity': turn.id,
-      'data-activity-state': state.failureCount >= 2 ? 'retrying' : 'live',
+      'data-activity-state': state.unavailable ? 'unavailable' : state.failureCount >= 2 ? 'retrying' : 'live',
       'aria-label': 'Live Codex process activity',
     });
     const signal = createEl('span', {
@@ -738,7 +750,7 @@
     const selector = `[data-turn-activity="${CSS.escape(turnId)}"]`;
     root.querySelectorAll(selector).forEach((indicator) => {
       indicator.classList.toggle('codex-live-activity--updated', state.highlightUntil > Date.now());
-      indicator.dataset.activityState = state.failureCount >= 2 ? 'retrying' : 'live';
+      indicator.dataset.activityState = state.unavailable ? 'unavailable' : state.failureCount >= 2 ? 'retrying' : 'live';
       const heading = indicator.querySelector('[data-activity-heading]');
       const summary = indicator.querySelector('[data-activity-summary]');
       if (heading) heading.textContent = display.heading;
@@ -795,7 +807,7 @@
 
   async function loadTurnActivity(turnId) {
     const state = getLiveActivityState(turnId);
-    if (!turnId || state.loading) return false;
+    if (!turnId || state.loading || state.unavailable || pagePolling.blocked || Date.now() < state.nextAttemptAt) return false;
     const initialLoad = !state.loaded;
     state.loading = true;
     try {
@@ -838,6 +850,7 @@
       if (payload.counts?.raw) state.reportedCount = Math.max(state.reportedCount, Number(payload.counts.raw) || 0);
       state.loaded = true;
       state.failureCount = 0;
+      state.nextAttemptAt = 0;
       state.errorMessage = '';
       updateLiveActivityIndicators(turnId, {
         announce: incoming.length > 0,
@@ -855,11 +868,55 @@
     } catch (error) {
       state.failureCount += 1;
       state.errorMessage = error.message || 'Unable to load process details.';
+      state.unavailable = terminalPollingError(error);
+      state.nextAttemptAt = Date.now() + pollingDelay(state.failureCount, error);
       updateLiveActivityIndicators(turnId, { renderEventPanels: true });
+      if (state.unavailable) {
+        showPollingUnavailable();
+        // One scoped page refresh removes stale queue cards or verifies lost page access.
+        refreshPage(root.dataset.codexPage === 'dashboard' ? refreshDashboard
+          : root.dataset.codexPage === 'session' ? refreshSession : refreshTurn);
+      }
       return false;
     } finally {
       state.loading = false;
     }
+  }
+
+  function terminalPollingError(error) {
+    return [401, 403, 404].includes(error.status);
+  }
+
+  function pollingDelay(failures, error) {
+    return Math.max(error.retryAfterMs || 0, Math.min(60000, LIVE_ACTIVITY_POLL_MS * 2 ** Math.min(failures, 5)));
+  }
+
+  function showPollingUnavailable() {
+    if (root.querySelector('[data-polling-unavailable]')) return;
+    const notice = createEl('p', { 'data-polling-unavailable': '', role: 'status',
+      text: 'Some Codex activity is no longer available to your account. ' });
+    notice.appendChild(createEl('a', { href: '/codex', text: 'Reload Codex to refresh access.' }));
+    root.prepend(notice);
+  }
+
+  async function refreshPage(action) {
+    if (pagePolling.blocked || pagePolling.loading || Date.now() < pagePolling.nextAttemptAt) return null;
+    pagePolling.loading = true;
+    try {
+      const payload = await action();
+      pagePolling.failures = 0; pagePolling.nextAttemptAt = 0;
+      return payload;
+    } catch (error) {
+      pagePolling.failures += 1;
+      pagePolling.nextAttemptAt = Date.now() + pollingDelay(pagePolling.failures, error);
+      if (terminalPollingError(error)) {
+        pagePolling.blocked = true;
+        stopLiveActivityPolling();
+        if (syncPageAutoRefresh) syncPageAutoRefresh(null);
+        showPollingUnavailable();
+      }
+      return null;
+    } finally { pagePolling.loading = false; }
   }
 
   function stopLiveActivityPolling() {
@@ -870,7 +927,7 @@
   }
 
   async function pollLiveActivities() {
-    if (document.hidden || liveActivityTurns.length === 0) return;
+    if (document.hidden || pagePolling.blocked || liveActivityTurns.length === 0) return;
     await Promise.all(liveActivityTurns
       .filter((turn) => !getLiveActivityState(turn.id).paused)
       .map((turn) => loadTurnActivity(turn.id)));
@@ -907,7 +964,7 @@
       }
       updateLiveActivityIndicators(turn.id);
     });
-    liveActivityTurns = availableTurns.filter((turn) => turn.status === 'running');
+    liveActivityTurns = availableTurns.filter((turn) => turn.status === 'running' && !getLiveActivityState(turn.id).unavailable);
     if (liveActivityTurns.length) {
       startLiveActivityPolling();
     } else {
@@ -3155,7 +3212,7 @@
       });
     });
     setInterval(() => {
-      refreshDashboard().catch(() => {});
+      refreshPage(refreshDashboard);
     }, 10000);
     syncLiveActivityTurns([...(bootstrap.runningTurns || []), ...(bootstrap.queuedTurns || [])]);
   }
@@ -3175,9 +3232,7 @@
     function startAutoRefresh() {
       if (refreshTimer) return;
       refreshTimer = setInterval(() => {
-        refreshSession()
-          .then(syncAutoRefresh)
-          .catch(() => {});
+        refreshPage(refreshSession).then(payload => { if (payload) syncAutoRefresh(payload); });
       }, 10000);
     }
 
@@ -3250,9 +3305,7 @@
     function startAutoRefresh() {
       if (refreshTimer) return;
       refreshTimer = setInterval(() => {
-        refreshTurn()
-          .then(syncAutoRefresh)
-          .catch(() => {});
+        refreshPage(refreshTurn).then(payload => { if (payload) syncAutoRefresh(payload); });
       }, 10000);
     }
 

@@ -17,7 +17,13 @@ const reasonCodes = new Set(['admission_index_invalid', 'coordinator_fenced', 'j
   'gateway_clock_uncertain', 'gateway_clock_window_uncertain', 'manual_budget_expired',
   'gateway_run_mismatch', 'gateway_accepted_run_missing', 'immutable_run_conflict', 'immutable_operation_conflict',
   'batch_disabled', 'batch_unauthorized', 'storage_quota', 'run_not_open', 'run_expired',
-  'run_operation_limit', 'replacement_not_safe', 'invalid_retry_of', 'rejected_run_bounds_expired']);
+  'run_operation_limit', 'replacement_not_safe', 'invalid_retry_of', 'rejected_run_bounds_expired',
+  'save_conversation_before_media_upload', 'idempotency_conflict', 'input_decoder_busy', 'input_too_large',
+  'unsupported_image', 'animated_image', 'image_dimensions', 'invalid_image', 'input_storage_config',
+  'input_storage_unsafe', 'input_integrity_failed', 'input_storage_free_space', 'input_digest_mismatch',
+  'input_preparation_busy', 'input_preparation_fenced', 'retained_input_record_quota', 'retained_input_bytes_quota',
+  'batch_media_disabled', 'input_quota_config', 'invalid_artifact_id', 'forbidden', 'private_media_delivery_busy',
+  'csrf_rejected', 'idempotency_key_required']);
 async function operation(name, action) {
   try { return await action(); }
   catch (error) {
@@ -32,6 +38,7 @@ function errorDiagnostic(error, fallbackOperation) {
   if (syscalls.has(error?.syscall)) result.syscall = error.syscall;
   if (reasonCodes.has(error?.code)) { result.reasonCode = error.code; result.reasonClass = 'application_error'; }
   if (Number.isInteger(error?.httpStatus) && error.httpStatus >= 100 && error.httpStatus <= 599) result.httpStatus = error.httpStatus;
+  if (reasonCodes.has(error?.code) && Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599) result.applicationStatus = error.status;
   return result;
 }
 module.exports = { operation, errorDiagnostic };

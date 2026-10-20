@@ -23,7 +23,7 @@
     byId('job-panel').hidden = !job;
     byId('upload-panel').hidden = Boolean(job?.active);
     if (!job) return;
-    text('job-state', job.state === 'completed' && job.failed ? 'Completed with errors' : ({ queued: 'Waiting', running: 'Fetching', completed: 'Completed', failed: 'Stopped' }[job.state] || job.state));
+    text('job-state', job.state === 'completed' && (job.failed || job.skippedErrors) ? 'Completed with errors' : ({ queued: 'Waiting', running: 'Fetching', completed: 'Completed', failed: 'Stopped' }[job.state] || job.state));
     text('job-message', job.message || (job.active ? 'Fetching missing items at a steady pace.' : 'You can upload another list.'));
     text('job-total', job.totalCodes);
     text('job-existing', job.skippedExisting);
@@ -35,6 +35,7 @@
     text('job-summary', `${processed} of ${job.totalCodes} item codes processed`);
     text('job-timing', job.active ? `At least ${job.delaySeconds} seconds between item attempts. Next check: ${formatDate(job.nextFetchAt)}` : `Finished: ${formatDate(job.finishedAt)}`);
     text('job-current', job.currentCode ? `Current item: ${job.currentCode}` : '');
+    text('job-skipped-errors', job.skippedErrors ? `${job.skippedErrors} skipped records still have fetch errors; they are not complete.` : '');
     byId('background-note').hidden = !job.active;
     text('job-reference', `Started: ${formatDate(job.startedAt)} · Job ${job.jobId}`);
     const failures = byId('job-failures');
@@ -99,6 +100,7 @@
     }
     const body = new FormData();
     body.append('format', byId('input-format').value);
+    body.append('retryFailed', String(byId('retry-failed').checked));
     if (file) body.append('file', file);
     else body.append('html', html);
     submitting = true;
@@ -114,7 +116,7 @@
       byId('upload-form').reset();
       showFormat();
       showJob(data.job);
-      status.textContent = data.job.active ? 'Upload accepted. You can leave this page.' : 'All item codes are already in the catalog.';
+      status.textContent = data.job.active ? 'Upload accepted. You can leave this page.' : data.job.message || 'No item fetches were queued.';
     } catch (error) {
       status.classList.add('error');
       status.textContent = error.message;

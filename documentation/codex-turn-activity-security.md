@@ -16,6 +16,25 @@ Capabilities: `codex.turn.read`, `codex.turn.cancel`, `codex.turn.retry`, and th
 
 Object scope: owner. Turns are selected with `createdBy.id` from the validated principal.
 
+Dashboard bootstrap, queue polling, recent-session lists, statistics and session
+detail now use that same scope. Global workspace lock details are admin-only.
+Legacy session follow-up and archive operations also enforce session ownership:
+`codex.session.write` and `codex.session.archive` are separate capabilities granted
+to the existing admin/family/user/codex_system bundles, with no default unknown-role
+grant. Admin override is explicitly allowed for these session operations.
+Archive uses an atomic scoped update. Existing POST/CSRF, request limits, private
+cache handling and execution-provider checks remain in force.
+
+This closes a mismatch where a user could receive a foreign turn in dashboard/queue
+or legacy session data, then repeatedly receive an intentional 404 from its event
+endpoint. It does not establish which accounts triggered historical production
+404s. Client errors now preserve HTTP status; 401/403/404 stop automatic activity
+polling, perform one scoped page refresh and offer a reload. Stale page data cannot
+re-enable an unavailable turn. Page-level terminal errors stop page polling too.
+Transient failures back off to at most 60 seconds and successful reads reset the
+delay. Tests cover owner/family/admin scope, missing/foreign access, explicit grants,
+archive/follow-up denial, stale open pages and transient recovery.
+
 Admin override: yes, for turn read, raw-event read, cancel, retry, and steering. Read/cancel/retry use the centralized Codex turn owner-scope builder; steering retains its equivalent existing owner check.
 
 Browser mutations and CSRF control: cancel, retry, and steering use POST plus the shared session CSRF middleware. Activity and raw-event reads are GET-only and side-effect free.

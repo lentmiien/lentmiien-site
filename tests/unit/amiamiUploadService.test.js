@@ -31,21 +31,58 @@ function fixture(existing = []) {
       return clone(row);
     })),
   };
-  const itemModel = { find: jest.fn(() => query(() => existing.map(gcode => ({ gcode })))) };
+  const itemModel = { find: jest.fn(filter => query(() => existing.map(item => typeof item === 'string' ? { gcode: item } : item)
+    .filter(item => filter.gcode.$in.includes(item.gcode) && (!filter.source || (item.source === filter.source
+      && item.detailStatus === filter.detailStatus && item.details == null))))) };
   const fetch = jest.fn().mockResolvedValue({ status: 'fetched' });
+  const retry = jest.fn().mockResolvedValue({ status: 'fetched' });
   const authorizeCreator = jest.fn().mockResolvedValue(true);
   const logger = { warning: jest.fn(), error: jest.fn() };
   let available = true;
-  const deps = { jobModel, itemModel, attemptMissingItemScrape: fetch, authorizeCreator,
+  const deps = { jobModel, itemModel, attemptMissingItemScrape: fetch, retryFailedItemScrape: retry, authorizeCreator,
     logger, now: () => clock, ready: () => available };
   const service = createAmiAmiUploadService(deps);
   service.start();
-  return { service, deps, jobModel, fetch, authorizeCreator, logger,
+  return { service, deps, jobModel, fetch, retry, authorizeCreator, logger,
     row: () => row, advance: ms => { clock += ms; }, unavailable: () => { available = false; } };
 }
 let f;
 beforeEach(() => { jest.useFakeTimers(); f = fixture(); });
 afterEach(() => { f.service.stop(); jest.useRealTimers(); });
+
+test('error placeholders remain visible as incomplete until an explicit bounded recovery import', async () => {
+  f.service.stop(); f = fixture([
+    { gcode: 'FIGURE-1', source: 'amiami-api-lookup', detailStatus: 'error', details: null },
+    { gcode: 'FIGURE-2', source: 'amiami-api-lookup', detailStatus: 'fetched', details: { itemName: 'Preserved' } },
+  ]);
+  const ordinary = await f.service.submit('FIGURE-1\nFIGURE-2', creator, 'codes');
+  expect(ordinary).toMatchObject({ state: 'completed', skippedErrors: 1, queuedCount: 0 });
+  expect(ordinary.message).toContain('still have fetch errors');
+  const recovery = await f.service.submit('FIGURE-1\nFIGURE-2\nFIGURE-3', creator, 'codes', { retryFailed: true });
+  expect(recovery).toMatchObject({ queuedCount: 2, skippedExisting: 1, skippedErrors: 0, retryFailed: true });
+  await f.service.tick();
+  expect(f.retry).toHaveBeenCalledWith('FIGURE-1');
+  await f.service.tick();
+  expect(f.retry).toHaveBeenCalledTimes(1);
+  f.advance(DELAY_MS);
+  await f.service.tick();
+  expect(f.retry).toHaveBeenLastCalledWith('FIGURE-3');
+  expect(f.fetch).not.toHaveBeenCalled();
+});
+
+test('recovery imports recheck permission before dispatch', async () => {
+  await f.service.submit('FIGURE-1', creator, 'codes', { retryFailed: true });
+  f.authorizeCreator.mockResolvedValue(false);
+  await f.service.tick();
+  expect(f.retry).not.toHaveBeenCalled();
+  expect(await f.service.status()).toMatchObject({ state: 'failed' });
+});
+test('a failed record appearing after submission is reported as a skipped error', async () => {
+  await f.service.submit('FIGURE-1', creator, 'codes');
+  f.fetch.mockResolvedValue({ status: 'existing', item: { detailStatus: 'error' } });
+  await f.service.tick();
+  expect(await f.service.status()).toMatchObject({ state: 'completed', skippedExisting: 1, skippedErrors: 1, fetched: 0 });
+});
 
 test('code lists filter existing records and use the same single-job queue and delay as HTML', async () => {
   f.service.stop(); f = fixture(['FIGURE-1']);

@@ -66,11 +66,37 @@ describe('human tool request startup recovery', () => {
       log,
       env: { HUMAN_TOOL_RECOVERY_INTERVAL_MS: '1000' },
       setIntervalFn,
+      ready: () => true,
     })).toBe(handle);
     await Promise.resolve();
 
     expect(service.recoverInterruptedResponses).toHaveBeenCalledTimes(1);
     expect(setIntervalFn).toHaveBeenCalledWith(expect.any(Function), 15000);
     expect(handle.unref).toHaveBeenCalledTimes(1);
+  });
+
+  test('pauses recurring recovery while MongoDB is unavailable and resumes without overlap', async () => {
+    let ready = false, scheduled, finish;
+    const service = { recoverInterruptedResponses: jest.fn(() => new Promise(resolve => { finish = resolve; })) };
+    const log = { notice: jest.fn(), error: jest.fn() };
+    scheduleHumanToolRequestRecovery({ service, log, ready: () => ready,
+      setIntervalFn: callback => { scheduled = callback; return {}; } });
+    await scheduled();
+    expect(service.recoverInterruptedResponses).not.toHaveBeenCalled();
+    ready = true;
+    const pending = scheduled();
+    await scheduled();
+    expect(service.recoverInterruptedResponses).toHaveBeenCalledTimes(1);
+    ready = false;
+    finish({ modifiedCount: 0, expiredCount: 0 });
+    await pending;
+    await scheduled();
+    expect(service.recoverInterruptedResponses).toHaveBeenCalledTimes(1);
+    ready = true;
+    const resumed = scheduled();
+    finish({ modifiedCount: 1, expiredCount: 0 });
+    await resumed;
+    expect(service.recoverInterruptedResponses).toHaveBeenCalledTimes(2);
+    expect(log.error).not.toHaveBeenCalled();
   });
 });
