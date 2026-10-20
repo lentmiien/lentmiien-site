@@ -172,7 +172,7 @@ class RunpodBillingHistoryService {
         code: 'RUNPOD_BILLING_START_INVALID', status: 500,
       });
     }
-    this.syncQueue = Promise.resolve();
+    this.syncInFlight = null;
   }
 
   range(now = this.now()) {
@@ -208,9 +208,11 @@ class RunpodBillingHistoryService {
   }
 
   syncHistory(principal) {
-    const operation = this.syncQueue.then(() => this._syncHistory(principal));
-    this.syncQueue = operation.catch(() => {});
-    return operation;
+    if (!this.syncInFlight) {
+      this.syncInFlight = Promise.resolve().then(() => this._syncHistory(principal))
+        .finally(() => { this.syncInFlight = null; });
+    }
+    return this.syncInFlight;
   }
 
   async _syncHistory(principal) {

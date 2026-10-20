@@ -1,3 +1,6 @@
+const { createHash } = require('crypto');
+const { RunpodApiError, boundedInteger, sharedCoordinator, withAbort } = require('./runpodRequestCoordinator');
+const sharedCaches = new WeakMap();
 const RUNPOD_API_ORIGIN = 'https://api.runpod.io';
 const RUNPOD_API_VERSION = 'v2';
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -35,6 +38,7 @@ const ENDPOINTS = Object.freeze({
   pods: '/v2/pods',
   networkVolumes: '/v2/network-volumes',
   accountTemplates: '/v2/templates',
+  secrets: '/v2/account/secrets',
 });
 
 const ALLOWED_PATHS = new Set(Object.values(ENDPOINTS));
@@ -75,26 +79,6 @@ class RunpodConfigurationError extends Error {
     super(message);
     this.name = 'RunpodConfigurationError';
     this.code = 'RUNPOD_NOT_CONFIGURED';
-  }
-}
-
-class RunpodApiError extends Error {
-  constructor(message, {
-    code = 'RUNPOD_API_ERROR',
-    operation = null,
-    status = null,
-    providerCode = null,
-    providerTitle = null,
-    providerDetail = null,
-  } = {}) {
-    super(message);
-    this.name = 'RunpodApiError';
-    this.code = code;
-    this.operation = operation;
-    this.status = status;
-    this.providerCode = providerCode;
-    this.providerTitle = providerTitle;
-    this.providerDetail = providerDetail;
   }
 }
 
@@ -169,13 +153,13 @@ function publicRunpodError(error) {
 
 async function cancelResponseBody(response) {
   try {
-    await response?.body?.cancel?.();
+    response?.body?.cancel?.().catch(() => {});
   } catch (_) {
     // Ignore cancellation failures; the original response error is authoritative.
   }
 }
 
-async function readResponseText(response, maxResponseBytes, operation) {
+async function readResponseText(response, maxResponseBytes, operation, signal) {
   const contentLength = Number.parseInt(response.headers?.get?.('content-length'), 10);
   if (Number.isFinite(contentLength) && contentLength > maxResponseBytes) {
     await cancelResponseBody(response);
@@ -187,7 +171,7 @@ async function readResponseText(response, maxResponseBytes, operation) {
   }
 
   if (!response.body || typeof response.body.getReader !== 'function') {
-    const text = await response.text();
+    const text = await withAbort(response.text(), signal, () => { cancelResponseBody(response); });
     if (Buffer.byteLength(text, 'utf8') > maxResponseBytes) {
       throw new RunpodApiError(`Runpod returned too much data for ${operation}.`, {
         code: 'RUNPOD_RESPONSE_TOO_LARGE',
@@ -203,22 +187,26 @@ async function readResponseText(response, maxResponseBytes, operation) {
   let totalBytes = 0;
   let text = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    totalBytes += value.byteLength;
-    if (totalBytes > maxResponseBytes) {
-      await reader.cancel().catch(() => {});
-      throw new RunpodApiError(`Runpod returned too much data for ${operation}.`, {
-        code: 'RUNPOD_RESPONSE_TOO_LARGE',
-        operation,
-        status: response.status,
-      });
+  try {
+    while (true) {
+      const { done, value } = await withAbort(reader.read(), signal, () => { reader.cancel().catch(() => {}); });
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxResponseBytes) {
+        reader.cancel().catch(() => {});
+        throw new RunpodApiError(`Runpod returned too much data for ${operation}.`, {
+          code: 'RUNPOD_RESPONSE_TOO_LARGE',
+          operation,
+          status: response.status,
+        });
+      }
+      text += decoder.decode(value, { stream: true });
     }
-    text += decoder.decode(value, { stream: true });
-  }
 
-  return text + decoder.decode();
+    return text + decoder.decode();
+  } finally {
+    reader.cancel().catch(() => {});
+  }
 }
 
 function sanitizeProviderErrorText(value, maxLength, secrets = []) {
@@ -341,12 +329,13 @@ function extractProviderErrorDetails(responseText, secrets = []) {
   return { providerCode, providerTitle, providerDetail };
 }
 
-async function readProviderErrorDetails(response, maxResponseBytes, operation, secrets = []) {
+async function readProviderErrorDetails(response, maxResponseBytes, operation, secrets = [], signal) {
   try {
     const responseText = await readResponseText(
       response,
       Math.min(maxResponseBytes, DEFAULT_MAX_ERROR_RESPONSE_BYTES),
-      operation
+      operation,
+      signal
     );
     return extractProviderErrorDetails(responseText, secrets);
   } catch (_) {
@@ -360,6 +349,9 @@ function ensureCollection(body, propertyName, operation, maxItems) {
       code: 'RUNPOD_INVALID_RESPONSE',
       operation,
     });
+  }
+  if (body.pagination && (body.pagination.hasNextPage !== false || body.pagination.nextCursor != null)) {
+    throw new RunpodApiError(`Runpod returned an incomplete list for ${operation}.`, { code: 'RUNPOD_INCOMPLETE_RESPONSE', operation });
   }
   if (body[propertyName].length > maxItems) {
     throw new RunpodApiError(`Runpod returned too many items for ${operation}.`, {
@@ -450,15 +442,30 @@ class RunpodApiV2Service {
     maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES,
     maxRequestBytes = DEFAULT_MAX_REQUEST_BYTES,
     now = () => Date.now(),
+    coordinator,
+    budgetMs = process.env.RUNPOD_API_BUDGET_MS,
+    readRetries = process.env.RUNPOD_API_READ_RETRIES,
   } = {}) {
     this.apiKey = typeof apiKey === 'string' ? apiKey.trim() : '';
     this.fetch = fetchImpl;
-    this.timeoutMs = positiveInteger(timeoutMs, DEFAULT_TIMEOUT_MS);
-    this.cacheTtlMs = nonNegativeInteger(cacheTtlMs, DEFAULT_CACHE_TTL_MS);
+    this.timeoutMs = boundedInteger(timeoutMs, DEFAULT_TIMEOUT_MS, 250, 120_000);
+    this.budgetMs = boundedInteger(budgetMs, 30_000, 1000, 180_000);
+    this.readRetries = boundedInteger(readRetries, 2, 0, 4);
+    this.coordinator = coordinator || (typeof fetchImpl === 'function' ? sharedCoordinator(fetchImpl) : null);
+    this.cacheTtlMs = boundedInteger(cacheTtlMs, DEFAULT_CACHE_TTL_MS, 0, 300_000);
     this.maxResponseBytes = positiveInteger(maxResponseBytes, DEFAULT_MAX_RESPONSE_BYTES);
     this.maxRequestBytes = positiveInteger(maxRequestBytes, DEFAULT_MAX_REQUEST_BYTES);
     this.now = now;
-    this.cache = new Map();
+    if (typeof fetchImpl === 'function') {
+      if (!sharedCaches.has(fetchImpl)) sharedCaches.set(fetchImpl, new Map());
+      const caches = sharedCaches.get(fetchImpl);
+      const key = createHash('sha256').update(this.apiKey).digest('hex');
+      if (!caches.has(key)) {
+        if (caches.size >= 32) caches.delete(caches.keys().next().value);
+        caches.set(key, new Map());
+      }
+      this.cache = caches.get(key);
+    } else this.cache = new Map();
   }
 
   ensureConfigured() {
@@ -485,11 +492,23 @@ class RunpodApiV2Service {
     return url;
   }
 
-  async requestJson(pathname, {
+  requestJson(pathname, options = {}) {
+    this.ensureConfigured();
+    const method = (options.method || 'GET').toUpperCase();
+    return this.coordinator.run((signal) => this.requestJsonAttempt(pathname, { ...options, signal }), {
+      safe: method === 'GET', priority: options.priority ?? (method === 'GET' && /^\/v2\/pods(?:\/[^/]+)?$/u.test(pathname) ? 0 : 1),
+      timeoutMs: this.timeoutMs, budgetMs: Math.min(this.budgetMs, options.budgetMs ?? this.budgetMs),
+      retries: this.readRetries, signal: options.signal,
+    });
+  }
+
+  async requestJsonAttempt(pathname, {
     query = {},
     operation = 'request',
     method = 'GET',
     body,
+    signal,
+    suppressProviderDetails = false,
   } = {}) {
     this.ensureConfigured();
     const normalizedMethod = typeof method === 'string' ? method.toUpperCase() : '';
@@ -523,8 +542,6 @@ class RunpodApiV2Service {
         });
       }
     }
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
       const headers = {
@@ -535,26 +552,32 @@ class RunpodApiV2Service {
       if (serializedBody !== undefined) {
         headers['Content-Type'] = 'application/json';
       }
-      const response = await this.fetch(url, {
+      this.coordinator.stats.requests += 1;
+      const pending = this.fetch(url, {
         method: normalizedMethod,
         headers,
         ...(serializedBody === undefined ? {} : { body: serializedBody }),
         redirect: 'error',
-        signal: controller.signal,
+        signal,
       });
+      Promise.resolve(pending).then((late) => { if (signal.aborted) cancelResponseBody(late); }, () => {});
+      const response = await withAbort(pending, signal);
+      const rate = this.coordinator.observe(response);
 
       if (!response.ok) {
         const providerError = await readProviderErrorDetails(
           response,
           this.maxResponseBytes,
           operation,
-          [this.apiKey]
+          [this.apiKey],
+          signal
         );
         throw new RunpodApiError(`Runpod could not load ${operation} (HTTP ${response.status}).`, {
-          code: 'RUNPOD_HTTP_ERROR',
+          code: response.status === 429 ? 'RUNPOD_RATE_LIMITED' : 'RUNPOD_HTTP_ERROR',
           operation,
           status: response.status,
-          ...providerError,
+          ...rate,
+          ...(suppressProviderDetails ? {} : providerError),
         });
       }
 
@@ -573,7 +596,7 @@ class RunpodApiV2Service {
         });
       }
 
-      const responseText = await readResponseText(response, this.maxResponseBytes, operation);
+      const responseText = await readResponseText(response, this.maxResponseBytes, operation, signal);
       if (!responseText.trim()) {
         throw new RunpodApiError(`Runpod returned an invalid response for ${operation}.`, {
           code: 'RUNPOD_INVALID_RESPONSE',
@@ -604,14 +627,12 @@ class RunpodApiV2Service {
         code: 'RUNPOD_NETWORK_ERROR',
         operation,
       });
-    } finally {
-      clearTimeout(timeout);
     }
   }
 
   loadCached(cacheKey, loader, { forceRefresh = false } = {}) {
     const inFlight = this.cache.get(cacheKey);
-    if (inFlight?.promise) {
+    if (!forceRefresh && inFlight?.promise) {
       return inFlight.promise;
     }
     if (forceRefresh) {
@@ -626,9 +647,11 @@ class RunpodApiV2Service {
       return Promise.resolve(cached.value);
     }
 
+    if (this.cache.size >= 128) this.cache.delete(this.cache.keys().next().value);
     const promise = Promise.resolve()
       .then(loader)
       .then((value) => {
+        if (this.cache.get(cacheKey)?.promise !== promise) return value;
         if (this.cacheTtlMs > 0) {
           this.cache.set(cacheKey, {
             value,
@@ -640,7 +663,7 @@ class RunpodApiV2Service {
         return value;
       })
       .catch((error) => {
-        this.cache.delete(cacheKey);
+        if (this.cache.get(cacheKey)?.promise === promise) this.cache.delete(cacheKey);
         throw error;
       });
 
@@ -747,21 +770,33 @@ class RunpodApiV2Service {
     }, { forceRefresh });
   }
 
-  async listPods() {
+  async listPods(options = {}) {
     const body = await this.requestJson(ENDPOINTS.pods, {
       operation: 'the pod list',
+      ...options,
     });
-    return ensureCollection(body, 'pods', 'the pod list', MAX_PODS);
+    const pods = ensureCollection(body, 'pods', 'the pod list', MAX_PODS);
+    pods.forEach((pod) => ensureResource(pod, 'the pod list'));
+    return pods;
   }
 
-  async getPod(id) {
+  async getPod(id, options = {}) {
     const body = await this.requestJson(podPath(id), {
       operation: 'the pod',
+      ...options,
     });
     return ensureResource(body, 'the pod');
   }
 
-  async getPodLogSnapshot(id, options = {}) {
+  getPodLogSnapshot(id, options = {}) {
+    this.ensureConfigured();
+    return this.coordinator.run((signal) => this.getPodLogSnapshotAttempt(id, { ...options, signal }), {
+      safe: true, priority: 2, timeoutMs: this.timeoutMs + (options.maxWaitMs || 2000),
+      budgetMs: Math.min(this.budgetMs, options.budgetMs ?? this.budgetMs), retries: this.readRetries, signal: options.signal,
+    });
+  }
+
+  async getPodLogSnapshotAttempt(id, options = {}) {
     this.ensureConfigured();
     const normalized = normalizePodLogOptions(options);
     const maxBytes = positiveInteger(options.maxBytes, DEFAULT_MAX_POD_LOG_BYTES);
@@ -775,13 +810,15 @@ class RunpodApiV2Service {
     });
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), normalized.maxWaitMs);
+    const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
     let response;
     let text = '';
     let totalBytes = 0;
     let timedOut = false;
     let truncated = false;
     try {
-      response = await this.fetch(url, {
+      this.coordinator.stats.requests += 1;
+      const pending = this.fetch(url, {
         method: 'GET',
         headers: {
           Accept: 'text/event-stream',
@@ -789,19 +826,24 @@ class RunpodApiV2Service {
           'User-Agent': 'lentmiien-site-runpod-v2/2.0',
         },
         redirect: 'error',
-        signal: controller.signal,
+        signal,
       });
+      Promise.resolve(pending).then((late) => { if (signal.aborted) cancelResponseBody(late); }, () => {});
+      response = await withAbort(pending, signal);
+      const rate = this.coordinator.observe(response);
       if (!response.ok) {
         const providerError = await readProviderErrorDetails(
           response,
           Math.min(maxBytes, DEFAULT_MAX_ERROR_RESPONSE_BYTES),
           'Pod logs',
-          [this.apiKey]
+          [this.apiKey],
+          signal
         );
         throw new RunpodApiError(`Runpod could not load Pod logs (HTTP ${response.status}).`, {
-          code: 'RUNPOD_HTTP_ERROR',
+          code: response.status === 429 ? 'RUNPOD_RATE_LIMITED' : 'RUNPOD_HTTP_ERROR',
           operation: 'Pod logs',
           status: response.status,
+          ...rate,
           ...providerError,
         });
       }
@@ -815,7 +857,7 @@ class RunpodApiV2Service {
         });
       }
       if (!response.body || typeof response.body.getReader !== 'function') {
-        text = await response.text();
+        text = await withAbort(response.text(), signal);
         totalBytes = Buffer.byteLength(text, 'utf8');
         if (totalBytes > maxBytes) {
           text = Buffer.from(text, 'utf8').subarray(0, maxBytes).toString('utf8');
@@ -828,7 +870,7 @@ class RunpodApiV2Service {
           while (true) {
             let result;
             try {
-              result = await reader.read();
+              result = await withAbort(reader.read(), signal, () => { reader.cancel().catch(() => {}); });
             } catch (error) {
               if (error?.name === 'AbortError') {
                 timedOut = true;
@@ -848,7 +890,7 @@ class RunpodApiV2Service {
           }
           text += decoder.decode();
         } finally {
-          await reader.cancel().catch(() => {});
+          reader.cancel().catch(() => {});
         }
       }
     } catch (error) {
@@ -884,6 +926,25 @@ class RunpodApiV2Service {
     };
   }
 
+  async listSecrets(name) {
+    const body = await this.requestJson(ENDPOINTS.secrets, {
+      query: { name }, operation: 'secret metadata', suppressProviderDetails: true,
+    });
+    const secrets = ensureCollection(body, 'secrets', 'secret metadata', 500);
+    if (secrets.some((s) => !s || typeof s.id !== 'string' || !RESOURCE_ID_PATTERN.test(s.id)
+      || typeof s.name !== 'string' || s.name.length > 191)) {
+      throw new RunpodApiError('Runpod returned invalid secret metadata.', { code: 'RUNPOD_INVALID_RESPONSE' });
+    }
+    return secrets.map(({ id, name: secretName }) => ({ id, name: secretName }));
+  }
+
+  async createSecret(input) {
+    const body = await this.requestJson(ENDPOINTS.secrets, {
+      method: 'POST', body: input, operation: 'secret creation', suppressProviderDetails: true,
+    });
+    return ensureResource(body, 'secret creation');
+  }
+
   async createPod(input) {
     const body = await this.requestJson(ENDPOINTS.pods, {
       method: 'POST',
@@ -908,6 +969,7 @@ class RunpodApiV2Service {
       method: 'POST',
       body: { action: normalizedAction },
       operation: `pod ${normalizedAction}`,
+      priority: normalizedAction === 'stop' || normalizedAction === 'terminate' ? 0 : 1,
     });
     if (normalizedAction === 'terminate') return null;
     return ensureResource(body, `pod ${normalizedAction}`);
@@ -917,25 +979,25 @@ class RunpodApiV2Service {
     await this.requestJson(podPath(id), {
       method: 'DELETE',
       operation: 'pod termination',
+      priority: 0,
     });
     return true;
   }
 
-  async listNetworkVolumes() {
+  async listNetworkVolumes(options = {}) {
     const body = await this.requestJson(ENDPOINTS.networkVolumes, {
       operation: 'the network volume list',
+      ...options,
     });
-    return ensureCollection(
-      body,
-      'networkVolumes',
-      'the network volume list',
-      MAX_NETWORK_VOLUMES
-    );
+    const volumes = ensureCollection(body, 'networkVolumes', 'the network volume list', MAX_NETWORK_VOLUMES);
+    volumes.forEach((volume) => ensureResource(volume, 'the network volume list'));
+    return volumes;
   }
 
   async getNetworkVolume(id) {
     const body = await this.requestJson(networkVolumePath(id), {
       operation: 'the network volume',
+      priority: 0,
     });
     return ensureResource(body, 'the network volume');
   }
@@ -962,6 +1024,7 @@ class RunpodApiV2Service {
     await this.requestJson(networkVolumePath(id), {
       method: 'DELETE',
       operation: 'network volume deletion',
+      priority: 0,
     });
     return true;
   }
@@ -1041,6 +1104,7 @@ class RunpodApiV2Service {
 }
 
 module.exports = {
+  readResponseText,
   BILLING_BUCKET_SIZES,
   CATALOG_ITEM_LIMITS,
   CLOUD_TYPES,

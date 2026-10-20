@@ -17,6 +17,10 @@ async function main({
   ensureSecret = ensureRunpodSecret,
 } = {}) {
   try {
+    if (argv.includes('--help')) {
+      stdout('Use REST v2 account secrets to create a missing LLM key name, or --check for metadata only. Existing names are never overwritten.');
+      return null;
+    }
     const checkOnly = argv.includes('--check');
     const result = await ensureSecret({
       apiKey: env.RUNPOD_API_KEY,

@@ -270,7 +270,7 @@ describe('codexToolService Runpod model provider availability', () => {
 
   test('publishes only Runpod providers whose exact pods are running', async () => {
     RunpodPod.find.mockReturnValue(runpodPodQuery([
-      { name: 'ollama-qwen' },
+      { name: 'ollama-qwen', lastProviderSyncAt: new Date() },
     ]));
 
     const config = await codexToolService.publicConfig({ user: admin });
@@ -287,11 +287,22 @@ describe('codexToolService Runpod model provider availability', () => {
     }));
     expect(RunpodPod.find).toHaveBeenCalledWith({
       name: { $in: ['ollama-qwen', 'glm53-flash'] },
+      lastProviderSyncAt: { $gte: expect.any(Date), $lte: expect.any(Date) },
       providerStatus: 'RUNNING',
       lifecycleGroup: 'running',
       archivedAt: null,
     });
   });
+
+  test.each([undefined, null, 'invalid', new Date(Date.now() - 181_000), new Date(Date.now() + 60_000)])(
+    'rejects a stale or invalid local RUNNING mirror (%s) without provider HTTP', async (lastProviderSyncAt) => {
+      RunpodPod.find.mockReturnValue(runpodPodQuery([{ name: 'ollama-qwen', lastProviderSyncAt }]));
+      const config = await codexToolService.publicConfig({ user: admin });
+      expect(config.modelProviderOptions.map((p) => p.value)).not.toContain('runpod-qwen');
+      await expect(codexToolService.resolveTurnRequestOptions({ modelProvider: 'runpod-qwen' }, {}, { user: admin }))
+        .rejects.toThrow(/stale/u);
+    }
+  );
 
   test('hides all Runpod providers when the pods are stopped or absent', async () => {
     const config = await codexToolService.publicConfig({ user: admin });
@@ -318,7 +329,7 @@ describe('codexToolService Runpod model provider availability', () => {
     Role.findOne
       .mockResolvedValueOnce({ permissions: ['codex.run.runpod_model'] })
       .mockResolvedValueOnce(null);
-    RunpodPod.find.mockReturnValue(runpodPodQuery([{ name: 'glm53-flash' }]));
+    RunpodPod.find.mockReturnValue(runpodPodQuery([{ name: 'glm53-flash', lastProviderSyncAt: new Date() }]));
 
     const config = await codexToolService.publicConfig({
       user: { name: 'model-user', type_user: 'user' },
@@ -1291,7 +1302,7 @@ describe('codexToolService local model request options', () => {
     podName,
     profile
   ) => {
-    RunpodPod.find.mockReturnValue(runpodPodQuery([{ name: podName }]));
+    RunpodPod.find.mockReturnValue(runpodPodQuery([{ name: podName, lastProviderSyncAt: new Date() }]));
 
     await expect(codexToolService.resolveTurnRequestOptions({
       modelProvider,
@@ -1337,7 +1348,7 @@ describe('codexToolService local model request options', () => {
   });
 
   test('rejects a Runpod provider without its semantic capability', async () => {
-    RunpodPod.find.mockReturnValue(runpodPodQuery([{ name: 'ollama-qwen' }]));
+    RunpodPod.find.mockReturnValue(runpodPodQuery([{ name: 'ollama-qwen', lastProviderSyncAt: new Date() }]));
 
     await expect(codexToolService.resolveTurnRequestOptions({
       modelProvider: 'runpod-qwen',

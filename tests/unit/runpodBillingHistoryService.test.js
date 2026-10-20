@@ -233,6 +233,18 @@ describe('RunpodBillingHistoryService', () => {
     expect(JSON.stringify(fixture.appLogger.warning.mock.calls)).not.toContain('private');
   });
 
+  test('coalesces overlapping syncs and permits a later refresh', async () => {
+    const fixture = createFixture();
+    fixture.service._syncHistory = jest.fn().mockResolvedValue({ accountPeriods: 1 });
+    const first = fixture.service.syncHistory({ name: 'scheduler' });
+    const second = fixture.service.syncHistory({ name: 'admin' });
+    expect(first).toBe(second);
+    await Promise.all([first, second]);
+    expect(fixture.service._syncHistory).toHaveBeenCalledTimes(1);
+    await fixture.service.syncHistory({ name: 'admin' });
+    expect(fixture.service._syncHistory).toHaveBeenCalledTimes(2);
+  });
+
   test('fails safely only when both provider billing sections are unavailable', async () => {
     const fixture = createFixture();
     fixture.runpodService.getBilling.mockRejectedValue(new Error('account secret'));

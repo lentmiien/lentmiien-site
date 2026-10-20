@@ -94,7 +94,13 @@ TTS_API_BASE=http://192.168.0.20:8080
 AI_GATEWAY_BASE_URL=http://192.168.0.20:8080
 LLM_ADMIN_TOKEN=
 RUNPOD_API_KEY=
+# Per-attempt timeout (250..120000 ms); total budget includes queue, cooldown and retries.
 RUNPOD_API_TIMEOUT_MS=10000
+RUNPOD_API_BUDGET_MS=30000
+# Shared within this Node process, not across workers, external CLIs, or other account users.
+RUNPOD_API_CONCURRENCY=4
+RUNPOD_API_QUEUE_LIMIT=64
+RUNPOD_API_READ_RETRIES=2
 RUNPOD_API_CACHE_TTL_MS=30000
 RUNPOD_MAX_ACTIVE_PODS=2
 RUNPOD_MAX_GPU_COUNT=16
@@ -110,7 +116,10 @@ RUNPOD_OLLAMA_PULL_TIMEOUT_MS=1800000
 RUNPOD_OLLAMA_MODEL_DOWNLOAD_TIMEOUT_MS=21600000
 # Bounded background monitor for pinned GGUF artifact preparation (4h10m default).
 RUNPOD_MODEL_ARTIFACT_PREPARATION_TIMEOUT_MS=15000000
+# Clamped to 2000..60000 ms. The independent active cost guard remains every 60 seconds.
 RUNPOD_POLL_INTERVAL_MS=5000
+# Local provider mirror freshness for Codex; clamped to 120000..600000 ms.
+CODEX_RUNPOD_STATE_MAX_AGE_MS=180000
 # Optional convenience default for the standalone GLM preparation script.
 RUNPOD_GLM53_VOLUME_ID=
 # Stable Ollama gateway. Keep the tunnel token local; the bootstrap script copies it once

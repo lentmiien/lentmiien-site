@@ -241,7 +241,7 @@ describe('RunpodApiV2Service', () => {
 
     await expect(service.getGpuTypes()).rejects.toEqual(expect.objectContaining({
       code: 'RUNPOD_TIMEOUT',
-      message: 'Runpod timed out while loading the GPU catalog.',
+      message: 'Runpod request timed out or was cancelled.',
     }));
   });
 
@@ -256,8 +256,8 @@ describe('RunpodApiV2Service', () => {
     });
 
     await Promise.all([
-      service.getGpuTypes({ forceRefresh: true }),
-      service.getGpuTypes({ forceRefresh: true }),
+      service.getGpuTypes(),
+      service.getGpuTypes(),
     ]);
     await service.getGpuTypes();
     expect(fetchImpl).toHaveBeenCalledTimes(1);

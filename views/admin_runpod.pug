@@ -79,6 +79,20 @@ block content
         strong Some compute or storage-management data could not be loaded.
         p Catalog and billing data may still be current. Refresh before making a cost-bearing decision.
 
+    if management.pendingCreations && management.pendingCreations.length
+      .runpod-alert.runpod-alert--warning(role='alert')
+        strong Resource creation needs reconciliation.
+        p A provider request may have succeeded. New creations of that resource kind are blocked until the outcome is confirmed. Do not repeat the creation in another tool.
+        each intent in management.pendingCreations
+          p= `${intent.kind}: ${intent.state}; operation ${intent.operationId}${intent.providerId ? '; resource ' + intent.providerId : '; provider ID unknown'}`
+        p Review the exact operation in the Runpod administration recovery guide before manual remediation.
+
+    if management.requestDiagnostics
+      details.runpod-panel
+        summary Control-plane request diagnostics (this Node process)
+        p= `Requests: ${management.requestDiagnostics.requests}; retries: ${management.requestDiagnostics.retries}; failures: ${management.requestDiagnostics.failures}; throttled: ${management.requestDiagnostics.throttled}; queued: ${management.requestDiagnostics.queued}.`
+        p= `HTTP status counts: ${JSON.stringify(management.requestDiagnostics.statuses)}`
+
     section#model-library.runpod-panel.runpod-panel--featured(aria-labelledby='runpodModelLibraryHeading')
       .runpod-panel__header
         div

@@ -14,6 +14,14 @@ function createRunpodPodGuardRunner({ manager = runpodPodManager, appLogger = lo
     if (running) return { skipped: true };
     running = true;
     try {
+      // Expired guards take precedence over background recovery/catalog work.
+      const stopped = await manager.stopExpiredPods();
+      if (typeof manager.reconcileCreationIntents === 'function') {
+        // The manager coalesces recovery. It must not delay the next cost-guard tick.
+        manager.reconcileCreationIntents().catch(() => {
+          appLogger.error('Runpod creation recovery failed; unresolved operations remain blocked', { category: 'runpod_management' });
+        });
+      }
       let synchronized = null;
       if (typeof manager.syncProviderPods === 'function') {
         try {
@@ -51,7 +59,6 @@ function createRunpodPodGuardRunner({ manager = runpodPodManager, appLogger = lo
           }
         }
       }
-      const stopped = await manager.stopExpiredPods();
       return {
         skipped: false,
         stopped,

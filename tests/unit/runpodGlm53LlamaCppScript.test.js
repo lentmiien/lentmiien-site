@@ -122,3 +122,39 @@ describe('Runpod GLM llama.cpp standalone check', () => {
     });
   });
 });
+
+describe('bounded offline GLM workload probes', () => {
+  const { probeStatus, requestJson, verifyGatewayPreflight } = require('../../scripts/test-runpod-glm53-llama-cpp-v2');
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+  test('aborts a hung health request at the remaining deadline', async () => {
+    let signal;
+    const fetchImpl = jest.fn((url, options) => { signal = options.signal; return new Promise(() => {}); });
+    const result = probeStatus(fetchImpl, new URL('https://example.test/health'), {}, Date.now() + 100).catch((e) => e);
+    await jest.advanceTimersByTimeAsync(100);
+    expect(await result).toMatchObject({ name: 'AbortError' });
+    expect(signal.aborted).toBe(true);
+  });
+  test('preflight cannot hang on the anonymous probe', async () => {
+    const fetchImpl = jest.fn(() => new Promise(() => {}));
+    const result = verifyGatewayPreflight(fetchImpl, 'https://example.test', {}, { timeoutMs: 100 }).catch((e) => e);
+    await jest.advanceTimersByTimeAsync(100);
+    expect(await result).toMatchObject({ name: 'AbortError' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+  test('cancels an oversized stream while reading', async () => {
+    const cancel = jest.fn();
+    const body = new ReadableStream({ start(c) { c.enqueue(new Uint8Array(1025)); }, cancel });
+    const fetchImpl = jest.fn().mockResolvedValue(new Response(body));
+    await expect(requestJson(fetchImpl, 'https://example.test', {}, { maxBytes: 1024 })).rejects.toMatchObject({ code: 'RUNPOD_GLM53_RESPONSE_TOO_LARGE' });
+    expect(cancel).toHaveBeenCalled();
+  });
+  test('cancels a hung body reader at the request deadline', async () => {
+    const cancel = jest.fn();
+    const fetchImpl = jest.fn().mockResolvedValue(new Response(new ReadableStream({ cancel })));
+    const result = requestJson(fetchImpl, 'https://example.test', {}, { timeoutMs: 100 }).catch((e) => e);
+    await jest.advanceTimersByTimeAsync(100);
+    expect(await result).toMatchObject({ code: 'RUNPOD_GLM53_INFERENCE_TIMEOUT' });
+    expect(cancel).toHaveBeenCalled();
+  });
+});

@@ -30,7 +30,7 @@ describe('Runpod automatic Pod cost guard', () => {
       expect(JSON.stringify(appLogger.warning.mock.calls)).not.toContain('private upstream');
     } finally { dateSpy.mockRestore(); }
   });
-  test('observes provider state before applying automatic stops', async () => {
+  test('prioritizes expired stops before background provider observation', async () => {
     const manager = {
       syncProviderPods: jest.fn().mockResolvedValue({ imported: 0, updated: 1, archived: 0 }),
       stopExpiredPods: jest.fn().mockResolvedValue(0),
@@ -49,8 +49,8 @@ describe('Runpod automatic Pod cost guard', () => {
       { name: 'runpod-state-observer' },
       { recordEvent: false }
     );
-    expect(manager.syncProviderPods.mock.invocationCallOrder[0])
-      .toBeLessThan(manager.stopExpiredPods.mock.invocationCallOrder[0]);
+    expect(manager.stopExpiredPods.mock.invocationCallOrder[0])
+      .toBeLessThan(manager.syncProviderPods.mock.invocationCallOrder[0]);
   });
 
   test('stops expired Pods and prevents overlapping ticks', async () => {

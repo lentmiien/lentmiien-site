@@ -34,6 +34,17 @@ function renderPage(dashboard = {}, management = {}, storedHistory = {}) {
 }
 
 describe('Runpod admin page', () => {
+  test('renders escaped unresolved operation details and aggregate request diagnostics', () => {
+    const html = renderPage({}, {
+      pendingCreations: [{ kind: 'pod', state: 'unknown', operationId: '<script>unsafe</script>' }],
+      requestDiagnostics: { requests: 42, retries: 2, failures: 1, throttled: 1, queued: 0, statuses: { 200: 40, 429: 1 } },
+    });
+    expect(html).toContain('Resource creation needs reconciliation.');
+    expect(html).toContain('&lt;script&gt;unsafe&lt;/script&gt;');
+    expect(html).not.toContain('<script>unsafe</script>');
+    expect(html).toContain('Requests: 42; retries: 2');
+  });
+
   test('offers a focused two-model library and guarded GLM quick launch when verified', () => {
     const html = renderPage({}, {
       limits: {

@@ -33,13 +33,160 @@ Network-volume management uses:
 - `GET` and `POST /v2/network-volumes`
 - `GET`, `PATCH`, and `DELETE /v2/network-volumes/{id}`
 
-API v1 is not used. Normal catalog, billing, template, volume, and Pod workflows
-remain REST API v2-only. Runpod v2 does not currently expose Secret creation, so
-the standalone `bootstrap:runpod-cloudflare-secret` command makes one narrowly
-scoped official GraphQL mutation to create the encrypted tunnel-token Secret;
-it is not part of the web application or ongoing resource management. Runpod
-REST API v2 is currently public beta, so response fields may evolve. Current reference:
-<https://docs.runpod.io/api-reference-v2/overview>.
+Management REST v1 is not used. Catalog, billing, template, volume, Pod, and
+standalone Secret bootstrap operations use REST API v2. Secrets use
+`GET /v2/account/secrets?name=...` and `POST /v2/account/secrets`; values are
+write-only and an existing name is never overwritten. Workload paths such as
+`/v1/chat/completions` belong to llama.cpp's OpenAI-compatible API and are unrelated
+to retirement of the Runpod management API.
+
+Verified against public documentation and the OpenAPI schema on 2026-10-20:
+[Runpod's Q3 announcement](https://www.runpod.io/blog/runpod-q3-2026-releases)
+says management REST v1 stops on November 15, 2026, GraphQL rate limits start on
+October 27, and GraphQL stops in January 2027. The claimed October 19 acceleration
+and quoted GraphQL quotas were not independently confirmed. They are **not** REST
+v2 configuration values. REST v2 limits are per user across multiple windows;
+the implementation reads `RateLimit-Policy`, `RateLimit`, and `Retry-After`.
+References: [rate limits](https://docs.runpod.io/api-reference-v2/rate-limits),
+[public schema](https://api.runpod.io/v2/openapi.json),
+[secret creation](https://docs.runpod.io/api-reference-v2/account/create-a-secret),
+[secret listing](https://docs.runpod.io/api-reference-v2/account/list-secrets).
+
+## Request coordination and diagnostics
+
+All default clients share a bounded priority queue and cooldown in the same Node
+process. Stop/termination requests and pod reconciliation reads precede catalog,
+billing and log work that has not started. Urgent work can displace a queued
+lower-priority request when the bounded queue is full. Already running requests are bounded
+but not preempted. Every request respects the longest exhausted quota window or
+Retry-After delay, including HTTP dates. Valid long delays are never shortened to
+fit a local budget. Malformed metadata receives a conservative 60-second cooldown
+and a bounded warning. A request whose cooldown exceeds its budget fails with
+`RUNPOD_COOLDOWN` and a retry timestamp instead of sleeping indefinitely.
+
+Only GET reads retry 429, 408, 500, 502, 503, 504 and transport timeout/network
+failures. The default is two retries, with exponential backoff starting at 250 ms
+and up to 100% jitter, capped at 5 seconds before jitter. Backoff/cooldown consumes
+no active request slot. Cancellation and the total budget cover queue time,
+connection, and streamed response reads. The cost guard performs expired stops
+before background observation; coalesced creation recovery runs independently
+and does not block the next guard tick. Writes (including start, restart, PATCH,
+and delete) are never automatically replayed. Mutation 429 is a typed retryable
+error; a new operation must renew its preconditions. Provider error payloads are
+bounded and Secret bootstrap errors suppress them entirely.
+
+| Configuration | Default | Bounds |
+| --- | ---: | --- |
+| `RUNPOD_API_TIMEOUT_MS` | 10000 | 250–120000 ms per attempt |
+| `RUNPOD_API_CACHE_TTL_MS` | 30000 | 0–300000 ms |
+| `RUNPOD_API_BUDGET_MS` | 30000 | 1000–180000 ms total |
+| `RUNPOD_API_CONCURRENCY` | 4 | 1–16 active requests |
+| `RUNPOD_API_QUEUE_LIMIT` | 64 | 1–256 waiting requests |
+| `RUNPOD_API_READ_RETRIES` | 2 | 0–4 retries |
+| `RUNPOD_POLL_INTERVAL_MS` | 5000 | 2000–60000 ms |
+| `CODEX_RUNPOD_STATE_MAX_AGE_MS` | 180000 | 120000–600000 ms |
+
+Cached catalog/billing reads share results by credential within the process.
+Mutation preflights explicitly bypass cached and already in-flight results.
+Overlapping billing syncs coalesce. Pod/volume lists reject malformed IDs and
+incomplete pagination rather than infer absence from truncated evidence. Accounts
+above the bounded list sizes need an explicit pagination implementation before
+management is enabled; the site fails closed rather than silently truncating.
+The guard still runs at startup and every 60 seconds, including when idle. This
+change does not reduce the approximately 1,440 idle pod-list reads per day.
+
+The admin page exposes aggregate request, HTTP status, retry, failure, and queue
+counts. Counters reset on process restart; there are no per-success request logs.
+Throttling warnings include bounded aggregates at most once a minute. These are
+**in-process controls**, not an account-wide quota guarantee: other Node processes,
+CLI invocations and other account users have independent queues. The production
+review found one Node process but did not establish exclusive account use. No
+Runpod Gateway change is part of this work.
+
+## Durable creation and cost-guard recovery
+
+Before a billable pod or volume create, MongoDB must accept a creation intent.
+The new `runpod_creation_intents` collection contains at most one current record
+per resource kind (`_id: pod` or `volume`); its built-in unique `_id` index prevents
+concurrent unresolved creations even across app processes. Records contain only
+an operation UUID, provider name/ID, state, start time and intended stop deadline,
+never environment payloads or credentials. Resolved records can be replaced by
+the next authorized operation; unresolved records are never automatically expired.
+Pods carry the UUID in the supported `env.LENTMIIEN_CREATION_OPERATION` field;
+volumes use the supported `name` field with a UUID suffix. These are correlation
+identifiers, **not provider idempotency keys**. Existing pod names remain unchanged.
+
+A lost creation response becomes `unknown` and blocks another creation of that
+kind. Every guard tick reconciles unresolved intents. A crashed in-flight request
+has a 10-minute recovery lease; an explicitly failed request can reconcile
+immediately. Recovery uses an exact identifier match, then a fresh detail read.
+A successfully persisted managed pod is retained with its original deadline. An
+untracked correlated resource is rolled back; attached volumes are not deleted.
+Cleanup remains unresolved until an exact detail 404 and a complete provider
+list corroborate absence after a persisted deletion request. A known create ID
+missing from a list alone never proves rollback succeeded.
+There is no fuzzy-name deletion or automatic create replay. This durable gate
+covers application-managed creates. Standalone `--execute` smoke/provisioning
+scripts and external account tools remain operator-owned and do not participate
+in the MongoDB gate; do not use them to bypass an unresolved application intent.
+
+If no ID was ever observed and no exact match exists, the dashboard continues to
+show **unknown**. Absence at one instant cannot prove that a delayed create will
+never finish. For operator remediation: pause new creates of that kind, inspect
+the displayed operation UUID and exact provider name/environment metadata, and
+confirm the outcome with Runpod support if necessary. Do not delete by a similar
+name or repeat creation from another tool. Only after the provider confirms the
+original request cannot still create a resource (or its exact resource has been
+removed) may an administrator mark that **specific `_id` plus `token`** resolved
+in MongoDB. Keep an operational audit of that decision. No automatic timeout
+unlocks unknown creations, and no web route bypasses this gate.
+
+Starts save the requested deadline **before** sending the billable action. A
+failed database write blocks the start; a lost provider response leaves that
+deadline active. Manual stops persist `stopRequestedAt` before the request, and
+the guard retries those requests even if their original runtime deadline is in
+the future. A RUNNING acknowledgement is reported as pending, never as stopped.
+Failed/nonterminal stops retain the original deadline. Confirmed inactive states
+can clear it. Synchronization repairs missing active deadlines from the observed
+start/creation time, without extending valid deadlines, and guards updates
+against concurrent local actions. Old records need no destructive migration:
+`stopRequestedAt` is nullable and deadline repairs occur during observation.
+
+Codex uses the local RUNNING mirror only while its provider observation is fresh
+(default three minutes, allowing two delayed 60-second ticks). Missing, malformed,
+stale or implausibly future timestamps make the model unavailable with an
+explanation; no provider HTTP request is made for each Codex turn. Finishing a
+long model setup does not refresh an old provider observation; readiness may
+wait until the next guard observation.
+
+Application safeguards still depend on a functioning database, process, provider
+API and account authority. Provider outages or long account cooldowns can delay
+stops; they cannot be guaranteed while the app is down. Pending failures remain
+visible for operator follow-up. No paid-resource test was performed for this
+release; remote eventual consistency and actual account quotas remain untested.
+
+## Safe deployment verification
+
+1. Deploy the reviewed commit using Node 24.20.0 and the usual application release
+   procedure. Do not use `npm start` as a smoke test: prestart performs maintenance.
+   No existing secrets need to be replaced. Keep the new defaults unless measured
+   behavior justifies a change.
+2. Confirm MongoDB readiness and permission to create/write
+   `runpod_creation_intents`, and that the existing pod collection accepts nullable
+   `stopRequestedAt`. The creation gate relies on MongoDB's automatic `_id` index;
+   no manual backfill, destructive migration or paid resource is required.
+3. Open `/admin/runpod` with an authorized session. Review the bounded request
+   counters, any unknown intents, and the next two guard observations in logs.
+   With no active pods, leave them absent; do not create a resource to test this.
+4. Optionally run each Secret bootstrap with **`--check` only** to verify metadata
+   and read permission. It never returns values or creates/overwrites a secret.
+   Do not run the provisioning scripts with `--execute` as release verification.
+5. Confirm stale or stopped Runpod models are unavailable in Codex and that an
+   account without Runpod capabilities cannot access the monitor. Investigate
+   pending cleanup/cooldown warnings before authorizing new billable work.
+6. If rollback is required, disable new creates first and resolve any pending
+   intent and stop request before reverting: older code does not understand the
+   new durable safeguards. Preserve the records for review.
 
 ## Ollama workflow
 
@@ -564,19 +711,19 @@ Interactive principals: validated admin sessions
 Machine principals: internal `runpod-state-observer`, `runpod-auto-stop`, and `runpod-billing-scheduler` labels; Cloudflare Access service-token client for outbound gateway checks; no inbound application machine route (`RUNPOD_API_KEY` is an outbound provider credential)
 Data classification: public catalogs; sensitive account billing/resource metadata; secret provider, tunnel, Access-token, and future LLM-gateway credentials
 Capabilities: runpod.catalog.read, runpod.billing.read, runpod.billing.sync, runpod.pod.read, runpod.pod.create, runpod.pod.start, runpod.pod.stop, runpod.pod.extend, runpod.pod.delete, runpod.pod.setup, runpod.pod.sync, runpod.model_download.create, runpod.model_artifact.prepare, runpod.ollama.reconfigure, runpod.llama_cpp.create, runpod.llama_cpp.reconfigure, runpod.network_volume.read, runpod.network_volume.create, runpod.network_volume.delete, runpod.network_volume.sync, runpod.template.manage
-Object scope: account-wide admin feature; Pod and volume browser actions use local MongoDB IDs and resolve provider IDs server-side; model downloads accept a provider volume ID but verify it against the authenticated account's v2 volume list and derive cloud/location server-side; volume deletion also verifies the resolved provider ID against that list
+Object scope: explicitly admin-managed account resources; durable creation recovery acts only on an exact operation correlation and re-read provider ID; Pod and volume browser actions use local MongoDB IDs and resolve provider IDs server-side; model downloads accept a provider volume ID but verify it against the authenticated account's v2 volume list and derive cloud/location server-side; volume deletion also verifies the resolved provider ID against that list
 Admin override: no implicit bypass; admin receives the explicit capability bundle and each mutation checks its semantic capability
 Browser mutations and CSRF control: POST only; shared session token, timing-safe comparison, and Origin validation, with a same-origin Fetch Metadata fallback for opaque browser origins; Pod and volume deletion also require the exact resource name
 Public/secret abuse controls: authentication plus admin guard, semantic capabilities, read/mutation/create rate limits, active-Pod ceiling, GPU ceiling, storage-size ceiling, fresh location-specific compute price check, confirmed hourly/monthly maxima, storage-billing/public-proxy acknowledgements, one-writer-per-volume enforcement, one-active-connector-per-named-tunnel enforcement, mandatory auto-stop, automatic downloader deletion, no Runpod port in the gateway profile, and Cloudflare Access at the stable hostname
-Request and upload limits: URL-encoded forms only, at most 16 KiB and 20 scalar fields; no uploads; provider requests capped at 64 KiB; provider responses capped at 4 MiB
+Request and upload limits: URL-encoded forms only, at most 16 KiB and 20 scalar fields; no uploads; provider requests capped at 64 KiB; provider responses capped at 4 MiB; Secret metadata capped at 64 KiB while streaming; bounded shared queue/concurrency, total request budgets, GET-only retries and provider cooldowns
 Output/rendering contexts: bounded normalized values rendered with escaped Pug interpolation; sanitized provider error fields may be shown to administrators, but no provider HTML, raw response bodies, environment values, or inline JSON
 Private file/media storage and delivery: none
-Outbound hosts/services: fixed HTTPS api.runpod.io v2 paths; a standalone one-time Secret bootstrap to fixed HTTPS api.runpod.io/graphql; exact <pod>-<port>.proxy.runpod.net diagnostic URLs; exact configured https://llm.lentmiien.com gateway origin; the Pod wrapper downloads only the pinned cloudflared AMD64 release URL and verifies its SHA-256; redirects rejected; Ollama paths restricted to /, /api/tags, /api/pull, /api/generate, and /api/ps
+Outbound hosts/services: fixed HTTPS api.runpod.io v2 paths; standalone metadata-only checks and create-if-missing bootstrap on fixed HTTPS api.runpod.io/v2/account/secrets; exact <pod>-<port>.proxy.runpod.net diagnostic URLs; exact configured https://llm.lentmiien.com gateway origin; the Pod wrapper downloads only the pinned cloudflared AMD64 release URL and verifies its SHA-256; redirects rejected; Ollama paths restricted to /, /api/tags, /api/pull, /api/generate, and /api/ps
 Cache policy: browser responses are private/no-store; catalog results use a short in-memory cache
-Security-relevant logs: stable action, category, safe error code, and HTTP status metadata only; no key, billing amount, resource ID, principal data, or provider body
+Security-relevant logs: stable action/category/error code, bounded request/status/retry aggregates and operation UUID for unresolved creation; no keys, billing amounts, principal data or provider bodies
 Retention/deletion behavior: provider deletion archives local serving and downloader Pod lifecycle/cost metadata plus volume and per-Pod billing metadata; verified model tags remain on the active volume record; account months, Pod billing periods, and audit events are retained; model files are permanently removed only by provider volume deletion; application databases persist only non-secret gateway mode/URL and Runpod Secret references, never credential values
-Required negative tests: non-admin/capability denial (including separate model-download authority), invalid CSRF and Origin, oversized/non-form body, malformed local/provider ID/model tag, missing or in-use volume, unavailable hardware/storage location, active-Pod/GPU/compute/storage-cost limits, invalid start/extension/download duration, public-endpoint/storage-billing acknowledgement, exact delete confirmation, cross-region/community-volume rejection, provider timeout/error/oversize/redirect, provider-error redaction, proxy-host validation, exact Cloudflare-host validation, missing Access credentials, duplicate named-tunnel connector, Secret-bootstrap no-overwrite/error redaction, cleanup after failed creation/setup/download, successful-download cleanup failure, and auto-stop/extension overlap
-Legacy dependency or migration plan: new v2-only models/routes; MongoDB creates the new collections and indexes; rollback can remove code after all provider Pods have been explicitly deleted
+Required negative tests: non-admin/capability denial (including separate model-download authority), invalid CSRF and Origin, oversized/non-form body, malformed local/provider ID/model tag, missing or in-use volume, unavailable hardware/storage location, active-Pod/GPU/compute/storage-cost limits, invalid start/extension/download duration, public-endpoint/storage-billing acknowledgement, exact delete confirmation, cross-region/community-volume rejection, provider timeout/error/oversize/redirect, provider-error redaction, proxy-host validation, exact Cloudflare-host validation, missing Access credentials, duplicate named-tunnel connector, Secret-bootstrap no-overwrite/error redaction, cleanup after failed creation/setup/download, successful-download cleanup failure, auto-stop/extension overlap, shared cooldown/backoff/priority/cancellation, nonterminal stops, ambiguous starts, durable unknown creation/restart recovery, stale local availability, and hung workload streams
+Legacy dependency or migration plan: REST v2-only transports including Secret bootstrap; additive runpod_creation_intents collection with built-in unique _id gate and nullable Pod stopRequestedAt; no credentials persisted; resolve pending creation/stop intents before rollback because old code does not enforce them
 ```
 
 The application has no shared recent-authentication or MFA gate yet. The feature
@@ -621,9 +768,10 @@ npm run bootstrap:runpod-llm-api-secret -- --check
 
 The command first lists Secret metadata. It never overwrites an existing Secret,
 never returns the value, and prints only the configured Secret name/status. Runpod
-REST v2 currently has no Secret-creation operation, so this standalone bootstrap
-is the documented narrow GraphQL exception; every template, volume, and Pod
-operation remains v2.
+REST v2 supplies the account-secret operations. Duplicate-name 409 and ambiguous
+create responses trigger an exact-name re-read, never another write. Malformed,
+oversized or incomplete lists fail closed. The bootstrap does not prove the value
+of an existing Secret, because the provider never returns it.
 
 The read-only connectivity check does not start Express, MongoDB, schedulers,
 workers, or the `prestart` pipeline:

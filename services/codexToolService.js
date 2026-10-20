@@ -424,14 +424,24 @@ function buildSteerTurnScope(turnId, user) {
 }
 
 async function getRunningRunpodPodNames() {
+  // The guard observes provider state every 60 seconds. Allow two delayed ticks;
+  // never issue a provider request on each Codex turn.
+  const configured = Number(process.env.CODEX_RUNPOD_STATE_MAX_AGE_MS);
+  const maxAgeMs = Number.isSafeInteger(configured) && configured > 0
+    ? Math.max(120_000, Math.min(configured, 600_000)) : 180_000;
+  const now = Date.now();
   const podNames = RUNPOD_MODEL_PROVIDER_DEFINITIONS.map((definition) => definition.podName);
   const pods = await RunpodPod.find({
     name: { $in: podNames },
     providerStatus: 'RUNNING',
+    lastProviderSyncAt: { $gte: new Date(now - maxAgeMs), $lte: new Date(now + 15_000) },
     lifecycleGroup: 'running',
     archivedAt: null,
   }).lean().exec();
-  return new Set(pods.map((pod) => String(pod && pod.name || '').trim()));
+  return new Set(pods.filter((pod) => {
+    const observed = new Date(pod?.lastProviderSyncAt).getTime();
+    return observed >= now - maxAgeMs && observed <= now + 15_000;
+  }).map((pod) => String(pod && pod.name || '').trim()));
 }
 
 function serializeModelProviderOption(definition) {
@@ -514,7 +524,7 @@ async function assertModelProviderAvailable(providerInput) {
     throw createHttpError(503, 'Runpod model availability could not be verified. Please try again.');
   }
   if (!runningPodNames.has(definition.podName)) {
-    throw createHttpError(409, `${definition.label} is unavailable because its Runpod pod is not running.`);
+    throw createHttpError(409, `${definition.label} is unavailable because its Runpod pod is not running or its provider state is stale. Wait for provisioning and the next state refresh.`);
   }
   return definition;
 }

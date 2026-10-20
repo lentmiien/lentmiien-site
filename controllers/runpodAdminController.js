@@ -48,6 +48,8 @@ const NOTICE_MESSAGES = Object.freeze({
   'pod-created': { type: 'success', message: 'The pod was created. Ollama setup is running in the background.' },
   'pod-create-failed': { type: 'error', message: 'The pod could not be created. Check current availability and try again.' },
   'pod-started': { type: 'success', message: 'The pod start request was accepted.' },
+  'pod-start-unknown': { type: 'error', message: 'The start outcome is unknown. Its saved auto-stop deadline remains active. Refresh provider state before another action.' },
+  'pod-stop-pending': { type: 'error', message: 'Stop requested; provider confirmation is pending. The cost guard will retry without extending the original deadline.' },
   'pod-start-failed': { type: 'error', message: 'The pod could not be started in its current state.' },
   'pod-start-gpu-unavailable': { type: 'error', message: 'The original GPU for this stopped Pod is unavailable. Wait and retry, or delete and redeploy on currently available hardware.' },
   'pod-start-rate-limited': { type: 'error', message: 'Runpod is rate limiting Pod starts. Wait briefly and retry.' },
@@ -353,6 +355,8 @@ function buildPageModel(
     errorSections,
     notice: NOTICE_MESSAGES[filters.notice] || null,
     podManagement: {
+      pendingCreations: Array.isArray(management.pendingCreations) ? management.pendingCreations.slice(0, 2) : [],
+      requestDiagnostics: management.requestDiagnostics || null,
       limits: {
         maxActivePods: 2,
         maxGpuCount: 16,

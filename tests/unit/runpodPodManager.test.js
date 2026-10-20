@@ -68,7 +68,7 @@ describe('Runpod setup cleanup observations', () => {
     f.runpodService.getPod.mockRejectedValue(missing());
     f.runpodService.listPods.mockRejectedValue(new RunpodApiError('private details', { code: 'RUNPOD_TIMEOUT' }));
     await expect(cleanup(f)).resolves.toMatchObject({ outcome: 'unconfirmed', persisted: false });
-    expect(f.runpodService.listPods).toHaveBeenCalledTimes(2);
+    expect(f.runpodService.listPods).toHaveBeenCalledTimes(1);
     expect(f.podModel.updateOne).not.toHaveBeenCalled();
     expect(f.runpodService.transitionPod).not.toHaveBeenCalled();
     expect(JSON.stringify(f.appLogger.error.mock.calls)).not.toContain('private details');
@@ -82,11 +82,11 @@ describe('Runpod setup cleanup observations', () => {
     expect(f.podModel.updateOne).not.toHaveBeenCalled();
   });
 
-  test.each(['RUNPOD_TIMEOUT', 'RUNPOD_NETWORK_ERROR'])('retries a failed safe read once for %s', async (code) => {
+  test.each(['RUNPOD_TIMEOUT', 'RUNPOD_NETWORK_ERROR'])('does not multiply transport safe-read retries for %s', async (code) => {
     const f = createFixture();
     f.runpodService.getPod.mockRejectedValueOnce(new RunpodApiError('failed', { code })).mockResolvedValue(exited);
-    await expect(cleanup(f)).resolves.toEqual({ outcome: 'already_inactive', persisted: true });
-    expect(f.runpodService.getPod).toHaveBeenCalledTimes(2);
+    await expect(cleanup(f)).resolves.toEqual({ outcome: 'unconfirmed', persisted: false, errorCode: code });
+    expect(f.runpodService.getPod).toHaveBeenCalledTimes(1);
     expect(f.runpodService.transitionPod).not.toHaveBeenCalled();
   });
 
@@ -105,7 +105,7 @@ describe('Runpod setup cleanup observations', () => {
     f.runpodService.transitionPod.mockResolvedValue(running);
     await expect(cleanup(f)).resolves.toEqual({ outcome: 'stop_requested', persisted: true });
     expect(f.podModel.updateOne).toHaveBeenCalledWith(expect.any(Object), {
-      $set: expect.objectContaining({ autoStopAt: new Date(+FIXED_NOW + 60_000), lifecycleGroup: 'running' }),
+      $set: expect.objectContaining({ autoStopAt: FIXED_NOW, stopRequestedAt: FIXED_NOW, lifecycleGroup: 'running' }),
     });
     expect(f.appLogger.warning).toHaveBeenCalledTimes(1);
   });
@@ -151,7 +151,7 @@ describe('Runpod setup cleanup observations', () => {
     f.runpodService.getPod.mockResolvedValue({ id: 'pod-123', status: 'UNKNOWN', actions: [] });
     await expect(f.manager.stopExpiredPods()).resolves.toBe(0);
     expect(f.podModel.updateOne).toHaveBeenCalledWith(expect.any(Object), {
-      $set: expect.objectContaining({ autoStopAt: new Date(+FIXED_NOW + 60_000), autoStopClaimedAt: null }),
+      $set: expect.objectContaining({ autoStopClaimedAt: null }),
     });
     expect(f.appLogger.error).toHaveBeenCalledWith('Automatic Runpod pod stop failed', expect.any(Object));
   });
@@ -286,30 +286,38 @@ function createFixture({ template = ollamaTemplate(), localPod = null, managerOp
     find: jest.fn().mockImplementation(() => queryResult([])),
     findOne: jest.fn().mockImplementation(() => queryResult(localPod)),
     create: jest.fn(),
-    updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
-    updateMany: jest.fn().mockResolvedValue({ acknowledged: true }),
+    updateOne: jest.fn().mockResolvedValue({ acknowledged: true, matchedCount: 1 }),
+    updateMany: jest.fn().mockResolvedValue({ acknowledged: true, matchedCount: 1 }),
   };
   const templateModel = {
     find: jest.fn().mockImplementation(() => queryResult([])),
     findOne: jest.fn().mockImplementation(() => queryResult(template)),
     findOneAndUpdate: jest.fn(),
-    updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+    updateOne: jest.fn().mockResolvedValue({ acknowledged: true, matchedCount: 1 }),
   };
   const networkVolumeModel = {
     find: jest.fn().mockImplementation(() => queryResult([])),
     findOne: jest.fn().mockImplementation(() => queryResult(null)),
     findOneAndUpdate: jest.fn(),
-    updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+    updateOne: jest.fn().mockResolvedValue({ acknowledged: true, matchedCount: 1 }),
   };
   const modelArtifactModel = {
     find: jest.fn().mockImplementation(() => queryResult([])),
     findOne: jest.fn().mockImplementation(() => queryResult(null)),
     findOneAndUpdate: jest.fn(),
-    updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+    updateOne: jest.fn().mockResolvedValue({ acknowledged: true, matchedCount: 1 }),
   };
   const eventModel = { create: jest.fn().mockResolvedValue({}) };
   const appLogger = { warning: jest.fn(), error: jest.fn() };
+  const creationIntents = {
+    begin: jest.fn(async (kind, name, intendedStopAt) => ({ _id: kind, token: 'test-operation', providerName: name, intendedStopAt })),
+    payload: jest.fn((intent, input) => input),
+    observed: jest.fn().mockResolvedValue(), complete: jest.fn().mockResolvedValue(),
+    failed: jest.fn().mockResolvedValue(), reconcile: jest.fn().mockResolvedValue(),
+    pending: jest.fn().mockResolvedValue([]), matches: jest.fn().mockReturnValue(false),
+  };
   const manager = new RunpodPodManager({
+    creationIntents,
     runpodService,
     podModel,
     networkVolumeModel,
@@ -327,6 +335,7 @@ function createFixture({ template = ollamaTemplate(), localPod = null, managerOp
     ...managerOptions,
   });
   return {
+    creationIntents,
     appLogger,
     eventModel,
     manager,
@@ -2000,7 +2009,7 @@ describe('RunpodPodManager', () => {
     expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
   });
 
-  test('immediately cleans up a Pod when Runpod returns a rate above the confirmed limit', async () => {
+  test('requests correlated recovery when Runpod returns a rate above the confirmed limit', async () => {
     const fixture = createFixture();
     fixture.runpodService.createPod.mockResolvedValue({
       id: 'pod-costly',
@@ -2014,11 +2023,12 @@ describe('RunpodPodManager', () => {
     }))).rejects.toEqual(expect.objectContaining({
       code: 'RUNPOD_COST_LIMIT_EXCEEDED',
     }));
-    expect(fixture.runpodService.deletePod).toHaveBeenCalledWith('pod-costly');
+    expect(fixture.creationIntents.failed).toHaveBeenCalled();
+    expect(fixture.creationIntents.reconcile).toHaveBeenCalledWith(fixture.manager);
     expect(fixture.podModel.create).not.toHaveBeenCalled();
   });
 
-  test('reports an actionable error if creation cleanup cannot delete the provider Pod', async () => {
+  test('reports the failed create and delegates pending cleanup to durable recovery', async () => {
     const fixture = createFixture();
     fixture.runpodService.createPod.mockResolvedValue({
       id: 'pod-costly', status: 'PROVISIONING', cost: 0.8,
@@ -2032,19 +2042,19 @@ describe('RunpodPodManager', () => {
     }))).rejects.toEqual(expect.objectContaining({ code: 'RUNPOD_COST_LIMIT_EXCEEDED' }));
 
     expect(fixture.appLogger.error).toHaveBeenCalledWith(
-      'Failed to delete an unpersisted Runpod pod after creation failure',
+      'Runpod pod creation failed',
       {
         category: 'runpod_management',
         metadata: {
-          action: 'create_cleanup',
-          errorCode: 'RUNPOD_NETWORK_ERROR',
+          action: 'create',
+          errorCode: 'RUNPOD_COST_LIMIT_EXCEEDED',
           providerStatus: null,
         },
       }
     );
   });
 
-  test('fails closed by stopping a started Pod when its auto-stop state cannot be persisted', async () => {
+  test('blocks a billable start before calling the provider when its deadline cannot be persisted', async () => {
     const localPod = {
       _id: POD_RECORD_ID,
       providerPodId: 'pod-123',
@@ -2066,10 +2076,7 @@ describe('RunpodPodManager', () => {
       name: 'admin',
     })).rejects.toThrow('database unavailable');
 
-    expect(fixture.runpodService.transitionPod.mock.calls).toEqual([
-      ['pod-123', 'start'],
-      ['pod-123', 'stop'],
-    ]);
+    expect(fixture.runpodService.transitionPod).not.toHaveBeenCalled();
   });
 
   test('starts a stopped Pod for the selected bounded duration and replaces the old deadline', async () => {
@@ -2655,4 +2662,134 @@ describe('RunpodPodManager', () => {
     }));
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('Runpod review cost guard regressions', () => {
+  const local = (extra = {}) => ({ _id: POD_RECORD_ID, providerPodId: 'pod-123', name: 'test',
+    archivedAt: null, lifecycleGroup: 'running', setupStatus: 'ready', autoStopMinutes: 60,
+    autoStopAt: new Date(+FIXED_NOW - 60_000), ...extra });
+  const running = { id: 'pod-123', status: 'RUNNING', actions: ['stop'] };
+
+  test('scheduled stop acknowledgement RUNNING retains the expired deadline and reports zero stops', async () => {
+    const f = createFixture();
+    f.podModel.find.mockReturnValue(queryResult([local()]));
+    f.runpodService.getPod.mockResolvedValue(running);
+    f.runpodService.transitionPod.mockResolvedValue(running);
+    await expect(f.manager.stopExpiredPods()).resolves.toBe(0);
+    const updates = f.podModel.updateOne.mock.calls.map(([, update]) => update.$set);
+    expect(updates.some((u) => Object.hasOwn(u, 'autoStopAt'))).toBe(false);
+    expect(updates.at(-1)).toMatchObject({ autoStopClaimedAt: null, lastOperationError: { code: 'RUNPOD_STOP_PENDING' } });
+    expect(f.eventModel.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'succeeded' }));
+  });
+  test('manual nonterminal stop persists retryable cleanup intent before the request', async () => {
+    const pod = local({ autoStopAt: new Date(+FIXED_NOW + 3_600_000) });
+    const f = createFixture({ localPod: pod });
+    f.runpodService.getPod.mockResolvedValue(running);
+    f.runpodService.transitionPod.mockResolvedValue(running);
+    await expect(f.manager.transitionManagedPod(POD_RECORD_ID, 'stop', {})).rejects.toMatchObject({ code: 'RUNPOD_STOP_PENDING' });
+    expect(f.podModel.updateOne.mock.calls[0][1].$set).toMatchObject({ autoStopAt: pod.autoStopAt, stopRequestedAt: FIXED_NOW });
+    expect(f.podModel.updateOne.mock.invocationCallOrder[0]).toBeLessThan(f.runpodService.transitionPod.mock.invocationCallOrder[0]);
+    expect(f.podModel.updateOne.mock.calls.some(([, u]) => u.$set.autoStopAt === null)).toBe(false);
+  });
+  test('ambiguous start preserves a saved deadline even when the provider accepted it but timed out', async () => {
+    const f = createFixture({ localPod: local({ autoStopAt: null, lifecycleGroup: 'stopped' }) });
+    f.runpodService.getPod.mockResolvedValue({ id: 'pod-123', status: 'EXITED', actions: ['start'] });
+    f.runpodService.transitionPod.mockRejectedValue(new RunpodApiError('timeout', { code: 'RUNPOD_TIMEOUT' }));
+    await expect(f.manager.transitionManagedPod(POD_RECORD_ID, 'start', {}, { runMinutes: 30 })).rejects.toMatchObject({ code: 'RUNPOD_START_OUTCOME_UNKNOWN' });
+    expect(f.podModel.updateOne.mock.calls[0][1].$set).toMatchObject({ autoStopAt: new Date(+FIXED_NOW + 1_800_000), lifecycleGroup: 'running', lastProviderSyncAt: null });
+    expect(f.runpodService.transitionPod).toHaveBeenCalledTimes(1);
+    expect(f.podModel.updateOne.mock.calls.some(([, u]) => u.$set.autoStopAt === null)).toBe(false);
+  });
+  test('repairs an active observed record missing its deadline from the original provider start time', async () => {
+    const f = createFixture({ localPod: local({ autoStopAt: null }) });
+    const startedAt = new Date(+FIXED_NOW - 7_200_000);
+    f.runpodService.listPods.mockResolvedValue([{ ...running, startedAt }]);
+    await f.manager.syncProviderPods({});
+    expect(f.podModel.updateOne).toHaveBeenCalledWith(expect.objectContaining({ autoStopAt: null }), {
+      $set: expect.objectContaining({ autoStopAt: new Date(+startedAt + 3_600_000) }),
+    });
+  });
+  test('restores an archived mirror observed active so the repaired deadline remains enforceable', async () => {
+    const f = createFixture({ localPod: local({ archivedAt: new Date(+FIXED_NOW - 60_000), autoStopAt: null }) });
+    f.runpodService.listPods.mockResolvedValue([running]);
+    await f.manager.syncProviderPods({});
+    expect(f.podModel.updateOne.mock.calls[0][1].$set).toMatchObject({ archivedAt: null, lifecycleGroup: 'running', autoStopAt: expect.any(Date) });
+  });
+
+  test('never extends a valid original deadline during synchronization', async () => {
+    const f = createFixture({ localPod: local() });
+    f.runpodService.listPods.mockResolvedValue([running]);
+    await f.manager.syncProviderPods({});
+    expect(f.podModel.updateOne.mock.calls[0][1].$set).not.toHaveProperty('autoStopAt');
+  });
+  test('guards missing-deadline repair against concurrent action changes', async () => {
+    const f = createFixture({ localPod: local({ autoStopAt: null, lastActionAt: FIXED_NOW }) });
+    f.runpodService.listPods.mockResolvedValue([running]);
+    await f.manager.syncProviderPods({});
+    expect(f.podModel.updateOne).not.toHaveBeenCalled();
+  });
+  test('a failed guard claim never sends a provider start', async () => {
+    const f = createFixture({ localPod: local({ autoStopAt: null }) });
+    f.runpodService.getPod.mockResolvedValue({ id: 'pod-123', status: 'EXITED', actions: ['start'] });
+    f.podModel.updateOne.mockResolvedValue({ matchedCount: 0, acknowledged: true });
+    await expect(f.manager.transitionManagedPod(POD_RECORD_ID, 'start', {})).rejects.toMatchObject({ code: 'RUNPOD_GUARD_PERSIST_FAILED' });
+    expect(f.runpodService.transitionPod).not.toHaveBeenCalled();
+  });
+  test('creation persists intent and original deadline before calling the provider, and retains ambiguity', async () => {
+    const f = createFixture();
+    f.runpodService.createPod.mockRejectedValue(new RunpodApiError('timeout', { code: 'RUNPOD_TIMEOUT' }));
+    await expect(f.manager.createManagedPod(validCreateInput())).rejects.toMatchObject({ code: 'RUNPOD_TIMEOUT' });
+    expect(f.creationIntents.begin).toHaveBeenCalledWith('pod', 'ollama-test', expect.any(Date));
+    expect(f.creationIntents.begin.mock.invocationCallOrder[0]).toBeLessThan(f.runpodService.createPod.mock.invocationCallOrder[0]);
+    expect(f.creationIntents.complete).not.toHaveBeenCalled();
+    expect(f.creationIntents.failed).toHaveBeenCalled();
+    expect(f.runpodService.createPod).toHaveBeenCalledTimes(1);
+  });
+  test('a stale list cannot archive a pod created while the list request was in flight', async () => {
+    const f = createFixture();
+    f.podModel.find.mockReturnValue(queryResult([local({ createdAt: FIXED_NOW })]));
+    f.runpodService.listPods.mockResolvedValue([]);
+    await expect(f.manager.syncProviderPods({})).resolves.toMatchObject({ archived: 0 });
+    expect(f.podModel.updateOne).not.toHaveBeenCalled();
+  });
+  test('an absent list entry with a live detail read retains its original cost guard', async () => {
+    const f = createFixture();
+    f.podModel.find.mockReturnValue(queryResult([local()]));
+    f.runpodService.listPods.mockResolvedValue([]);
+    f.runpodService.getPod.mockResolvedValue(running);
+    await expect(f.manager.syncProviderPods({})).resolves.toMatchObject({ archived: 0 });
+    expect(f.podModel.updateOne.mock.calls[0][1].$set).not.toHaveProperty('autoStopAt');
+    expect(f.podModel.updateOne.mock.calls[0][1].$set.lifecycleGroup).toBe('running');
+  });
+  test('deadline survives a post-start persistence failure and cleanup re-reads provider state', async () => {
+    const f = createFixture({ localPod: local({ autoStopAt: null }) });
+    f.runpodService.getPod.mockResolvedValueOnce({ id: 'pod-123', status: 'EXITED', actions: ['start'] }).mockResolvedValue(running);
+    f.runpodService.transitionPod.mockResolvedValueOnce(running).mockRejectedValueOnce(new RunpodApiError('lost stop reply', { code: 'RUNPOD_TIMEOUT' }));
+    f.podModel.updateOne.mockResolvedValueOnce({ matchedCount: 1 }).mockRejectedValueOnce(new Error('db failed'));
+    await expect(f.manager.transitionManagedPod(POD_RECORD_ID, 'start', {})).rejects.toThrow('db failed');
+    expect(f.runpodService.getPod).toHaveBeenCalledTimes(2);
+    expect(f.runpodService.transitionPod.mock.calls).toEqual([['pod-123', 'start'], ['pod-123', 'stop']]);
+    expect(f.podModel.updateOne.mock.calls.some(([, u]) => u.$set.autoStopAt === null)).toBe(false);
+  });
+
+  test('readiness tolerates 429 and respects a server cooldown without a tight loop', async () => {
+    const f = createFixture();
+    f.runpodService.getPod.mockRejectedValueOnce(new RunpodApiError('throttled', { status: 429, retryAt: Date.now() + 10_000 }))
+      .mockResolvedValueOnce(running);
+    await expect(f.manager.waitForRunningPod('pod-123')).resolves.toEqual(running);
+    expect(f.manager.sleep.mock.calls[0][0]).toBeGreaterThan(9000);
+    expect(f.runpodService.getPod).toHaveBeenCalledTimes(2);
+    expect(createFixture({ managerOptions: { pollIntervalMs: 1 } }).manager.pollIntervalMs).toBe(2000);
+  });
+});
+
+test('finishing long llama.cpp setup cannot refresh an old RUNNING observation', async () => {
+  const f = createFixture();
+  f.manager.waitForRunningPod = jest.fn().mockResolvedValue({ id: 'pod-123', status: 'RUNNING' });
+  f.manager.waitForLlamaCpp = jest.fn().mockResolvedValue(true);
+  f.manager.verifyLlamaCppModel = jest.fn().mockResolvedValue(true);
+  await f.manager._provisionLlamaCppPod({ _id: POD_RECORD_ID, providerPodId: 'pod-123' }, {}, {});
+  const completed = f.podModel.updateOne.mock.calls.find(([, update]) => update.$set.setupStatus === 'ready');
+  expect(completed[1].$set).not.toHaveProperty('lastProviderSyncAt');
+  expect(completed[1].$set).not.toHaveProperty('providerStatus');
 });

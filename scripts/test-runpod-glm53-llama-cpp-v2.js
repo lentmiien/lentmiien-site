@@ -3,7 +3,8 @@
 
 require('dotenv').config({ quiet: true });
 
-const { RunpodApiV2Service } = require('../services/runpodApiV2Service');
+const { RunpodApiV2Service, readResponseText } = require('../services/runpodApiV2Service');
+const { withAbort } = require('../services/runpodRequestCoordinator');
 const {
   GLM53_FLASH_DEFAULT_CONTEXT_TOKENS,
   GLM53_FLASH_LLAMA_CPP_MODEL_ALIAS,
@@ -140,31 +141,47 @@ function accessHeaders(env, { includeNativeKey = true } = {}) {
 
 async function cancelBody(response) {
   try {
-    await response.body?.cancel?.();
+    response.body?.cancel?.().catch(() => {});
   } catch (_) {
     // Only status is needed.
   }
 }
 
-async function verifyGatewayPreflight(fetchImpl, gatewayUrl, env) {
-  const anonymous = await fetchImpl(new URL('/health', gatewayUrl), {
+async function probeStatus(fetchImpl, url, options, deadline = Date.now() + 15_000) {
+  if (Date.now() >= deadline) throw new DOMException('Probe deadline exceeded', 'AbortError');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(1, Math.min(15_000, deadline - Date.now())));
+  let response;
+  try {
+    const pending = fetchImpl(url, { ...options, signal: controller.signal });
+    Promise.resolve(pending).then((late) => { if (controller.signal.aborted) cancelBody(late); }, () => {});
+    response = await withAbort(pending, controller.signal);
+    return { ok: response.ok, status: response.status };
+  } finally {
+    controller.abort();
+    clearTimeout(timeout);
+    if (response) await cancelBody(response);
+  }
+}
+
+async function verifyGatewayPreflight(fetchImpl, gatewayUrl, env, { timeoutMs = 30_000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  const anonymous = await probeStatus(fetchImpl, new URL('/health', gatewayUrl), {
     headers: { Accept: 'application/json' },
     redirect: 'manual',
-  });
+  }, deadline);
   const anonymousStatus = anonymous.status;
-  await cancelBody(anonymous);
   if (![401, 403].includes(anonymousStatus) && !(anonymousStatus >= 300 && anonymousStatus < 400)) {
     const error = new Error('Cloudflare Access did not block an anonymous request.');
     error.code = 'RUNPOD_GATEWAY_ANONYMOUS_ACCESS';
     throw error;
   }
 
-  const authenticated = await fetchImpl(new URL('/health', gatewayUrl), {
+  const authenticated = await probeStatus(fetchImpl, new URL('/health', gatewayUrl), {
     headers: accessHeaders(env),
     redirect: 'manual',
-  });
+  }, deadline);
   const authenticatedStatus = authenticated.status;
-  await cancelBody(authenticated);
   if ([401, 403].includes(authenticatedStatus) || (authenticatedStatus >= 300 && authenticatedStatus < 400)) {
     const error = new Error('Cloudflare Access rejected the configured service token.');
     error.code = 'RUNPOD_CLOUDFLARE_ACCESS_DENIED';
@@ -188,14 +205,22 @@ async function waitForGateway(service, fetchImpl, providerPodId, gatewayUrl, env
   let lastStage = '';
   let lastStatus = null;
   while (Date.now() < deadline) {
-    const [pod, logs] = await Promise.all([
-      service.getPod(providerPodId),
-      service.getPodLogSnapshot(providerPodId, {
-        source: 'container',
-        tail: 300,
-        maxWaitMs: 2_000,
-      }).catch(() => ({ events: [] })),
-    ]);
+    let pod, logs;
+    try {
+      [pod, logs] = await Promise.all([
+        service.getPod(providerPodId, { budgetMs: Math.max(1, deadline - Date.now()) }),
+        service.getPodLogSnapshot(providerPodId, {
+          source: 'container',
+          tail: 300,
+          maxWaitMs: 2_000,
+          budgetMs: Math.max(1, deadline - Date.now()),
+        }).catch(() => ({ events: [] })),
+      ]);
+    } catch (error) {
+      if (!error.retryable && error.status !== 429) throw error;
+      await sleepImpl(Math.min(Math.max(2000, pollIntervalMs, (error.retryAt || 0) - Date.now()), Math.max(1, deadline - Date.now())));
+      continue;
+    }
     if (['ERROR', 'EXITED', 'TERMINATED'].includes(pod?.status)) {
       const error = new Error('The GLM serving Pod entered a terminal state before readiness.');
       error.code = 'RUNPOD_GLM53_POD_TERMINAL_STATE';
@@ -212,17 +237,16 @@ async function waitForGateway(service, fetchImpl, providerPodId, gatewayUrl, env
       onStage(signal.stage);
     }
     try {
-      const response = await fetchImpl(new URL('/health', gatewayUrl), {
+      const response = await probeStatus(fetchImpl, new URL('/health', gatewayUrl), {
         headers: accessHeaders(env),
         redirect: 'error',
-      });
+      }, deadline);
       lastStatus = response.status;
-      await cancelBody(response);
       if (response.ok) return { pod, signal, status: response.status };
     } catch (_) {
       // Tunnel and model startup are asynchronous; bounded polling continues.
     }
-    await sleepImpl(pollIntervalMs);
+    await sleepImpl(Math.min(Math.max(2000, pollIntervalMs), Math.max(1, deadline - Date.now())));
   }
   const error = new Error(`The GLM gateway did not become healthy (last HTTP ${lastStatus || 'unavailable'}).`);
   error.code = 'RUNPOD_GLM53_STARTUP_TIMEOUT';
@@ -236,7 +260,9 @@ async function requestJson(fetchImpl, url, options, {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(url, { ...options, redirect: 'error', signal: controller.signal });
+    const pending = fetchImpl(url, { ...options, redirect: 'error', signal: controller.signal });
+    Promise.resolve(pending).then((late) => { if (controller.signal.aborted) cancelBody(late); }, () => {});
+    const response = await withAbort(pending, controller.signal);
     if (!response.ok) {
       await cancelBody(response);
       const error = new Error(`The GLM gateway returned HTTP ${response.status}.`);
@@ -244,14 +270,10 @@ async function requestJson(fetchImpl, url, options, {
       error.status = response.status;
       throw error;
     }
-    const text = await response.text();
-    if (Buffer.byteLength(text, 'utf8') > maxBytes) {
-      const error = new Error('The GLM gateway response exceeded the safety limit.');
-      error.code = 'RUNPOD_GLM53_RESPONSE_TOO_LARGE';
-      throw error;
-    }
+    const text = await readResponseText(response, maxBytes, 'workload probe', controller.signal);
     return JSON.parse(text);
   } catch (error) {
+    if (error?.code === 'RUNPOD_RESPONSE_TOO_LARGE') error.code = 'RUNPOD_GLM53_RESPONSE_TOO_LARGE';
     if (error?.name === 'AbortError') {
       const timeout = new Error('The GLM gateway request timed out.');
       timeout.code = 'RUNPOD_GLM53_INFERENCE_TIMEOUT';
@@ -259,11 +281,13 @@ async function requestJson(fetchImpl, url, options, {
     }
     throw error;
   } finally {
+    controller.abort();
     clearTimeout(timer);
   }
 }
 
 async function verifyInference(fetchImpl, gatewayUrl, env) {
+  const deadline = Date.now() + DEFAULT_INFERENCE_TIMEOUT_MS;
   const headers = {
     ...accessHeaders(env),
     'Content-Type': 'application/json',
@@ -292,7 +316,7 @@ async function verifyInference(fetchImpl, gatewayUrl, env) {
         stream: false,
       }),
     },
-    { timeoutMs: DEFAULT_INFERENCE_TIMEOUT_MS }
+    { timeoutMs: Math.max(1, deadline - Date.now()) }
   );
   const message = completion?.choices?.[0]?.message;
   const output = String(message?.content || message?.reasoning_content || '').trim();
@@ -485,6 +509,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  probeStatus,
   ACTIVE_PROVIDER_STATUSES,
   DEFAULT_CONTEXT_TOKENS,
   DEFAULT_GPU_COUNT,

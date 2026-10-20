@@ -1,3 +1,4 @@
+const RunpodCreationIntent = require('../../models/runpod_creation_intent');
 const RunpodOperationEvent = require('../../models/runpod_operation_event');
 const RunpodBillingPeriod = require('../../models/runpod_billing_period');
 const RunpodPod = require('../../models/runpod_pod');
@@ -7,6 +8,16 @@ const RunpodModelArtifact = require('../../models/runpod_model_artifact');
 const RunpodWorkloadTemplate = require('../../models/runpod_workload_template');
 
 describe('Runpod persistence models', () => {
+  test('creation intents persist only bounded correlation and recovery metadata', async () => {
+    const intent = new RunpodCreationIntent({ _id: 'pod', token: 'test-token', providerName: 'test',
+      state: 'pending', startedAt: new Date(), intendedStopAt: new Date(), env: { SECRET: 'never-persist' } });
+    await expect(intent.validate()).resolves.toBeUndefined();
+    expect(intent.toObject()).not.toHaveProperty('env');
+    expect(RunpodCreationIntent.collection.collectionName).toBe('runpod_creation_intents');
+    expect(RunpodPod.schema.path('stopRequestedAt').options.default).toBe(null);
+    await expect(new RunpodCreationIntent({ _id: 'invalid', state: 'resolved' }).validate()).rejects.toThrow();
+  });
+
   test('uses dedicated template, Pod lifecycle, and audit collections', () => {
     expect(RunpodWorkloadTemplate.collection.collectionName).toBe('runpod_workload_templates');
     expect(RunpodPod.collection.collectionName).toBe('runpod_pods');

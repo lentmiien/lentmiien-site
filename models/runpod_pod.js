@@ -123,6 +123,7 @@ const RunpodPodSchema = new mongoose.Schema({
   maxHourlyCostAcknowledged: { type: Number, default: null, min: 0 },
   autoStopMinutes: { type: Number, default: null, min: 15, max: 10080 },
   autoStopAt: { type: Date, default: null, index: true },
+  stopRequestedAt: { type: Date, default: null, index: true },
   autoStopClaimedAt: { type: Date, default: null },
   lastOperationError: { type: OperationErrorSchema, default: null },
   providerCreatedAt: { type: Date, default: null },

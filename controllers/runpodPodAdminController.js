@@ -26,6 +26,8 @@ const NOTICE_KEYS = Object.freeze({
   podCreateFailed: 'pod-create-failed',
   podStarted: 'pod-started',
   podStartFailed: 'pod-start-failed',
+  podStartUnknown: 'pod-start-unknown',
+  podStopPending: 'pod-stop-pending',
   podStartGpuUnavailable: 'pod-start-gpu-unavailable',
   podStartRateLimited: 'pod-start-rate-limited',
   podStopped: 'pod-stopped',
@@ -104,6 +106,7 @@ function modelArtifactPodFailureNotice(error) {
 }
 
 function startFailureNotice(error) {
+  if (error?.code === 'RUNPOD_START_OUTCOME_UNKNOWN') return NOTICE_KEYS.podStartUnknown;
   if (error?.code === 'RUNPOD_START_GPU_UNAVAILABLE') {
     return NOTICE_KEYS.podStartGpuUnavailable;
   }
@@ -345,7 +348,7 @@ function createRunpodPodAdminController({
         return redirectWithNotice(res, NOTICE_KEYS.podStopped);
       } catch (error) {
         logRejectedOperation(appLogger, 'stop', error);
-        return redirectWithNotice(res, NOTICE_KEYS.podStopFailed);
+        return redirectWithNotice(res, error?.code === 'RUNPOD_STOP_PENDING' ? NOTICE_KEYS.podStopPending : NOTICE_KEYS.podStopFailed);
       }
     },
 

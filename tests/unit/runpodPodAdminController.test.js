@@ -239,3 +239,15 @@ describe('Runpod Pod admin mutation controller', () => {
     expect(JSON.stringify(appLogger.warning.mock.calls)).not.toContain(secret);
   });
 });
+
+test.each([
+  ['startPod', 'RUNPOD_START_OUTCOME_UNKNOWN', 'pod-start-unknown'],
+  ['stopPod', 'RUNPOD_STOP_PENDING', 'pod-stop-pending'],
+])('reports %s uncertainty without a success notice', async (method, code, notice) => {
+  const service = manager();
+  service.transitionManagedPod.mockRejectedValue({ code });
+  const controller = createRunpodPodAdminController({ manager: service, appLogger: { warning: jest.fn(), error: jest.fn() } });
+  const res = response();
+  await controller[method]({ params: { id: 'local-id' }, user: { name: 'admin' } }, res);
+  expect(res.redirect).toHaveBeenCalledWith(303, `/admin/runpod?notice=${notice}#pods`);
+});
