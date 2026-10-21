@@ -1,0 +1,38 @@
+.chat5-filters {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.chat5-filters summary {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.chat5-model-meta {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.chat5-model-warning {
+  color: var(--warning);
+  background: var(--surface-2);
+  border: 1px solid var(--warning);
+  border-left-width: 4px;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  white-space: pre-line;
+}
+
+.chat5-model-warning--deprecated {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.chat5-entry-card[hidden],
+.chat5-bucket-header[hidden] {
+  display: none !important;
+}

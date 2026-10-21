@@ -4,6 +4,23 @@ const Conversation = require('../models/conversation5');
 const Legacy = require('../models/conversation4');
 const { hasCapabilities } = require('../utils/authorization');
 const { MIIEN_ROLE_CAPABILITY_BUNDLES } = require('../utils/miienAuthorizationPolicy');
+const logger = require('../utils/logger');
+async function listPage(req, res, next) {
+  res.set('Cache-Control', 'private, no-store');
+  res.locals.gtag = false;
+  try {
+    if (!req.isAuthenticated?.()) return res.sendStatus(401);
+    const user = await currentReader(req.user?._id);
+    if (!user) return res.sendStatus(403);
+    req.user = user;
+    return next();
+  } catch (error) {
+    logger.error('Failed to authorize Chat5 conversation list', {
+      category: 'authorization', metadata: { errorName: error?.name || 'Error' },
+    });
+    return next(error);
+  }
+}
 async function currentReader(id) {
   if (!/^[a-f\d]{24}$/i.test(String(id || ''))) return null;
   const user = await User.findById(id).select('_id name type_user').lean();
@@ -69,4 +86,4 @@ function socketGuard(socket) {
     }
   };
 }
-module.exports = { currentReader, canReadConversation, page, messagePage, socketGuard };
+module.exports = { currentReader, canReadConversation, page, listPage, messagePage, socketGuard };

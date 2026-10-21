@@ -3,6 +3,7 @@ const utils = require('../utils/utils');
 const openai = require('../utils/ChatGPT');
 const anthropic = require('../utils/anthropic');
 const logger = require('../utils/logger');
+const { modelIdFor, buildConversationList, buildConversationFilters } = require('../services/chat5ConversationListService');
 const { renderMessagesHtml, renderMessageHtml } = require('../utils/chat5Markdown');
 const { hasDatePassed, parseOptionalDateOnly, toDateOnlyString } = require('../utils/dateOnly');
 const {
@@ -553,48 +554,76 @@ exports.update_message = async (req, res) => {
   res.redirect(`/chat5/edit_message/${messageId}`);
 };
 
-exports.view_chat5_top = async (req, res) => {
-  const user_id = req.user.name;
+exports.view_chat5_top = async (req, res, next) => {
+  try {
+    const user_id = req.user.name;
 
-  // Get both new and old conversations, and sort from new to old
-  const conversations = await conversationService.listUserConversations(user_id);
-  conversations.sort((a, b) => {
-    if (a.updatedAt > b.updatedAt) return -1;
-    if (a.updatedAt < b.updatedAt) return 1;
-    return 0;
-  });
+    // Get both new and old conversations, and sort from new to old
+    const conversations = await conversationService.listUserConversations(user_id);
+    conversations.sort((a, b) => {
+      if (a.updatedAt > b.updatedAt) return -1;
+      if (a.updatedAt < b.updatedAt) return 1;
+      return 0;
+    });
 
-  // Generate category list, sorted on average date of last 5 entries per category
-  const categoryMap = new Map();
-  for (const item of conversations) {
-    const cat = item.category;
-    if (!categoryMap.has(cat)) {
-      categoryMap.set(cat, []);
+    // Generate category list, sorted on average date of last 5 entries per category
+    const categoryMap = new Map();
+    for (const item of conversations) {
+      const cat = item.category;
+      if (!categoryMap.has(cat)) {
+        categoryMap.set(cat, []);
+      }
+      const arr = categoryMap.get(cat);
+      // Only keep up to 5 newest items
+      if (arr.length < 5) {
+        arr.push(item);
+      }
     }
-    const arr = categoryMap.get(cat);
-    // Only keep up to 5 newest items
-    if (arr.length < 5) {
-      arr.push(item);
+    const categoryAverages = [];
+    for (const [category, catItems] of categoryMap.entries()) {
+      // Make sure updatedAt is treated as a Date (or a timestamp)
+      const times = catItems.map((item) => new Date(item.updatedAt).getTime());
+      const avg = times.reduce((acc, t) => acc + t, 0) / times.length;
+      categoryAverages.push({ category, avgUpdatedAt: avg });
     }
+
+    // Sort categories by average updatedAt descending (most recently updated categories first)
+    categoryAverages.sort((a, b) => b.avgUpdatedAt - a.avgUpdatedAt);
+
+    // Final result: just the sorted unique categories
+    const sortedCategories = categoryAverages.map((e) => e.category);
+
+    // Fetch pending requests
+    const pending_conversation_ids = await conversationService.fetchPending();
+
+    // Include deprecated cards: the generation catalog deliberately omits them.
+    let modelCards = [];
+    let modelCardsUnavailable = false;
+    const modelIds = [...new Set(conversations.map(modelIdFor).filter(Boolean))];
+    if (modelIds.length) {
+      try {
+        modelCards = await AIModelCards.find({ api_model: { $in: modelIds } })
+          .select('model_name provider api_model model_type in_modalities out_modalities max_tokens max_out_tokens deprecation_date')
+          .lean();
+      } catch (error) {
+        modelCardsUnavailable = true;
+        logger.warning('Failed to load model cards for Chat5 conversation list', {
+          category: 'chat5', metadata: { errorName: error?.name || 'Error' },
+        });
+      }
+    }
+    const listedConversations = buildConversationList(conversations, modelCards, pending_conversation_ids);
+    res.render('chat5_top', {
+      conversations: listedConversations,
+      filters: buildConversationFilters(listedConversations, sortedCategories),
+      modelCardsUnavailable,
+    });
+  } catch (error) {
+    logger.error('Failed to load Chat5 conversation list', {
+      category: 'chat5', metadata: { errorName: error?.name || 'Error' },
+    });
+    return next(error);
   }
-  const categoryAverages = [];
-  for (const [category, catItems] of categoryMap.entries()) {
-    // Make sure updatedAt is treated as a Date (or a timestamp)
-    const times = catItems.map((item) => new Date(item.updatedAt).getTime());
-    const avg = times.reduce((acc, t) => acc + t, 0) / times.length;
-    categoryAverages.push({ category, avgUpdatedAt: avg });
-  }
-
-  // Sort categories by average updatedAt descending (most recently updated categories first)
-  categoryAverages.sort((a, b) => b.avgUpdatedAt - a.avgUpdatedAt);
-
-  // Final result: just the sorted unique categories
-  const sortedCategories = categoryAverages.map((e) => e.category);
-
-  // Fetch pending requests
-  const pending_conversation_ids = await conversationService.fetchPending();
-
-  res.render("chat5_top", {conversations, sortedCategories, pending_conversation_ids});
 };
 
 const DEFAULT_CONVERSATION = {

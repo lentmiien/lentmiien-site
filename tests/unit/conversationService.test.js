@@ -29,6 +29,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 const mockConversation5Model = {
+  find: jest.fn(),
   findOne: jest.fn(),
   findById: jest.fn(),
 };
@@ -522,4 +523,22 @@ test('Miien scoped submission denies foreign records before legacy lookup', asyn
   expect(mockConversation5Model.findOne).toHaveBeenCalledWith({ _id: 'foreign', members: { $all: ['owner'], $size: 1 } });
   expect(mockConversation5Model.findById).not.toHaveBeenCalled();
   expect(legacy.findById).not.toHaveBeenCalled();
+});
+
+
+test('conversation list scopes both schemas to the caller and retains legacy model/preview metadata', async () => {
+  const legacyModel = createConversationModel();
+  const service = new ConversationService(legacyModel, {}, {});
+  const current = { _id: 'current', members: ['owner'], metadata: { model: 'current-model' } };
+  mockConversation5Model.find.mockResolvedValue([current]);
+  legacyModel.find.mockResolvedValue([
+    { _id: 'legacy', user_id: 'owner', title: 'Legacy', description: 'Summary', tags: ['tag'], messages: ['m'], default_model: 'legacy-model' },
+    { _id: 'fallback', user_id: 'owner' },
+  ]);
+  const result = await service.listUserConversations('owner');
+  expect(mockConversation5Model.find).toHaveBeenCalledWith({ members: 'owner' });
+  expect(legacyModel.find).toHaveBeenCalledWith({ user_id: 'owner' });
+  expect(result[0]).toBe(current);
+  expect(result[1]).toMatchObject({ old: true, summary: 'Summary', tags: ['tag'], messages: ['m'], members: ['owner'], metadata: { model: 'legacy-model' } });
+  expect(result[2].metadata.model).toBe('gpt-4.1-2025-04-14');
 });

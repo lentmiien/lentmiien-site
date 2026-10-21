@@ -1,17 +1,41 @@
 extends layout
+block styles
+  link(rel='stylesheet' href='/css/chat5_top.css')
+
+mixin conversationFilter(filter)
+  .col-sm-6.col-lg-3
+    label.form-label.chat5-input-label(for=`filter-${filter.key}`)= filter.label
+    select.form-select(id=`filter-${filter.key}` name=filter.key data-conversation-filter=filter.key)
+      option(value='') All
+      each option in filter.options
+        option(value=option.value)= option.label
+
 block content
   .row.mb-3
     .col 
       h2.mb-0.chat5-title Chat 5 list 
-  .row.g-2.align-items-center.mb-3
-    .col-md-6
-      label(for="filter").form-label.mb-1.chat5-input-label Filter 
-      select#filter.form-select(name="filter", onchange="Filter(this)") 
-        option(value="") - all -
-        each c in sortedCategories
-          option(value=c)= c
-    .col-md-6.text-md-end.mt-2.mt-md-0
-      a.btn.btn-primary.chat5-create-btn(href=`/chat5/chat/NEW`) +NEW
+  form#conversationFilters.chat5-filters.mb-3(role='search' aria-label='Filter conversations')
+    .row.g-3
+      .col-sm-6.col-lg-3
+        label.form-label.chat5-input-label(for='filter-title') Title contains
+        input#filter-title.form-control(type='search' name='title' maxlength='255' placeholder='Search conversation titles' autocomplete='off')
+      each filter in filters.slice(0, 3)
+        +conversationFilter(filter)
+    details.mt-3
+      summary More filters
+      .row.g-3.mt-1
+        each filter in filters.slice(3)
+          +conversationFilter(filter)
+    .d-flex.flex-wrap.align-items-center.gap-3.mt-3
+      button.btn.btn-outline-secondary(type='reset') Reset filters
+      span#filterResults.chat5-entry-meta(role='status' aria-live='polite')= `${conversations.length} of ${conversations.length} conversations`
+      small.chat5-entry-meta All filters are combined.
+  .d-flex.justify-content-end.mb-3
+    a.btn.btn-primary.chat5-create-btn(href=`/chat5/chat/NEW`) +NEW
+
+  if modelCardsUnavailable
+    p.chat5-model-warning Model cards could not be loaded. Model metadata and deprecation warnings are unavailable; reload to try again.
+  p#noConversations.chat5-entry-meta(hidden=conversations.length > 0)= conversations.length ? 'No conversations match these filters.' : 'No conversations yet.'
 
   if Array.isArray(permissions) && permissions.includes('chat.conversation.read')
     p
@@ -55,7 +79,7 @@ block content
     - const b = bucketFor(c.updatedAt)
     if b !== lastBucket
       - lastBucket = b
-      .bucket-header.chat5-bucket-header.mt-4.mb-2
+      .bucket-header.chat5-bucket-header.mt-4.mb-2(data-age-bucket=b)
         h6.chat5-bucket-title.mb-0= b
 
     //- Card
@@ -64,7 +88,13 @@ block content
     - const msgCount = (c.messages && c.messages.length) ? c.messages.length : 0
     - const createdISO = c.createdAt
     - const updatedISO = c.updatedAt
+    - const modelSummary = c.modelCards.map(card => `${card.name} (${card.provider}) • ${card.type} • Input: ${card.input.join(', ')} → Output: ${card.output.join(', ')} • Token limit: ${card.maxTokens ?? 'unknown'} • Output limit: ${card.maxOutputTokens ?? 'unknown'}`).join('\n')
+    - const modelWarning = c.modelCards.map(card => card.warning ? `${card.name}: ${card.warning}` : '').filter(Boolean).join('\n')
     .entry.card.entry-card.chat5-entry-card.mb-2(data-category=c.category data-age-bucket=b
+      data-filters=JSON.stringify(c.filters)
+      data-model-summary=(modelSummary || 'Model card unavailable; deprecation status unknown.')
+      data-model-id=c.modelId
+      data-model-warning=modelWarning
       data-title=c.title
       data-summary=(c.summary || '')
       data-category-label=c.category
@@ -78,10 +108,24 @@ block content
         .d-flex.flex-column.flex-md-row.align-items-md-center.justify-content-between.gap-2
           .d-flex.flex-column
             .d-flex.align-items-center.gap-2.flex-wrap
-              a.chat5-entry-link.fs-6.fw-semibold(href=`/chat5/chat/${c._id.toString()}`)= `${c.old?"*":""}${c.title}${pending_conversation_ids.indexOf(c._id.toString()) >= 0 ? " [P]" : ""}`
+              a.chat5-entry-link.fs-6.fw-semibold(href=`/chat5/chat/${c._id.toString()}`)= `${c.old?"*":""}${c.title}${c.isPending ? " [P]" : ""}`
               span.badge.chat5-badge.chat5-badge--category= c.category
             .chat5-entry-meta
               | Updated #{timeAgo(c.updatedAt)} • #{msgCount} msg#{msgCount === 1 ? '' : 's'}
+            .chat5-model-meta.mt-2
+              div
+                strong Model: #{c.modelId || 'Not specified'}
+              if c.modelCards.length > 1
+                small Multiple model cards match this model ID; provider is not stored on the conversation.
+              each card in c.modelCards
+                .mt-1
+                  div #{card.name} • #{card.provider} • #{card.type}
+                  small Input: #{card.input.join(', ')} → Output: #{card.output.join(', ')} • Token limit: #{card.maxTokens == null ? 'unknown' : card.maxTokens.toLocaleString()} • Output limit: #{card.maxOutputTokens == null ? 'unknown' : card.maxOutputTokens.toLocaleString()}
+                  if card.warning
+                    p.chat5-model-warning.mb-0.mt-2(class=card.status === 'deprecated' ? 'chat5-model-warning--deprecated' : '')
+                      strong= card.warning
+              if !c.modelCards.length
+                small Model card unavailable; deprecation status unknown.
           .d-flex.align-items-center.gap-2.ms-md-3
             if c.tags && c.tags.length
               //- show first few tags as badges (optional)
@@ -102,6 +146,9 @@ block content
         .modal-body.overflow-auto.chat5-preview-body
           h6#previewTitle.mb-2.chat5-preview-title
           p#previewSummary.chat5-preview-summary
+          p#previewModelId.chat5-model-meta
+          p#previewModel.chat5-model-meta
+          p#previewModelWarning.chat5-model-warning(hidden)
           hr.chat5-divider
           .row.row-cols-1.row-cols-md-2.g-3
             .col

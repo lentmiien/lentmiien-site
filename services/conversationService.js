@@ -1753,11 +1753,16 @@ class ConversationService {
     const newConvs = await Conversation5Model.find({members: userId});
     const oldConvs = await this.conversationModel.find({user_id: userId});
 
-    // Minimal conversation
+    // Legacy metadata used by the conversation list and its previews.
     const oldConvsConverted = oldConvs.map(conv => {
       return {
         _id: conv._id,
         title: conv.title,
+        summary: conv.description,
+        tags: conv.tags,
+        messages: conv.messages,
+        members: [conv.user_id],
+        metadata: { model: conv.default_model || 'gpt-4.1-2025-04-14' },
         updatedAt: conv.updated_date,
         category: conv.category,
         old: true,

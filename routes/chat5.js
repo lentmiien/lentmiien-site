@@ -71,7 +71,7 @@ router.post('/quick-settings/:id/delete', quickSettingsController.remove);
 router.get('/story_mode/:id', require('../middleware/chat5PrivateAccess').page, controller.story_mode);
 router.get('/edit_message/:id', require('../middleware/chat5PrivateAccess').messagePage, controller.edit_message);
 router.post('/update_message/:id', require('../middleware/chat5PrivateAccess').messagePage, upload.array('imgs'), controller.update_message);
-router.get('/top', controller.view_chat5_top);
+router.get('/top', require('../middleware/chat5PrivateAccess').listPage, controller.view_chat5_top);
 router.post('/training-entries', trainingDataController.createEntry);
 router.post('/training-entries/:id/delete', trainingDataController.deleteEntry);
 router.get('/chat/:id', require('../middleware/chat5PrivateAccess').page, controller.view_chat5);
