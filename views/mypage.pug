@@ -17,6 +17,9 @@ block content
           |  · Asia/Tokyo
       button#account-customize.account-primary(type='button', aria-haspopup='dialog', aria-controls='account-customizer') Customize account
     p.account-intro A little space for your day. Open Tools above to find everything else.
+    if Array.isArray(permissions) && permissions.includes('account.profile.read')
+      p
+        a(href='/settings') User settings
     #account-status(role='status', aria-live='polite')
     .account-grid
       each section in settings.sections

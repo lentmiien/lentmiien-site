@@ -14,6 +14,7 @@ const { ROLE_BUNDLES: COMMONS_ROLE_BUNDLES } = require('../utils/commonsAuthoriz
 const { BUNDLES: LOCAL_AI_BUNDLES } = require('./localAi/policy');
 
 const { ROLE_BUNDLES: PACKING_ROLE_BUNDLES } = require('../utils/smallestBoxPolicy');
+const { ROLE_BUNDLES: USER_SETTINGS_ROLE_BUNDLES } = require('../utils/userSettingsPolicy');
 
 const BASE = ['dashboard.account.read', 'dashboard.preferences.write'];
 const ADMIN = ['dashboard.operations.read', 'dashboard.personal.read', 'dashboard.personal.write', 'dashboard.embedding.search', 'finance.account.close'];
@@ -22,7 +23,7 @@ const PERSONAL_PATH = /^\/(?:accounting|budget|receipt|payroll|health)(?:\/|$)|^
 const GROUPS = ['Chat & knowledge', 'Create & generate', 'Documents & utilities', 'Plan & household', 'Personal account', 'Content & learning', 'Operations', 'Administration'];
 function groupFor(item) {
   const p = item.href;
-  if (PERSONAL_PATH.test(p)) return GROUPS[4];
+  if (p === '/settings' || PERSONAL_PATH.test(p)) return GROUPS[4];
   if (/^\/admin\/(runpod|ai-gateway|tapo|disasters|ask-lennart)/.test(p) || p === '/codex') return GROUPS[6];
   if (p.startsWith('/admin') || p === '/tmp-files' || p === '/codex-log-review') return GROUPS[7];
   if (/^\/chat/.test(p)) return GROUPS[0];
@@ -32,6 +33,7 @@ function groupFor(item) {
   return GROUPS[2];
 }
 const NAVIGATION = MYPAGE_ICON_DEFINITIONS.map(item => ({ ...item, public: false }));
+NAVIGATION.push({ id: 'user_settings', href: '/settings', label: 'User settings', src: '/i/product.svg', capability: 'account.profile.read', subgroup: 'Account' });
 NAVIGATION.push({ id: 'smallest_box', href: '/binpacking-smallest', label: 'Smallest Box Finder', src: '/i/binpacking.svg', capability: 'packing.container.read', subgroup: 'Packing tools' });
 NAVIGATION.push({ id: 'local_ai_queue', href: '/local-ai/queue', label: 'Local AI queue', src: '/i/batch.svg', capability: 'local_ai.jobs.use' });
 NAVIGATION.push({ id: 'lantern_commons', href: '/commons', label: 'Lantern Commons', src: '/commons/icon.svg', capability: 'commons.world.play', subgroup: 'Village & play' });
@@ -93,7 +95,7 @@ async function resolvePolicy(user, roleModel, ownerId) {
   const assigned = await loadAssignedCapabilities(user, roleModel);
   return {
     user, isAdmin: user.type_user === 'admin', isOwner: ownerMatches(user, ownerId),
-    capabilities: [...new Set([...assigned, ...roleBundleCapabilities(user, ROLE_BUNDLES),
+    capabilities: [...new Set([...assigned, ...roleBundleCapabilities(user, ROLE_BUNDLES), ...roleBundleCapabilities(user, USER_SETTINGS_ROLE_BUNDLES),
       ...roleBundleCapabilities(user, PACKING_ROLE_BUNDLES), ...roleBundleCapabilities(user, LOCAL_AI_BUNDLES), ...roleBundleCapabilities(user, COMMONS_ROLE_BUNDLES), ...roleBundleCapabilities(user, TARIC_ROLE_BUNDLES), ...roleBundleCapabilities(user, MIIEN_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CHAT_TOOL_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CODEX_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, RUNPOD_ROLE_CAPABILITY_BUNDLES)])],
   };
 }

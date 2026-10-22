@@ -1,0 +1,29 @@
+.user-settings { max-width: 960px; margin: 2rem auto; color: var(--text); }
+.settings-heading { margin-bottom: 1.5rem; }
+.settings-heading h1 { margin: 1rem 0 .5rem; }
+.user-settings a { color: var(--accent); }
+.user-settings a:hover { color: var(--accent-hover); }
+.settings-heading p, .settings-hint { color: var(--text-secondary); }
+.settings-panel { padding: 1.5rem; border: 1px solid var(--border); border-radius: 1rem; background: var(--surface-1); }
+.settings-panel h2 { font-size: 1.25rem; margin-bottom: 1rem; }
+.settings-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.settings-details dt { color: var(--text-muted); font-size: .875rem; font-weight: 400; }
+.settings-details dd { margin: .4rem 0; overflow-wrap: anywhere; }
+.settings-hint { font-size: .9rem; }
+.settings-panel > .settings-hint:last-child { margin-bottom: 0; }
+.settings-forms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; margin-top: 1.25rem; align-items: start; }
+.settings-panel label { display: block; margin-top: 1rem; }
+.settings-panel input:not([type='hidden']) { display: block; width: 100%; margin: .4rem 0 1rem; padding: .7rem; border: 1px solid var(--border); border-radius: .5rem; color: var(--text); background: var(--surface-2); }
+.settings-panel button { margin-top: .5rem; padding: .7rem 1rem; border: 0; border-radius: .5rem; font-weight: 600; background: var(--brand); color: var(--text-inverse); }
+.settings-panel button:hover { background: var(--brand-hover); }
+.settings-panel button:active { background: var(--brand-active); }
+.user-settings :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.settings-notice { padding: 1rem; border: 1px solid; border-radius: .5rem; background: var(--surface-2); }
+.settings-success { border-color: var(--success); }
+.settings-error { border-color: var(--danger); }
+@media (max-width: 640px) {
+  .user-settings { margin: 1rem auto; }
+  .settings-details, .settings-forms { grid-template-columns: 1fr; }
+  .settings-panel { padding: 1.1rem; }
+  .settings-panel button { width: 100%; }
+}

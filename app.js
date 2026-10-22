@@ -201,8 +201,9 @@ const isEmbeddingGemma2Path = req => /^\/admin\/embeddinggemma2(?:\/|$)/i.test(r
 const isLocalAiPath = req => /^\/local-ai(?:\/|$)/i.test(req.path);
 const isSmallestBoxPath = req => /^\/binpacking-smallest(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
-app.use((req, res, next) => (isSmallestBoxPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
-app.use((req, res, next) => (isSmallestBoxPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
+const isUserSettingsPath = req => /^\/settings(?:\/|$)/i.test(req.path);
+app.use((req, res, next) => (isUserSettingsPath(req) || isSmallestBoxPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
+app.use((req, res, next) => (isUserSettingsPath(req) || isSmallestBoxPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -511,6 +512,7 @@ app.use('/webapi/servlet', dummyapiRouter);
 app.use('/blog', blogRouter);
 app.use('/cookingp', cookingPublicRouter);
 app.use('/yaml-viewer', yamlRouter);
+app.use('/settings', require('./routes/userSettings').createUserSettingsRouter());
 app.use('/mypage', (req, res, next) => {
   if (!req.isAuthenticated?.() && (req.path.startsWith('/api/') || req.path === '/icon-settings')) {
     return res.status(401).set('Cache-Control', 'private, no-store').json({ ok: false, error: 'Login required.' });

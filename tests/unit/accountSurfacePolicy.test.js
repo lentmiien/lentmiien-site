@@ -83,3 +83,10 @@ test.each(['admin', 'family', 'user'])('shared smallest-box link is visible in t
   const entry = navigationFor(await policy(role)).find(item => item.id === 'smallest_box');
   expect(entry).toMatchObject({ href: '/binpacking-smallest', label: 'Smallest Box Finder', subgroup: 'Packing tools' });
 });
+
+test.each(['admin', 'family', 'user'])('user settings is available to %s without personal-owner binding', async role => {
+  const p = await policy(role, [], otherId, '');
+  expect(navigationFor(p).find(item => item.id === 'user_settings')).toMatchObject({
+    href: '/settings', label: 'User settings', group: 'Personal account', personal: false,
+  });
+});

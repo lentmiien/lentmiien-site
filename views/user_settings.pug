@@ -1,0 +1,53 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/user_settings.css')
+
+block content
+  main.user-settings
+    header.settings-heading
+      a(href='/mypage') ← My Account
+      h1 User settings
+      p View your account details and manage your email and password.
+    if success
+      p.settings-notice.settings-success(role='status')= success
+    if error
+      p.settings-notice.settings-error(role='alert')= error
+    section.settings-panel(aria-labelledby='account-details-heading')
+      h2#account-details-heading Account details
+      dl.settings-details
+        div
+          dt Username
+          dd= account.name
+        div
+          dt Account email
+          dd= account.email || 'Not set'
+        div
+          dt Account type
+          dd= account.type
+      p.settings-hint Your username cannot be changed. Only an administrator can change your account type.
+    .settings-forms
+      if canEditEmail
+        section.settings-panel(aria-labelledby='email-heading')
+          h2#email-heading Email address
+          p.settings-hint Update the contact email for your account.
+          form(method='post', action='/settings/email')
+            input(type='hidden', name='_csrf', value=csrfToken)
+            label(for='settings-email') Email address
+            input#settings-email(type='email', name='email', value=emailValue, maxlength='200', autocomplete='email', required)
+            label(for='email-current-password') Current password
+            input#email-current-password(type='password', name='currentPassword', maxlength='1024', autocomplete='current-password', required)
+            button(type='submit') Save email
+      if canChangePassword
+        section.settings-panel(aria-labelledby='password-heading')
+          h2#password-heading Change password
+          p#password-help.settings-hint Use at least 12 characters, up to 72 bytes. Some characters use more than one byte.
+          form(method='post', action='/settings/password')
+            input(type='hidden', name='_csrf', value=csrfToken)
+            label(for='password-current') Current password
+            input#password-current(type='password', name='currentPassword', maxlength='1024', autocomplete='current-password', required)
+            label(for='password-new') New password
+            input#password-new(type='password', name='newPassword', minlength='12', maxlength='72', autocomplete='new-password', aria-describedby='password-help', required)
+            label(for='password-confirm') Confirm new password
+            input#password-confirm(type='password', name='confirmPassword', minlength='12', maxlength='72', autocomplete='new-password', required)
+            button(type='submit') Change password
