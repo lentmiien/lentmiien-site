@@ -1,34 +1,56 @@
 # Smallest-box packing
 
-`/binpacking-smallest` searches a user's saved box catalog in ascending internal volume (ties use the box ID). It allows 3D rotation, rejects boxes too small for any individual item or the combined volume/weight, and tries the existing packing worker with a one-container limit. Only a complete single-container placement is accepted. The selected algorithm is heuristic: failure means no solution was found, not proof that a mathematical arrangement is impossible. Provider failures stop the search; they must not silently skip a potentially smaller box.
+`/binpacking-smallest` searches the shared box catalog in ascending internal volume (ties use the box ID). It allows 3D rotation, rejects boxes too small for any individual item or combined volume/weight, then tries the packing worker with a one-container limit. A result must contain every item, with valid dimensions, positions and no overlaps. Provider errors stop the search. A heuristic failure does not prove that a mathematical arrangement is impossible.
 
-The catalog starts empty. Add real available boxes with internal dimensions in mm, empty weight and maximum contents weight in kg, then save. Zero maximum load permits only weightless contents. The whole list is saved atomically in `packing_container_catalogs`, one document per owner, up to 30 boxes. Removing rows and saving deletes those definitions. Unsaved edits are not used for searches. Items and results are transient. The original `/binpacking` workflow remains available.
+All logged-in admin, family and user accounts can read/search the same boxes and see Smallest Box Finder in the Tools navbar. Admins (or users granted `packing.container.write`) edit up to **50 boxes** in the compact, collapsed editor below the results. Dimensions are internal mm; weights are kg. Maximum load is contents weight; zero permits weightless contents only. Saving an empty list clears the shared definitions. Items and results are not stored. Concurrent edits use a revision check: a stale save returns 409 and retains the newer catalog.
+
+## Tags
+
+Each box has up to 20 tags (1–40 letters, numbers, hyphens or underscores), normalized to lowercase. The editor accepts comma-separated tags. Search controls are generated from the saved tags. API clients may send:
+
+```json
+"tagFilter": { "require": ["fold-box"], "requireNot": ["tube", "large-box"] }
+```
+
+A `requireNot` match always excludes a box, even if a `require` tag also matches. A `require` match includes it unless excluded. Boxes with no matching filter tags remain included, as requested; **require is not a strict whitelist**. Therefore positive tags alone do not remove any boxes. Empty/omitted filters include all boxes. Tag filtering runs before geometry/weight filtering and packing. Tags are not sent to the packing worker.
+
+## Preserving existing boxes
+
+On database readiness, the application initializes the singleton in `packing_shared_container_catalogs`. If there is exactly one nonempty legacy catalog owned by an admin, all its boxes are copied, with empty tags. The original `packing_container_catalogs` document is retained unchanged as a backup. Once the shared catalog exists, initialization never overwrites it, even if its list is empty. Concurrent initialization uses the singleton `_id` and `$setOnInsert`.
+
+Reads can use the same legacy snapshot without writing if startup initialization has not completed; saving also retries initialization. If multiple admins have nonempty legacy catalogs, initialization fails closed with an actionable log. Set optional `PACKING_CATALOG_SOURCE_OWNER_ID` to the intended admin's immutable user ID and restart; it must identify an admin with a nonempty catalog. No source ID is needed for the normal single-admin case. Non-admin legacy catalogs are not shared. Rollback to the old implementation keeps the original catalog, but later shared edits are not copied back into it.
+
+## API
+
+`POST /api/binpacking-smallest` accepts JSON and uses the shared database catalog. In the page's **API access** section, an admin can create a named API key with a lifetime of 1–365 days and revoke keys. Copy a new key immediately; only its hash is stored. Up to ten active keys per account. The old global API key and browser cookies are not accepted by this endpoint.
+
+```sh
+curl "$SITE_URL/api/binpacking-smallest" \
+  -H "Authorization: Bearer $PACKING_API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data '{"algorithm":"laff","items":[{"id":"widget","w":100,"d":80,"h":50,"weight":0.2,"qty":3}],"tagFilter":{"requireNot":["tube"]}}'
+```
+
+`algorithm` defaults to `laff`; alternatives are `plain` and `bruteforce`. The response is `{ success, container, data, meta }` on success: `container` is the selected saved box (including tags), `data.pallets` contains exactly one packing solution, and `meta` includes attempt and filter counts. No fit returns HTTP 200 with `success: false`, `message`, and `meta`. Invalid input is 400, invalid/expired/revoked keys 401, work/rate limits 429, and unavailable database/worker or interrupted search 503. See `public/yaml/binpacking-smallest.v1.yaml` for the wire contract.
 
 ## Security contract
 
-- Feature: smallest-box search and editable personal container catalog.
-- Security zone: logged-in. Interactive principals: admin, or explicitly granted family/user accounts. Machine principals: none.
-- Data classification: private. Capabilities: `packing.container.read`, `packing.container.write`, `packing.search.run`. Admin receives all three by default; family/user receive none by default and may receive explicit grants. No legacy `binpacking` permission is implied.
-- Object scope: owner, derived from validated `req.user._id`, including catalog reads, replacement, and searches. No admin override. No client-supplied owner/object identifier is accepted.
-- Browser mutations: PUT catalog and POST search use shared session CSRF tokens and Origin validation. GET never creates a catalog.
-- Abuse/work limits: 64 KiB JSON, 30 containers, 100 distinct item IDs, 200 total items; bruteforce fewer than 8. Dimensions 0–1,000,000 mm (strictly positive), weights 0–1,000,000 kg, IDs at most 100 characters. One search per owner and two globally per application process, 5 search requests/minute per owner, 30 catalog writes/minute. At most 30 sequential provider calls, 15 seconds per call, 60 seconds total; disconnect aborts work. Multi-process deployments multiply local concurrency/rate limits.
-- Output: Pug escaping, DOM textContent, no interpolated script data. Private/no-store responses; analytics disabled. No files or uploads sent to server. CSV files are read locally with a 64 KiB limit on this page.
-- Outbound: existing configured `BIN_PACKING_API_URL` only; redirects disabled, bounded request/response sizes, no caller-selected destination. Items/box dimensions go to this local/configured worker.
-- Logs: generic actionable database/provider/time-limit failures through shared logger, with error type only; no item/catalog payloads or upstream error text.
-- Retention: saved catalog persists until edited/cleared; empty replacement clears all box definitions. No stored search history.
-- Negative tests: anonymous/missing capability, cross-owner scope, forged owner, invalid CSRF/Origin, invalid/oversized input, bounded concurrency, incomplete/multiple-box output and provider failure; inert HTML output.
-- Legacy dependency: existing worker protocol and browser CSV/3D renderer shared with `/binpacking`; no legacy database data imported.
+- Zone: logged-in/private. Interactive principals: admin, family, user; machine principals: independently named, revocable service credentials.
+- Capabilities: `packing.container.read` and `packing.search.run` bundled for all three roles. `packing.container.write` and `packing.api.manage` default to admin only, with explicit grants supported. Unknown roles fail closed unless explicitly granted.
+- Object scope: one explicitly admin-managed shared catalog. No client owner/catalog IDs. Credentials remain owner-scoped for list/issue/revoke; no administrator override for another owner's keys.
+- Machine scope: keys have only packing read/run capabilities and a fixed issuer account. Each request checks hash, namespace, scopes, expiry, revocation, current issuer existence and read/run/API-management capabilities. Rechecked before returning a search result. Keys cannot edit boxes or issue keys. Generic reusable primitive: `services/serviceCredentialService.js`, `models/service_credential.js`.
+- Browser mutations: non-GET, shared session CSRF and Origin validation. No credential issuance on GET. Machine auth is mounted before legacy body parsing and `/api` authentication, with a terminal 404; it uses bearer headers only and no browser CSRF.
+- Limits: 128 KiB catalog JSON; 64 KiB search JSON/CSV; 50 boxes, 100 item types, 200 items (7 for bruteforce), bounded strings/dimensions/weights; 20 tags per box and filter list. Search at most 50 calls, 15 seconds/call, 60 seconds overall. One active search per issuer and two per process, shared across browser/API; 5 searches/minute per issuer. API pre-auth 60 requests/minute/IP. Catalog writes 30/minute/account; key issuance 10/hour/account, ten active slots enforced by a compound unique index. Per-process limits multiply in multi-process deployments.
+- Data/rendering: private/no-store and no-referrer; no analytics; escaped Pug and DOM text/property assignments. No inline catalog JSON. API keys displayed once, no browser storage, cleared on pagehide/hide. No private media.
+- Outbound: configured `BIN_PACKING_API_URL` only, no redirects, bounded response size/time. The worker receives item/box measurements, without tags or credentials.
+- Logs: stable operational/migration failures with safe codes; credential issue/revoke audit contains opaque issuer/key IDs only. Never log keys, request items, box definitions, or upstream bodies.
+- Retention: shared catalog persists until edited; legacy backup retained; search input/results transient. Expired credentials removed by TTL; revoked/expired slots may be reclaimed on issuance. Revoke then issue for rotation.
+- Negative verification: migration preserves all 30 boxes, repeats/concurrency/empty catalogs do not overwrite shared data; ambiguous source rejected; tag conflicts/no-match/defaults; authorization/CSRF, owner-scoped keys, expired/revoked/wrong-scope tokens, strict inputs, shared admission limits and concurrent-save conflicts.
+- Deployment: no new dependency. Optional source-owner variable documented in `env_sample`. Collection/index initialization uses the configured database lifecycle. Cloudflare must not cache private routes; the app enforces authorization without it. No credentials or live user data are needed for automated tests.
 
-## Deployment and verification
-
-No new environment variables or dependencies. MongoDB creates the separate collection on first save; its unique owner index is required. No data migration is needed. Grant the three capabilities to non-admin accounts that should use the tool. Do not edge-cache this authenticated route; application checks apply without Cloudflare. Rollback by removing the route/navigation registration; retained catalog data is isolated from the old tool.
-
-Manual check: add and save several box sizes, reload to verify persistence, upload/paste items, compare a successful fit and a no-fit case, then open the 3D preview. Verify removal/editing and an empty catalog. Search always uses the saved list. A failed or timed-out worker should show an error rather than a larger-box recommendation.
-
-Focused verification:
+Focused checks:
 
 ```sh
-npm test -- tests/unit/smallestBoxService.test.js tests/unit/smallestBoxRoutes.test.js tests/unit/smallestBoxClient.test.js tests/unit/adminRoleManagement.test.js tests/unit/accountSurfacePolicy.test.js --coverage=false
+npm test -- tests/unit/smallestBoxService.test.js tests/unit/smallestBoxRoutes.test.js tests/unit/smallestBoxClient.test.js tests/unit/smallestBoxCatalog.test.js tests/unit/serviceCredentials.test.js tests/unit/accountSurfacePolicy.test.js --coverage=false
+npm run lint:openapi -- binpacking-smallest.v1.yaml
 ```
-
-The client tests render the Pug pages in jsdom and exercise catalog editing, saving/removal, inert labels, search submission/results, unsaved/invalid input handling, and the original fixed-container workflow. Service and HTTP tests use isolated data and a mocked worker; they do not require application startup, MongoDB credentials, or a live packing worker.

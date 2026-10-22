@@ -315,3 +315,7 @@ LOCAL_AI_INPUT_OWNER_QUOTA_BYTES=536870912
 # LOCAL_AI_OUTPUT_DATA_DIR=C:/ProgramData/LennartWebLocalAI/outputs
 LOCAL_AI_OUTPUT_QUOTA_BYTES=8589934592
 LOCAL_AI_OUTPUT_OWNER_QUOTA_BYTES=2147483648
+
+# Optional: admin account ID whose saved boxes seed the shared packing catalog.
+# Leave empty to use the single nonempty admin catalog automatically.
+PACKING_CATALOG_SOURCE_OWNER_ID=

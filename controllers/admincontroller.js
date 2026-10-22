@@ -118,6 +118,7 @@ const routes = [
   "packing.container.read",
   "packing.container.write",
   "packing.search.run",
+  "packing.api.manage",
   "ocr",
   "asr",
   "shoppinglist",

@@ -85,7 +85,7 @@ test('rejects unbounded, malformed, duplicate and privileged input', () => {
     { items: [{ ...item, qty: 8 }], algorithm: 'bruteforce' }]) {
     expect(searchSchema.safeParse(body).success).toBe(false);
   }
-  expect(catalogSchema.safeParse({ containers: Array.from({ length: 31 }, (_, i) => box(String(i))) }).success).toBe(false);
+  expect(catalogSchema.safeParse({ containers: Array.from({ length: 51 }, (_, i) => box(String(i))) }).success).toBe(false);
   expect(catalogSchema.safeParse({ containers: [box('same'), box('same')] }).success).toBe(false);
   expect(catalogSchema.safeParse({ containers: [] }).success).toBe(true);
 });
@@ -100,4 +100,26 @@ test('default transport uses the configured worker with bounded time, size and n
       expect.objectContaining({ timeout: 15000, maxRedirects: 0, maxContentLength: 2097152,
         maxBodyLength: 65536, signal: expect.any(AbortSignal) }));
   } finally { post.mockRestore(); }
+});
+
+
+test('50 tagged boxes are accepted; exclusions win and unmatched/untagged boxes stay eligible', async () => {
+  const packer = jest.fn().mockResolvedValue({ success: false });
+  const containers = Array.from({ length: 50 }, (_, i) => ({ ...box(String(i)), tags: i === 0 ? ['tube', 'fold-box'] : i === 1 ? ['other'] : [] }));
+  const result = await findSmallestBox(containers, { items: [item], tagFilter: { require: [' FOLD-BOX '], requireNot: ['TUBE'] } }, { packer });
+  expect(result.meta).toMatchObject({ totalContainers: 50, tagFilteredContainers: 1, eligibleContainers: 49, attempts: 49 });
+  expect(packer.mock.calls.map(([payload]) => payload.container.id)).not.toContain('0');
+  expect(packer.mock.calls.map(([payload]) => payload.container.id)).toContain('1');
+  expect(packer.mock.calls[0][0].container).not.toHaveProperty('tags');
+});
+test.each([undefined, {}, { require: ['tube'] }, { requireNot: ['unknown'] }])('empty, positive-only and unmatched filters include all boxes: %j', async tagFilter => {
+  const packer = jest.fn().mockResolvedValue({ success: false });
+  const result = await findSmallestBox([{ ...box('tube'), tags: ['tube'] }, box('untagged')], { items: [item], tagFilter }, { packer });
+  expect(result.meta.eligibleContainers).toBe(2);
+});
+test('invalid tags and privileged tag-filter fields fail validation', () => {
+  for (const tagFilter of [{ requireNot: ['<script>'] }, { require: ['a'.repeat(41)] }, { requireNot: Array(21).fill('tube') }, { owner: 'foreign' }]) {
+    expect(searchSchema.safeParse({ items: [item], tagFilter }).success).toBe(false);
+  }
+  expect(catalogSchema.parse({ containers: [box('legacy')] }).containers[0].tags).toEqual([]);
 });

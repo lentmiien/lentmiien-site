@@ -47,23 +47,26 @@ function completeSingleBox(data, items, container) {
 }
 
 async function findSmallestBox(containers, request, { packer = pack, signal } = {}) {
-  const { items, algorithm } = searchSchema.parse(request);
+  const { items, algorithm, tagFilter } = searchSchema.parse(request);
   containers = catalogSchema.parse({ containers }).containers;
   const totalVolume = items.reduce((sum, item) => sum + volume(item) * item.qty, 0);
   const totalWeight = items.reduce((sum, item) => sum + item.weight * item.qty, 0);
-  const candidates = containers.filter(container => {
+  // An exclusion wins over an inclusion; unmatched boxes are included by default.
+  const selected = containers.filter(container => !container.tags.some(tag => tagFilter?.requireNot.includes(tag)));
+  const candidates = selected.filter(container => {
     const available = sides(container);
     return volume(container) >= totalVolume && container.maxLoadWeight >= totalWeight
       && items.every(item => sides(item).every((side, i) => side <= available[i]));
   }).sort((a, b) => volume(a) - volume(b) || a.id.localeCompare(b.id));
   const meta = { algorithm, totalItemCount: items.reduce((sum, item) => sum + item.qty, 0),
-    uniqueItems: items.length, totalContainers: containers.length, eligibleContainers: candidates.length,
+    uniqueItems: items.length, totalContainers: containers.length, tagFilteredContainers: containers.length - selected.length, eligibleContainers: candidates.length,
     filteredContainers: containers.length - candidates.length, attempts: 0 };
   const boundedSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000);
   for (const container of candidates) {
     boundedSignal.throwIfAborted();
+    const { tags, ...packingContainer } = container;
     const data = await packer({ algorithm, maxContainers: 1, minimizeContainers: true,
-      container, items: items.map(item => ({ ...item, rotate3D: true })) }, boundedSignal);
+      container: packingContainer, items: items.map(item => ({ ...item, rotate3D: true })) }, boundedSignal);
     boundedSignal.throwIfAborted();
     meta.attempts += 1;
     if (completeSingleBox(data, items, container)) {
@@ -74,6 +77,6 @@ async function findSmallestBox(containers, request, { packer = pack, signal } = 
   }
   return { success: false, meta, message: containers.length === 0
     ? 'Save at least one available box before searching.'
-    : 'No single-box solution was found in your saved boxes with this algorithm. Try another algorithm or add a larger box.' };
+    : 'No single-box solution was found in the shared boxes with this algorithm. Try another algorithm or add a larger box.' };
 }
 module.exports = { findSmallestBox, completeSingleBox };

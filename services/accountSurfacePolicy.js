@@ -32,7 +32,7 @@ function groupFor(item) {
   return GROUPS[2];
 }
 const NAVIGATION = MYPAGE_ICON_DEFINITIONS.map(item => ({ ...item, public: false }));
-NAVIGATION.push({ id: 'smallest_box', href: '/binpacking-smallest', label: 'Smallest Box Finder', src: '/i/binpacking.svg', capability: 'packing.container.read' });
+NAVIGATION.push({ id: 'smallest_box', href: '/binpacking-smallest', label: 'Smallest Box Finder', src: '/i/binpacking.svg', capability: 'packing.container.read', subgroup: 'Packing tools' });
 NAVIGATION.push({ id: 'local_ai_queue', href: '/local-ai/queue', label: 'Local AI queue', src: '/i/batch.svg', capability: 'local_ai.jobs.use' });
 NAVIGATION.push({ id: 'lantern_commons', href: '/commons', label: 'Lantern Commons', src: '/commons/icon.svg', capability: 'commons.world.play', subgroup: 'Village & play' });
 NAVIGATION.push({ id: 'taric_tool', href: '/admin/taric', label: 'TARIC assisted classification', src: '/i/product.svg', capability: 'taric.tool.manage' });

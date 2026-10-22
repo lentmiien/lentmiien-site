@@ -186,6 +186,7 @@ app.use(require('./middleware/accountSurfaceBody'));
 // Dedicated TARIC machine authentication must precede all legacy body parsing/auth.
 const taricTool = require('./services/taric');
 const localAi = require('./services/localAi');
+app.use('/api/binpacking-smallest', require('./routes/binpackingSmallest').createSmallestBoxApiRouter());
 app.use('/api/local-ai/v1', require('./routes/localAi').createRouter(localAi, { machine: true }));
 app.use('/api/taric/v1', require('./routes/taric').createTaricRouter(taricTool.service));
 const amiamiUpload = require('./services/amiamiUpload');
@@ -773,6 +774,12 @@ let databaseServicesNeedRecovery = false;
 function startDatabaseServices() {
   if (databaseServicesStarted) return;
   databaseServicesStarted = true;
+
+  require('./services/smallestBoxCatalogService').catalogService.initialize().catch(error => {
+    logger.error('Shared box catalog migration failed; check legacy admin catalogs and PACKING_CATALOG_SOURCE_OWNER_ID', {
+      category: 'binpacking_smallest', metadata: { code: error.code || 'MIGRATION_FAILED' },
+    });
+  });
 
   const starters = [
     ['TARIC worker', () => taricTool.worker.start()],

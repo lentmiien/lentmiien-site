@@ -1,4 +1,6 @@
 const mongoose = require('mongoose');
+const PackingSharedCatalog = require('./models/packing_shared_catalog');
+const ServiceCredential = require('./models/service_credential');
 const PackingContainerCatalog = require('./models/packing_container_catalog');
 
 // Database access is unavailable until the application lifecycle has established a
@@ -205,6 +207,8 @@ const RunpodPodBillingPeriod = require('./models/runpod_pod_billing_period');
 
 // Export models
 module.exports = {
+  PackingSharedCatalog,
+  ServiceCredential,
   PackingContainerCatalog,
   CommonsWorld,
   CommonsDiary,

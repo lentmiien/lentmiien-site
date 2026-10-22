@@ -1,0 +1,207 @@
+openapi: 3.0.3
+info:
+  title: Smallest Box Packing API
+  version: 1.0.0
+  description: Search the shared saved box catalog for one container that holds all items. Create a scoped key in the tool's API access section.
+servers:
+  - url: /
+security:
+  - packingKey: []
+paths:
+  /api/binpacking-smallest:
+    post:
+      operationId: findSmallestBox
+      summary: Find one box for all items
+      description: >-
+        Filters shared boxes by tags, dimensions, volume and weight, then tries increasing volume.
+        Require-not tags take priority; boxes with no matching filter tags are included.
+        Positive require tags are not a strict whitelist. Empty filters include all boxes.
+        Limits are 5 searches/minute per key issuer and one concurrent search per issuer,
+        shared with browser searches. Maximum search duration is 60 seconds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [items]
+              properties:
+                algorithm:
+                  type: string
+                  enum: [laff, plain, bruteforce]
+                  default: laff
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  description: Unique IDs; at most 200 total items, or 7 with bruteforce.
+                  items:
+                    $ref: '#/components/schemas/Item'
+                tagFilter:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    require:
+                      $ref: '#/components/schemas/Tags'
+                    requireNot:
+                      $ref: '#/components/schemas/Tags'
+      responses:
+        '200':
+          description: One complete solution, or success false when no fit is found.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, meta]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  container:
+                    $ref: '#/components/schemas/Container'
+                  data:
+                    type: object
+                    properties:
+                      success:
+                        type: boolean
+                      containersUsed:
+                        type: integer
+                        enum: [1]
+                      pallets:
+                        type: array
+                        minItems: 1
+                        maxItems: 1
+                        items:
+                          type: object
+                          properties:
+                            containerId:
+                              type: string
+                            w:
+                              type: number
+                            d:
+                              type: number
+                            h:
+                              type: number
+                            placements:
+                              type: array
+                              items:
+                                type: object
+                                required: [itemId, x, y, z, w, d, h]
+                                properties:
+                                  itemId:
+                                    type: string
+                                  x:
+                                    type: number
+                                  y:
+                                    type: number
+                                  z:
+                                    type: number
+                                  w:
+                                    type: number
+                                  d:
+                                    type: number
+                                  h:
+                                    type: number
+                  meta:
+                    type: object
+                    properties:
+                      algorithm:
+                        type: string
+                      totalItemCount:
+                        type: integer
+                      uniqueItems:
+                        type: integer
+                      totalContainers:
+                        type: integer
+                      tagFilteredContainers:
+                        type: integer
+                      eligibleContainers:
+                        type: integer
+                      filteredContainers:
+                        type: integer
+                      attempts:
+                        type: integer
+                      containerId:
+                        type: string
+                      containerVolume:
+                        type: number
+                        description: Cubic millimeters.
+        '400':
+          $ref: '#/components/responses/Invalid'
+        '401':
+          description: Missing, invalid, expired, revoked or insufficiently scoped key, or issuer access revoked.
+        '413':
+          description: JSON body exceeds 64 KiB.
+        '429':
+          description: Rate or concurrency limit reached.
+        '503':
+          description: Catalog or packing worker unavailable, or search time limit reached.
+components:
+  securitySchemes:
+    packingKey:
+      type: http
+      scheme: bearer
+      description: Scoped svc_ key issued on /binpacking-smallest. Cookies and the legacy global API key are not accepted.
+  responses:
+    Invalid:
+      description: Invalid JSON, fields, quantities, dimensions, weights or tags.
+  schemas:
+    Dimension:
+      type: number
+      minimum: 0
+      exclusiveMinimum: true
+      maximum: 1000000
+      description: Internal millimeters.
+    Weight:
+      type: number
+      minimum: 0
+      maximum: 1000000
+      description: Kilograms.
+    Tags:
+      type: array
+      maxItems: 20
+      items:
+        type: string
+        minLength: 1
+        maxLength: 40
+      description: Trimmed and lowercased; then letters a-z, digits, hyphen and underscore only, starting with a letter or digit.
+    Item:
+      type: object
+      additionalProperties: false
+      required: [id, w, d, h, weight, qty]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 100
+        w:
+          $ref: '#/components/schemas/Dimension'
+        d:
+          $ref: '#/components/schemas/Dimension'
+        h:
+          $ref: '#/components/schemas/Dimension'
+        weight:
+          $ref: '#/components/schemas/Weight'
+        qty:
+          type: integer
+          minimum: 1
+          maximum: 200
+    Container:
+      type: object
+      properties:
+        id:
+          type: string
+        w:
+          $ref: '#/components/schemas/Dimension'
+        d:
+          $ref: '#/components/schemas/Dimension'
+        h:
+          $ref: '#/components/schemas/Dimension'
+        emptyWeight:
+          $ref: '#/components/schemas/Weight'
+        maxLoadWeight:
+          $ref: '#/components/schemas/Weight'
+        tags:
+          $ref: '#/components/schemas/Tags'

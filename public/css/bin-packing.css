@@ -581,12 +581,6 @@
   order: 0;
 }
 
-.bin-pack--smallest #boxCatalogRows {
-  display: grid;
-  gap: 16px;
-  max-height: 32rem;
-  overflow-y: auto;
-}
 
 .bin-pack--smallest .bin-pack__input {
   min-width: 0;
@@ -601,3 +595,31 @@
   outline: 2px solid var(--focus);
   outline-offset: 3px;
 }
+
+.bin-pack__catalog {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-1);
+}
+.bin-pack__catalog > summary {
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 600;
+}
+.bin-pack__catalog[open] > summary { margin-bottom: 16px; }
+.bin-pack__catalog-scroll { overflow: auto; max-height: 28rem; }
+.bin-pack__catalog-table { min-width: 960px; }
+.bin-pack__catalog-table thead { position: sticky; top: 0; background: var(--surface-3); z-index: 1; }
+.bin-pack__catalog-table th, .bin-pack__catalog-table td { padding: 5px; }
+.bin-pack__catalog-table input { padding: 6px; border-radius: 5px; }
+.bin-pack__catalog-table td:first-child { min-width: 150px; }
+.bin-pack__catalog-table td:nth-child(7) { min-width: 200px; }
+.bin-pack__catalog-table .bin-pack__secondary { padding: 5px 8px; font-size: 0.7rem; }
+.bin-pack__tag-filter { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0; }
+[data-tag-filters] { max-height: 18rem; overflow: auto; }
+[data-api-secret-panel] { margin-top: 16px; }
+#packingApiSecret { width: 100%; min-height: 4rem; }
+[data-api-keys] li { margin: 8px 0; }
+[data-api-keys] button { margin-left: 12px; }

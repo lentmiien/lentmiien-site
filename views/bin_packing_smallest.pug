@@ -7,14 +7,14 @@ block content
   section.bin-pack.bin-pack--smallest
     header.bin-pack__header
       h1.bin-pack__title Smallest Box Finder
-      p.bin-pack__subtitle Find the smallest saved box that holds every item. Boxes are tried by internal volume, with 3D rotation allowed.
+      p.bin-pack__subtitle Find the smallest shared box that holds every item. Boxes are tried by internal volume, with 3D rotation allowed.
       p.bin-pack__hint The selected algorithm may miss a possible arrangement. If no solution is found, try another algorithm.
       a(href='/binpacking') Open the original multi-container tool
     .bin-pack__grid
       .bin-pack__column.bin-pack__column--form
         article.bin-pack__panel
           form#binPackForm.bin-pack__form(novalidate, data-smallest-box, data-csrf=csrfToken)
-            p.bin-pack__hint Searches use your saved available boxes. Save any changes before searching. Up to 100 item types and 200 total items.
+            p.bin-pack__hint Searches use the shared available boxes. Save any changes before searching. Up to 100 item types and 200 total items.
             fieldset.bin-pack__fieldset
               legend.bin-pack__legend Items
               .bin-pack__field
@@ -29,6 +29,11 @@ block content
                 button(type='button', class='bin-pack__secondary', data-clear-items) Clear items
               ul.bin-pack__errors(data-parse-errors, aria-live='polite')
             fieldset.bin-pack__fieldset
+              legend.bin-pack__legend Box tag filters
+              p.bin-pack__hint Require not excludes matching boxes, even if another tag is required. Boxes with no matching filter tags are included. Leave all tags at Default to include every box.
+              div(data-tag-filters)
+              p.bin-pack__hint(data-filter-count, aria-live='polite') Loading tags…
+            fieldset.bin-pack__fieldset
               legend.bin-pack__legend Algorithm
               .bin-pack__field.bin-pack__field--algorithm
                 label(for='algorithm') Choose algorithm
@@ -41,15 +46,6 @@ block content
                 p.bin-pack__hint(data-bruteforce-note) Bruteforce available for fewer than 8 total items.
             button#binPackSubmit.bin-pack__submit(type='submit') Find smallest box
       .bin-pack__column
-        article.bin-pack__panel
-          h2.bin-pack__panel-title Your available boxes
-          p.bin-pack__hint Use internal dimensions in mm and weights in kg. Maximum load is the contents weight; zero permits only weightless items. Save up to 30 boxes with unique IDs.
-          form#boxCatalogForm.bin-pack__form
-            div#boxCatalogRows
-            .bin-pack__actions
-              button.bin-pack__secondary(type='button', data-add-box, disabled) Add box
-              button.bin-pack__submit(type='submit', data-save-boxes, disabled) Save boxes
-            p.bin-pack__status(data-catalog-status, role='status') Loading saved boxes…
         article.bin-pack__panel.bin-pack__panel--compact
           h2.bin-pack__panel-title Item overview
           dl.bin-pack__stats
@@ -88,6 +84,43 @@ block content
                 dd(data-meta-items)
           div#binPackOutput.bin-pack__output
             p.bin-pack__placeholder No packing requests submitted yet.
+    details.bin-pack__catalog
+      summary Shared available boxes — #[span(data-catalog-count) loading…]
+      p.bin-pack__hint Up to 50 boxes. Use internal dimensions in mm, weights in kg, and comma-separated tags (letters, numbers, hyphens or underscores). Maximum load is the contents weight; zero permits only weightless items.
+      unless canEditBoxes
+        p.bin-pack__hint An administrator can update this shared list.
+      form#boxCatalogForm.bin-pack__form(data-can-edit=canEditBoxes ? 'true' : 'false')
+        .bin-pack__catalog-scroll
+          table.bin-pack__table.bin-pack__catalog-table
+            thead
+              tr
+                each title in ['Box ID', 'Width', 'Depth', 'Height', 'Empty kg', 'Max kg', 'Tags', '']
+                  th(scope='col')= title
+            tbody#boxCatalogRows
+        if canEditBoxes
+          .bin-pack__actions
+            button.bin-pack__secondary(type='button', data-add-box, disabled) Add box
+            button.bin-pack__submit(type='submit', data-save-boxes, disabled) Save shared boxes
+        p.bin-pack__status(data-catalog-status, role='status') Loading shared boxes…
+    if canManagePackingApi
+      details.bin-pack__catalog
+        summary API access
+        p Send items and optional tag filters to POST /api/binpacking-smallest using a bearer API key. Keys allow searches only.
+        a(href='/yaml/binpacking-smallest.v1.yaml', target='_blank', rel='noopener') API specification
+        form#packingApiKeyForm.bin-pack__input-grid
+          .bin-pack__field
+            label(for='packingKeyLabel') Client name
+            input#packingKeyLabel.bin-pack__input(type='text', maxlength='80', required, autocomplete='off')
+          .bin-pack__field
+            label(for='packingKeyDays') Expires in days
+            input#packingKeyDays.bin-pack__input(type='number', min='1', max='365', value='30', required)
+          button.bin-pack__submit(type='submit') Create API key
+        div(data-api-secret-panel, hidden)
+          label(for='packingApiSecret') Copy this key now. It will not be shown again.
+          textarea#packingApiSecret.bin-pack__textarea(readonly, rows='2', autocomplete='off', spellcheck='false')
+          button.bin-pack__secondary(type='button', data-hide-api-secret) Hide key
+        p.bin-pack__status(data-api-status, role='status')
+        ul(data-api-keys)
     .bin-pack__viewer-overlay(data-viewer-modal aria-hidden='true')
       .bin-pack__viewer
         header.bin-pack__viewer-header

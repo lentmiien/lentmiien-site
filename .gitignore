@@ -15,6 +15,7 @@ public/imgen
 public/video
 public/yaml/*
 !public/yaml/core-api.v1.yaml
+!public/yaml/binpacking-smallest.v1.yaml
 !public/yaml/schedule-task.v1.yaml
 !public/yaml/chat5-pdf.v1.yaml
 !public/yaml/chat5-realtime.v1.yaml

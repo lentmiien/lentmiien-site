@@ -1248,7 +1248,13 @@
         if (parseHasErrors || !state.items.length) errors.push('Fix the CSV errors and add at least one item.');
         if (form.dataset.catalogReady !== 'true') errors.push('Wait for your box list to load.');
         if (form.dataset.catalogDirty === 'true') errors.push('Save your box changes before searching.');
-        return { payload: { algorithm: algorithmSelect.value, items: state.items }, errors: errors };
+        var tagFilter = { require: [], requireNot: [] };
+        document.querySelectorAll('[data-box-tag]').forEach(function (select) {
+          if (select.value === 'require' || select.value === 'requireNot') tagFilter[select.value].push(select.dataset.boxTag);
+        });
+        var searchPayload = { algorithm: algorithmSelect.value, items: state.items };
+        if (tagFilter.require.length || tagFilter.requireNot.length) searchPayload.tagFilter = tagFilter;
+        return { payload: searchPayload, errors: errors };
       }
       var containerId = (form.elements.containerId && form.elements.containerId.value || '').trim();
       var width = Number(form.elements.containerWidth && form.elements.containerWidth.value);
@@ -1322,7 +1328,7 @@
       }
 
       if (smallestBox) resetResults();
-      setStatus(smallestBox ? 'Trying saved boxes from smallest to largest…' : 'Submitting packing request...', 'info');
+      setStatus(smallestBox ? 'Trying shared boxes from smallest to largest…' : 'Submitting packing request...', 'info');
 
       fetch(smallestBox ? '/binpacking-smallest/run' : '/binpacking/run', {
         method: 'POST',

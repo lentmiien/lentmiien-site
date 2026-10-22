@@ -78,3 +78,8 @@ test('owner with Budget grant uses its existing alias without requiring Accounti
   const p = await policy('admin', ['budget']);
   expect(prefs.effective(p).sections.find(s => s.id === 'accounting').href).toBe('/budget');
 });
+
+test.each(['admin', 'family', 'user'])('shared smallest-box link is visible in the navbar for %s', async role => {
+  const entry = navigationFor(await policy(role)).find(item => item.id === 'smallest_box');
+  expect(entry).toMatchObject({ href: '/binpacking-smallest', label: 'Smallest Box Finder', subgroup: 'Packing tools' });
+});
