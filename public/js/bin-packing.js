@@ -339,6 +339,8 @@
       return;
     }
 
+    var smallestBox = form.hasAttribute('data-smallest-box');
+    var parseHasErrors = false;
     var fileInput = document.getElementById('itemsFile');
     var textarea = document.getElementById('itemsTextarea');
     var parseErrorsEl = document.querySelector('[data-parse-errors]');
@@ -949,6 +951,7 @@
     };
 
     var applyParseResult = function (result) {
+      parseHasErrors = Boolean(result.errors && result.errors.length);
       state.items = result.items || [];
       state.totalWeight = result.totalWeight || 0;
       renderErrors(result.errors);
@@ -964,6 +967,10 @@
         renderPreview();
         return;
       }
+      if (smallestBox && value.length > 65536) {
+        applyParseResult({ items: [], errors: ['CSV must be at most 64 KiB.'] });
+        return;
+      }
       var result = parseItems(value);
       applyParseResult(result);
     };
@@ -973,6 +980,10 @@
         return;
       }
 
+      if (smallestBox && file.size > 65536) {
+        setStatus('CSV files must be at most 64 KiB.', 'error');
+        return;
+      }
       var reader = new FileReader();
       reader.onload = function (event) {
         var text = event.target && event.target.result ? String(event.target.result) : '';
@@ -1233,6 +1244,12 @@
 
     var collectPayload = function () {
       var errors = [];
+      if (smallestBox) {
+        if (parseHasErrors || !state.items.length) errors.push('Fix the CSV errors and add at least one item.');
+        if (form.dataset.catalogReady !== 'true') errors.push('Wait for your box list to load.');
+        if (form.dataset.catalogDirty === 'true') errors.push('Save your box changes before searching.');
+        return { payload: { algorithm: algorithmSelect.value, items: state.items }, errors: errors };
+      }
       var containerId = (form.elements.containerId && form.elements.containerId.value || '').trim();
       var width = Number(form.elements.containerWidth && form.elements.containerWidth.value);
       var depth = Number(form.elements.containerDepth && form.elements.containerDepth.value);
@@ -1304,12 +1321,14 @@
         submitBtn.textContent = 'Running...';
       }
 
-      setStatus('Submitting packing request...', 'info');
+      if (smallestBox) resetResults();
+      setStatus(smallestBox ? 'Trying saved boxes from smallest to largest…' : 'Submitting packing request...', 'info');
 
-      fetch('/binpacking/run', {
+      fetch(smallestBox ? '/binpacking-smallest/run' : '/binpacking/run', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(smallestBox ? { 'X-CSRF-Token': form.dataset.csrf, Accept: 'application/json' } : {}),
         },
         body: JSON.stringify(payload),
       })
@@ -1318,7 +1337,7 @@
             return response.json().catch(function () {
               return null;
             }).then(function (body) {
-              var message = body && body.message ? body.message : 'The bin packing request failed.';
+              var message = body && (body.message || body.error) ? (body.message || body.error) : 'The bin packing request failed.';
               throw new Error(message);
             });
           }
@@ -1329,9 +1348,9 @@
             var message = data && data.message ? data.message : 'The bin packing service returned an error.';
             setStatus(message, 'error');
           } else {
-            setStatus('Packing completed successfully.', 'success');
+            setStatus(smallestBox ? 'Found ' + data.container.id + '. Tried ' + data.meta.attempts + ' of ' + data.meta.eligibleContainers + ' eligible boxes; filtered out ' + data.meta.filteredContainers + '.' : 'Packing completed successfully.', 'success');
           }
-          renderMeta(data && data.meta, payload, totalCount);
+          renderMeta(data && data.meta, smallestBox ? { container: data && data.container } : payload, totalCount);
           renderResult(data && data.data);
         })
         .catch(function (error) {
@@ -1341,7 +1360,7 @@
         .finally(function () {
           if (submitBtn) {
             submitBtn.disabled = false;
-            submitBtn.textContent = 'Run packing';
+            submitBtn.textContent = smallestBox ? 'Find smallest box' : 'Run packing';
           }
         });
     };

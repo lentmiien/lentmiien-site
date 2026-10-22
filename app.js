@@ -197,9 +197,10 @@ const isMusicPath = req => /^\/(?:music|admin\/music-test)(?:\/|$)/i.test(req.pa
 const isCommonsPrivatePath = req => /^\/commons\/api(?:\/|$)/i.test(req.path);
 const isEmbeddingGemma2Path = req => /^\/admin\/embeddinggemma2(?:\/|$)/i.test(req.path);
 const isLocalAiPath = req => /^\/local-ai(?:\/|$)/i.test(req.path);
+const isSmallestBoxPath = req => /^\/binpacking-smallest(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
-app.use((req, res, next) => (isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
-app.use((req, res, next) => (isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
+app.use((req, res, next) => (isSmallestBoxPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
+app.use((req, res, next) => (isSmallestBoxPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -533,6 +534,7 @@ app.use('/accounting/legacy', isAuthenticated, authorize("accounting"), legacyBu
 app.use('/cooking', isAuthenticated, authorize("cooking"), cookingRouter);
 app.use('/health', isAuthenticated, authorize("health"), healthRouter);
 app.use('/box', isAuthenticated, authorize("box"), boxRouter);
+app.use('/binpacking-smallest', require('./routes/binpackingSmallest').createSmallestBoxRouter());
 app.use('/binpacking', isAuthenticated, authorize("binpacking"), binPackingRouter);
 app.use('/quicknote', isAuthenticated, authorize("quicknote"), quicknoteRouter);
 app.use('/es', isAuthenticated, authorize("emergencystock"), esRouter);

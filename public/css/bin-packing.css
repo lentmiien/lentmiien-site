@@ -575,3 +575,29 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+
+/* Keep a long saved catalog usable without pushing the search below the fold. */
+.bin-pack--smallest .bin-pack__column--form {
+  order: 0;
+}
+
+.bin-pack--smallest #boxCatalogRows {
+  display: grid;
+  gap: 16px;
+  max-height: 32rem;
+  overflow-y: auto;
+}
+
+.bin-pack--smallest .bin-pack__input {
+  min-width: 0;
+  width: 100%;
+}
+
+.bin-pack--smallest .bin-pack__column {
+  min-width: 0;
+}
+
+.bin-pack--smallest button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}

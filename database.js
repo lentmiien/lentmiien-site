@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const PackingContainerCatalog = require('./models/packing_container_catalog');
 
 // Database access is unavailable until the application lifecycle has established a
 // connection. Failing immediately prevents buffered operations from piling up while
@@ -204,6 +205,7 @@ const RunpodPodBillingPeriod = require('./models/runpod_pod_billing_period');
 
 // Export models
 module.exports = {
+  PackingContainerCatalog,
   CommonsWorld,
   CommonsDiary,
   UseraccountModel,

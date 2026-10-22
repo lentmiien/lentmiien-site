@@ -13,6 +13,8 @@ const { ROLE_BUNDLES: COMMONS_ROLE_BUNDLES } = require('../utils/commonsAuthoriz
 
 const { BUNDLES: LOCAL_AI_BUNDLES } = require('./localAi/policy');
 
+const { ROLE_BUNDLES: PACKING_ROLE_BUNDLES } = require('../utils/smallestBoxPolicy');
+
 const BASE = ['dashboard.account.read', 'dashboard.preferences.write'];
 const ADMIN = ['dashboard.operations.read', 'dashboard.personal.read', 'dashboard.personal.write', 'dashboard.embedding.search', 'finance.account.close'];
 const ROLE_BUNDLES = { admin: [...BASE, ...ADMIN], family: BASE, user: BASE };
@@ -30,6 +32,7 @@ function groupFor(item) {
   return GROUPS[2];
 }
 const NAVIGATION = MYPAGE_ICON_DEFINITIONS.map(item => ({ ...item, public: false }));
+NAVIGATION.push({ id: 'smallest_box', href: '/binpacking-smallest', label: 'Smallest Box Finder', src: '/i/binpacking.svg', capability: 'packing.container.read' });
 NAVIGATION.push({ id: 'local_ai_queue', href: '/local-ai/queue', label: 'Local AI queue', src: '/i/batch.svg', capability: 'local_ai.jobs.use' });
 NAVIGATION.push({ id: 'lantern_commons', href: '/commons', label: 'Lantern Commons', src: '/commons/icon.svg', capability: 'commons.world.play', subgroup: 'Village & play' });
 NAVIGATION.push({ id: 'taric_tool', href: '/admin/taric', label: 'TARIC assisted classification', src: '/i/product.svg', capability: 'taric.tool.manage' });
@@ -91,7 +94,7 @@ async function resolvePolicy(user, roleModel, ownerId) {
   return {
     user, isAdmin: user.type_user === 'admin', isOwner: ownerMatches(user, ownerId),
     capabilities: [...new Set([...assigned, ...roleBundleCapabilities(user, ROLE_BUNDLES),
-      ...roleBundleCapabilities(user, LOCAL_AI_BUNDLES), ...roleBundleCapabilities(user, COMMONS_ROLE_BUNDLES), ...roleBundleCapabilities(user, TARIC_ROLE_BUNDLES), ...roleBundleCapabilities(user, MIIEN_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CHAT_TOOL_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CODEX_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, RUNPOD_ROLE_CAPABILITY_BUNDLES)])],
+      ...roleBundleCapabilities(user, PACKING_ROLE_BUNDLES), ...roleBundleCapabilities(user, LOCAL_AI_BUNDLES), ...roleBundleCapabilities(user, COMMONS_ROLE_BUNDLES), ...roleBundleCapabilities(user, TARIC_ROLE_BUNDLES), ...roleBundleCapabilities(user, MIIEN_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CHAT_TOOL_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CODEX_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, RUNPOD_ROLE_CAPABILITY_BUNDLES)])],
   };
 }
 function allows(policy, item) {
