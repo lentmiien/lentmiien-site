@@ -34,7 +34,7 @@ beforeEach(async () => {
     next();
   });
   const operations = createPackingOperations({ catalog, search });
-  app.use('/api/binpacking-smallest', createSmallestBoxApiRouter({ operations, keys, log }));
+  app.use('/api/binpacking-smallest', createSmallestBoxApiRouter({ catalog, operations, keys, log }));
   app.use('/binpacking-smallest', createSmallestBoxRouter({ catalog, roleModel, operations, keys, log }));
   server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
@@ -176,7 +176,7 @@ test('machine route is mounted before legacy parsers and cannot fall through to 
   const mounted = source.indexOf("app.use('/api/binpacking-smallest'");
   expect(mounted).toBeGreaterThan(0);
   expect(mounted).toBeLessThan(source.indexOf('const legacyJsonParser'));
-  const response = await fetch(base.replace('/binpacking-smallest', '/api/binpacking-smallest') + '/containers', {
+  const response = await fetch(base.replace('/binpacking-smallest', '/api/binpacking-smallest') + '/unknown', {
     headers: { Authorization: 'Bearer test-key' },
   });
   expect(response.status).toBe(404);
@@ -188,4 +188,49 @@ test('revocation during a machine search prevents result delivery', async () => 
   const response = await api();
   expect(response.status).toBe(401);
   expect(search).toHaveBeenCalledTimes(1);
+});
+
+const apiCatalog = (options = {}, suffix = '') => fetch(base.replace('/binpacking-smallest', '/api/binpacking-smallest') + '/containers' + suffix, {
+  ...options, headers: { Authorization: 'Bearer test-key', ...options.headers },
+});
+test('API returns shared boxes and sorted unique tags without a browser session or mutation', async () => {
+  const containers = [{ ...box, tags: ['tube', 'fold-box'] }, { ...box, id: 'second', tags: ['tube'] }, { ...box, id: 'untagged', tags: [] }];
+  saved.set('shared', { containers, revision: 3, migratedFrom: owner });
+  const response = await apiCatalog({ headers: { 'x-anonymous': 'true' } });
+  expect(response.status).toBe(200);
+  expect(response.headers.get('cache-control')).toContain('no-store');
+  expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+  expect(await response.json()).toEqual({ containers, revision: 3, tags: ['fold-box', 'tube'] });
+  expect(keys.authenticate).toHaveBeenCalledTimes(2);
+  expect(catalog.save).not.toHaveBeenCalled();
+  expect(search).not.toHaveBeenCalled();
+});
+test('empty API catalog succeeds and reads do not consume search quota', async () => {
+  for (let i = 0; i < 6; i += 1) {
+    const response = await apiCatalog();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ containers: [], revision: 0, tags: [] });
+  }
+  expect((await api()).status).toBe(200);
+});
+test('API catalog rejects missing/invalid keys, query selectors and write methods', async () => {
+  for (const Authorization of ['', 'Bearer legacy-key']) {
+    expect((await apiCatalog({ headers: { Authorization } })).status).toBe(401);
+  }
+  expect((await apiCatalog({}, '?ownerId=' + foreign)).status).toBe(400);
+  for (const method of ['POST', 'PUT', 'DELETE']) expect((await apiCatalog({ method })).status).toBe(404);
+  expect(catalog.read).not.toHaveBeenCalled();
+  expect(catalog.save).not.toHaveBeenCalled();
+});
+test('API catalog hides storage errors and logs an actionable failure', async () => {
+  catalog.read.mockRejectedValue(new Error('private database details'));
+  const response = await apiCatalog();
+  expect(response.status).toBe(503);
+  expect(await response.text()).not.toContain('private database details');
+  expect(log.error).toHaveBeenCalled();
+  expect(JSON.stringify(log.error.mock.calls)).not.toContain('private database details');
+});
+test('revocation during a catalog read prevents result delivery', async () => {
+  keys.authenticate.mockResolvedValueOnce({ ownerId: owner }).mockRejectedValueOnce(Object.assign(new Error('Revoked'), { status: 401, publicMessage: 'Invalid API key.' }));
+  expect((await apiCatalog()).status).toBe(401);
 });

@@ -95,7 +95,7 @@ function createSmallestBoxRouter({ catalog = catalogService, roleModel = Role, o
   router.use(errorHandler(log));
   return router;
 }
-function createSmallestBoxApiRouter({ operations = packingOperations, keys = credentials, log = logger } = {}) {
+function createSmallestBoxApiRouter({ catalog = catalogService, operations = packingOperations, keys = credentials, log = logger } = {}) {
   const router = express.Router();
   router.use(privateResponse);
   router.use(rateLimit({ windowMs: 60000, limit: 60, standardHeaders: 'draft-8', legacyHeaders: false,
@@ -109,6 +109,14 @@ function createSmallestBoxApiRouter({ operations = packingOperations, keys = cre
       req.packingOwnerId = principal.ownerId;
       req.verifyPackingAccess = () => keys.authenticate(req.get('authorization'));
       next();
+    } catch (error) { next(error); }
+  });
+  router.get('/containers', async (req, res, next) => {
+    try {
+      const { containers, revision } = await catalog.read();
+      await req.verifyPackingAccess();
+      const tags = [...new Set(containers.flatMap(container => container.tags))].sort();
+      res.json({ containers, revision, tags });
     } catch (error) { next(error); }
   });
   router.post('/', operations.limiter, express.json({ limit: '64kb' }), operations.run);

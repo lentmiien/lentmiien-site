@@ -22,6 +22,10 @@ Reads can use the same legacy snapshot without writing if startup initialization
 
 ## API
 
+Client integration guide: [Smallest Box Finder API manual](smallest-box-api.md).
+
+`GET /api/binpacking-smallest/containers` returns `{ containers, revision, tags }` using the same bearer key. `tags` is the sorted, unique union of box tags. This read-only endpoint uses the shared catalog reader, exposes no owner or migration metadata, and never initializes or modifies the catalog. It accepts no query parameters and shares the API IP rate limit, without consuming search quota.
+
 `POST /api/binpacking-smallest` accepts JSON and uses the shared database catalog. In the page's **API access** section, an admin can create a named API key with a lifetime of 1–365 days and revoke keys. Copy a new key immediately; only its hash is stored. Up to ten active keys per account. The old global API key and browser cookies are not accepted by this endpoint.
 
 ```sh
@@ -38,14 +42,14 @@ curl "$SITE_URL/api/binpacking-smallest" \
 - Zone: logged-in/private. Interactive principals: admin, family, user; machine principals: independently named, revocable service credentials.
 - Capabilities: `packing.container.read` and `packing.search.run` bundled for all three roles. `packing.container.write` and `packing.api.manage` default to admin only, with explicit grants supported. Unknown roles fail closed unless explicitly granted.
 - Object scope: one explicitly admin-managed shared catalog. No client owner/catalog IDs. Credentials remain owner-scoped for list/issue/revoke; no administrator override for another owner's keys.
-- Machine scope: keys have only packing read/run capabilities and a fixed issuer account. Each request checks hash, namespace, scopes, expiry, revocation, current issuer existence and read/run/API-management capabilities. Rechecked before returning a search result. Keys cannot edit boxes or issue keys. Generic reusable primitive: `services/serviceCredentialService.js`, `models/service_credential.js`.
+- Machine scope: keys have only packing read/run capabilities and a fixed issuer account. Each request checks hash, namespace, scopes, expiry, revocation, current issuer existence and read/run/API-management capabilities. Rechecked before returning a search result or API catalog read. Keys cannot edit boxes or issue keys. Generic reusable primitive: `services/serviceCredentialService.js`, `models/service_credential.js`.
 - Browser mutations: non-GET, shared session CSRF and Origin validation. No credential issuance on GET. Machine auth is mounted before legacy body parsing and `/api` authentication, with a terminal 404; it uses bearer headers only and no browser CSRF.
 - Limits: 128 KiB catalog JSON; 64 KiB search JSON/CSV; 50 boxes, 100 item types, 200 items (7 for bruteforce), bounded strings/dimensions/weights; 20 tags per box and filter list. Search at most 50 calls, 15 seconds/call, 60 seconds overall. One active search per issuer and two per process, shared across browser/API; 5 searches/minute per issuer. API pre-auth 60 requests/minute/IP. Catalog writes 30/minute/account; key issuance 10/hour/account, ten active slots enforced by a compound unique index. Per-process limits multiply in multi-process deployments.
 - Data/rendering: private/no-store and no-referrer; no analytics; escaped Pug and DOM text/property assignments. No inline catalog JSON. API keys displayed once, no browser storage, cleared on pagehide/hide. No private media.
 - Outbound: configured `BIN_PACKING_API_URL` only, no redirects, bounded response size/time. The worker receives item/box measurements, without tags or credentials.
 - Logs: stable operational/migration failures with safe codes; credential issue/revoke audit contains opaque issuer/key IDs only. Never log keys, request items, box definitions, or upstream bodies.
 - Retention: shared catalog persists until edited; legacy backup retained; search input/results transient. Expired credentials removed by TTL; revoked/expired slots may be reclaimed on issuance. Revoke then issue for rotation.
-- Negative verification: migration preserves all 30 boxes, repeats/concurrency/empty catalogs do not overwrite shared data; ambiguous source rejected; tag conflicts/no-match/defaults; authorization/CSRF, owner-scoped keys, expired/revoked/wrong-scope tokens, strict inputs, shared admission limits and concurrent-save conflicts.
+- Negative verification: migration preserves all 30 boxes, repeats/concurrency/empty catalogs do not overwrite shared data; ambiguous source rejected; tag conflicts/no-match/defaults; authorization/CSRF, owner-scoped keys, expired/revoked/wrong-scope tokens, strict inputs, read-only API catalog/authentication/error responses, shared admission limits and concurrent-save conflicts.
 - Deployment: no new dependency. Optional source-owner variable documented in `env_sample`. Collection/index initialization uses the configured database lifecycle. Cloudflare must not cache private routes; the app enforces authorization without it. No credentials or live user data are needed for automated tests.
 
 Focused checks:

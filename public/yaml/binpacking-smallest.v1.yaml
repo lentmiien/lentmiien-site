@@ -1,13 +1,59 @@
 openapi: 3.0.3
 info:
   title: Smallest Box Packing API
-  version: 1.0.0
+  version: 1.1.0
   description: Search the shared saved box catalog for one container that holds all items. Create a scoped key in the tool's API access section.
 servers:
   - url: /
 security:
   - packingKey: []
 paths:
+  /api/binpacking-smallest/containers:
+    get:
+      operationId: listPackingContainers
+      summary: Fetch shared boxes and available tags
+      description: >-
+        Read-only snapshot of up to 50 shared boxes, the catalog revision, and sorted unique tags.
+        Uses the same bearer key as searches. No query parameters or request body.
+        Shares the API limit of 60 requests/minute/IP; does not consume search quota.
+        Responses are private and no-store. No catalog mutation is exposed through this API.
+      responses:
+        '200':
+          description: Shared catalog; empty containers and tags arrays when no boxes are saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [containers, revision, tags]
+                properties:
+                  containers:
+                    type: array
+                    maxItems: 50
+                    items:
+                      $ref: '#/components/schemas/Container'
+                  revision:
+                    type: integer
+                    minimum: 0
+                    description: Snapshot revision; searches always use the latest saved catalog.
+                  tags:
+                    type: array
+                    uniqueItems: true
+                    maxItems: 1000
+                    description: Sorted unique union of all container tags; no tags gives an empty array.
+                    items:
+                      type: string
+                      minLength: 1
+                      maxLength: 40
+                      pattern: '^[a-z0-9][a-z0-9_-]{0,39}$'
+        '400':
+          description: Query parameters are not accepted.
+        '401':
+          description: Missing, invalid, expired, revoked or insufficiently scoped key, or issuer access revoked.
+        '429':
+          description: API rate limit reached.
+        '503':
+          description: Shared catalog unavailable.
   /api/binpacking-smallest:
     post:
       operationId: findSmallestBox

@@ -105,7 +105,7 @@ block content
     if canManagePackingApi
       details.bin-pack__catalog
         summary API access
-        p Send items and optional tag filters to POST /api/binpacking-smallest using a bearer API key. Keys allow searches only.
+        p Send items and optional tag filters to POST /api/binpacking-smallest using a bearer API key. Fetch boxes and tags from GET /api/binpacking-smallest/containers. Keys allow catalog reads and searches.
         a(href='/yaml/binpacking-smallest.v1.yaml', target='_blank', rel='noopener') API specification
         form#packingApiKeyForm.bin-pack__input-grid
           .bin-pack__field
