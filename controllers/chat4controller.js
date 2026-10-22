@@ -1,3 +1,4 @@
+const { resolveImageReference } = require('../public/js/libraryImageReference');
 const { renderMarkdownSafe } = require('../utils/chat5Markdown');
 const sharp = require('sharp');// For getting image size
 const fs = require('fs').promises;
@@ -349,7 +350,9 @@ async function getImageDimensions(imagePath) {
     const metadata = await sharp(imagePath).metadata();
     return {width: metadata.width, height: metadata.height};
   } catch (error) {
-    logger.error('Error processing image:', error);
+    logger.warning('Knowledge public image dimensions unavailable; check the referenced public image', {
+      category: 'knowledge', metadata: { code: error.code || 'UNKNOWN' },
+    });
     return undefined;
   }
 }
@@ -376,17 +379,18 @@ exports.viewknowledge = async (req, res) => {
   // Update og/twitter title meta tags
   res.locals.og_title = `Lennart's Website - ${knowledge.title}`;
   res.locals.twitter_title = `Lennart's Website - ${knowledge.title}`;
-  // If any images attached to knowledge entry, update og/twitter image meta tags to first image
-  if (knowledge.images.length > 0) {
-    const filename = knowledge.images[0];
+  // Private media must never be read from public storage or advertised to social crawlers.
+  const previewImage = resolveImageReference(knowledge.images?.[0]);
+  if (previewImage && !previewImage.isPrivate) {
+    const filename = previewImage.fileName;
     const size = await getImageDimensions(`./public/img/${filename}`);
     if (size) {
       // Get file meta data
       const metadata = await FileMetaModel.find({ filename });
-      res.locals.og_image = `https://home.lentmiien.com/img/${filename}`;
+      res.locals.og_image = `https://home.lentmiien.com${previewImage.url}`;
       res.locals.og_image_width = size.width.toString();
       res.locals.og_image_height = size.height.toString();
-      res.locals.twitter_image = `https://home.lentmiien.com/img/${filename}`;
+      res.locals.twitter_image = `https://home.lentmiien.com${previewImage.url}`;
       res.locals.twitter_image_alt = metadata.length > 0 ? metadata[0].prompt : `Image of ${knowledge.title}${filename.indexOf("image-") === 0 ? ", created using OpenAI's' DALL·E image generation" : ""}`;
     }
   }

@@ -30,8 +30,8 @@ block content
               .row 
                 .col 
                   h5 Lunch
-                  if cookday.lunch.image.length > 0
-                    img.image-large(src=`/img/${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
+                  if resolveImageUrl(cookday.lunch.image)
+                    img.image-large(src=resolveImageUrl(cookday.lunch.image), alt=`${cookday.lunch.name}`)
                     br
                   div(style="border: 1px solid red;")
                     b Scheduled cooking: 
@@ -50,8 +50,8 @@ block content
                   button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','lunch')`) Send request
                 .col 
                   h5 Dinner
-                  if cookday.dinner.image.length > 0
-                    img.image-large(src=`/img/${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
+                  if resolveImageUrl(cookday.dinner.image)
+                    img.image-large(src=resolveImageUrl(cookday.dinner.image), alt=`${cookday.dinner.name}`)
                     br
                   div(style="border: 1px solid red;")
                     b Scheduled cooking: 
@@ -70,8 +70,8 @@ block content
                   button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','dinner')`) Send request
                 .col 
                   h5 Dessert
-                  if cookday.dessert.image.length > 0
-                    img.image-large(src=`/img/${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
+                  if resolveImageUrl(cookday.dessert.image)
+                    img.image-large(src=resolveImageUrl(cookday.dessert.image), alt=`${cookday.dessert.name}`)
                     br
                   div(style="border: 1px solid red;")
                     b Scheduled cooking: 

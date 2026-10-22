@@ -172,3 +172,23 @@ Live checklist for Lennart after deployment:
 - `views/gpt_image/index.pug`
 
 Correction also changes `utils/chat5Markdown.js`, `public/js/chat5.js` and `public/js/chat5_5.js`.
+
+## Knowledge and cooking image resolution (October 2026)
+
+Knowledge Library detail/list previews, the Knowledge chat-image picker, Cookbook detail/import previews, and both cooking calendar views resolve stored image references at read time through `public/js/libraryImageReference.js`. The same module is available to Pug through `app.locals.resolveImageUrl` and to browser previews as `window.LibraryImages`. It also defines the unchanged private filename contract used by storage/delivery.
+
+Supported references are bare private UUID PNG/JPG/WebP filenames, exact `/gpt-image/media/<filename>` paths, and legacy single raster filenames or `/img/<filename>` paths. A valid private filename mistakenly qualified with `/img/` is redirected to protected delivery by the resolver. Public filenames may include letters, numbers, spaces, parentheses, underscores, hyphens and dots, with PNG/JPEG/WebP/GIF/AVIF/BMP/TIFF extensions; qualified public names can be percent-encoded. External URLs, nested paths, traversal, double encoding, query/fragment suffixes, non-raster extensions, malformed private names and arbitrary authenticated routes are rejected. Rejected references render no image and are not passed to Sharp. Stored `images` arrays and Knowledge-to-Cookbook origin references are preserved.
+
+Calendar range and create responses retain `recipe.image` for existing consumers and add `recipe.imageUrl` (validated local URL or null). The browser validates the resolved URL again and also understands legacy responses. Creating a calendar entry refreshes the range using the same rendering path; there is no separate calendar-entry update endpoint. Knowledge only looks up dimensions/FileMeta and generates social-preview URLs for a validated public image. Private images leave the site's default social image unchanged, with no public-disk lookup or private social URL. Missing public images produce a bounded `knowledge` warning without filenames or content.
+
+This is maintenance of existing rendering, not a new access zone or operation. Private bytes remain in the existing logged-in shared library: valid principal, `gpt_image.library.read`, registered generation/reference membership, safe private-file confinement, and private/no-store delivery are still required. No admin override, new browser mutation, outbound host, storage namespace, retention change, public copy or authorization bypass is introduced. Existing legacy page authorization/CSRF behavior is not rebuilt by this correction; the media endpoint independently enforces its security contract even when referenced from a legacy page.
+
+Regression checks use synthetic controller/model fixtures, rendered Pug and JSDOM previews, calendar load/create parity, hostile references, import/create/update preservation, social metadata/dimensions, and the existing media-route authorization/cache/confinement suite:
+
+```sh
+npm test -- tests/unit/libraryImageReference.test.js tests/unit/knowledgeCookbookImages.test.js tests/unit/libraryImagePreviews.test.js tests/unit/cookingCalendarService.test.js tests/unit/gptImageMedia.test.js tests/unit/gptImageWindowsStorage.test.js tests/unit/gptImageStorageReadiness.test.js --coverage=false --runInBand
+npm test -- --runInBand
+git diff --check
+```
+
+Deployment: release server/templates and the new shared browser asset together, restart the web process through the normal deployment workflow, and refresh cached pages/assets as needed. No environment, capability, Cloudflare, database migration, media copy or tool reseed is required. Existing durable private storage and library records must remain available. Rollback is a code/asset rollback; no data changes need reversal. Local tests do not verify the production storage mount or a live authenticated browser; after deployment verify existing images in Knowledge, Cookbook and calendar previews with an authorized session. This correction itself does not deploy or access production.

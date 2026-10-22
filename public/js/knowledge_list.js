@@ -9,7 +9,7 @@
 
   const parseImages = (datasetValue) => {
     if (!datasetValue) return [];
-    return datasetValue.split('|').map((item) => item.trim()).filter(Boolean);
+    return datasetValue.split('|').filter(Boolean);
   };
 
   const resetPreviewState = (card) => {
@@ -38,7 +38,7 @@
     }
 
     if (container.dataset.loaded === 'false') {
-      const images = parseImages(button.dataset.images);
+      const images = parseImages(button.dataset.images).map(window.LibraryImages.resolveImageUrl).filter(Boolean);
       const titleElement = card.querySelector('.knowledge-card__title');
       const titleText = titleElement ? titleElement.textContent.trim() : 'Knowledge preview';
 
@@ -49,7 +49,7 @@
 
         const image = document.createElement('img');
         image.loading = 'lazy';
-        image.src = `/img/${name}`;
+        image.src = name;
         image.alt = `${titleText} preview`;
 
         wrapper.appendChild(image);

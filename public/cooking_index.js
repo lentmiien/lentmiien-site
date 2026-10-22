@@ -232,8 +232,9 @@
       ? `Last cooked ${formatDisplayDate(entry.usage.lastCookedDate)}`
       : 'Not cooked recently';
     const countsText = `90d: ${entry.usage?.countLast90Days ?? 0} | Total: ${entry.usage?.totalCount ?? 0}`;
-    const imageMarkup = entry.recipe?.image
-      ? `<img src="/img/${encodeURIComponent(entry.recipe.image)}" alt="${recipeTitle}" class="rounded" style="width:48px;height:48px;object-fit:cover;">`
+    const imageUrl = window.LibraryImages.resolveImageUrl(entry.recipe?.imageUrl ?? entry.recipe?.image);
+    const imageMarkup = imageUrl
+      ? `<img src="${escapeHtml(imageUrl)}" alt="${recipeTitle}" class="rounded" style="width:48px;height:48px;object-fit:cover;">`
       : '';
 
     return `

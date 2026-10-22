@@ -1,3 +1,4 @@
+const { resolveImageUrl } = require('../public/js/libraryImageReference');
 
 const { Types, isValidObjectId } = require('mongoose');
 const logger = require('../utils/logger');
@@ -496,6 +497,7 @@ class CookingCalendarService {
             id: canonicalRecipe.id,
             title: canonicalRecipe.title,
             image: Array.isArray(canonicalRecipe.images) && canonicalRecipe.images.length > 0 ? canonicalRecipe.images[0] : null,
+            imageUrl: resolveImageUrl(canonicalRecipe.images?.[0]),
             source: canonicalRecipe.source,
             viewPath: canonicalRecipe.viewPath,
           } : null,
@@ -624,6 +626,7 @@ class CookingCalendarService {
           id: recipe.id,
           title: recipe.title,
           image: Array.isArray(recipe.images) && recipe.images.length > 0 ? recipe.images[0] : null,
+          imageUrl: resolveImageUrl(recipe.images?.[0]),
           source: recipe.source,
           viewPath: recipe.viewPath,
         },

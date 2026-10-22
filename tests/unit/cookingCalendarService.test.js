@@ -248,7 +248,7 @@ describe('CookingCalendarService', () => {
       ])
     });
 
-    const knowledgeDoc = { _id: recipeId, title: 'Soup', images: ['img'] };
+    const knowledgeDoc = { _id: recipeId, title: 'Soup', images: ['legacy.png'] };
     Chat4KnowledgeModel.find.mockReturnValue({
       lean: jest.fn().mockResolvedValue([knowledgeDoc])
     });
@@ -270,7 +270,8 @@ describe('CookingCalendarService', () => {
       recipe: {
         id: recipeId.toString(),
         title: 'Soup',
-        image: 'img',
+        image: 'legacy.png',
+        imageUrl: '/img/legacy.png',
         source: 'knowledge',
         viewPath: `/chat4/viewknowledge/${recipeId.toString()}`
       },
@@ -282,6 +283,34 @@ describe('CookingCalendarService', () => {
         lastCookedDate: null
       }
     });
+  });
+
+  test.each([
+    ['gpt-image-private-11111111-2222-4333-8444-555555555555.png', '/gpt-image/media/gpt-image-private-11111111-2222-4333-8444-555555555555.png'],
+    ['/gpt-image/media/gpt-image-private-11111111-2222-4333-8444-555555555555.jpg', '/gpt-image/media/gpt-image-private-11111111-2222-4333-8444-555555555555.jpg'],
+    ['/img/gpt-image-private-11111111-2222-4333-8444-555555555555.webp', '/gpt-image/media/gpt-image-private-11111111-2222-4333-8444-555555555555.webp'],
+    ['legacy.png', '/img/legacy.png'],
+    ['/img/legacy.png', '/img/legacy.png'],
+    ['../escape.png', null],
+    ['/admin/private.png', null],
+    ['https://example.test/remote.png', null],
+    [undefined, null],
+  ])('calendar load and create have matching safe image URLs for %s', async (reference, expectedUrl) => {
+    const recipeId = new Types.ObjectId().toString();
+    const entryId = new Types.ObjectId();
+    const recipe = { id: recipeId, title: 'Fixture', images: reference ? [reference] : [], source: 'cookbook', viewPath: `/cooking/cookbook/${recipeId}`, aliasIds: [recipeId] };
+    jest.spyOn(service, 'resolveCanonicalRecipe').mockResolvedValue(recipe);
+    jest.spyOn(service, 'getLastCookedDate').mockResolvedValue(null);
+    CookingCalendarV2Model.findOneAndUpdate.mockReturnValue({ lean: async () => ({ entries: [] }) });
+    const created = await service.addEntry({ date: '2024-05-01', recipeId, category: 'Lunch', force: true });
+    CookbookRecipeModel.find.mockReturnValue({ lean: async () => [{ ...recipe, _id: recipeId }] });
+    Chat4KnowledgeModel.find.mockReturnValue({ lean: async () => [] });
+    CookingCalendarV2Model.find.mockReturnValue({ lean: async () => [{ date: '2024-05-01', entries: [{ _id: entryId, recipeId, category: 'Lunch' }] }] });
+    jest.spyOn(service, 'buildUsageMap').mockResolvedValue(new Map());
+    const loaded = await service.getCalendarRange('2024-05-01', '2024-05-01');
+    expect(created.entry.recipe.imageUrl).toBe(expectedUrl);
+    expect(loaded.days[0].entries[0].recipe).toEqual(created.entry.recipe);
+    expect(created.entry.recipe.image).toBe(reference || null);
   });
 
   test('addEntry returns warning when recently cooked and not forced', async () => {
@@ -316,7 +345,7 @@ describe('CookingCalendarService', () => {
         lean: jest.fn().mockResolvedValue({
           _id: { toString: () => cookbookId },
           title: 'Dish',
-          images: ['img'],
+          images: ['legacy.png'],
           originKnowledgeId: legacyKnowledgeId
         })
       });
@@ -341,7 +370,8 @@ describe('CookingCalendarService', () => {
     expect(result.entry.recipe).toEqual({
       id: cookbookId,
       title: 'Dish',
-      image: 'img',
+      image: 'legacy.png',
+      imageUrl: '/img/legacy.png',
       source: 'cookbook',
       viewPath: `/cooking/cookbook/${cookbookId}`
     });

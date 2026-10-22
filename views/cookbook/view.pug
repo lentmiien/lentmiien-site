@@ -63,7 +63,9 @@ block content
             .card-body.recipe-images
               h5.mb-3 Images
               each img in recipe.images
-                img(src=`/img/${img}`, alt=`${recipe.title} image`)
+                - const imageUrl = resolveImageUrl(img);
+                if imageUrl
+                  img(src=imageUrl, alt=`${recipe.title} image`)
 
         .card.shadow-sm.mb-3
           .card-body

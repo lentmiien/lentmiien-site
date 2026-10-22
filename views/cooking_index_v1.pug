@@ -14,10 +14,10 @@ block content
         .row 
           .col 
             h5 Lunch
-            if cookday.lunch.image.length > 0
+            if resolveImageUrl(cookday.lunch.image)
               div
                 a(href=`/chat4/viewknowledge/${cookday.lunch.knowledge_id}`) 
-                  img.image-large(src=`/img/${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
+                  img.image-large(src=resolveImageUrl(cookday.lunch.image), alt=`${cookday.lunch.name}`)
             div 
               b(id=`${cookday.date}lunch`)= cookday.lunch.name
             .input-group 
@@ -28,10 +28,10 @@ block content
               button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','lunch')`) Update
           .col 
             h5 Dinner
-            if cookday.dinner.image.length > 0
+            if resolveImageUrl(cookday.dinner.image)
               div
                 a(href=`/chat4/viewknowledge/${cookday.dinner.knowledge_id}`) 
-                  img.image-large(src=`/img/${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
+                  img.image-large(src=resolveImageUrl(cookday.dinner.image), alt=`${cookday.dinner.name}`)
             div 
               b(id=`${cookday.date}dinner`)= cookday.dinner.name
             .input-group 
@@ -42,10 +42,10 @@ block content
               button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','dinner')`) Update
           .col 
             h5 Dessert
-            if cookday.dessert.image.length > 0
+            if resolveImageUrl(cookday.dessert.image)
               div
                 a(href=`/chat4/viewknowledge/${cookday.dessert.knowledge_id}`) 
-                  img.image-large(src=`/img/${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
+                  img.image-large(src=resolveImageUrl(cookday.dessert.image), alt=`${cookday.dessert.name}`)
             b(id=`${cookday.date}dessert`)= cookday.dessert.name
             .input-group 
               select.form-control(id=`${cookday.date}dessert_select`, name="change_food") 

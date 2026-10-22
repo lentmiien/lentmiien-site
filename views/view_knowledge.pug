@@ -27,7 +27,9 @@ block content
         if knowledge.images.length
           .knowledge-images
             each img in knowledge.images
-              img.image-large(src=`/img/${img}`, alt=`Image attached to ${knowledge.title}`, loading="lazy")
+              - const imageUrl = resolveImageUrl(img);
+              if imageUrl
+                img.image-large(src=imageUrl, alt=`Image attached to ${knowledge.title}`, loading="lazy")
         article#knowledgeContent.knowledge-markdown!= knowledge.contentHTML
         footer.knowledge-footer
           p.knowledge-taxonomy= `${knowledge.category}: ${knowledge.tags.join(", ")}`

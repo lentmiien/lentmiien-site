@@ -101,7 +101,9 @@ block content
               if sourceKnowledge.images && sourceKnowledge.images.length
                 .mb-2
                   each img in sourceKnowledge.images
-                    img(src=`/img/${img}`, alt='legacy image')
+                    - const imageUrl = resolveImageUrl(img);
+                    if imageUrl
+                      img(src=imageUrl, alt='legacy image')
               .source-knowledge-content
                 .small.text-muted.mb-2 Markdown preview
                 div!= sourceKnowledge.contentHTML

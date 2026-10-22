@@ -6,8 +6,7 @@ const sharp = require('sharp');
 const logger = require('../utils/logger');
 
 const APP_ROOT = path.resolve(__dirname, '..');
-const MEDIA_PREFIX = '/gpt-image/media/';
-const PRIVATE_NAME = /^gpt-image-private-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$/;
+const { MEDIA_PREFIX, PRIVATE_NAME } = require('../public/js/libraryImageReference');
 const MIME_TYPES = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' };
 const MAX_STORED_BYTES = 50 * 1024 * 1024 - 1;
 const MAX_INPUT_PIXELS = 40 * 1024 * 1024;

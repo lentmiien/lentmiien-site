@@ -61,7 +61,9 @@ block content
               if messages[index].images.length > 0
                 each img in messages[index].images
                   figure.knowledge-image-block
-                    img.image-large(src=`/img/${img.filename}`, alt="image")
+                    - const imageUrl = resolveImageUrl(img.filename);
+                    if imageUrl
+                      img.image-large(src=imageUrl, alt="image")
                     figcaption.knowledge-meta= `Image file: ${img.filename}`
               pre.user= messages[index].prompt
   script(src="/js/view_knowledge.js") 

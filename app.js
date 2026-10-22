@@ -53,6 +53,7 @@ const server = http.createServer(app);
 const databaseLifecycle = new DatabaseLifecycleService();
 app.set('logger', logger);
 app.set('databaseLifecycle', databaseLifecycle);
+app.locals.resolveImageUrl = require('./public/js/libraryImageReference').resolveImageUrl;
 app.locals.safeJson = serializeForInlineScript;
 app.locals.safeJsonText = escapeInlineScriptText;
 const formAssets = require('./utils/formAssets').createFormAssets();
