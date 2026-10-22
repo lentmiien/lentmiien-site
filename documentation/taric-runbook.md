@@ -131,6 +131,52 @@ Duplicate headers, JSON keys, extra fields, numeric codes, malformed IDs, query 
 
 ## Independent benchmarks and approved catalog
 
+### Benchmark CSV format
+
+The importer at `/admin/taric` accepts a UTF-8, comma-delimited `.csv` with a header row and 1–500 nonempty data records, at most 2 MiB (2,097,152 bytes). Blank records are ignored; quoted multiline fields count as one record. Headers are case-sensitive and must match the names below exactly, without surrounding spaces. Column order is arbitrary. Duplicate headers, unknown columns, missing required columns, malformed CSV and rows with a different number of fields are rejected.
+
+| Column | Required header / value | Meaning and validation |
+| --- | --- | --- |
+| `descriptive_name` | Yes / nonblank | Product category or short descriptive name sent to the model; maximum 500 characters. |
+| `full_item_name` | Yes / nonblank | Full product title sent to the model; maximum 1,000 characters. |
+| `specs` | Yes / may be empty | Product specifications sent to the model; maximum 12,000 characters. Keep the empty field when unavailable. |
+| `hs_code` | Yes / nonblank | Input HS code: exactly six ASCII digits (`950300`) or four digits, a dot, two digits (`9503.00`). Stored normalized to six digits. |
+| `taric_code` | Yes / nonblank | Reviewed expected answer: exactly ten ASCII digits, including leading zeros; no dots, spaces or numeric/scientific notation. |
+| `description_summary` | No / may be empty | Reference description, maximum 1,000 characters. Used only for diagnostic lexical overlap, not the pass score or model input. |
+| `source_id` | No / may be empty | Stable source record identifier, maximum 500 characters when provided. Used in training-overlap checks; defaults to the full item name for those checks if omitted. |
+| `group_id` | No / may be empty | Stable product-family/group identifier, maximum 500 characters when provided. Used in training-overlap checks. Use the same identifier for related products. |
+| `provenance` | No / may be empty | Per-row source/review notes, maximum 500 characters when provided. Not sent to the model. |
+| `description`, `taric_description` | No / may be empty | Accepted for legacy CSV compatibility but ignored by the benchmark importer. They do not substitute for `description_summary`. |
+
+Lengths use JavaScript string length (UTF-16 code units). Names and nonempty source/group/provenance values must contain non-whitespace text and exclude control characters other than tab, CR and LF. Values are not trimmed. Keep codes as text when editing in a spreadsheet: CSV quoting alone does not prevent spreadsheet software from stripping leading zeros. Quote any field containing commas, double quotes or line breaks; escape a literal double quote by doubling it (`""`).
+
+Identical model inputs (the four input fields, after HS normalization) with the same target are deduplicated; the first row's summary/metadata is retained. Identical inputs with conflicting targets reject the entire file. The 500-record limit applies before deduplication. Invalid rows are not silently skipped. Import validation checks code syntax, not whether the target is a correct tariff classification. A row can pass import yet exceed the separate generation token budget; keep product text concise.
+
+Copy [the synthetic sample CSV](examples/taric-benchmark-sample.csv) as a starting point. It demonstrates quoted commas/quotes, blank specifications, both HS formats and optional metadata. **Its products and codes are placeholders, not reviewed classifications; replace every sample row before creating a real benchmark.** Keep actual private benchmark data outside the repository and `public/`.
+
+Choose an unused integer version from 1 through 10,000 for the next benchmark. Version 0 is reserved: actual import requires the exact original training CSV hash. A v1+ import requires v0 to exist. A version already containing different CSV bytes cannot be overwritten. Preview checks CSV syntax and returns counts/hash; it does not validate review declarations, independence or publication eligibility. Import creates an immutable draft; publication is a separate action.
+
+### Review and frozen scoring policy JSON
+
+The textarea contains one JSON object supplied separately from the CSV. All nine fields below are required; additional fields are rejected. Use JSON booleans/numbers, not quoted strings, and no comments or trailing commas.
+
+| Field | Meaning and accepted value |
+| --- | --- |
+| `targetsReviewed` | Boolean: the expected TARIC labels have actually been reviewed. Required to be `true` for v1+ publication. |
+| `independent` | Boolean: this is an independent evaluation dataset rather than training-derived data. Required to be `true` for v1+ publication. |
+| `trainingExcluded` | Boolean: these cases were excluded from training. Required to be `true` for v1+ publication. |
+| `provenance` | Nonblank text, maximum 2,000 characters: actual data source, label review, holdout process and product-family overlap audit. Applies to the entire benchmark. |
+| `reviewer` | Nonblank text, maximum 200 characters: reviewer identity. The server separately records the importing account. |
+| `sourceLineage` | Array of up to 20 nonblank source identifiers, each at most 100 characters. An empty array is syntactically allowed. Declare real upstream sources; this is distinct from each row's `source_id`. |
+| `minExact` | Number from 0 to 1: minimum fraction of all accepted, deduplicated cases whose validated output exactly matches `taric_code`. `1` means 100%; `0.95` means 95%. |
+| `maxInvalid` | Number from 0 to 1: maximum fraction of all accepted cases with no valid result. `0` permits none. This does not override other run-failure checks. |
+
+These declarations do not perform review for you. False declarations are accepted for drafts, but block v1+ publication. Declaring independence cannot override detected training overlap: normalized input, source or group matches, or lineage including `v0`, known training hashes or a v0 source identifier, mark the benchmark contaminated. Undeclared or paraphrased overlap still requires human review.
+
+The denominator is all accepted cases, not only successful responses. A valid but wrong code lowers exact accuracy without counting as invalid. Invalid/missing output (including malformed output or catalog rejection) is invalid and not exact. Description similarity never affects pass/fail. For 100 accepted cases, `minExact: 0.95` requires at least 95 validated exact matches. The current worker also requires completion, zero recorded case errors, no cancellation and safe session cleanup, so raising `maxInvalid` does not make errored runs pass. Publication and normal release have additional independence, catalog and runtime checks.
+
+“Frozen” means the imported review, thresholds and denominator belong to that immutable benchmark. Reimporting the same CSV bytes at the same version returns the existing benchmark; it does not update its review or policy. Use a new version to correct labels, review declarations or thresholds. The page's default JSON describes v0 (`false` review flags and `sourceLineage: ["v0"]`); replace it for a genuinely independent benchmark, rather than just changing the version number.
+
 First collect independently labelled cases. Use the same CSV headers plus optional source/group/provenance columns. For v1+ provide review JSON in the UI or `--review-file`:
 
 ```json
