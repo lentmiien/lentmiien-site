@@ -108,6 +108,9 @@ async function renderMermaidDiagrams(diagrams) {
     startOnLoad: false,
     securityLevel: 'strict',
     theme: 'base',
+    // Preserve the layout and appearance used before Mermaid 12.
+    layout: 'dagre',
+    look: 'classic',
     flowchart: {
       htmlLabels: false,
       useMaxWidth: true,

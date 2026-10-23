@@ -14,7 +14,7 @@ jest.mock('simple-git', () => {
   });
   mockSimpleGit.__instances = instances;
   mockSimpleGit.__reset = () => { instances.length = 0; };
-  return mockSimpleGit;
+  return { simpleGit: mockSimpleGit };
 });
 
 jest.mock('fs', () => ({
@@ -56,7 +56,7 @@ describe('GitHubService', () => {
 
     axios = require('axios');
     fs = require('fs');
-    simpleGit = require('simple-git');
+    ({ simpleGit } = require('simple-git'));
     simpleGit.__reset();
     logger = require('../../utils/logger');
     GitHubService = require('../../services/githubService');

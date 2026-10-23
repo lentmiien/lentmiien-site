@@ -1,5 +1,5 @@
 const axios = require('axios');
-const simpleGit = require('simple-git');
+const { simpleGit } = require('simple-git');
 const path = require('path');
 const fs = require('fs');
 const logger = require('../utils/logger');
