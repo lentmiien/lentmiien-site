@@ -201,7 +201,7 @@ const isEmbeddingGemma2Path = req => /^\/admin\/embeddinggemma2(?:\/|$)/i.test(r
 const isLocalAiPath = req => /^\/local-ai(?:\/|$)/i.test(req.path);
 const isSmallestBoxPath = req => /^\/binpacking-smallest(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
-const isUserSettingsPath = req => /^\/settings(?:\/|$)/i.test(req.path);
+const isUserSettingsPath = req => /^\/(?:settings|admin\/password-reminders)(?:\/|$)/i.test(req.path);
 app.use((req, res, next) => (isUserSettingsPath(req) || isSmallestBoxPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
 app.use((req, res, next) => (isUserSettingsPath(req) || isSmallestBoxPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
 
@@ -577,15 +577,16 @@ app.use('/admin/database-viewer', (_req, res, next) => {
 app.use('/admin/taric', require('./routes/taricAdmin').createTaricAdminRouter(taricTool.service));
 app.use('/admin/amiami-items/upload', require('./routes/amiamiUpload').createAmiAmiUploadRouter(amiamiUpload));
 app.use('/admin/embeddinggemma2', require('./routes/embeddinggemma2').createRouter());
+app.use('/admin/password-reminders', require('./routes/passwordReminders').createPasswordRemindersRouter());
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
 app.post(
   '/login',
   loginLimiter,
   passport.authenticate('local', {
-    successRedirect: '/mypage',
     failureRedirect: '/login',
-  })
+  }),
+  require('./utils/passwordPolicy').redirectAfterLogin
 );
 
 

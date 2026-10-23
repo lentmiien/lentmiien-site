@@ -13,6 +13,11 @@ block content
       p.settings-notice.settings-success(role='status')= success
     if error
       p.settings-notice.settings-error(role='alert')= error
+    if passwordReminder
+      .settings-notice.settings-reminder(role='status')
+        p= passwordReminder
+        p This is a reminder. You can keep using your account and update your password later.
+        a(href='/mypage') Continue to My Account
     section.settings-panel(aria-labelledby='account-details-heading')
       h2#account-details-heading Account details
       dl.settings-details
@@ -25,6 +30,13 @@ block content
         div
           dt Account type
           dd= account.type
+        div
+          dt Last password change
+          dd
+            if passwordChangedAt
+              time(datetime=passwordChangedAt)= passwordChangedAt.replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC')
+            else
+              | Not recorded
       p.settings-hint Your username cannot be changed. Only an administrator can change your account type.
     .settings-forms
       if canEditEmail
@@ -41,7 +53,7 @@ block content
       if canChangePassword
         section.settings-panel(aria-labelledby='password-heading')
           h2#password-heading Change password
-          p#password-help.settings-hint Use at least 12 characters, up to 72 bytes. Some characters use more than one byte.
+          p#password-help.settings-hint= passwordRequirements
           form(method='post', action='/settings/password')
             input(type='hidden', name='_csrf', value=csrfToken)
             label(for='password-current') Current password

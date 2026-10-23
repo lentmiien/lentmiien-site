@@ -9,6 +9,7 @@ const { hasCapabilities } = require('../utils/authorization');
 const { ROLE_BUNDLES } = require('../utils/userSettingsPolicy');
 const { createRequireCapabilities, PRIVATE_NO_STORE } = require('../middleware/requireCapabilities');
 const { createSessionCsrf } = require('../middleware/sessionCsrf');
+const { PASSWORD_REQUIREMENTS, meetsPasswordRequirements, passwordReminder } = require('../utils/passwordPolicy');
 
 const passwordInput = z.string().min(1).refine(value => Buffer.byteLength(value, 'utf8') <= 1024);
 const csrfField = z.string().optional();
@@ -20,7 +21,7 @@ const emailInput = z.object({
 const passwordChangeInput = z.object({
   _csrf: csrfField,
   currentPassword: passwordInput,
-  newPassword: z.string().min(12).max(72).refine(value => Buffer.byteLength(value, 'utf8') <= 72),
+  newPassword: z.string().max(72).refine(meetsPasswordRequirements),
   confirmPassword: z.string().max(72),
 }).strict().refine(input => input.newPassword === input.confirmPassword);
 
@@ -71,6 +72,9 @@ function createUserSettingsRouter({ userModel = User, roleModel = Role, appLogge
     return res.status(status).render('user_settings', {
       pageTitle: 'User settings',
       account: { name: req.user.name, email: req.user.email, type: req.user.type_user },
+      passwordChangedAt: req.user.password_changed_at ? new Date(req.user.password_changed_at).toISOString() : null,
+      passwordReminder: passwordReminder(req.user),
+      passwordRequirements: PASSWORD_REQUIREMENTS,
       emailValue: email === undefined ? req.user.email : email,
       error,
       success: req.method === 'GET' && typeof req.query.updated === 'string'
@@ -99,7 +103,7 @@ function createUserSettingsRouter({ userModel = User, roleModel = Role, appLogge
       if (Object.keys(req.query).length || !parsed.success) {
         return fail(400, section === 'email'
           ? 'Enter a valid email address (up to 200 characters) and your current password. Only the email address can be edited here.'
-          : 'Enter your current password and matching new passwords, at least 12 characters and no more than 72 UTF-8 bytes.');
+          : `Enter your current password and matching new passwords. ${PASSWORD_REQUIREMENTS}`);
       }
       const input = parsed.data;
       try {
@@ -111,7 +115,7 @@ function createUserSettingsRouter({ userModel = User, roleModel = Role, appLogge
           return fail(400, 'Choose a new password that is different from your current password.');
         }
         const changes = section === 'email' ? { email: input.email }
-          : { hash_password: await bcrypt.hash(input.newPassword, 12) };
+          : { hash_password: await bcrypt.hash(input.newPassword, 12), password_changed_at: new Date(), password_change_requested: false };
         // Matching the verified hash prevents a concurrent password change/reset
         // from being overwritten by a request carrying the previous credentials.
         const result = await userModel.updateOne({ _id: req.user._id, hash_password: previousHash }, { $set: changes }, { runValidators: true });

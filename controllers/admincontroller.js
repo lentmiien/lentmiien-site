@@ -370,6 +370,8 @@ exports.reset_password = async (req, res) => {
   if (user) {
     const temporaryPassword = generateTemporaryPassword();
     user.hash_password = hashPassword(temporaryPassword);
+    user.password_changed_at = new Date();
+    user.password_change_requested = true;
     await user.save();
     return res.json({
       status: "Completed",
@@ -413,6 +415,8 @@ exports.create_user = async (req, res) => {
     email,
     type_user,
     hash_password: hashPassword(temporaryPassword),
+    password_changed_at: new Date(),
+    password_change_requested: true,
   };
   await new UseraccountModel(entry_data).save();
 

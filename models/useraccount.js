@@ -5,6 +5,8 @@ const Useraccount = new mongoose.Schema({
   email: { type: String, required: true, max: 100 },
   type_user: { type: String, required: true, max: 10 },
   hash_password: { type: String, required: true, max: 256 },
+  password_changed_at: { type: Date, default: null },
+  password_change_requested: { type: Boolean, default: false },
   dashboard_settings: { type: mongoose.Schema.Types.Mixed, default: undefined },
   navbar_settings: { type: mongoose.Schema.Types.Mixed, default: undefined },
   mypage_icon_settings: {

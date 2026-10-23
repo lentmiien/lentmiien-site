@@ -21,6 +21,7 @@
 .settings-notice { padding: 1rem; border: 1px solid; border-radius: .5rem; background: var(--surface-2); }
 .settings-success { border-color: var(--success); }
 .settings-error { border-color: var(--danger); }
+.settings-reminder { border-color: var(--warning); margin-bottom: 1.25rem; }
 @media (max-width: 640px) {
   .user-settings { margin: 1rem auto; }
   .settings-details, .settings-forms { grid-template-columns: 1fr; }

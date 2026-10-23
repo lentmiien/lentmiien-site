@@ -42,6 +42,16 @@ block content
             form(method="post", action="/admin/model-lists/refresh")
               input(type="hidden", name="return_to", value="/admin")
               button.btn.btn-secondary(type="submit", disabled=refreshState && refreshState.aiModelLists ? !refreshState.aiModelLists.canRun : false) Refresh model lists
+  .card.mb-4
+    .card-body
+      h2.h4 Password update reminders
+      p Ask every user, including administrators, to update their password on their next login. The reminder will repeat at each login until they change their password. Users can continue to their account without updating it.
+      form(method='post', action='/admin/password-reminders')
+        input(type='hidden', name='_csrf', value=csrfToken)
+        .form-check.mb-3
+          input#confirm-password-reminders.form-check-input(type='checkbox', name='confirm', value='all-users', required)
+          label.form-check-label(for='confirm-password-reminders') I want to request a password update from all users.
+        button.btn.btn-primary(type='submit') Request password updates for all users
   h2 User list 
   table.table.table-striped 
     thead 

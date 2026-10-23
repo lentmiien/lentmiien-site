@@ -8,8 +8,8 @@ const logger = require('../../utils/logger');
 
 const owner = '111111111111111111111111';
 const token = 'a'.repeat(43);
-const currentPassword = 'Existing password!';
-const newPassword = 'A different password!';
+const currentPassword = 'Existing password1!';
+const newPassword = 'A different password2!';
 let initialHash;
 let server; let base; let principal; let authenticated; let userModel; let grants; let roleModel; let session;
 beforeAll(async () => { initialHash = await bcrypt.hash(currentPassword, 4); });
@@ -52,7 +52,7 @@ const post = (path, body, headers = {}) => fetch(`${base}/settings${path}`, {
 const emailBody = () => ({ email: 'new@example.invalid', currentPassword });
 const passwordBody = () => ({ currentPassword, newPassword, confirmPassword: newPassword });
 
-test.each(['admin', 'family', 'user'])('%s can read only their own account details without writes or secrets', async role => {
+test.each(['admin', 'family', 'user', 'other'])('%s can read only their own account details without writes or secrets', async role => {
   principal.type_user = role;
   const response = await get();
   const html = await response.text();
@@ -127,7 +127,7 @@ test('missing session token cannot be manufactured by a mutation', async () => {
   expect(session.csrfToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
 });
 
-test.each(['name', 'type_user', 'userId', '_id', 'hash_password', 'owner', 'permissions'])('rejects client-supplied %s on both forms, including for admins', async field => {
+test.each(['name', 'type_user', 'userId', '_id', 'hash_password', 'owner', 'permissions', 'password_changed_at', 'password_change_requested'])('rejects client-supplied %s on both forms, including for admins', async field => {
   principal.type_user = 'admin';
   expect((await post('/email', { ...emailBody(), [field]: 'foreign' })).status).toBe(400);
   expect((await post('/password', { ...passwordBody(), [field]: 'foreign' })).status).toBe(400);
@@ -160,6 +160,7 @@ test.each([
   { newPassword: 'x'.repeat(73), confirmPassword: 'x'.repeat(73) },
   { newPassword: '日'.repeat(25), confirmPassword: '日'.repeat(25) },
   { currentPassword: {} },
+  ...['alllowercase1!', 'ALLUPPERCASE1!', 'NoDigitsHere!!', 'NoSymbolsHere12', 'Aa1!short'].map(value => ({ newPassword: value, confirmPassword: value })),
 ])('malformed passwords, mismatch and bcrypt truncation are rejected %#', async replacement => {
   const body = Object.keys(replacement).length ? { ...passwordBody(), ...replacement } : {};
   expect((await post('/password', body)).status).toBe(400);
@@ -199,20 +200,50 @@ test('email is trimmed and saved only to the validated owner; success uses POST/
   expect(principal.type_user).toBe('user');
 });
 
-test.each([newPassword, '日'.repeat(24)])('password change persists a working bcrypt hash, including the 72-byte boundary %#', async password => {
+test.each([newPassword, 'Aa1!' + '日'.repeat(22) + 'ab'])('password change persists a working bcrypt hash, including the 72-byte boundary %#', async password => {
+  principal.password_change_requested = true;
+  principal.password_changed_at = new Date('2020-01-01');
+  const startedAt = new Date();
   const response = await post('/password', { currentPassword, newPassword: password, confirmPassword: password });
   expect(response.status).toBe(303);
   expect(response.headers.get('location')).toBe('/settings?updated=password');
   const [filter, update] = userModel.updateOne.mock.calls[0];
   expect(filter).toEqual({ _id: owner, hash_password: initialHash });
-  expect(Object.keys(update.$set)).toEqual(['hash_password']);
+  expect(Object.keys(update.$set)).toEqual(['hash_password', 'password_changed_at', 'password_change_requested']);
+  expect(update.$set.password_changed_at.getTime()).toBeGreaterThanOrEqual(startedAt.getTime());
+  expect(update.$set.password_change_requested).toBe(false);
   expect(update.$set.hash_password).toMatch(/^\$2[aby]\$12\$/);
   expect(await bcrypt.compare(password, update.$set.hash_password)).toBe(true);
   expect(await bcrypt.compare(currentPassword, update.$set.hash_password)).toBe(false);
   const html = await (await get('?updated=password')).text();
   expect(html).toContain('Your password has been changed.');
+  expect(html).not.toContain('settings-reminder');
+  expect(html).toContain(principal.password_changed_at.toISOString());
   expect(html).not.toContain(password);
   expect(JSON.stringify(session)).not.toContain(password);
+});
+
+test('visiting settings and changing email do not dismiss a password reminder', async () => {
+  principal.password_changed_at = new Date('2020-01-01');
+  principal.password_change_requested = true;
+  const before = await (await get()).text();
+  expect(before).toContain('An administrator has asked everyone');
+  expect(before).toContain('Continue to My Account');
+  expect(before).toContain('2020-01-01T00:00:00.000Z');
+  expect((await post('/email', emailBody())).status).toBe(303);
+  expect(principal.password_change_requested).toBe(true);
+  expect(principal.password_changed_at.toISOString()).toBe('2020-01-01T00:00:00.000Z');
+  expect(await (await get()).text()).toContain('An administrator has asked everyone');
+});
+
+test('failed password changes preserve the last-change date and requested reminder', async () => {
+  principal.password_changed_at = new Date('2020-01-01');
+  principal.password_change_requested = true;
+  expect((await post('/password', { ...passwordBody(), currentPassword: 'wrong' })).status).toBe(400);
+  userModel.updateOne.mockRejectedValue(new Error('database unavailable'));
+  expect((await post('/password', passwordBody())).status).toBe(503);
+  expect(principal.password_change_requested).toBe(true);
+  expect(principal.password_changed_at.toISOString()).toBe('2020-01-01T00:00:00.000Z');
 });
 
 test('normal browser URL-encoded forms work with a hidden CSRF token', async () => {
@@ -249,7 +280,8 @@ test('database failures preserve the form email, clear passwords, and log no per
   expect(response.status).toBe(503);
   const html = await response.text();
   expect(html).toContain('value="new@example.invalid"');
-  expect(html).not.toMatch(/secret database message|Existing password!/);
+  expect(html).not.toContain('secret database message');
+  expect(html).not.toContain(currentPassword);
   expect(logger.error).toHaveBeenCalledWith('Account settings operation failed', {
     category: 'account_settings', metadata: { operation: 'email' },
   });
