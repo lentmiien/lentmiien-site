@@ -51,7 +51,7 @@ test('sends items without a container and displays selected box and safe output'
   submit('binPackForm'); await flush();
   const [url, request] = win.fetch.mock.calls.at(-1);
   expect(url).toBe('/binpacking-smallest/run');
-  expect(JSON.parse(request.body)).toEqual({ algorithm: 'laff', items: [{ id: 'item', w: 1, d: 1, h: 1, weight: 0, qty: 2 }] });
+  expect(JSON.parse(request.body)).toEqual({ algorithm: 'laff', safetyMarginMm: 10, items: [{ id: 'item', w: 1, d: 1, h: 1, weight: 0, qty: 2 }] });
   expect(win.document.querySelector('[data-request-status]').textContent).toContain('Tried 2 of 3');
   expect(win.document.querySelector('[data-meta-container]').textContent).toContain(box.id);
   expect(win.document.querySelector('#binPackOutput img')).toBeNull();
@@ -66,6 +66,43 @@ test('unsaved catalog and malformed CSV prevent accidentally searching a partial
   items('id,w,d,h,weight,qty\nitem,1,1,1,0,2\nbad,0,1,1,0,1');
   submit('binPackForm'); expect(win.fetch).toHaveBeenCalledTimes(1);
   expect(win.document.querySelector('[data-request-status]').textContent).toContain('Fix the CSV');
+});
+test('margin is editable and alternatives display their own weights, box dimensions and placements', async () => {
+  await setup(); items();
+  win.document.getElementById('safetyMarginMm').value = '5';
+  const solution = (id, size, weight) => ({ success: true, container: { ...box, id, w: size },
+    estimatedCushionWeight: weight, estimatedShipmentWeight: weight + 1,
+    meta: { safetyMarginMm: 5, emptyVolume: 4000, containerVolume: size * 400, algorithm: 'laff', totalItemCount: 2 },
+    data: { success: true, pallets: [{ containerId: id, w: size, d: 20, h: 20,
+      placements: [{ itemId: 'item', x: 5, y: 5, z: 5, w: 1, d: 1, h: 1 }] }] } });
+  win.fetch.mockResolvedValue(response({ ...solution('small', 30, 0.1), alternatives: [solution('<img src=x>', 40, 0.2)] }));
+  submit('binPackForm'); await flush();
+  expect(JSON.parse(win.fetch.mock.calls.at(-1)[1].body).safetyMarginMm).toBe(5);
+  const choices = win.document.querySelector('[data-solution-options]');
+  expect(choices.hidden).toBe(false);
+  expect(choices.children).toHaveLength(2);
+  expect(choices.children[0].getAttribute('aria-pressed')).toBe('true');
+  expect(win.document.getElementById('binPackOutput').textContent).toContain('0.1 kg');
+  choices.children[1].click();
+  expect(win.document.querySelector('[data-meta-container]').textContent).toContain('<img src=x>');
+  expect(choices.children[1].getAttribute('aria-pressed')).toBe('true');
+  const output = win.document.getElementById('binPackOutput');
+  expect(output.textContent).toContain('0.2 kg');
+  expect(output.textContent).toContain('1.2 kg');
+  expect(output.textContent).toContain('origin (5, 5, 5)');
+  expect(output.textContent).toContain('40 x 20 x 20');
+  expect(choices.querySelector('img')).toBeNull();
+  win.fetch.mockResolvedValue(response({ success: false, message: 'No fit', meta: {} }));
+  submit('binPackForm'); await flush();
+  expect(choices.hidden).toBe(true);
+  expect(choices.children).toHaveLength(0);
+});
+test.each(['', '-1', '500001'])('invalid margin %p is rejected before submitting', async value => {
+  await setup(); items();
+  win.document.getElementById('safetyMarginMm').value = value;
+  submit('binPackForm');
+  expect(win.fetch).toHaveBeenCalledTimes(1);
+  expect(win.document.querySelector('[data-request-status]').textContent).toContain('Safety margin');
 });
 test('original page still submits its fixed container to the original route', async () => {
   await setup(false); items();

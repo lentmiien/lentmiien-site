@@ -1,9 +1,12 @@
 const axios = require('axios');
 const binPackingService = require('./binPackingService');
+const logger = require('../utils/logger');
 const { catalogSchema, searchSchema } = require('../utils/smallestBoxValidation');
 
 const volume = box => box.w * box.d * box.h;
 const sides = box => [box.w, box.d, box.h].sort((a, b) => a - b);
+// Six measured shipments: 2.629 kg extra / 0.31986695978656 m³ empty space.
+const CUSHION_DENSITY_KG_PER_M3 = 8.22;
 
 async function pack(payload, signal) {
   const response = await axios.post(binPackingService.apiUrl, payload, {
@@ -46,37 +49,68 @@ function completeSingleBox(data, items, container) {
   return true;
 }
 
-async function findSmallestBox(containers, request, { packer = pack, signal } = {}) {
-  const { items, algorithm, tagFilter } = searchSchema.parse(request);
+async function findSmallestBox(containers, request, { packer = pack, signal, log = logger } = {}) {
+  const { items, algorithm, tagFilter, safetyMarginMm } = searchSchema.parse(request);
   containers = catalogSchema.parse({ containers }).containers;
   const totalVolume = items.reduce((sum, item) => sum + volume(item) * item.qty, 0);
   const totalWeight = items.reduce((sum, item) => sum + item.weight * item.qty, 0);
+  const usableDimensions = container => ({ w: container.w - 2 * safetyMarginMm,
+    d: container.d - 2 * safetyMarginMm, h: container.h - 2 * safetyMarginMm });
+  const emptyVolume = container => Math.max(0, volume(container) - totalVolume);
+  const cushionWeight = container => emptyVolume(container) * CUSHION_DENSITY_KG_PER_M3 / 1e9;
   // An exclusion wins over an inclusion; unmatched boxes are included by default.
   const selected = containers.filter(container => !container.tags.some(tag => tagFilter?.requireNot.includes(tag)));
   const candidates = selected.filter(container => {
-    const available = sides(container);
-    return volume(container) >= totalVolume && container.maxLoadWeight >= totalWeight
+    const usable = usableDimensions(container);
+    const available = sides(usable);
+    return available.every(side => side > 0) && volume(usable) >= totalVolume
+      && container.maxLoadWeight >= totalWeight + cushionWeight(container)
       && items.every(item => sides(item).every((side, i) => side <= available[i]));
   }).sort((a, b) => volume(a) - volume(b) || a.id.localeCompare(b.id));
-  const meta = { algorithm, totalItemCount: items.reduce((sum, item) => sum + item.qty, 0),
+  const meta = { algorithm, safetyMarginMm, cushionDensityKgPerM3: CUSHION_DENSITY_KG_PER_M3,
+    alternativesSearchComplete: true, totalItemCount: items.reduce((sum, item) => sum + item.qty, 0),
     uniqueItems: items.length, totalContainers: containers.length, tagFilteredContainers: containers.length - selected.length, eligibleContainers: candidates.length,
     filteredContainers: containers.length - candidates.length, attempts: 0 };
   const boundedSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000);
+  const solutions = [];
   for (const container of candidates) {
-    boundedSignal.throwIfAborted();
-    const { tags, ...packingContainer } = container;
-    const data = await packer({ algorithm, maxContainers: 1, minimizeContainers: true,
-      container: packingContainer, items: items.map(item => ({ ...item, rotate3D: true })) }, boundedSignal);
-    boundedSignal.throwIfAborted();
-    meta.attempts += 1;
-    if (completeSingleBox(data, items, container)) {
-      return { success: true, container, data: { ...data,
-        pallets: [{ ...data.pallets[0], containerId: container.id, w: container.w, d: container.d, h: container.h }] },
-      meta: { ...meta, containerId: container.id, containerVolume: volume(container) } };
+    try {
+      boundedSignal.throwIfAborted();
+      const { tags, ...packingContainer } = container;
+      Object.assign(packingContainer, usableDimensions(container), { maxLoadWeight: container.maxLoadWeight - cushionWeight(container) });
+      meta.attempts += 1;
+      const data = await packer({ algorithm, maxContainers: 1, minimizeContainers: true,
+        container: packingContainer, items: items.map(item => ({ ...item, rotate3D: true })) }, boundedSignal);
+      boundedSignal.throwIfAborted();
+      if (completeSingleBox(data, items, packingContainer)) {
+        // Return full box dimensions and coordinates relative to its real inner corner.
+        const placements = data.pallets[0].placements.map(placement => ({ ...placement,
+          x: placement.x + safetyMarginMm, y: placement.y + safetyMarginMm, z: placement.z + safetyMarginMm }));
+        solutions.push({ success: true, container,
+          estimatedCushionWeight: cushionWeight(container),
+          estimatedShipmentWeight: container.emptyWeight + totalWeight + cushionWeight(container),
+          data: { ...data, pallets: [{ ...data.pallets[0], containerId: container.id,
+            w: container.w, d: container.d, h: container.h, placements }] },
+          meta: { containerId: container.id, containerVolume: volume(container), emptyVolume: emptyVolume(container),
+            usableDimensions: usableDimensions(container) } });
+        if (solutions.length === 3) break;
+      }
+    } catch (error) {
+      // Keep completed solutions if only the search for additional choices failed.
+      if (signal?.aborted || !solutions.length) throw error;
+      meta.alternativesSearchComplete = false;
+      log.warning('Additional box search interrupted; returning completed solutions. Check packing worker availability and time limits', {
+        category: 'binpacking_smallest', metadata: { errorName: error.name, attempts: meta.attempts },
+      });
+      break;
     }
   }
-  return { success: false, meta, message: containers.length === 0
+  if (solutions.length) {
+    const results = solutions.map(solution => ({ ...solution, meta: { ...meta, ...solution.meta } }));
+    return { ...results[0], alternatives: results.slice(1) };
+  }
+  return { success: false, meta, alternatives: [], message: containers.length === 0
     ? 'Save at least one available box before searching.'
     : 'No single-box solution was found in the shared boxes with this algorithm. Try another algorithm or add a larger box.' };
 }
-module.exports = { findSmallestBox, completeSingleBox };
+module.exports = { findSmallestBox, completeSingleBox, CUSHION_DENSITY_KG_PER_M3 };

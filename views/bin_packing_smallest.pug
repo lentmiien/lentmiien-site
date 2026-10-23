@@ -7,7 +7,7 @@ block content
   section.bin-pack.bin-pack--smallest
     header.bin-pack__header
       h1.bin-pack__title Smallest Box Finder
-      p.bin-pack__subtitle Find the smallest shared box that holds every item. Boxes are tried by internal volume, with 3D rotation allowed.
+      p.bin-pack__subtitle Compare up to three boxes that hold every item, from smallest to largest internal volume. Items may rotate in 3D.
       p.bin-pack__hint The selected algorithm may miss a possible arrangement. If no solution is found, try another algorithm.
       a(href='/binpacking') Open the original multi-container tool
     .bin-pack__grid
@@ -33,6 +33,13 @@ block content
               p.bin-pack__hint Require not excludes matching boxes, even if another tag is required. Boxes with no matching filter tags are included. Leave all tags at Default to include every box.
               div(data-tag-filters)
               p.bin-pack__hint(data-filter-count, aria-live='polite') Loading tags…
+            fieldset.bin-pack__fieldset
+              legend.bin-pack__legend Cushion space
+              .bin-pack__field
+                label(for='safetyMarginMm') Safety margin per side (mm)
+                input#safetyMarginMm.bin-pack__input(type='number', name='safetyMarginMm', min='0', max='500000', step='any', value='10', required)
+                p.bin-pack__hint A 10 mm margin leaves 20 mm less usable width, depth and height. Set 0 for no margin. This reserves space at the box walls, not between items.
+                p.bin-pack__hint Shipping estimates include cushion material at 8.22 grams per liter of empty space.
             fieldset.bin-pack__fieldset
               legend.bin-pack__legend Algorithm
               .bin-pack__field.bin-pack__field--algorithm
@@ -71,6 +78,7 @@ block content
         article.bin-pack__panel
           h2.bin-pack__panel-title Packing output
           div.bin-pack__status(data-request-status, aria-live='polite')
+          div.bin-pack__actions(data-solution-options, hidden, role='group', aria-label='Choose a packing solution')
           div.bin-pack__meta(data-meta-summary, hidden)
             dl
               div
@@ -86,7 +94,7 @@ block content
             p.bin-pack__placeholder No packing requests submitted yet.
     details.bin-pack__catalog
       summary Shared available boxes — #[span(data-catalog-count) loading…]
-      p.bin-pack__hint Up to 50 boxes. Use internal dimensions in mm, weights in kg, and comma-separated tags (letters, numbers, hyphens or underscores). Maximum load is the contents weight; zero permits only weightless items.
+      p.bin-pack__hint Up to 50 boxes. Use internal dimensions in mm, weights in kg, and comma-separated tags (letters, numbers, hyphens or underscores). Maximum load includes items and estimated cushion weight.
       unless canEditBoxes
         p.bin-pack__hint An administrator can update this shared list.
       form#boxCatalogForm.bin-pack__form(data-can-edit=canEditBoxes ? 'true' : 'false')

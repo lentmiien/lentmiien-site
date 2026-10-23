@@ -623,3 +623,12 @@
 #packingApiSecret { width: 100%; min-height: 4rem; }
 [data-api-keys] li { margin: 8px 0; }
 [data-api-keys] button { margin-left: 12px; }
+
+[data-solution-options] { margin-bottom: 16px; }
+[data-solution-options][hidden] { display: none; }
+[data-solution-options] button { text-align: left; }
+[data-solution-options] button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface-3);
+}

@@ -999,6 +999,8 @@
     };
 
     var resetResults = function () {
+      var options = document.querySelector('[data-solution-options]');
+      if (options) { options.replaceChildren(); options.hidden = true; }
       if (outputEl) {
         outputEl.innerHTML = '';
         var placeholder = document.createElement('p');
@@ -1065,7 +1067,7 @@
       return element;
     };
 
-    var renderResult = function (data) {
+    var renderResult = function (data, solution) {
       if (!outputEl) {
         return;
       }
@@ -1096,6 +1098,12 @@
 
       var used = Number.isFinite(data.containersUsed) ? data.containersUsed : (Array.isArray(data.pallets) ? data.pallets.length : 0);
       summaryGrid.appendChild(createElement('div', null, 'Containers used: ' + used));
+      if (solution && Number.isFinite(solution.estimatedCushionWeight)) {
+        summaryGrid.appendChild(createElement('div', null, 'Estimated cushion weight: ' + formatNumber(solution.estimatedCushionWeight, 3) + ' kg'));
+        summaryGrid.appendChild(createElement('div', null, 'Estimated shipment weight (box + items + cushion): ' + formatNumber(solution.estimatedShipmentWeight, 3) + ' kg'));
+        summaryGrid.appendChild(createElement('div', null, 'Safety margin: ' + formatNumber(solution.meta.safetyMarginMm) + ' mm per side'));
+        summaryGrid.appendChild(createElement('div', null, 'Item fill rate: ' + formatNumber(100 * (1 - solution.meta.emptyVolume / solution.meta.containerVolume), 2) + '%'));
+      }
 
       if (typeof data.note === 'string' && data.note.trim()) {
         var note = createElement('p', 'bin-pack__note', data.note);
@@ -1242,6 +1250,30 @@
       }
     };
 
+    var renderSmallestSolutions = function (result, totalCount) {
+      var solutions = [result].concat(result.alternatives || []);
+      var options = document.querySelector('[data-solution-options]');
+      options.replaceChildren();
+      options.hidden = solutions.length < 2;
+      var selectSolution = function (index) {
+        var solution = solutions[index];
+        Array.from(options.children).forEach(function (button, i) { button.setAttribute('aria-pressed', String(i === index)); });
+        renderMeta(solution.meta, { container: solution.container }, totalCount);
+        renderResult(solution.data, solution);
+      };
+      solutions.forEach(function (solution, index) {
+        var box = solution.container;
+        var label = (index === 0 ? 'Smallest: ' : 'Alternative ' + index + ': ') + box.id +
+          ' (' + box.w + ' × ' + box.d + ' × ' + box.h + ' mm)';
+        if (Number.isFinite(solution.estimatedShipmentWeight)) label += ' — est. ' + formatNumber(solution.estimatedShipmentWeight, 3) + ' kg';
+        var button = createElement('button', 'bin-pack__secondary', label);
+        button.type = 'button';
+        button.addEventListener('click', function () { selectSolution(index); });
+        options.appendChild(button);
+      });
+      selectSolution(0);
+    };
+
     var collectPayload = function () {
       var errors = [];
       if (smallestBox) {
@@ -1252,7 +1284,12 @@
         document.querySelectorAll('[data-box-tag]').forEach(function (select) {
           if (select.value === 'require' || select.value === 'requireNot') tagFilter[select.value].push(select.dataset.boxTag);
         });
-        var searchPayload = { algorithm: algorithmSelect.value, items: state.items };
+        var marginInput = form.elements.safetyMarginMm;
+        var safetyMarginMm = Number(marginInput.value);
+        if (!marginInput.value.trim() || !Number.isFinite(safetyMarginMm) || safetyMarginMm < 0 || safetyMarginMm > 500000) {
+          errors.push('Safety margin must be between 0 and 500000 mm per side.');
+        }
+        var searchPayload = { algorithm: algorithmSelect.value, items: state.items, safetyMarginMm: safetyMarginMm };
         if (tagFilter.require.length || tagFilter.requireNot.length) searchPayload.tagFilter = tagFilter;
         return { payload: searchPayload, errors: errors };
       }
@@ -1355,6 +1392,13 @@
             setStatus(message, 'error');
           } else {
             setStatus(smallestBox ? 'Found ' + data.container.id + '. Tried ' + data.meta.attempts + ' of ' + data.meta.eligibleContainers + ' eligible boxes; filtered out ' + data.meta.filteredContainers + '.' : 'Packing completed successfully.', 'success');
+            if (smallestBox) {
+              if (data.meta.alternativesSearchComplete === false) {
+                setStatus('Found ' + data.container.id + '. The search for additional boxes was interrupted; completed solutions are shown.', 'info');
+              }
+              renderSmallestSolutions(data, totalCount);
+              return;
+            }
           }
           renderMeta(data && data.meta, smallestBox ? { container: data && data.container } : payload, totalCount);
           renderResult(data && data.data);

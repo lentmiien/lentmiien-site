@@ -140,7 +140,7 @@ test('machine route accepts bearer auth without a browser session/CSRF and uses 
   saved.set('shared', { containers: [box], revision: 0 });
   const tagFilter = { require: ['fold-box'], requireNot: ['tube'] };
   expect((await api({ items, tagFilter }, { 'x-anonymous': 'true' })).status).toBe(200);
-  expect(search).toHaveBeenCalledWith([box], { algorithm: 'laff', items, tagFilter }, expect.any(Object));
+  expect(search).toHaveBeenCalledWith([box], { algorithm: 'laff', safetyMarginMm: 10, items, tagFilter }, expect.any(Object));
   expect(keys.authenticate).toHaveBeenCalledTimes(2);
 });
 test('API rejects session-only/legacy/bad auth and unknown options before searching', async () => {
@@ -150,6 +150,17 @@ test('API rejects session-only/legacy/bad auth and unknown options before search
   expect((await api({ items, padding: 'x'.repeat(70000) })).status).toBe(413);
   expect((await api(undefined, {}, 'GET')).status).toBe(404);
   expect(search).not.toHaveBeenCalled();
+});
+test.each([-1, 500001, '10', null])('browser and API reject invalid margin %p', async safetyMarginMm => {
+  expect((await api({ items, safetyMarginMm })).status).toBe(400);
+  expect((await send('/run', { items, safetyMarginMm })).status).toBe(400);
+  expect(search).not.toHaveBeenCalled();
+});
+test('browser and API accept explicit zero and fractional margins', async () => {
+  expect((await api({ items, safetyMarginMm: 0 })).status).toBe(200);
+  expect(search).toHaveBeenLastCalledWith([], { algorithm: 'laff', items, safetyMarginMm: 0 }, expect.any(Object));
+  expect((await send('/run', { items, safetyMarginMm: 12.5 })).status).toBe(200);
+  expect(search).toHaveBeenLastCalledWith([], { algorithm: 'laff', items, safetyMarginMm: 12.5 }, expect.any(Object));
 });
 test('browser and API share the per-issuer concurrency limit', async () => {
   let finish, entered;

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Smallest Box Packing API
-  version: 1.1.0
+  version: 1.2.0
   description: Search the shared saved box catalog for one container that holds all items. Create a scoped key in the tool's API access section.
 servers:
   - url: /
@@ -57,9 +57,12 @@ paths:
   /api/binpacking-smallest:
     post:
       operationId: findSmallestBox
-      summary: Find one box for all items
+      summary: Find up to three single-box solutions
       description: >-
-        Filters shared boxes by tags, dimensions, volume and weight, then tries increasing volume.
+        Filters shared boxes by tags, usable dimensions, volume and estimated contents weight including cushion,
+        then tries increasing full internal volume until three solutions are found.
+        The primary solution remains in container/data/meta; alternatives contains up to two more.
+        safetyMarginMm defaults to 10 per side (20 mm removed from each dimension); use 0 for no margin.
         Require-not tags take priority; boxes with no matching filter tags are included.
         Positive require tags are not a strict whitelist. Empty filters include all boxes.
         Limits are 5 searches/minute per key issuer and one concurrent search per issuer,
@@ -77,6 +80,12 @@ paths:
                   type: string
                   enum: [laff, plain, bruteforce]
                   default: laff
+                safetyMarginMm:
+                  type: number
+                  minimum: 0
+                  maximum: 500000
+                  default: 10
+                  description: Cushion zone at each box wall in mm; subtract twice this from every dimension. Does not enforce gaps between items.
                 items:
                   type: array
                   minItems: 1
@@ -94,86 +103,21 @@ paths:
                       $ref: '#/components/schemas/Tags'
       responses:
         '200':
-          description: One complete solution, or success false when no fit is found.
+          description: Primary solution plus up to two alternatives, or success false when no fit is found.
           content:
             application/json:
               schema:
-                type: object
-                required: [success, meta]
-                properties:
-                  success:
-                    type: boolean
-                  message:
-                    type: string
-                  container:
-                    $ref: '#/components/schemas/Container'
-                  data:
-                    type: object
+                allOf:
+                  - $ref: '#/components/schemas/Solution'
+                  - type: object
+                    required: [alternatives]
                     properties:
-                      success:
-                        type: boolean
-                      containersUsed:
-                        type: integer
-                        enum: [1]
-                      pallets:
+                      alternatives:
                         type: array
-                        minItems: 1
-                        maxItems: 1
+                        maxItems: 2
+                        description: Additional independent single-box solutions in ascending full volume order. Empty when none found. Never pack these containers together.
                         items:
-                          type: object
-                          properties:
-                            containerId:
-                              type: string
-                            w:
-                              type: number
-                            d:
-                              type: number
-                            h:
-                              type: number
-                            placements:
-                              type: array
-                              items:
-                                type: object
-                                required: [itemId, x, y, z, w, d, h]
-                                properties:
-                                  itemId:
-                                    type: string
-                                  x:
-                                    type: number
-                                  y:
-                                    type: number
-                                  z:
-                                    type: number
-                                  w:
-                                    type: number
-                                  d:
-                                    type: number
-                                  h:
-                                    type: number
-                  meta:
-                    type: object
-                    properties:
-                      algorithm:
-                        type: string
-                      totalItemCount:
-                        type: integer
-                      uniqueItems:
-                        type: integer
-                      totalContainers:
-                        type: integer
-                      tagFilteredContainers:
-                        type: integer
-                      eligibleContainers:
-                        type: integer
-                      filteredContainers:
-                        type: integer
-                      attempts:
-                        type: integer
-                      containerId:
-                        type: string
-                      containerVolume:
-                        type: number
-                        description: Cubic millimeters.
+                          $ref: '#/components/schemas/Solution'
         '400':
           $ref: '#/components/responses/Invalid'
         '401':
@@ -183,7 +127,7 @@ paths:
         '429':
           description: Rate or concurrency limit reached.
         '503':
-          description: Catalog or packing worker unavailable, or search time limit reached.
+          description: Catalog or packing worker unavailable, or search time limit reached before any solution. Completed solutions are returned with alternativesSearchComplete false if a later attempt fails.
 components:
   securitySchemes:
     packingKey:
@@ -194,6 +138,117 @@ components:
     Invalid:
       description: Invalid JSON, fields, quantities, dimensions, weights or tags.
   schemas:
+    Solution:
+      type: object
+      required: [success, meta]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        estimatedCushionWeight:
+          type: number
+          minimum: 0
+          description: Kilograms, using full empty box volume (including wall margins) times 8.22 kg/m³.
+        estimatedShipmentWeight:
+          type: number
+          minimum: 0
+          description: Kilograms; box plus all item quantities plus estimated cushion weight.
+        container:
+          $ref: '#/components/schemas/Container'
+        data:
+          type: object
+          properties:
+            success:
+              type: boolean
+            containersUsed:
+              type: integer
+              enum: [1]
+            pallets:
+              type: array
+              minItems: 1
+              maxItems: 1
+              items:
+                type: object
+                properties:
+                  containerId:
+                    type: string
+                  w:
+                    type: number
+                  d:
+                    type: number
+                  h:
+                    type: number
+                  placements:
+                    type: array
+                    items:
+                      type: object
+                      required: [itemId, x, y, z, w, d, h]
+                      properties:
+                        itemId:
+                          type: string
+                        x:
+                          type: number
+                          description: Width coordinate in mm from the full box corner, already including margin offset.
+                        y:
+                          type: number
+                          description: Depth coordinate in mm from the full box corner, already including margin offset.
+                        z:
+                          type: number
+                          description: Height coordinate in mm from the full box corner, already including margin offset.
+                        w:
+                          type: number
+                        d:
+                          type: number
+                        h:
+                          type: number
+        meta:
+          type: object
+          properties:
+            safetyMarginMm:
+              type: number
+              description: Applied margin per box wall, in mm.
+            cushionDensityKgPerM3:
+              type: number
+              enum: [8.22]
+            emptyVolume:
+              type: number
+              description: Full internal box volume minus total item volume, in cubic millimeters.
+            usableDimensions:
+              type: object
+              required: [w, d, h]
+              properties:
+                w:
+                  $ref: '#/components/schemas/Dimension'
+                d:
+                  $ref: '#/components/schemas/Dimension'
+                h:
+                  $ref: '#/components/schemas/Dimension'
+            alternativesSearchComplete:
+              type: boolean
+              description: True when three solutions were found or all candidates exhausted; false if worker failure or deadline interrupted a search after a solution was found.
+            algorithm:
+              type: string
+            totalItemCount:
+              type: integer
+            uniqueItems:
+              type: integer
+            totalContainers:
+              type: integer
+            tagFilteredContainers:
+              type: integer
+            eligibleContainers:
+              type: integer
+            filteredContainers:
+              type: integer
+            attempts:
+              type: integer
+              description: Total worker calls across the primary and alternative search.
+            containerId:
+              type: string
+            containerVolume:
+              type: number
+              description: Cubic millimeters.
     Dimension:
       type: number
       minimum: 0

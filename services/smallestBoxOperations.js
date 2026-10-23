@@ -10,7 +10,7 @@ function createPackingOperations({ catalog = catalogService, search = findSmalle
     message: { success: false, message: 'Too many searches. Please try again in a minute.' } });
   async function run(req, res, next) {
     const parsed = searchSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ success: false, message: 'Invalid search. Use unique item IDs, valid dimensions, up to 200 items (7 for bruteforce), and valid tags.' });
+    if (!parsed.success) return res.status(400).json({ success: false, message: 'Invalid search. Use unique item IDs, valid dimensions, up to 200 items (7 for bruteforce), valid tags, and a safety margin from 0 to 500000 mm.' });
     const owner = req.packingOwnerId;
     if (activeOwners.has(owner) || activeOwners.size >= 2) {
       return res.status(429).json({ success: false, message: 'A box search is already running. Please try again shortly.' });
