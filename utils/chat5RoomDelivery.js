@@ -1,12 +1,13 @@
 const { currentReader, canReadConversation } = require('../middleware/chat5PrivateAccess');
 const logger = require('./logger');
+const { sessionHasRequiredTwoFactor } = require('./twoFactorSession');
 async function authorized(socket, ids) {
   const session = socket.request?.session;
   if (typeof session?.reload === 'function') await new Promise((resolve, reject) => session.reload(error => error ? reject(error) : resolve()));
   const current = socket.request?.session;
   if (!current?.cookie?.expires || +new Date(current.cookie.expires) <= Date.now()) return false;
   const user = await currentReader(current.passport?.user);
-  if (!user || user.name !== socket.data?.userName) return false;
+  if (!user || user.name !== socket.data?.userName || !sessionHasRequiredTwoFactor(user, current)) return false;
   for (const id of ids) if (!await canReadConversation(id, user)) return false;
   return true;
 }

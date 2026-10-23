@@ -32,6 +32,16 @@ test('play does not require chat; revoking grant or passport denies the next com
   deps.roleModel.findOne.mockResolvedValue(null); await expect(authorize(socket, deps)).rejects.toThrow();
   delete session.passport; await expect(authorize(socket, deps)).rejects.toThrow();
 });
+test('Commons denies unverified admins and rechecks password-bound factor proof', async () => {
+  const { socket, deps, session } = authFixture();
+  const admin = { ...user, type_user: 'admin', hash_password: 'synthetic', two_factor: { enabled: true, version: 'synthetic' } };
+  deps.userModel.findOne.mockResolvedValue(admin);
+  await expect(authorize(socket, deps)).rejects.toThrow('UNAUTHORIZED');
+  session.twoFactor = require('../../../utils/twoFactorSession').verificationReceipt(admin);
+  expect((await authorize(socket, deps)).userId).toBe(user._id);
+  admin.hash_password = 'changed';
+  await expect(authorize(socket, deps)).rejects.toThrow('UNAUTHORIZED');
+});
 test('portals have fixed authorized destinations and no household data', async () => {
   const model = { findOne: jest.fn(async () => null) };
   expect(await portal('chat', user, model)).not.toHaveProperty('href');

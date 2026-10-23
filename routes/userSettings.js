@@ -10,6 +10,7 @@ const { ROLE_BUNDLES } = require('../utils/userSettingsPolicy');
 const { createRequireCapabilities, PRIVATE_NO_STORE } = require('../middleware/requireCapabilities');
 const { createSessionCsrf } = require('../middleware/sessionCsrf');
 const { PASSWORD_REQUIREMENTS, meetsPasswordRequirements, passwordReminder } = require('../utils/passwordPolicy');
+const { requiresTwoFactor, beginPendingVerification } = require('../utils/twoFactorSession');
 
 const passwordInput = z.string().min(1).refine(value => Buffer.byteLength(value, 'utf8') <= 1024);
 const csrfField = z.string().optional();
@@ -75,6 +76,7 @@ function createUserSettingsRouter({ userModel = User, roleModel = Role, appLogge
       passwordChangedAt: req.user.password_changed_at ? new Date(req.user.password_changed_at).toISOString() : null,
       passwordReminder: passwordReminder(req.user),
       passwordRequirements: PASSWORD_REQUIREMENTS,
+      twoFactorEnabled: Boolean(req.user.two_factor?.enabled),
       emailValue: email === undefined ? req.user.email : email,
       error,
       success: req.method === 'GET' && typeof req.query.updated === 'string'
@@ -123,6 +125,10 @@ function createUserSettingsRouter({ userModel = User, roleModel = Role, appLogge
           return fail(409, 'Your account changed while this form was open. Reload and try again.');
         }
         Object.assign(req.user, changes);
+        if (section === 'password' && requiresTwoFactor(req.user)) {
+          await beginPendingVerification(req, req.user);
+          return res.redirect(303, '/two-factor/verify');
+        }
         return res.redirect(303, `/settings?updated=${section}`);
       } catch (_) {
         logFailure(section);

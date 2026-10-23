@@ -201,7 +201,7 @@ const isEmbeddingGemma2Path = req => /^\/admin\/embeddinggemma2(?:\/|$)/i.test(r
 const isLocalAiPath = req => /^\/local-ai(?:\/|$)/i.test(req.path);
 const isSmallestBoxPath = req => /^\/binpacking-smallest(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
-const isUserSettingsPath = req => /^\/(?:settings|admin\/password-reminders)(?:\/|$)/i.test(req.path);
+const isUserSettingsPath = req => /^\/(?:settings|admin\/password-reminders|two-factor|login)(?:\/|$)/i.test(req.path);
 app.use((req, res, next) => (isUserSettingsPath(req) || isSmallestBoxPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
 app.use((req, res, next) => (isUserSettingsPath(req) || isSmallestBoxPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
 
@@ -223,6 +223,8 @@ app.use(minuteLoggerPath, secretPublicResponse, telemetryLimiter, minuteLoggerRo
 // Passport setup
 app.use(passport.initialize());
 app.use(passport.session());
+app.use(require('./middleware/twoFactorGate'));
+require('./services/twoFactorService').checkConfiguration();
 
 passport.use(
   new LocalStrategy((username, password, done) => {
@@ -270,6 +272,7 @@ passport.deserializeUser((id, done) => {
 // View engine setup
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'pug');
+app.use('/two-factor', require('./routes/twoFactor').createTwoFactorRouter());
 
 const htmlDirectory = path.join(__dirname, 'public', 'html');
 const htmlSamplesCache = new HtmlSamplesCacheService({
@@ -583,10 +586,11 @@ app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 app.post(
   '/login',
   loginLimiter,
-  passport.authenticate('local', {
-    failureRedirect: '/login',
-  }),
-  require('./utils/passwordPolicy').redirectAfterLogin
+  require('./routes/twoFactor').privateResponse,
+  express.urlencoded({ extended: false, limit: '4kb', parameterLimit: 3 }),
+  require('./routes/twoFactor').csrf.requireToken,
+  require('./routes/twoFactor').passwordLogin(passport),
+  require('./routes/twoFactor').requestError
 );
 
 

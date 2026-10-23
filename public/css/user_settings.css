@@ -22,6 +22,7 @@
 .settings-success { border-color: var(--success); }
 .settings-error { border-color: var(--danger); }
 .settings-reminder { border-color: var(--warning); margin-bottom: 1.25rem; }
+.two-factor-settings { margin-top: 1.25rem; }
 @media (max-width: 640px) {
   .user-settings { margin: 1rem auto; }
   .settings-details, .settings-forms { grid-template-columns: 1fr; }

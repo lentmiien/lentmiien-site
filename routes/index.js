@@ -33,7 +33,7 @@ function csvDiffUploadMiddleware(req, res, next) {
 
 /* GET home page. */
 router.get('/', controller.index);
-router.get('/login', controller.login);
+router.get('/login', require('./twoFactor').privateResponse, require('./twoFactor').csrf.issueToken, controller.login);
 router.get('/exchange-rates', controller.exchange_rates);
 router.get('/exchange-rates/data', controller.exchange_rates_data);
 

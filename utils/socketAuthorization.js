@@ -1,4 +1,5 @@
 const { hasPermission } = require('./authorization');
+const { sessionHasRequiredTwoFactor } = require('./twoFactorSession');
 
 async function authorizeSocketSession(session, {
   userModel,
@@ -17,7 +18,7 @@ async function authorizeSocketSession(session, {
   }
 
   const user = await userModel.findOne({ _id: userId });
-  if (!user) {
+  if (!user || !sessionHasRequiredTwoFactor(user, session, now)) {
     return { ok: false, reason: 'Unauthorized' };
   }
   const permissionGranted = permission

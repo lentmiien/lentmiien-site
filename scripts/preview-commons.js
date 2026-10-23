@@ -35,6 +35,11 @@ async function createPreview({ port = 0, provider = null, maxOnline = 10, v12 = 
   app.post('/__preview/login', (req, res) => {
     const id = String(req.body.resident || 1).padStart(24, '0');
     if (!users.has(id)) return res.sendStatus(400);
+    // This synthetic login represents an already completed MFA ceremony.
+    const user = users.get(id);
+    user.hash_password ||= 'synthetic-preview-password-fingerprint';
+    user.two_factor ||= { enabled: true, version: 'synthetic-preview-factor' };
+    req.session.twoFactor = require('../utils/twoFactorSession').verificationReceipt(user);
     req.session.passport = { user: id }; return res.json({ ok: true });
   });
   app.use((req, _res, next) => { req.user = users.get(req.session.passport?.user); req.isAuthenticated = () => Boolean(req.user); next(); });

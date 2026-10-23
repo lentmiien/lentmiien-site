@@ -7,6 +7,7 @@ const { safeEqual } = require('../middleware/sessionCsrf');
 const { portal } = require('../services/commons/registry');
 const World = require('../public/commons/world');
 const logger = require('../utils/logger');
+const { sessionHasRequiredTwoFactor } = require('../utils/twoFactorSession');
 let lastAuthorizationWarning = -Infinity;
 const reload = session => new Promise((resolve, reject) => session.reload(error => error ? reject(error) : resolve()));
 async function authorize(socket, { userModel, roleModel, config, now = Date.now }, capability = PLAY) {
@@ -22,8 +23,8 @@ async function authorize(socket, { userModel, roleModel, config, now = Date.now 
   if (!/^[a-f0-9]{24}$/i.test(id) || (!Number.isFinite(expires) || expires <= now())) throw new Error('UNAUTHORIZED');
   let principal;
   try {
-    principal = await userModel.findOne({ _id: id }, 'name type_user', { maxTimeMS: 2000 });
-    if (!principal || !await hasCapabilities(principal, [PLAY, capability], { roleModel, roleCapabilityBundles: ROLE_BUNDLES })) throw new Error('UNAUTHORIZED');
+    principal = await userModel.findOne({ _id: id }, 'name type_user hash_password two_factor.enabled two_factor.version', { maxTimeMS: 2000 });
+    if (!principal || !sessionHasRequiredTwoFactor(principal, session, now()) || !await hasCapabilities(principal, [PLAY, capability], { roleModel, roleCapabilityBundles: ROLE_BUNDLES })) throw new Error('UNAUTHORIZED');
   } catch (error) {
     if (error.message !== 'UNAUTHORIZED' && now() - lastAuthorizationWarning > 60000) {
       lastAuthorizationWarning = now();

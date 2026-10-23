@@ -7,6 +7,13 @@ const Useraccount = new mongoose.Schema({
   hash_password: { type: String, required: true, max: 256 },
   password_changed_at: { type: Date, default: null },
   password_change_requested: { type: Boolean, default: false },
+  two_factor: {
+    enabled: { type: Boolean, default: false },
+    version: { type: String, default: '' },
+    secret: { type: String, select: false },
+    last_step: { type: Number, default: -1, select: false },
+    recovery_hashes: { type: [String], default: [], select: false },
+  },
   dashboard_settings: { type: mongoose.Schema.Types.Mixed, default: undefined },
   navbar_settings: { type: mongoose.Schema.Types.Mixed, default: undefined },
   mypage_icon_settings: {

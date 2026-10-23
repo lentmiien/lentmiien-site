@@ -1,0 +1,11 @@
+.two-factor-page { max-width: 640px; padding: 0 1rem; }
+.two-factor-page, .two-factor-page * { box-sizing: border-box; }
+.two-factor-page h1 { font-size: 2rem; }
+.two-factor-page p { line-height: 1.6; }
+.two-factor-page details { margin: 1.25rem 0; }
+.two-factor-page summary { cursor: pointer; color: var(--accent); }
+.two-factor-page .two-factor-secondary { background: var(--surface-3); color: var(--text); border: 1px solid var(--border); }
+.two-factor-qr { display: block; max-width: 100%; height: auto; margin: 1rem auto; }
+.two-factor-key, .two-factor-recovery code { overflow-wrap: anywhere; color: var(--text); }
+.two-factor-recovery { padding: 1rem 1rem 1rem 2rem; background: var(--surface-2); line-height: 2; }
+.two-factor-continue { display: inline-block; margin-top: 1rem; }

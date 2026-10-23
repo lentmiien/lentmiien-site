@@ -3,6 +3,8 @@ APP_REVISION=
 
 PORT=
 SESSION_SECRET=
+# Required before deploying admin two-factor authentication. Independent 32-byte base64 secret; keep stable and backed up.
+TWO_FACTOR_ENCRYPTION_KEY=
 CSRF_ALLOWED_ORIGINS=
 MONGOOSE_URL=
 DATABASE_CONNECT_TIMEOUT_MS=10000

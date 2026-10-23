@@ -1,0 +1,95 @@
+extends two_factor_layout
+
+mixin csrfInput
+  input(type='hidden', name='_csrf', value=csrfToken)
+mixin verificationFields(prefix)
+  label(for=prefix + '-password') Current password
+  input(id=prefix + '-password', type='password', name='currentPassword', autocomplete='current-password', maxlength='1024', required)
+  label(for=prefix + '-code') Authenticator or recovery code
+  input(id=prefix + '-code', type='text', name='code', autocomplete='one-time-code', maxlength='39', required)
+
+block content
+  h1 Account security
+  if error
+    p.settings-notice.settings-error(role='alert')= error
+  .settings-panel
+    if mode === 'expired'
+      h2 Sign in again
+      p Your verification session has expired. Start again to protect your account.
+      a(href='/login') Return to login
+    else if mode === 'verify'
+      h2 Verify your account
+      p Enter the six-digit code shown in your authenticator app, or use one of your saved recovery codes.
+      form(method='post', action='/two-factor/verify')
+        +csrfInput
+        label(for='verification-code') Authenticator or recovery code
+        input#verification-code(type='text', name='code', autocomplete='one-time-code', maxlength='39', required, autofocus)
+        button(type='submit') Verify and continue
+      p.settings-hint This browser will remember verification for 90 days. Changing your password will require verification again.
+    else if mode === 'start'
+      h2= user.two_factor && user.two_factor.enabled ? 'Replace your authenticator' : 'Set up two-factor authentication'
+      if user.type_user === 'admin'
+        p Two-factor authentication is required for administrator accounts.
+      p Use an authenticator app to generate a six-digit code. You will scan a QR code, confirm a code, and save recovery codes in case you lose access to your authenticator.
+      form(method='post', action='/two-factor/setup/start')
+        +csrfInput
+        if !pending
+          if user.two_factor && user.two_factor.enabled
+            +verificationFields('setup')
+          else
+            label(for='setup-password') Current password
+            input#setup-password(type='password', name='currentPassword', autocomplete='current-password', maxlength='1024', required)
+        button(type='submit')= user.two_factor && user.two_factor.enabled ? 'Set up replacement authenticator' : 'Start setup'
+    else if mode === 'setup'
+      h2 Add this account to your authenticator
+      p Scan this QR code with your authenticator app. Keep the QR code and setup key private.
+      img.two-factor-qr(src=qr, width='256', height='256', alt='QR code for authenticator enrollment')
+      details
+        summary Cannot scan? Enter a setup key instead
+        p Choose a time-based account and enter this key:
+        code.two-factor-key= secret
+      form(method='post', action='/two-factor/setup/confirm')
+        +csrfInput
+        label(for='setup-code') Six-digit authenticator code
+        input#setup-code(type='text', name='code', inputmode='numeric', autocomplete='one-time-code', pattern='[0-9]{6}', maxlength='6', required)
+        button(type='submit') Confirm authenticator
+    else if mode === 'recovery'
+      h2 Save your recovery codes
+      p Two-factor authentication is ready. Store these codes somewhere safe, separate from this browser. Each code can be used once instead of an authenticator code.
+      p These codes are shown only once. Any previous recovery codes no longer work.
+      ul.two-factor-recovery
+        each code in codes
+          li
+            code= code
+      a.two-factor-continue(href=continueTo) I have saved my codes — continue
+    else if mode === 'manage'
+      h2 Two-factor authentication
+      if user.two_factor && user.two_factor.enabled
+        p Enabled. This browser remembers verification for 90 days after a code is verified. Password changes require verification again.
+        a(href='/two-factor/setup') Replace authenticator
+        h3 Replace recovery codes
+        p This invalidates old recovery codes and remembered verification in other browsers.
+        form(method='post', action='/two-factor/recovery-codes')
+          +csrfInput
+          +verificationFields('recovery')
+          button(type='submit') Generate new recovery codes
+        if user.type_user === 'admin'
+          p.settings-hint Administrators must keep two-factor authentication enabled.
+        else
+          details
+            summary Turn off two-factor authentication
+            form(method='post', action='/two-factor/disable')
+              +csrfInput
+              +verificationFields('disable')
+              button(type='submit') Turn off two-factor authentication
+      else
+        p Add an authenticator to protect your account. You will only need a code in a new browser, after changing your password, or after 90 days.
+        a(href='/two-factor/setup') Set up two-factor authentication
+    if mode !== 'expired' && mode !== 'recovery'
+      if !pending
+        p
+          a(href='/settings') Back to User settings
+      else
+        form(method='post', action='/two-factor/cancel')
+          +csrfInput
+          button.two-factor-secondary(type='submit') Cancel and return to login

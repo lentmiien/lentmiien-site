@@ -63,3 +63,9 @@ block content
             label(for='password-confirm') Confirm new password
             input#password-confirm(type='password', name='confirmPassword', minlength='12', maxlength='72', autocomplete='new-password', required)
             button(type='submit') Change password
+    section.settings-panel.two-factor-settings(aria-labelledby='two-factor-heading')
+      h2#two-factor-heading Two-factor authentication
+      p= twoFactorEnabled ? 'Enabled. Verification is remembered in each browser for 90 days. Changing your password requires verification again.' : 'Protect your account with an authenticator app. Verification is remembered in each browser for 90 days.'
+      if account.type === 'admin'
+        p.settings-hint Required for administrator accounts.
+      a(href='/two-factor')= twoFactorEnabled ? 'Manage two-factor authentication' : 'Set up two-factor authentication'

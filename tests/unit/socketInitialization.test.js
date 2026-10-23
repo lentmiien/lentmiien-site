@@ -123,4 +123,19 @@ describe('Socket.IO connection initialization', () => {
     expect(mockRegisterChat5_6Handlers).toHaveBeenCalledTimes(1);
     expect(socket.emit).toHaveBeenCalledWith('welcome');
   });
+
+  test('base events revalidate the stored session and disconnect after factor/password revocation', async () => {
+    initializeSocketIO({}, jest.fn());
+    const socket = createSocket({ request: { session: { reload: callback => callback() } } });
+    await connectionHandler(socket);
+    const guard = socket.use.mock.calls[0][0];
+    const authorize = require('../../utils/socketAuthorization').authorizeSocketSession;
+    authorize.mockResolvedValue({ ok: true, userName: 'alice' });
+    const next = jest.fn(); await guard(['event'], next); expect(next).toHaveBeenCalledWith();
+    authorize.mockResolvedValue({ ok: false });
+    next.mockClear(); await guard(['event'], next);
+    expect(socket.disconnect).toHaveBeenCalledWith(true);
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+    for (const [event, callback] of socket.on.mock.calls) if (event === 'disconnect') callback();
+  });
 });

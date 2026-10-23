@@ -12,6 +12,7 @@ const registerChat5_6Handlers = require('./chat5_6/chat5_6handler');
 
 function roomForUser(userName) { return `user:${encodeURIComponent(String(userName))}`; }
 function roomForConversation(conversationId) { return `conversation:${String(conversationId)}`; }
+let lastRevalidationWarning = -Infinity;
 
 module.exports = (server, sessionMiddleware, { databaseReady = isDatabaseReady } = {}) => {
   const io = socketIO(server, {maxHttpBufferSize: 10 * 1024 * 1024});
@@ -57,6 +58,35 @@ module.exports = (server, sessionMiddleware, { databaseReady = isDatabaseReady }
 
   // Handle connections
   io.on('connection', async (socket) => {
+    let checking = false;
+    const verifySession = async () => {
+      const session = socket.request.session;
+      if (typeof session?.reload !== 'function') throw new Error('Unauthorized');
+      await new Promise((resolve, reject) => session.reload(error => error ? reject(error) : resolve()));
+      let result;
+      try {
+        result = await authorizeSocketSession(socket.request.session, { userModel: UseraccountModel, roleModel: RoleModel, permission: null });
+      } catch (error) {
+        if (Date.now() - lastRevalidationWarning > 60000) {
+          lastRevalidationWarning = Date.now();
+          logger.warning('Socket session revalidation failed; check database availability', { category: 'socket-auth' });
+        }
+        throw error;
+      }
+      if (!result.ok || result.userName !== socket.data.userName) throw new Error('Unauthorized');
+    };
+    socket.use(async (_packet, next) => {
+      try { await verifySession(); next(); }
+      catch (_) { socket.disconnect(true); next(new Error('Unauthorized')); }
+    });
+    const verificationTimer = setInterval(async () => {
+      if (checking) return;
+      checking = true;
+      try { await verifySession(); } catch (_) { socket.disconnect(true); }
+      finally { checking = false; }
+    }, 30000);
+    verificationTimer.unref?.();
+    socket.on('disconnect', () => clearInterval(verificationTimer));
     socket.use(require('../middleware/chat5PrivateAccess').socketGuard(socket));
     const userName = socket.data.userName;
     const principal = socket.data.principal;

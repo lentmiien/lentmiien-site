@@ -49,7 +49,7 @@ exports.index = (req, res) => {
 };
 
 exports.login = (req, res) => {
-  res.render('login');
+  res.render('login', { loginError: req.query.error === 'credentials' ? 'The username or password was not accepted.' : '' });
 };
 
 /****************************/

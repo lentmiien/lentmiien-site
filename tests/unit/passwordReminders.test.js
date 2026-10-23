@@ -5,9 +5,7 @@ const { Passport } = require('passport');
 const { Strategy } = require('passport-local');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
-const path = require('path');
 const vm = require('vm');
-const { createRequire } = require('module');
 const { createUserSettingsRouter } = require('../../routes/userSettings');
 const { createPasswordRemindersRouter } = require('../../routes/passwordReminders');
 const { createSessionCsrf } = require('../../middleware/sessionCsrf');
@@ -50,12 +48,11 @@ beforeEach(async () => {
   app.use((req, res, next) => {
     Object.assign(res.locals, { loggedIn: req.isAuthenticated(), permissions: [], htmlPaths: [], bookmarks: [] }); next();
   });
-  // Use the production login route registration to test Passport's successful
-  // login continuation, failed login and session regeneration together.
-  const loginStart = source.indexOf("app.post(\n  '/login',");
-  vm.runInNewContext(source.slice(loginStart, source.indexOf('// Helper: constant-time', loginStart)), {
-    app, passport, loginLimiter: (_req, _res, next) => next(), require: createRequire(path.resolve('app.js')),
-  });
+  // Reminder behavior after successful password authentication is independent of
+  // the MFA challenge. twoFactor.test.js exercises the production login wiring.
+  app.post('/login', express.urlencoded({ extended: false, limit: '4kb' }),
+    passport.authenticate('local', { failureRedirect: '/login' }),
+    require('../../utils/passwordPolicy').redirectAfterLogin);
   app.use('/settings', createUserSettingsRouter({ userModel, roleModel }));
   app.use('/admin/password-reminders', createPasswordRemindersRouter({ userModel, roleModel }));
   app.get('/admin', createSessionCsrf().issueToken, (req, res) => res.render('manage_users', {

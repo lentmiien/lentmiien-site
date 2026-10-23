@@ -5,6 +5,7 @@ const Legacy = require('../models/conversation4');
 const { hasCapabilities } = require('../utils/authorization');
 const { MIIEN_ROLE_CAPABILITY_BUNDLES } = require('../utils/miienAuthorizationPolicy');
 const logger = require('../utils/logger');
+const { sessionHasRequiredTwoFactor } = require('../utils/twoFactorSession');
 async function listPage(req, res, next) {
   res.set('Cache-Control', 'private, no-store');
   res.locals.gtag = false;
@@ -23,7 +24,7 @@ async function listPage(req, res, next) {
 }
 async function currentReader(id) {
   if (!/^[a-f\d]{24}$/i.test(String(id || ''))) return null;
-  const user = await User.findById(id).select('_id name type_user').lean();
+  const user = await User.findById(id).select('_id name type_user hash_password two_factor.enabled two_factor.version').lean();
   if (!user || !await hasCapabilities(user, ['chat.conversation.read'], { roleModel: Role, roleCapabilityBundles: MIIEN_ROLE_CAPABILITY_BUNDLES })) return null;
   return user;
 }
@@ -62,7 +63,7 @@ function socketGuard(socket) {
       const current = socket.request?.session;
       if (!current?.cookie?.expires || +new Date(current.cookie.expires) <= Date.now()) throw new Error('Access denied');
       const user = await currentReader(current.passport?.user);
-      if (!user || user.name !== socket.data.userName) throw new Error('Access denied');
+      if (!user || user.name !== socket.data.userName || !sessionHasRequiredTwoFactor(user, current)) throw new Error('Access denied');
       const payload = raw && typeof raw === 'object' ? raw : {};
       const ids = [payload.conversationId, payload.conversation_id, payload.sourceConversationId, payload.templateId];
       if (legacy.includes(event) && socket.conversation_id && socket.conversation_id !== 'new') ids.push(socket.conversation_id);

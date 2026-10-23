@@ -1,15 +1,15 @@
-extends layout
+extends two_factor_layout
 
 block content
-  .row
-    .col
-      h1 Log in
-      form(action="/login" method="post")
-        div.input-group.mb-3
-          span#addon1.input-group-text Username:
-          input#username.form-control(type="text" name="username", aria-label="username" aria-describedby="addon1")
-        div.input-group.mb-3
-          span#addon2.input-group-text Password:
-          input#password.form-control(type="password" name="password", aria-label="password" aria-describedby="addon2")
-        div
-          input.btn.btn-primary(type="submit", value="Log in")
+  h1 Log in
+  .settings-panel
+    if loginError
+      p.settings-notice.settings-error(role='alert')= loginError
+    form(action='/login', method='post')
+      input(type='hidden', name='_csrf', value=csrfToken)
+      label(for='username') Username
+      input#username(type='text', name='username', autocomplete='username', maxlength='100', required)
+      label(for='password') Password
+      input#password(type='password', name='password', autocomplete='current-password', maxlength='1024', required)
+      button(type='submit') Log in
+    p.settings-hint If needed, you will be asked to verify your account next. This browser remembers verification for 90 days, until your password changes.
