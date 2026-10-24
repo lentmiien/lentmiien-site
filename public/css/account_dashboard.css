@@ -1,9 +1,38 @@
 .account-dashboard { max-width: 1180px; margin: 1.5rem auto 4rem; padding: 0 1rem; color: var(--text); }
 .account-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
-.account-heading h1 { font-size: clamp(2rem, 4vw, 3rem); font-weight: 650; letter-spacing: -.035em; margin: .25rem 0; }
+.account-heading h1 { font-size: clamp(1.5rem, 3vw, 1.9rem); font-weight: 650; letter-spacing: -.035em; margin: .15rem 0 .3rem; }
 .account-eyebrow { color: var(--text-muted); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 .25rem; }
-.account-date, .account-intro { color: var(--text-secondary); font-size: .92rem; }
-.account-intro { margin: 1rem 0 1.5rem; }
+.account-date { color: var(--text-secondary); font-size: .8rem; margin: 0; }
+.account-overview { border: 1px solid var(--border); border-top: 2px solid var(--brand); border-radius: 1rem; background: var(--surface-1); padding: 1.2rem; }
+.account-heading-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: .6rem 1rem; font-size: .8rem; }
+.account-settings-link { color: var(--accent); padding: .5rem 0; }
+.account-overview-heading { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-top: .8rem; padding: .35rem 0; border-top: 1px solid var(--divider); }
+.account-overview-heading h2, .account-sections-heading h2 { font-size: .9rem; font-weight: 650; margin: 0; }
+.account-overview-tools { display: flex; align-items: center; gap: .5rem; }
+#account-overview-status { font-size: .7rem; color: var(--text-muted); margin: 0; }
+.account-dashboard #account-overview-refresh { background: none; font-size: 1.1rem; padding: .2rem .6rem; }
+.account-overview-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .8rem 1.3rem; }
+.account-overview-group { min-width: 0; border-top: 1px solid var(--divider); padding-top: .7rem; }
+.account-overview-group[data-overview-group='chats'] { grid-column: span 2; }
+.account-overview-group-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.account-overview-group h3 { margin: 0; font-size: .85rem; font-weight: 650; }
+.account-overview-group h3 a { color: var(--text); text-decoration: none; }
+.account-overview-group h3 a:hover { color: var(--accent); }
+.account-overview-count { color: var(--accent); background: var(--accent-tint); border-radius: .3rem; padding: .05rem .4rem; font-size: .7rem; font-variant-numeric: tabular-nums; }
+.account-overview-group[data-state='empty'] .account-overview-count { color: var(--text-muted); background: var(--surface-2); }
+.account-overview-subtitle { font-size: .7rem; color: var(--text-muted); margin: .2rem 0 .4rem; }
+.account-overview-group[data-state='empty'] .account-overview-subtitle { display: none; }
+.account-overview-state, .account-overview-empty { font-size: .78rem; color: var(--text-secondary); margin: .5rem 0 .15rem; }
+.account-overview-group[data-state='unavailable'] .account-overview-state, .account-overview[data-state='error'] #account-overview-status { color: var(--warning); }
+.account-overview-rows { list-style: none; padding: 0; margin: 0; }
+.account-overview-row { min-width: 0; margin-top: .3rem; }
+.account-overview-row > a, .account-overview-row > span { display: block; padding: .2rem 0; color: var(--text); text-decoration: none; }
+.account-overview-row > a:hover { color: var(--accent); }
+.account-overview-row-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; line-height: 1.4; }
+.account-overview-row-meta { display: block; color: var(--text-muted); font-size: .7rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-overview-more { display: inline-block; font-size: .72rem; color: var(--accent); padding: .3rem 0 0; }
+.account-sections-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: .35rem 1rem; margin: 1.5rem 0 .7rem; }
+.account-sections-heading p { margin: 0; font-size: .75rem; color: var(--text-muted); }
 .account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: start; }
 .account-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 1rem; min-width: 0; overflow-wrap: anywhere; }
 .account-card-wide { grid-column: 1 / -1; }
@@ -53,5 +82,19 @@
 #customize-shortcuts summary { cursor: pointer; padding: .5rem 0; }
 .account-dashboard .life-log-shell { padding: .5rem 0; border: 0; background: none; box-shadow: none; }
 .account-dashboard .life-log-point-list { max-height: none; overflow: visible; }
-@media (max-width: 720px) { .account-dashboard { padding: 0 .25rem; margin-top: 1rem; } .account-grid { grid-template-columns: 1fr; } .account-heading { align-items: start; flex-direction: column; } .account-heading > button { align-self: stretch; } .account-card-heading { padding: 1rem; } .account-card-content { padding: 0 1rem 1rem; } #account-customizer { padding: 1rem; } }
+@media (max-width: 960px) { .account-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .account-dashboard { padding: 0 .25rem; margin-top: 1rem; } .account-grid { grid-template-columns: 1fr; } .account-heading { align-items: start; flex-direction: column; gap: .75rem; } .account-heading-actions { justify-content: flex-start; } .account-overview { padding: 1rem; } .account-card-heading { padding: 1rem; } .account-card-content { padding: 0 1rem 1rem; } #account-customizer { padding: 1rem; } }
+@media (max-width: 480px) {
+  .account-overview-grid { gap: .6rem .8rem; }
+  .account-overview-group h3 { font-size: .78rem; }
+  .account-overview-group { padding-top: .6rem; }
+  .account-overview-subtitle { margin-bottom: .2rem; }
+}
+@media (max-width: 359px) {
+  .account-overview-grid { grid-template-columns: 1fr; }
+  .account-overview-group[data-overview-group='chats'] { grid-column: auto; }
+  .account-overview-row > a, .account-overview-row > span { display: flex; gap: .5rem; align-items: baseline; padding: .3rem 0; }
+  .account-overview-row-title { flex: 1; min-width: 0; }
+  .account-overview-row-meta { max-width: 48%; }
+}
 @media (prefers-reduced-motion: reduce) { .account-dashboard * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

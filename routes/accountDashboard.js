@@ -5,12 +5,13 @@ const User = require('../models/useraccount');
 const { resolvePolicy, allows, SECTIONS, navigationFor } = require('../services/accountSurfacePolicy');
 const preferences = require('../services/accountPreferencesService');
 const { createDashboardData } = require('../services/accountDashboardData');
+const { createAccountOverviewData, overviewSections } = require('../services/accountOverviewData');
 const { createSessionCsrf, PRIVATE_NO_STORE } = require('../middleware/sessionCsrf');
 const { visualPayload } = require('../utils/accountLifeLogPayload');
 const logger = require('../utils/logger');
 const { createLifeLogLabels, parseLabelQuery } = require('../services/accountLifeLogLabels');
 const csrf = createSessionCsrf();
-function createAccountDashboard({ roleModel = Role, userModel = User, data = createDashboardData(), lifeLogLabels = createLifeLogLabels() } = {}) {
+function createAccountDashboard({ roleModel = Role, userModel = User, data = createDashboardData(), overview = createAccountOverviewData({ data }), lifeLogLabels = createLifeLogLabels() } = {}) {
   const router = express.Router();
   router.use((req, res, next) => {
     res.set({ 'Cache-Control': PRIVATE_NO_STORE, 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow' });
@@ -36,10 +37,18 @@ function createAccountDashboard({ roleModel = Role, userModel = User, data = cre
   router.get('/', (req, res) => {
     const dashboard = current(req);
     // Usernames can be email addresses or opaque identifiers; never use them as a greeting.
-    res.render('mypage', { pageTitle: 'My Account', dashboard, accountContext: req.dashboardPolicy.isAdmin ? 'Administrator account' : 'Personal account',
+    res.render('mypage', { pageTitle: 'My Account', dashboard, overviewSections: overviewSections(req.dashboardPolicy), accountContext: req.dashboardPolicy.isAdmin ? 'Administrator account' : 'Personal account',
       accountDate: new Intl.DateTimeFormat('en', { timeZone: 'Asia/Tokyo', weekday: 'long', month: 'long', day: 'numeric' }).format(new Date()),
       navChoices: navigationFor(req.dashboardPolicy, req.user.navbar_settings || req.user.mypage_icon_settings),
       canCompleteMypageTask: true });
+  });
+  router.get('/api/overview', async (req, res) => {
+    if (Object.keys(req.query).length) return res.status(400).json({ ok: false, error: 'Unexpected overview parameters.' });
+    try { res.json({ ok: true, ...(await overview.load(req.dashboardPolicy)) }); }
+    catch (_) {
+      logger.warning('Account overview could not be loaded', { category: 'account_dashboard' });
+      res.status(503).json({ ok: false, error: 'Could not load the overview. Try again.' });
+    }
   });
   router.get('/api/settings', (req, res) => res.json({ ok: true, settings: current(req) }));
   router.post('/api/settings', csrf.requireToken, async (req, res) => {

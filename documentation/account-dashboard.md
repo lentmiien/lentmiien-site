@@ -1,6 +1,12 @@
 # My Account and Tools navigation
 
-`/mypage` is an account dashboard with independent cards. Tools moved to the shared,
+`/mypage` starts with a compact, fixed-order overview that scrolls with the page,
+followed by the existing customizable cards. The overview includes priority tasks,
+today's cooking, due Life Log reminders, month-close reminders, pending Ask Lennart,
+active Codex sessions and chats from the last six hours. It remains available when
+the corresponding full cards are hidden. See [overview behavior and security](account-overview.md).
+
+Tools moved to the shared,
 searchable icon drawer. It preserves original icon IDs, public navigation, bookmarks,
 Quick Add, `actionBtn`, `chatmode`, `history_list` and `head_list`. An authorized full
 catalog remains discoverable even when shortcuts are hidden. The first eight visible
@@ -42,7 +48,8 @@ restoration; task links retain 900 ms holds, Space completion and Enter navigati
 - Limits: account requests 100/minute/principal; JSON 40 KiB and strict field allowlists.
   Each card query has a 2 second database timeout and bounded projection/list. Client
   concurrency is four; HTTP timeout 15 seconds; manual refresh, no polling. Hidden/collapsed
-  cards make no requests until shown/expanded. Failed cards do not break the shell.
+  full cards make no card requests until shown/expanded. The overview loads its own
+  authorized, bounded summaries independently. Failed cards do not break the shell.
   Tasks 40, agenda 20, chats 5, pending summaries 5, Codex 8, pods 30, cooking 12,
   financial accounts 100 and transactions 2,000 (overflow yields unavailable), emergency
   categories 200 and active items 2,000 (overflow yields unavailable). Life Log uses 8 recent

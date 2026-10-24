@@ -36,6 +36,75 @@
     if (typeof href === 'string' && href.startsWith('/') && !href.startsWith('//') && !/[\\\r\n]/.test(href)) link.href = href;
     return link;
   }
+  const overview = document.getElementById('account-overview');
+  const overviewRefresh = document.getElementById('account-overview-refresh');
+  const overviewStatus = document.getElementById('account-overview-status');
+  let overviewLoading = false;
+  let overviewQueued = false;
+  const overviewTime = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Tokyo', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  function renderOverviewGroup(group, data) {
+    group.dataset.state = data.state;
+    const count = group.querySelector('.account-overview-count');
+    const status = group.querySelector('.account-overview-state');
+    const more = group.querySelector('.account-overview-more');
+    const list = group.querySelector('.account-overview-rows');
+    const unavailable = data.state === 'unavailable';
+    count.hidden = unavailable;
+    count.textContent = unavailable ? '' : `${data.count}${data.countIsLowerBound ? '+' : ''}`;
+    status.textContent = unavailable ? 'Unavailable · refresh to retry.' : data.state === 'empty' ? group.dataset.emptyText : '';
+    status.hidden = !status.textContent;
+    list.replaceChildren();
+    if (!unavailable) (data.rows || []).slice(0, 2).forEach(row => {
+      const item = element('li', undefined, 'account-overview-row');
+      const link = row.href ? localLink(undefined, row.href) : element('span');
+      const title = element('span', row.title, 'account-overview-row-title');
+      link.title = row.title;
+      link.append(title);
+      const meta = element('small', undefined, 'account-overview-row-meta');
+      if (row.detail) meta.append(document.createTextNode(row.detail));
+      if (row.at && Number.isFinite(new Date(row.at).getTime())) {
+        if (row.detail) meta.append(document.createTextNode(' · '));
+        const time = element('time', overviewTime.format(new Date(row.at)));
+        time.dateTime = row.at; meta.append(time);
+      }
+      if (meta.textContent) link.append(meta);
+      item.append(link); list.append(item);
+    });
+    more.hidden = unavailable || data.count <= data.rows.length;
+    more.textContent = more.hidden ? '' : `${data.countIsLowerBound ? 'At least ' : '+'}${data.count - data.rows.length} more →`;
+    more.setAttribute('aria-label', `Open all ${group.querySelector('h3').textContent}`);
+  }
+  async function loadOverview() {
+    if (!overviewRefresh || overviewLoading) return;
+    overviewLoading = true; active++;
+    overviewRefresh.disabled = true;
+    overview.setAttribute('aria-busy', 'true');
+    overviewStatus.textContent = 'Updating…';
+    const groups = [...overview.querySelectorAll('[data-overview-group]')];
+    try {
+      const data = await request('/mypage/api/overview', { cache: 'no-store' });
+      if (!data.ok || !Array.isArray(data.groups)) throw new Error('Invalid overview response');
+      groups.forEach(group => renderOverviewGroup(group, data.groups.find(g => g.id === group.dataset.overviewGroup)
+        || { state: 'unavailable', rows: [], count: null }));
+      const unavailable = groups.some(group => group.dataset.state === 'unavailable');
+      overview.dataset.state = unavailable ? 'partial' : 'ready';
+      overviewStatus.textContent = unavailable ? 'Some items unavailable' : `Updated ${new Intl.DateTimeFormat('en', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' }).format(new Date(data.fetchedAt))}`;
+    } catch (_) {
+      overview.dataset.state = 'error';
+      overviewStatus.textContent = 'Could not update · retry';
+      groups.forEach(group => renderOverviewGroup(group, { state: 'unavailable', rows: [], count: null }));
+    } finally {
+      overview.removeAttribute('aria-busy'); overviewRefresh.disabled = false;
+      overviewLoading = false; active--; pump();
+    }
+  }
+  function enqueueOverview() {
+    if (!overviewRefresh || overviewLoading || overviewQueued) return;
+    overviewQueued = true; overviewRefresh.disabled = true;
+    overviewStatus.textContent = 'Waiting to refresh…';
+    pump();
+  }
+  overviewRefresh?.addEventListener('click', enqueueOverview);
   function renderRows(card, data) {
     const target = card.querySelector('.account-card-data');
     if (card.dataset.section === 'tasks') {
@@ -126,6 +195,7 @@
     }
   }
   function pump() {
+    if (overviewQueued && active < 4) { overviewQueued = false; void loadOverview(); }
     while (active < 4 && queue.length) {
       const card = queue.shift();
       if (!card.hidden && !card.querySelector('.account-card-content').hidden && !inflight.has(card.dataset.section)) void load(card);
@@ -207,6 +277,7 @@
   document.getElementById('nav-save').addEventListener('click', () => void saveNav());
   document.getElementById('nav-reset').addEventListener('click', () => void saveNav(true));
   if (window.location.hash === '#customize-shortcuts') { openCustomize(); document.getElementById('customize-shortcuts').open = true; }
-  if (!cards.some(c => !c.hidden)) globalStatus.textContent = 'All sections are hidden. Use Customize account to show them.';
+  if (!cards.some(c => !c.hidden)) globalStatus.textContent = 'All sections below are hidden. Use Customize account to show them.';
+  enqueueOverview();
   cards.forEach(card => enqueue(card));
 })();

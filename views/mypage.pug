@@ -7,19 +7,42 @@ block styles
 
 block content
   - const settings = typeof dashboard !== 'undefined' ? dashboard : { sections: [], hiddenSections: [], collapsedSections: [], jobs: {} };
+  - const overview = typeof overviewSections !== 'undefined' ? overviewSections : [];
   main#account-dashboard.account-dashboard(data-csrf-token=csrfToken, data-life-log-script=formAssetUrl('my_life_log.js'))
-    header.account-heading
-      div
-        p.account-eyebrow= typeof accountContext !== 'undefined' ? accountContext : 'Your account'
-        h1 Welcome back
-        p.account-date
-          span= typeof accountDate !== 'undefined' ? accountDate : ''
-          |  · Asia/Tokyo
-      button#account-customize.account-primary(type='button', aria-haspopup='dialog', aria-controls='account-customizer') Customize account
-    p.account-intro A little space for your day. Open Tools above to find everything else.
-    if Array.isArray(permissions) && permissions.includes('account.profile.read')
-      p
-        a(href='/settings') User settings
+    section#account-overview.account-overview(aria-labelledby='account-welcome')
+      header.account-heading
+        div
+          p.account-eyebrow= typeof accountContext !== 'undefined' ? accountContext : 'Your account'
+          h1#account-welcome Welcome back
+          p.account-date
+            span= typeof accountDate !== 'undefined' ? accountDate : ''
+            |  · Asia/Tokyo
+        .account-heading-actions
+          button#account-customize.account-primary(type='button', aria-haspopup='dialog', aria-controls='account-customizer') Customize account
+          if Array.isArray(permissions) && permissions.includes('account.profile.read')
+            a.account-settings-link(href='/settings') User settings
+      if overview.length
+        .account-overview-heading
+          h2 At a glance
+          .account-overview-tools
+            p#account-overview-status(role='status', aria-live='polite') Loading overview…
+            button#account-overview-refresh(type='button', aria-label='Refresh overview', title='Refresh overview') ↻
+        .account-overview-grid
+          each group in overview
+            section.account-overview-group(data-overview-group=group.id, data-empty-text=group.emptyText, aria-labelledby=`overview-title-${group.id}`)
+              header.account-overview-group-heading
+                h3(id=`overview-title-${group.id}`)
+                  a(href=group.href)= group.title
+                span.account-overview-count(hidden)
+              p.account-overview-subtitle= group.subtitle
+              p.account-overview-state Loading…
+              ul.account-overview-rows
+              a.account-overview-more(href=group.href, hidden)
+      else
+        p.account-overview-empty Your tools and account sections are available below and in Tools.
+    .account-sections-heading
+      h2 Your sections
+      p Show what you need with Customize account.
     #account-status(role='status', aria-live='polite')
     .account-grid
       each section in settings.sections
@@ -63,7 +86,7 @@ block content
       .account-dialog-heading
         h2#customize-title Make this space yours
         button#account-customize-close(type='button') Close
-      p Choose sections, their starting state and their order. Hidden sections do not load.
+      p Choose the sections below your overview, their starting state and their order. The overview always stays first, including priority items from hidden sections.
       ol#section-preferences
         each section in settings.sections
           li(data-setting-id=section.id)

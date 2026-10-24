@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const express = require('express');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const { assets, settings, renderDashboard, cardData, renderLifePanel, lifeEntries } = require('../fixtures/accountDashboardLayout');
+const { assets, settings, renderDashboard, cardData, overviewData, renderLifePanel, lifeEntries } = require('../fixtures/accountDashboardLayout');
 
 async function main() {
   assert(process.env.BOOTSTRAP_CSS, 'Supply the layout’s Bootstrap 5.3.3 CSS for accurate responsive checks.');
@@ -18,6 +18,7 @@ async function main() {
   const requests = [];
   app.use(express.json());
   app.get('/mypage', (_req, res) => res.send(renderDashboard(preferences)));
+  app.get('/mypage/api/overview', (_req, res) => res.json(overviewData()));
   app.get('/mypage/api/cards/:id', (req, res) => {
     requests.push(req.params.id); res.json(cardData(req.params.id, rowCount));
   });

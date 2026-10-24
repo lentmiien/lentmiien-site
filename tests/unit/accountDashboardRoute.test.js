@@ -5,17 +5,18 @@ const { createAccountDashboard } = require('../../routes/accountDashboard');
 const { DEFAULT_JOBS } = require('../../services/accountPreferencesService');
 const owner = '111111111111111111111111';
 const token = 'a'.repeat(43);
-let server; let base; let principal; let authenticated; let grants; let data; let userModel; let lifeLogLabels;
+let server; let base; let principal; let authenticated; let grants; let data; let overview; let userModel; let lifeLogLabels;
 beforeEach(async () => {
   process.env.DASHBOARD_PERSONAL_OWNER_USER_ID = owner;
   principal = { _id: owner, name: 'private@example.invalid', type_user: 'user' };
   authenticated = true; grants = [];
   data = { load: jest.fn(async () => ({ rows: [], state: 'empty' })), read: jest.fn(async () => []) };
+  overview = { load: jest.fn(async () => ({ groups: [], fetchedAt: '2026-10-24T00:00:00Z' })) };
   lifeLogLabels = jest.fn(async () => ['Synthetic label']);
   userModel = { updateOne: jest.fn(async () => ({ matchedCount: 1 })) };
   const app = express(); app.set('views', 'views'); app.set('view engine', 'pug'); app.locals.formAssetUrl = require('../../utils/formAssets').createFormAssets().url;
   app.use((req, res, next) => { req.user = principal; req.isAuthenticated = () => authenticated; req.session = { csrfToken: token }; res.locals.loggedIn = authenticated; res.locals.bookmarks = []; res.locals.htmlPaths = []; next(); });
-  app.use('/mypage', createAccountDashboard({ data, userModel, lifeLogLabels, roleModel: { findOne: async q => q.type === 'user' ? { permissions: grants } : null } }));
+  app.use('/mypage', createAccountDashboard({ data, overview, userModel, lifeLogLabels, roleModel: { findOne: async q => q.type === 'user' ? { permissions: grants } : null } }));
   await new Promise(resolve => { server = app.listen(0, '127.0.0.1', resolve); }); base = `http://127.0.0.1:${server.address().port}`;
 });
 afterEach(async () => { delete process.env.DASHBOARD_PERSONAL_OWNER_USER_ID; await new Promise(resolve => server.close(resolve)); });
@@ -29,6 +30,39 @@ test('fast shell performs no data/provider queries, escapes text and omits priva
   expect(html).not.toContain(principal.name); expect(html).not.toContain(owner);
   expect(html).not.toContain('googletagmanager'); expect(data.load).not.toHaveBeenCalled(); expect(data.read).not.toHaveBeenCalled();
   expect(html).toContain('data-section="jobs" hidden');
+  expect(overview.load).not.toHaveBeenCalled();
+});
+
+test('overview uses the validated policy, ignores card visibility and stays private', async () => {
+  grants = ['chat5']; principal.dashboard_settings = { hiddenSections: ['chats'] };
+  const response = await fetch(`${base}/mypage/api/overview`);
+  expect(response.status).toBe(200);
+  expect(response.headers.get('cache-control')).toContain('private, no-store');
+  expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+  expect(response.headers.get('ratelimit')).toBeTruthy();
+  expect(overview.load).toHaveBeenCalledWith(expect.objectContaining({ user: principal }));
+  expect(userModel.updateOne).not.toHaveBeenCalled();
+  const html = await (await fetch(`${base}/mypage`)).text();
+  expect(html).toContain('data-overview-group="chats"');
+  expect(html).toContain('data-section="chats" hidden');
+  expect(html).not.toContain('data-overview-group="life"');
+});
+test.each(['?owner=foreign', '?section=life', '?limit=100', '?now=2025-01-01', '?userId[$ne]='])('overview rejects client selectors %s before reads', async query => {
+  expect((await fetch(`${base}/mypage/api/overview${query}`)).status).toBe(400);
+  expect(overview.load).not.toHaveBeenCalled();
+});
+test('overview denies anonymous and missing surface capability before reads', async () => {
+  authenticated = false;
+  expect((await fetch(`${base}/mypage/api/overview`)).status).toBe(401);
+  authenticated = true; principal.type_user = 'unknown';
+  expect((await fetch(`${base}/mypage/api/overview`)).status).toBe(403);
+  expect(overview.load).not.toHaveBeenCalled();
+});
+test('overview failure uses a generic response and safe operational warning', async () => {
+  overview.load.mockRejectedValue(new Error('private fixture diagnostic'));
+  const response = await fetch(`${base}/mypage/api/overview`);
+  expect(response.status).toBe(503); expect(await response.text()).not.toContain('private fixture');
+  expect(require('../../utils/logger').warning).toHaveBeenCalledWith('Account overview could not be loaded', { category: 'account_dashboard' });
 });
 test.each(['accounting', 'life', 'minute', 'embedding'])('another admin cannot request %s or cause any data calls', async id => {
   principal.type_user = 'admin'; principal._id = '222222222222222222222222'; grants = ['accounting', 'embedding'];

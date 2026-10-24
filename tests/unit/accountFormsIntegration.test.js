@@ -40,7 +40,8 @@ beforeEach(async () => {
   app.get('/assets/forms/:revision/:filename', assets.serve);
   userModel = { updateOne: jest.fn(async () => ({ matchedCount: 1 })) };
   app.use('/mypage/embedding-search', require('../../routes/accountEmbedding'));
-  app.use('/mypage', createAccountDashboard({ userModel, data: {
+  app.use('/mypage', createAccountDashboard({ userModel,
+    overview: { load: jest.fn(async () => ({ groups: [], fetchedAt: new Date().toISOString() })) }, data: {
     load: jest.fn(async () => ({ rows: [], reminders: [], state: 'empty', fetchedAt: new Date().toISOString() })),
     read: jest.fn(async () => [{ _id: '333333333333333333333333', type: 'visual_log', label: 'body_map', timestamp: new Date(), v_log_data: JSON.stringify(visual) }]),
   } }));

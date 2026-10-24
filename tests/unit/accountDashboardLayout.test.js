@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const { createRequire } = require('node:module');
 const { JSDOM } = createRequire(__filename)('jsdom');
-const { settings, renderDashboard, cardData, renderLifePanel, lifeEntries } = require('../fixtures/accountDashboardLayout');
+const { settings, renderDashboard, cardData, overviewData, renderLifePanel, lifeEntries } = require('../fixtures/accountDashboardLayout');
 let dom;
 afterEach(() => dom?.window.close());
 const flush = async () => { for (let i = 0; i < 60; i++) await Promise.resolve(); };
@@ -13,7 +13,7 @@ function fixture() {
     style.textContent = fs.readFileSync(`public/css/${file}.css`, 'utf8');
     win.document.head.append(style);
   }
-  win.fetch = jest.fn(async url => ({ ok: true, json: async () => url.includes('/entries?') ? lifeEntries() : cardData(url.split('/').at(-1)) }));
+  win.fetch = jest.fn(async url => ({ ok: true, json: async () => url === '/mypage/api/overview' ? overviewData() : url.includes('/entries?') ? lifeEntries() : cardData(url.split('/').at(-1)) }));
   win.eval(fs.readFileSync('public/js/account_dashboard.js', 'utf8'));
   return win;
 }
