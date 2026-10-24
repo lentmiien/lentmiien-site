@@ -1,4 +1,5 @@
 const { LOCALITY, localWarningCode, distanceKm, locationConfig } = require('./disasterLocality');
+const { municipalityWarnings, completeMunicipalityWarnings } = require('./disasterJmaMunicipality');
 const array = x => x == null ? [] : Array.isArray(x) ? x : [x];
 const text = x => x && typeof x === 'object' ? text(x['#text']) : x == null ? '' : String(x).trim();
 const date = x => x && Number.isFinite(new Date(x).getTime()) ? new Date(x) : null;
@@ -34,19 +35,18 @@ function warningEvidence(alert) {
   if (!at) return null;
   const tuples = [];
   let covered = false;
-  let unknown = /取消/.test(alert.infoType || text(report.Head?.InfoType));
-  for (const warning of array(report.Body?.Warning)) {
-    // Headline region summaries cannot establish municipality state.
-    if (!/市町村|二次細分/.test(text(warning['@_type']))) continue;
+  const warnings = municipalityWarnings(report);
+  let unknown = /取消/.test(alert.infoType || text(report.Head?.InfoType)) || !completeMunicipalityWarnings(warnings);
+  for (const warning of warnings) {
     for (const item of array(warning.Item)) {
-      if (!array(item.Area).some(a => localWarningCode(text(a.Code), product, at))) continue;
+      if (!array(item?.Area).some(a => localWarningCode(text(a?.Code), product, at))) continue;
       covered = true;
       const kinds = array(item.Kind);
       if (!kinds.length) unknown = true;
       for (const kind of kinds) {
-        const name = text(kind.Name);
-        const code = text(kind.Code);
-        const status = text(kind.Status);
+        const name = text(kind?.Name);
+        const code = text(kind?.Code);
+        const status = text(kind?.Status);
         const clear = code === '00' || /発表警報・注意報はなし|警報・注意報なし/.test(name);
         const cancelled = /解除|取消/.test(status);
         const severity = /特別警報|レベル５|レベル5/.test(name) ? 'emergency' : /危険警報|警報/.test(name) ? 'warning' : /注意報/.test(name) ? 'advisory' : null;

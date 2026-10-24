@@ -19,6 +19,10 @@ const {
 const STATE_KEY = 'default';
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
 const DEFAULT_MAX_NEW_DETAILS_PER_RUN = 80;
+const MAX_WARNING_RECLASSIFICATIONS = 256;
+const WARNING_RECLASSIFY_BUDGET_MS = 15000;
+const WARNING_RETRY_MS = 15 * 60000;
+const WARNING_BODY_PROJECTION = 'source sourceId sourceUrl status infoType eventId reportAt controlAt serial raw.Head raw.Control raw.Body.Warning';
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_TIME_ZONE = 'Asia/Tokyo';
 const { locationConfig: getLocationConfig, locationKey } = require('../utils/disasterLocality');
@@ -281,14 +285,78 @@ class DisasterIngestionService {
     return alert;
   }
 
+  logUnresolvedWarning(alert, check) {
+    this.logger.warning('JMA warning detail has unresolved municipality state', {
+      category: 'disaster_ingestion', metadata: { source: 'jma', operation: 'warning_readiness',
+        bulletinId: warningReadiness.bulletinId(alert), reason: check.reason, version: check.version },
+    });
+  }
+
+  async reclassifyWarningCandidates(queue, now, counters) {
+    const deadline = Date.now() + WARNING_RECLASSIFY_BUDGET_MS;
+    // Only feed/persisted-pending identities, never an archive scan. Rotate failed
+    // attempts behind unattempted candidates so failures cannot monopolize a batch.
+    const candidates = queue.filter(c => warningReadiness.needsWarningCheck(c.entry, now))
+      .sort((a, b) => Number(!!b.entry.carriedPending) - Number(!!a.entry.carriedPending) ||
+        (+new Date(a.entry.lastAttemptAt || 0)) - (+new Date(b.entry.lastAttemptAt || 0)))
+      .slice(0, warningReadiness.MAX_PENDING);
+    const cached = new Map();
+    if (!candidates.length) return cached;
+    const records = await this.models.DisasterAlert.find({ dedupeKey: { $in: candidates.map(c => `jma:${c.entry.url || c.entry.id}`) } })
+      .select('dedupeKey parserVersion localSummaryVersion localWarningCheck').limit(warningReadiness.MAX_PENDING).maxTimeMS(2000).lean();
+    for (const record of records) cached.set(record.dedupeKey, record);
+    // Upgrade stale classifications before retrying known unresolved bodies.
+    candidates.sort((a, b) => Number(cached.get(`jma:${a.entry.url || a.entry.id}`)?.localWarningCheck?.version === warningReadiness.VERSION) -
+      Number(cached.get(`jma:${b.entry.url || b.entry.id}`)?.localWarningCheck?.version === warningReadiness.VERSION));
+    for (const { entry } of candidates) {
+      const existing = cached.get(`jma:${entry.url || entry.id}`);
+      if (!existing || this.shouldRefreshExistingJmaAlert(existing)) continue;
+      const oldCheck = existing.localWarningCheck;
+      const stale = oldCheck?.version !== warningReadiness.VERSION || existing.localSummaryVersion !== PARSER_VERSION;
+      if (!stale && (oldCheck?.resolved || +new Date(oldCheck?.checkedAt || 0) > +now - WARNING_RETRY_MS)) continue;
+      if (counters.warningReclassified >= MAX_WARNING_RECLASSIFICATIONS || Date.now() >= deadline) {
+        counters.warningReclassifyDeferred += 1;
+        continue;
+      }
+      counters.warningReclassified += 1; // attempts, including read/write failures
+      entry.lastAttemptAt = now;
+      try {
+        const stored = await this.models.DisasterAlert.findById(existing._id)
+          .select(WARNING_BODY_PROJECTION).maxTimeMS(1500).lean();
+        if (!stored) throw new Error('Stored JMA candidate disappeared');
+        const check = { ...warningReadiness.classifyWarning(stored), checkedAt: now };
+        // Reapply local evidence even when the parser version was already current.
+        // Remote coverage has no local state to put. Commit the marker only AFTER
+        // summary processing succeeds; failed candidates remain retryable.
+        await this.localSummary.ingestAlert(stored);
+        const saved = await this.models.DisasterAlert.updateOne({ _id: existing._id, parserVersion: PARSER_VERSION },
+          { $set: { localWarningCheck: check, localSummaryVersion: PARSER_VERSION } }, { maxTimeMS: 2000 });
+        if (saved.matchedCount !== 1) throw new Error('Stored JMA candidate changed during classification');
+        existing.localWarningCheck = check;
+        existing.localSummaryVersion = PARSER_VERSION;
+        if (!check.resolved && (oldCheck?.version !== check.version || oldCheck?.reason !== check.reason)) this.logUnresolvedWarning(stored, check);
+      } catch (error) {
+        // Do not trust a previous success when its required summary repair failed.
+        cached.set(existing.dedupeKey, { ...existing, localWarningCheck: null });
+        counters.warningReclassifyErrors += 1;
+        this.logger.warning('Stored JMA warning reclassification failed; candidate remains pending', {
+          category: 'disaster_ingestion', metadata: { source: 'jma', operation: 'warning_reclassification',
+            bulletinId: warningReadiness.bulletinId(entry), reason: 'stored_candidate_processing_failed', ...upstreamErrorMetadata(error) },
+        });
+      }
+    }
+    return cached;
+  }
+
   async pollJmaFeeds(state) {
     const now = new Date();
     const counters = { inserted: 0, duplicates: 0, updated: 0, skippedBeforeStart: 0,
       detailFetches: 0, deferred: 0, feedErrors: 0, detailErrors: 0, warningCheckedAt: now,
-      warningPending: 0, warningFeedErrors: 0 };
+      warningPending: 0, warningFeedErrors: 0, warningReclassified: 0, warningReclassifyDeferred: 0, warningReclassifyErrors: 0 };
     const feeds = [];
     const entries = new Map();
-    const maxDetails = parsePositiveInteger(process.env.DISASTER_JMA_MAX_NEW_DETAILS_PER_RUN, DEFAULT_MAX_NEW_DETAILS_PER_RUN);
+    const maxDetails = Math.min(DEFAULT_MAX_NEW_DETAILS_PER_RUN,
+      parsePositiveInteger(process.env.DISASTER_JMA_MAX_NEW_DETAILS_PER_RUN, DEFAULT_MAX_NEW_DETAILS_PER_RUN));
     const merge = (entry, feed, feedState) => {
       const sourceUrl = entry.url || entry.id;
       if (!sourceUrl) return;
@@ -296,8 +364,12 @@ class DisasterIngestionService {
       // Preserve the newest timestamp across short/long duplicates. Missing dates
       // stay unknown; a dated duplicate must not silently hide uncertainty.
       if (prior) {
+        const lastAttemptAt = prior.entry.lastAttemptAt || entry.lastAttemptAt;
+        const carriedPending = prior.entry.carriedPending || entry.carriedPending;
         if (!prior.entry.updatedAt || !entry.updatedAt) prior.entry.updatedAt = null;
         else if (+entry.updatedAt > +prior.entry.updatedAt) prior.entry = entry;
+        prior.entry.lastAttemptAt = lastAttemptAt;
+        prior.entry.carriedPending = carriedPending;
         return;
       }
       entries.set(sourceUrl, { entry: { ...entry }, feed, feedState });
@@ -339,13 +411,23 @@ class DisasterIngestionService {
     // Carry unresolved candidates across polls, including entries that have
     // fallen out of the short feed before the hourly long feed catches up.
     for (const pending of state.warningPending || []) {
-      const entry = { ...pending, updatedAt: pending.updatedAt ? new Date(pending.updatedAt) : null };
+      const entry = { ...pending, carriedPending: true, updatedAt: pending.updatedAt ? new Date(pending.updatedAt) : null };
       if (warningReadiness.needsWarningCheck(entry, now)) merge(entry, {}, null);
     }
     const pending = [];
     const queue = [...entries.values()].sort((a, b) =>
       warningReadiness.priority(a.entry, now) - warningReadiness.priority(b.entry, now) ||
       (+b.entry.updatedAt || 0) - (+a.entry.updatedAt || 0));
+    let cached = new Map();
+    try {
+      cached = await this.reclassifyWarningCandidates(queue, now, counters);
+    } catch (error) {
+      counters.warningReclassifyErrors += 1;
+      this.logger.warning('JMA warning reclassification lookup failed; stale candidates remain pending', {
+        category: 'disaster_ingestion', metadata: { source: 'jma', operation: 'warning_reclassification',
+          reason: 'candidate_lookup_failed', ...upstreamErrorMetadata(error) },
+      });
+    }
     for (const candidate of queue) {
       const { entry, feed, feedState } = candidate;
       const relevant = warningReadiness.needsWarningCheck(entry, now);
@@ -357,10 +439,9 @@ class DisasterIngestionService {
       const dedupeKey = `jma:${sourceUrl}`;
       let resolved = false;
       try {
-        const existing = await this.models.DisasterAlert.findOne({ dedupeKey })
-          .select({ parserVersion: 1, localSummaryVersion: 1, localWarningCheck: 1 }).lean();
-        const refresh = !existing || this.shouldRefreshExistingJmaAlert(existing) ||
-          (relevant && existing.localWarningCheck?.version !== warningReadiness.VERSION);
+        const existing = cached.get(dedupeKey) || await this.models.DisasterAlert.findOne({ dedupeKey })
+          .select({ parserVersion: 1, localSummaryVersion: 1, localWarningCheck: 1 }).maxTimeMS(1500).lean();
+        const refresh = !existing || this.shouldRefreshExistingJmaAlert(existing);
         if (refresh) {
           if (counters.detailFetches >= maxDetails) {
             counters.deferred += 1;
@@ -375,11 +456,9 @@ class DisasterIngestionService {
             if (!parsed.raw.Head || !parsed.raw.Control || !parsed.reportAt || !parsed.controlAt) {
               throw new Error('Missing JMA detail metadata');
             }
-            resolved = warningReadiness.warningResolved(parsed);
-            if (relevant && !resolved) this.logger.warning('JMA warning detail has unresolved municipality state', {
-              category: 'disaster_ingestion', metadata: { source: 'jma', operation: 'warning_readiness' },
-            });
-            parsed.localWarningCheck = { version: warningReadiness.VERSION, resolved };
+            parsed.localWarningCheck = { ...warningReadiness.classifyWarning(parsed), checkedAt: now };
+            resolved = parsed.localWarningCheck.resolved;
+            if (relevant && !resolved) this.logUnresolvedWarning(parsed, parsed.localWarningCheck);
             if (existing) {
               const saved = await this.refreshExistingJmaAlert(existing, parsed);
               if (!saved) throw new Error('JMA detail disappeared during refresh');
@@ -397,13 +476,14 @@ class DisasterIngestionService {
             }
           }
         } else {
-          if (existing.localSummaryVersion !== PARSER_VERSION) {
+          if (!relevant && existing.localSummaryVersion !== PARSER_VERSION) {
             const stored = await this.models.DisasterAlert.findById(existing._id);
             await this.localSummary.ingestAlert(stored);
             stored.localSummaryVersion = PARSER_VERSION;
             await stored.save();
           }
-          resolved = existing.localWarningCheck?.resolved === true;
+          resolved = existing.localSummaryVersion === PARSER_VERSION &&
+            existing.localWarningCheck?.version === warningReadiness.VERSION && existing.localWarningCheck.resolved === true;
           counters.duplicates += 1;
         }
       } catch (error) {
@@ -411,13 +491,14 @@ class DisasterIngestionService {
         counters.detailErrors += 1;
         this.logger.warning('JMA disaster detail processing failed; candidate remains unresolved', {
           category: 'disaster_ingestion',
-          metadata: { source: 'jma', warningCandidate: relevant, ...upstreamErrorMetadata(error) },
+          metadata: { source: 'jma', warningCandidate: relevant, bulletinId: warningReadiness.bulletinId(entry),
+            reason: 'detail_processing_failed', ...upstreamErrorMetadata(error) },
         });
       }
       if (relevant && !resolved) {
         counters.warningPending += 1;
         if (pending.length < warningReadiness.MAX_PENDING) {
-          pending.push({ id: entry.id, url: sourceUrl, updatedAt: entry.updatedAt,
+          pending.push({ id: entry.id, url: sourceUrl, updatedAt: entry.updatedAt, lastAttemptAt: entry.lastAttemptAt,
             title: String(entry.title || '').slice(0, 200), author: String(entry.author || '').slice(0, 100) });
         }
       }

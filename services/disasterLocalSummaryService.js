@@ -83,7 +83,11 @@ function createLocalSummaryService({ model = require('../models/disaster_local_s
   async function ingestAlert(alert) {
     const revision = order(alert.reportAt, alert.controlAt || alert.reportAt, alert.serial, /訂正|取消/.test(alert.infoType || ''));
     let warning = warningEvidence(alert);
-    if (!warning && ['VPWW53', 'VPWW54'].includes(productOf(alert)) && /取消|訂正/.test(alert.infoType || '') && alert.eventId) {
+    // Empty EventID is normal for warning bulletins. Never associate such a
+    // correction with a local event: ingestion's unresolved pending/health gate
+    // blocks current/all-clear until positively resolved or the window expires.
+    if (!warning && ['VPWW53', 'VPWW54'].includes(productOf(alert)) && /取消|訂正/.test(alert.infoType || '') && alert.eventId &&
+      !require('../utils/disasterJmaReadiness').warningResolved(alert)) {
       const current = await model.findById(key('warnings')).select('data').maxTimeMS(1500).lean();
       if (current?.data?.eventId === alert.eventId) warning = { ...current.data, at: date(alert.reportAt), coverage: false };
     }
@@ -109,7 +113,8 @@ function createLocalSummaryService({ model = require('../models/disaster_local_s
   async function health(ok, counters = {}) {
     const at = now();
     const diagnostics = Object.fromEntries(['warningPending', 'warningFeedErrors', 'warningFeedsPresent',
-      'warningPendingOverflow', 'deferred', 'detailErrors'].map(name => [name, counters[name] ?? null]));
+      'warningPendingOverflow', 'deferred', 'detailErrors', 'warningReclassified', 'warningReclassifyDeferred',
+      'warningReclassifyErrors'].map(name => [name, counters[name] ?? null]));
     await put('health', { ok, at: date(counters.warningCheckedAt) || at, ...diagnostics }, order(at));
   }
   async function read() {

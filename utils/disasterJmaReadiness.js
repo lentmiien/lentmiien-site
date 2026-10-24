@@ -1,10 +1,9 @@
 const { date, warningEvidence } = require('./disasterLocalEvidence');
 const { PARSER_VERSION } = require('./disasterJmaParser');
-const VERSION = `${PARSER_VERSION}:warning-readiness-v1`;
+const { array, text, municipalityWarnings, completeMunicipalityWarnings } = require('./disasterJmaMunicipality');
+const VERSION = `${PARSER_VERSION}:warning-readiness-v2`;
 const WINDOW_MS = 6 * 3600000;
 const MAX_PENDING = 512;
-const array = x => x == null ? [] : Array.isArray(x) ? x : [x];
-const text = x => typeof x === 'object' ? x?.['#text'] || '' : String(x || '');
 
 function potentialWarning(entry) {
   // A recognized different product cannot update the VPWW53/54 warning slot.
@@ -23,21 +22,30 @@ function priority(entry, now) {
   return /神奈川|横浜/.test(`${entry.title || ''} ${entry.author || ''}`) ? 0 : 1;
 }
 
-function warningResolved(alert) {
-  if (!alert?.raw?.Head || !alert.raw.Control || !date(alert.reportAt) || !date(alert.controlAt)) return false;
-  if (!potentialWarning({ id: alert.sourceId, url: alert.sourceUrl })) return true;
-  if (!alert.status || !['発表', '訂正', '取消'].includes(alert.infoType)) return false;
-  if (alert.status !== '通常') return ['訓練', '試験'].includes(alert.status);
+function classifyWarning(alert) {
+  const result = (resolved, reason) => ({ version: VERSION, resolved, reason });
+  if (!alert?.raw?.Head || !alert.raw.Control || !date(alert.reportAt) || !date(alert.controlAt)) return result(false, 'missing_metadata');
+  if (!potentialWarning({ id: alert.sourceId, url: alert.sourceUrl })) return result(true, 'different_product');
+  if (!alert.status || !['発表', '訂正', '取消'].includes(alert.infoType)) return result(false, 'unknown_bulletin_status');
+  if (alert.status !== '通常') return result(['訓練', '試験'].includes(alert.status), 'non_operational_status');
+  if (!/(?:^|[\/_\s-])VPWW(?:53|54)(?=[_.\s/-]|$)/.test(`${alert.sourceId} ${alert.sourceUrl}`)) return result(false, 'unknown_product');
+  const warnings = municipalityWarnings(alert.raw);
+  if (!warnings.length) return result(false, 'missing_municipality_block');
+  if (!completeMunicipalityWarnings(warnings)) return result(false, 'incomplete_municipality_block');
   const evidence = warningEvidence(alert);
-  if (evidence) return evidence.coverage;
-  const municipalityWarnings = array(alert.raw.Body?.Warning)
-    .filter(w => /市町村|二次細分/.test(text(w['@_type'])));
+  if (evidence) return result(evidence.coverage, evidence.coverage ? 'local_coverage' : 'unknown_local_state');
   // Only parsed municipality codes can establish a different region. Unknown
   // products, bodyless corrections/retractions and ambiguous areas stay unresolved.
-  return /VPWW(?:53|54)/.test(`${alert.sourceId} ${alert.sourceUrl}`) && municipalityWarnings.length > 0 &&
-    municipalityWarnings.every(w => array(w.Item).length > 0 && array(w.Item).every(item =>
-      array(item.Area).length > 0 && array(item.Area).every(a =>
-        /^\d{7}$/.test(text(a.Code)) && !['1410011', '1410000'].includes(text(a.Code)))));
+  const nonlocal = warnings.every(w => array(w.Item).every(item => array(item.Area).every(a =>
+    !['1410011', '1410000'].includes(text(a.Code)))));
+  return result(nonlocal, nonlocal ? 'nonlocal_municipalities' : 'ambiguous_local_code');
+}
+const warningResolved = alert => classifyWarning(alert).resolved;
+
+function bulletinId(entry) {
+  // Only a public JMA filename, never a URL/query, arbitrary title or raw body.
+  return `${entry.sourceId || entry.id || ''} ${entry.sourceUrl || entry.url || ''}`
+    .match(/(?:^|[\s/])(\d{14}_\d+_V[A-Z]{3}\d{2}_\d{6}\.xml)(?=$|[\s?#])/)?.[1] || null;
 }
 
 function warningFeedKind(url) {
@@ -50,4 +58,4 @@ function warningFeedKind(url) {
   return 'unknown';
 }
 
-module.exports = { VERSION, WINDOW_MS, MAX_PENDING, needsWarningCheck, priority, warningResolved, warningFeedKind };
+module.exports = { VERSION, WINDOW_MS, MAX_PENDING, needsWarningCheck, priority, classifyWarning, warningResolved, warningFeedKind, bulletinId };
