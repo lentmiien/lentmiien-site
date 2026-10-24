@@ -6,7 +6,8 @@ async function main() {
   const mode = process.argv[2] || '--check';
   if (!['--check', '--indexes', '--bootstrap'].includes(mode) || process.argv.length > 3) throw new Error('Use --check, --indexes or --bootstrap.');
   if (!process.env.MONGOOSE_URL) throw new Error('MONGOOSE_URL is required.');
-  await mongoose.connect(process.env.MONGOOSE_URL, { autoIndex: false, serverSelectionTimeoutMS: 5000 });
+  // Model initialization otherwise calls createCollection even when autoIndex is false.
+  await mongoose.connect(process.env.MONGOOSE_URL, { autoIndex: false, autoCreate: false, serverSelectionTimeoutMS: 5000 });
   const models = { DisasterAlert: require('../models/disaster_alert'), DisasterWeatherObservation: require('../models/disaster_weather_observation') };
   const summary = require('../models/disaster_local_summary');
   if (mode === '--indexes') {
