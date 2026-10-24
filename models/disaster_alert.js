@@ -81,8 +81,8 @@ const DisasterAlertSchema = new Schema({
     magnitudeDescription: { type: String, trim: true, default: null },
     maxIntensity: { type: String, trim: true, default: null },
     maxIntensityLabel: { type: String, trim: true, default: null },
-    yokohamaAsahiIntensity: { type: String, trim: true, default: '0' },
-    yokohamaAsahiIntensityLabel: { type: String, trim: true, default: '0' },
+    yokohamaAsahiIntensity: { type: String, trim: true, default: null },
+    yokohamaAsahiIntensityLabel: { type: String, trim: true, default: null },
     tsunamiComment: { type: String, trim: true, default: null },
   },
 
@@ -98,6 +98,7 @@ const DisasterAlertSchema = new Schema({
   },
 
   weather: {
+    localState: { type: Schema.Types.Mixed, default: null },
     hazardNames: { type: [String], default: [] },
     areaNames: { type: [String], default: [] },
     primaryArea: { type: String, trim: true, default: null },
@@ -107,6 +108,7 @@ const DisasterAlertSchema = new Schema({
   verifications: { type: [DisasterVerificationSchema], default: [] },
   rawXmlSizeBytes: { type: Number, default: 0 },
   raw: { type: Schema.Types.Mixed, default: {} },
+  localSummaryVersion: { type: String, default: null },
   parserVersion: { type: String, trim: true, default: 'jma-v1' },
 }, {
   minimize: false,

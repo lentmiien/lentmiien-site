@@ -19,11 +19,9 @@ const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
 const DEFAULT_MAX_NEW_DETAILS_PER_RUN = 80;
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_TIME_ZONE = 'Asia/Tokyo';
-const DEFAULT_LOCATION = {
-  name: '横浜旭区',
-  latitude: 35.4759,
-  longitude: 139.5443,
-};
+const { locationConfig: getLocationConfig, locationKey } = require('../utils/disasterLocality');
+const { p2pLocalIntensity } = require('../utils/disasterLocalEvidence');
+const { createLocalSummaryService } = require('./disasterLocalSummaryService');
 
 const DEFAULT_JMA_FEEDS = [
   'https://www.data.jma.go.jp/developer/xml/feed/eqvol.xml',
@@ -82,14 +80,6 @@ function getConfiguredJmaFeeds() {
 
 function getIntervalMs() {
   return parsePositiveInteger(process.env.DISASTER_POLL_INTERVAL_MS, DEFAULT_INTERVAL_MS);
-}
-
-function getLocationConfig() {
-  return {
-    name: process.env.DISASTER_WEATHER_LOCATION_NAME || DEFAULT_LOCATION.name,
-    latitude: parseNumber(process.env.DISASTER_WEATHER_LATITUDE, DEFAULT_LOCATION.latitude),
-    longitude: parseNumber(process.env.DISASTER_WEATHER_LONGITUDE, DEFAULT_LOCATION.longitude),
-  };
 }
 
 function compactError(error) {
@@ -207,7 +197,9 @@ class DisasterIngestionService {
       DisasterWeatherObservation,
       DisasterWeatherSnapshot,
     };
+    this.localSummary = options.localSummary || createLocalSummaryService();
     this.running = false;
+    this.weatherRunning = false;
   }
 
   async fetchText(url) {
@@ -215,6 +207,7 @@ class DisasterIngestionService {
     const response = await this.http.get(url, {
       timeout,
       responseType: 'text',
+      maxContentLength: 8 * 1024 * 1024,
       headers: {
         'User-Agent': 'lentmiien-site disaster dashboard (+https://home.lentmiien.com)',
       },
@@ -227,6 +220,7 @@ class DisasterIngestionService {
     const response = await this.http.get(url, {
       timeout,
       ...options,
+      maxContentLength: 8 * 1024 * 1024,
       headers: {
         'User-Agent': 'lentmiien-site disaster dashboard (+https://home.lentmiien.com)',
         ...(options.headers || {}),
@@ -253,6 +247,9 @@ class DisasterIngestionService {
   async saveAlert(alertData) {
     try {
       const alert = await this.models.DisasterAlert.create(alertData);
+      await this.localSummary.ingestAlert(alert);
+      alert.localSummaryVersion = PARSER_VERSION;
+      await alert.save();
       await this.verifyAlert(alert);
       return { inserted: true, alert };
     } catch (error) {
@@ -264,7 +261,7 @@ class DisasterIngestionService {
   }
 
   shouldRefreshExistingJmaAlert(alert) {
-    return alert?.category === 'typhoon' && alert.parserVersion !== PARSER_VERSION;
+    return alert?.parserVersion !== PARSER_VERSION;
   }
 
   async refreshExistingJmaAlert(existingAlert, parsedAlert) {
@@ -274,6 +271,9 @@ class DisasterIngestionService {
       { new: true }
     );
     if (alert) {
+      await this.localSummary.ingestAlert(alert);
+      alert.localSummaryVersion = PARSER_VERSION;
+      await alert.save();
       await this.verifyAlert(alert);
     }
     return alert;
@@ -308,7 +308,7 @@ class DisasterIngestionService {
         const sourceUrl = entry.url || entry.id;
         const dedupeKey = `jma:${sourceUrl}`;
         const existingAlert = await this.models.DisasterAlert.findOne({ dedupeKey })
-          .select({ category: 1, parserVersion: 1 })
+          .select({ category: 1, parserVersion: 1, localSummaryVersion: 1 })
           .lean();
         if (existingAlert) {
           if (this.shouldRefreshExistingJmaAlert(existingAlert)) {
@@ -323,6 +323,13 @@ class DisasterIngestionService {
             await this.refreshExistingJmaAlert(existingAlert, parsedAlert);
             runCounters.updated += 1;
             continue;
+          }
+          if (existingAlert.localSummaryVersion !== PARSER_VERSION) {
+            // Retry a prior summary-write failure from stored evidence without another provider call.
+            const stored = await this.models.DisasterAlert.findById(existingAlert._id);
+            await this.localSummary.ingestAlert(stored);
+            stored.localSummaryVersion = PARSER_VERSION;
+            await stored.save();
           }
           runCounters.duplicates += 1;
           continue;
@@ -616,8 +623,8 @@ class DisasterIngestionService {
         sourceId: entry.id,
         sourceUrl: `https://api.p2pquake.net/v2/jma/quake/${entry.id}`,
         category: 'earthquake',
-        severity: shindoScore(p2pScaleLabel(entry.earthquake?.maxScale)) >= 5 ? 'warning' : 'advisory',
-        severityScore: shindoScore(p2pScaleLabel(entry.earthquake?.maxScale)) >= 5 ? 4 : 2,
+        severity: shindoScore(p2pLocalIntensity(entry.points)) >= 5 ? 'warning' : shindoScore(p2pLocalIntensity(entry.points)) >= 3 ? 'advisory' : 'info',
+        severityScore: shindoScore(p2pLocalIntensity(entry.points)) >= 5 ? 4 : shindoScore(p2pLocalIntensity(entry.points)) >= 3 ? 2 : 0,
         confidence: 0.58,
         title: `Earthquake: ${hypocenter.name || 'Japan region'}`,
         headline: entry.comments?.freeFormComment || null,
@@ -637,12 +644,12 @@ class DisasterIngestionService {
           magnitude: hypocenter.magnitude || null,
           maxIntensity: p2pScaleLabel(entry.earthquake?.maxScale),
           maxIntensityLabel: p2pScaleLabel(entry.earthquake?.maxScale),
-          yokohamaAsahiIntensity: '0',
-          yokohamaAsahiIntensityLabel: '0',
+          yokohamaAsahiIntensity: p2pLocalIntensity(entry.points),
+          yokohamaAsahiIntensityLabel: p2pLocalIntensity(entry.points),
           tsunamiComment: entry.earthquake?.domesticTsunami || null,
         },
         areas: Array.isArray(entry.points)
-          ? entry.points.slice(0, 80).map((point) => ({
+          ? entry.points.map((point) => ({
             name: point.addr || null,
             prefecture: point.pref || null,
             maxIntensity: p2pScaleLabel(point.scale),
@@ -708,8 +715,8 @@ class DisasterIngestionService {
           depthKm: Number.isFinite(coordinates[2]) ? coordinates[2] : null,
           magnitude: properties.mag || null,
           magnitudeType: properties.magType || null,
-          yokohamaAsahiIntensity: '0',
-          yokohamaAsahiIntensityLabel: '0',
+          yokohamaAsahiIntensity: null,
+          yokohamaAsahiIntensityLabel: null,
         },
         verifications: [{
           source: 'usgs',
@@ -860,7 +867,7 @@ class DisasterIngestionService {
   }
 
   parseOpenWeatherObservation(data, location) {
-    if (!data || typeof data !== 'object' || !Number.isFinite(data.dt) || !data.main) {
+    if (!data || typeof data !== 'object' || !Number.isFinite(data.dt) || !Number.isFinite(data.main?.temp)) {
       throw Object.assign(new Error('OpenWeather current weather response was malformed'), { code: 'UPSTREAM_INVALID_RESPONSE' });
     }
 
@@ -871,6 +878,10 @@ class DisasterIngestionService {
       latitude: location.latitude,
       longitude: location.longitude,
       observedAt,
+      receivedAt: new Date(),
+      isDay: Number.isFinite(data.sys?.sunrise) && Number.isFinite(data.sys?.sunset)
+        ? data.dt >= data.sys.sunrise && data.dt < data.sys.sunset : null,
+      precipitationPeriodHours: 1,
       temperatureC: data?.main?.temp ?? null,
       feelsLikeC: data?.main?.feels_like ?? null,
       precipitationMm: [data?.rain?.['1h'], data?.snow?.['1h']]
@@ -952,16 +963,18 @@ class DisasterIngestionService {
       return best;
     }, null)?.entry;
 
-    if (!closest) {
+    if (!closest || Math.abs(+new Date(closest.time) - now) > 90 * 60000) {
       return null;
     }
 
     return {
       source: `${snapshot.source}-hourly`,
+      precipitationPeriodHours: snapshot.source === 'openweathermap' ? 3 : 1,
       locationName: snapshot.locationName,
       latitude: snapshot.latitude,
       longitude: snapshot.longitude,
       observedAt: new Date(closest.time),
+      receivedAt: snapshot.fetchedAt,
       temperatureC: closest.temperatureC ?? null,
       feelsLikeC: closest.feelsLikeC ?? null,
       precipitationMm: closest.precipitationMm ?? null,
@@ -984,21 +997,27 @@ class DisasterIngestionService {
       return null;
     }
     const bucketStartAt = hourBucketStart(observation.observedAt);
-    const observationKey = `${observation.locationName}:${bucketStartAt.toISOString()}`;
+    const observationKey = `${locationKey({ name: observation.locationName, latitude: observation.latitude, longitude: observation.longitude })}:${bucketStartAt.toISOString()}`;
     const summary = buildForecastSummary([observation]);
 
-    return this.models.DisasterWeatherObservation.findOneAndUpdate(
-      { observationKey },
-      {
-        $setOnInsert: {
-          ...observation,
-          observationKey,
-          bucketStartAt,
-          summary,
+    await this.localSummary.saveWeather(observation);
+    try {
+      return await this.models.DisasterWeatherObservation.findOneAndUpdate(
+        { observationKey, $or: [{ observedAt: { $lte: observation.observedAt } }, { observedAt: { $exists: false } }] },
+        {
+          $set: {
+            ...observation,
+            observationKey,
+            bucketStartAt,
+            summary,
+          },
         },
-      },
-      { upsert: true, new: true }
-    );
+        { upsert: true, new: true, maxTimeMS: 2000 }
+      );
+    } catch (error) {
+      if (error.code === 11000) return null; // An older poll cannot replace the latest reading.
+      throw error;
+    }
   }
 
   async refreshWeatherObservation(location, snapshot = null) {
@@ -1030,7 +1049,7 @@ class DisasterIngestionService {
     return this.saveWeatherObservation(this.buildObservationFromSnapshot(snapshot));
   }
 
-  async refreshWeatherSnapshot() {
+  async refreshWeatherSnapshot({ observationAlreadySaved = false } = {}) {
     if (process.env.DISASTER_WEATHER_ENABLED === 'false') {
       return null;
     }
@@ -1049,7 +1068,7 @@ class DisasterIngestionService {
           },
         });
         const snapshot = await this.models.DisasterWeatherSnapshot.create(this.parseOpenWeatherForecast(data, location));
-        await this.refreshWeatherObservation(location, snapshot);
+        if (!observationAlreadySaved) await this.refreshWeatherObservation(location, snapshot);
         return snapshot;
       } catch (error) {
         this.logger.warning('OpenWeather forecast refresh failed, trying Open-Meteo fallback', {
@@ -1078,70 +1097,62 @@ class DisasterIngestionService {
       },
     });
     const snapshot = await this.models.DisasterWeatherSnapshot.create(this.parseOpenMeteoForecast(data, location));
-    await this.refreshWeatherObservation(location, snapshot);
+    if (!observationAlreadySaved) await this.refreshWeatherObservation(location, snapshot);
     return snapshot;
   }
 
-  async runOnce(options = {}) {
-    if (this.running) {
-      return { status: 'skipped', reason: 'already-running' };
-    }
-
-    this.running = true;
-    const state = await this.getState();
-    state.running = true;
-    state.lastRunAt = new Date();
-    await state.save();
-
+  async runWeatherOnce() {
+    if (this.weatherRunning) return { status: 'skipped' };
+    this.weatherRunning = true;
     try {
-      const jmaResult = await this.pollJmaFeeds(state);
-      let backupCounters = null;
-      if (jmaResult.counters.feedErrors === getConfiguredJmaFeeds().length) {
-        backupCounters = await this.ingestBackupSources(state);
-      }
+      // Current data is saved before forecast requests and independently of alert detail work.
+      const observation = await this.refreshWeatherObservation(getLocationConfig());
+      await this.refreshWeatherSnapshot({ observationAlreadySaved: !!observation });
+      return { status: 'ok' };
+    } catch (error) {
+      this.logger.warning('Local weather poll failed; retaining last-known observation', {
+        category: 'disaster_ingestion', metadata: { operation: 'weather', ...upstreamErrorMetadata(error) },
+      });
+      return { status: 'failed' };
+    } finally { this.weatherRunning = false; }
+  }
 
-      let weatherSnapshotId = null;
-      let weatherObservationId = null;
-      try {
-        const weatherSnapshot = await this.refreshWeatherSnapshot();
-        weatherSnapshotId = weatherSnapshot?._id ? String(weatherSnapshot._id) : null;
-        const latestObservation = weatherSnapshotId
-          ? await this.models.DisasterWeatherObservation.findOne({}).sort({ bucketStartAt: -1 })
-          : null;
-        weatherObservationId = latestObservation?._id ? String(latestObservation._id) : null;
-      } catch (error) {
-        this.logger.warning('Disaster weather snapshot refresh failed', {
-          category: 'disaster_ingestion',
-          metadata: { operation: 'weather_snapshot', ...upstreamErrorMetadata(error) },
+  async runOnce(options = {}) {
+    if (this.running) return { status: 'skipped', reason: 'already-running' };
+    this.running = true;
+    let state;
+    try {
+      state = await this.getState();
+      state.running = true;
+      state.lastRunAt = new Date();
+      await state.save();
+      try { await this.localSummary.bootstrap(this.models); }
+      catch (error) {
+        this.logger.warning('Local disaster bootstrap incomplete; will retry next poll', {
+          category: 'disaster_ingestion', metadata: { errorName: error.name },
         });
       }
-
+      const jmaResult = await this.pollJmaFeeds(state);
+      let backupCounters = null;
+      if (jmaResult.counters.feedErrors === getConfiguredJmaFeeds().length) backupCounters = await this.ingestBackupSources(state);
+      await this.localSummary.health(jmaResult.counters.feedErrors === 0 && jmaResult.counters.deferred === 0);
       state.running = false;
       state.lastSuccessAt = new Date();
       state.lastError = null;
       state.feeds = jmaResult.feeds;
-      state.counters = {
-        reason: options.reason || 'scheduled',
-        ...jmaResult.counters,
-        backup: backupCounters,
-        weatherSnapshotId,
-        weatherObservationId,
-      };
+      state.counters = { reason: options.reason || 'scheduled', ...jmaResult.counters, backup: backupCounters };
       await state.save();
-
-      return {
-        status: 'ok',
-        ...state.counters,
-      };
+      return { status: 'ok', ...state.counters };
     } catch (error) {
-      state.running = false;
-      state.lastErrorAt = new Date();
-      state.lastError = compactError(error);
-      await state.save();
+      await this.localSummary.health(false).catch(() => {});
+      if (state) {
+        state.running = false;
+        state.lastErrorAt = new Date();
+        state.lastError = compactError(error);
+        await state.save();
+      }
       throw error;
-    } finally {
-      this.running = false;
-    }
+    } finally { this.running = false; }
   }
 }
 

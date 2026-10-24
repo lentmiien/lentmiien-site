@@ -140,6 +140,29 @@
       card.querySelector('.schedule-task-pill--empty').hidden = data.rows.length > 0;
       return;
     }
+    if (card.dataset.section === 'disaster' && data.summary) {
+      const { weather, warnings } = data.summary;
+      const wrapper = element('div', undefined, 'local-card');
+      const hero = element('div', undefined, 'local-card__weather');
+      const img = document.createElement('img');
+      if (/^\/i\/disaster\/v3\/weather-[a-z]+(?:-[a-z]+)?\.svg$/.test(weather.art)) img.src = weather.art;
+      img.alt = ''; img.width = 120; img.height = 120;
+      const copy = element('div');
+      copy.append(element('p', weather.label, 'local-card__label'), element('p', Number.isFinite(weather.temperatureC) ? `${weather.temperatureC.toFixed(1)}°C` : '—', 'local-card__temperature'),
+        element('p', weather.description || 'Current weather unavailable'));
+      hero.append(img, copy); wrapper.append(hero);
+      const metrics = [Number.isFinite(weather.feelsLikeC) ? `Feels like ${weather.feelsLikeC.toFixed(1)}°C` : null,
+        Number.isFinite(weather.humidityPercent) ? `Humidity ${weather.humidityPercent}%` : null,
+        Number.isFinite(weather.windSpeedMs) ? `Wind ${weather.windSpeedMs.toFixed(1)} m/s` : null,
+        Number.isFinite(weather.precipitationMm) ? `Rain/snow ${weather.precipitationMm.toFixed(1)} mm / ${weather.precipitationPeriodHours || 1}h` : null].filter(Boolean);
+      wrapper.append(element('p', metrics.join(' · '), 'local-card__meta'));
+      const at = weather.observedAt ? new Intl.DateTimeFormat('en', { timeZone: 'Asia/Tokyo', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(weather.observedAt)) : 'unavailable';
+      wrapper.append(element('p', `${weather.estimated ? 'Forecast valid' : 'Observed'} ${at} JST · ${weather.source || 'Source unavailable'} · ${weather.freshness}`, 'local-card__meta'),
+        element('h3', warnings.label), element('p', warnings.area, 'local-card__meta'));
+      const list = element('ul');
+      warnings.active.forEach(h => list.append(element('li', `${h.name} · ${h.severity} · ${h.status}`)));
+      wrapper.append(list); target.replaceChildren(wrapper); return;
+    }
     if (card.dataset.section === 'life' && target.dataset.panelMounted) return;
     const list = element('ul', undefined, 'account-rows');
     data.rows.forEach(row => {

@@ -246,21 +246,10 @@ function createDashboardData({ model = name => require(`../models/${name}`), now
       }), note: 'Shared household · last-known snapshot values.' };
     },
     async disaster() {
-      const { DASHBOARD_SCOPE_CHAIN, dashboardFilter } = require('../utils/accountDisasterFilters');
-      let alerts = []; let scope = DASHBOARD_SCOPE_CHAIN[0];
-      for (const candidate of DASHBOARD_SCOPE_CHAIN) {
-        alerts = await read('disaster_alert', dashboardFilter(candidate, new Date(now().getTime() - DAY)), 'title severity reportAt', { severityScore: -1, reportAt: -1 }, 5);
-        scope = candidate;
-        if (alerts.length) break;
-      }
-      const [weather, ingestion] = await Promise.all([
-        read('disaster_weather_snapshot', {}, 'locationName summary fetchedAt', { fetchedAt: -1 }, 1),
-        read('disaster_ingestion_state', { key: 'default' }, 'lastSuccessAt lastErrorAt', { lastSuccessAt: -1 }, 1),
-      ]);
-      const state = freshness(ingestion[0]?.lastSuccessAt, now());
-      return { state: state !== 'ready' || freshness(weather[0]?.fetchedAt, now(), 2 * 3600000) !== 'ready' ? 'stale' : 'ready',
-        rows: [...alerts.map(a => row(a.title, `Stored alert · ${a.severity}`, '/admin/disasters', a.reportAt)), ...weather.map(w => row(w.locationName, w.summary || 'Latest stored weather', '/admin/disasters', w.fetchedAt))],
-        note: `Latest stored regional feed (${scope}). ${alerts.length ? 'Up to 5 alerts from the last 24 hours.' : 'No recent stored alerts; this is not an all-clear.'} Ingestion last succeeded: ${iso(ingestion[0]?.lastSuccessAt) || 'unknown'}.` };
+      const { ids, projection, buildSummary } = require('./disasterLocalSummaryService');
+      const records = await read('disaster_local_summary', { _id: { $in: ids() } }, projection, { _id: 1 }, 6);
+      const summary = buildSummary(records, now());
+      return { state: summary.state, summary, rows: [], note: summary.warnings.note };
     },
     async stock() {
       const [categories, items, profiles] = await Promise.all([

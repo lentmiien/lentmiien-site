@@ -44,6 +44,7 @@ beforeAll(async () => {
   vm.runInNewContext(fs.readFileSync('routes/admin.js', 'utf8'), {
     module: { exports: {} }, __dirname: path.resolve('routes'), process: { env: {} }, require: name => {
       if (name === 'express') return { Router: () => registration, json: express.json, urlencoded: express.urlencoded };
+      if (name === '../middleware/disasterAccess') return { disasterAccess: () => (_req, _res, next) => next(), disasterCsrf: { issueToken: () => {}, requireToken: () => {} }, disasterRefreshLimit: () => {} };
       if (name === 'express-rate-limit') return { rateLimit: () => (_req, _res, next) => next() };
       if (name === '../controllers/admincontroller') return controller;
       if (['../middleware/musicAccess', '../middleware/requireCapabilities', '../middleware/sessionCsrf', '../database', '../utils/logger'].includes(name)) return require(path.resolve('routes', name));

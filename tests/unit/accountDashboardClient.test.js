@@ -75,3 +75,19 @@ test('card failure does not break queue; expansion loads its card once and refre
   expect(f.fetch.mock.calls.filter(c => c[0].endsWith('/gateway'))).toHaveLength(2);
   answer(f.pending.at(-1)); await flush();
 });
+
+test('local disaster card renders shared current DTO, active local hazards only, and text safely', async () => {
+  const f = fixture(['disaster']); const card = f.cards[0];
+  f.pending[0].resolve({ ok: true, json: async () => ({ ok: true, state: 'ready', fetchedAt: new Date().toISOString(), rows: [],
+    summary: { weather: { label: 'Current weather', temperatureC: 21, description: '<img onerror=alert(1)>', art: 'https://tracker.invalid/x', observedAt: '2026-10-24T13:57:00Z', source: 'openweathermap-current', freshness: 'fresh' },
+      warnings: { label: 'Local warnings & advisories', area: '横浜市北部', active: [{ name: '強風注意報', severity: 'advisory', status: '継続' }], history: [{ name: 'South warning' }] } } }) });
+  await flush();
+  const wrapper = card.querySelector('.account-card-data').children[0];
+  const image = wrapper.children[0].children[0];
+  expect(image.src).toBeUndefined();
+  const collect = node => [node.textContent, ...node.children.flatMap(collect)].join(' ');
+  const text = collect(wrapper);
+  expect(text).toContain('21.0°C'); expect(text).toContain('<img onerror=alert(1)>');
+  expect(text).toContain('強風注意報'); expect(text).not.toContain('South warning');
+  expect(text).toContain('Observed');
+});

@@ -233,3 +233,14 @@ describe('disasterJmaParser', () => {
     expect(alert.typhoon.track[0].speedKmh).toBe(100);
   });
 });
+
+test('typhoon probability normalization retains local areas beyond the former top-30 cutoff', () => {
+  const { extractTyphoon } = require('../../utils/disasterJmaParser');
+  const items = Array.from({ length: 35 }, (_, i) => ({ Area: { Name: `Elsewhere ${i}`, Code: String(i) }, Kind: { FiftyKtWindProbability: '90' } }));
+  items.push({ Area: { Name: '横浜市北部', Code: 'synthetic-product-code' }, Kind: { FiftyKtWindProbability: '10' } });
+  items.push({ Area: { Name: '横浜旭区', Code: 'synthetic-ward-code' }, Kind: { FiftyKtWindProbability: '0' } });
+  const typhoon = extractTyphoon({ Body: { MeteorologicalInfo: { DateTime: '2026-10-25T01:00:00Z', Duration: 'PT24H', Item: items } } });
+  expect(typhoon.affectedAreas).toHaveLength(37);
+  expect(typhoon.affectedAreas.at(-1)).toMatchObject({ name: '横浜旭区', probability: 0 });
+  expect(typhoon.affectedAreas.at(-2)).toMatchObject({ name: '横浜市北部', probability: 10, validAt: new Date('2026-10-25T01:00:00Z') });
+});

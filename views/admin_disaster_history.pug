@@ -8,7 +8,8 @@ block content
     header.disaster-page-header
       div
         p.disaster-kicker Archive
-        h1 Disaster History
+        h1 Bulletin archive
+        p Historical source reports across all areas; these are not active local warnings.
       .disaster-hero__actions
         a.disaster-button.disaster-button--ghost(href='/admin/disasters')
           svg(viewBox='0 0 24 24' aria-hidden='true')
@@ -43,7 +44,7 @@ block content
       section.disaster-panel
         .disaster-panel__header
           h2 Saved Alerts
-          span.disaster-panel__meta #{pagination.total} total
+          span.disaster-panel__meta Bounded archive · latest 20 pages
         if alerts && alerts.length
           .disaster-table-wrap
             table.disaster-table
@@ -80,6 +81,6 @@ block content
       nav.disaster-pagination(aria-label='Disaster history pages')
         if pagination.previousPage
           a.disaster-button.disaster-button--ghost(href=`/admin/disasters/history?category=${encodeURIComponent(filters.category)}&source=${encodeURIComponent(filters.source)}&limit=${filters.limit}&page=${pagination.previousPage}`) Previous
-        span Page #{pagination.page} of #{pagination.totalPages}
+        span Page #{pagination.page}
         if pagination.nextPage
           a.disaster-button.disaster-button--ghost(href=`/admin/disasters/history?category=${encodeURIComponent(filters.category)}&source=${encodeURIComponent(filters.source)}&limit=${filters.limit}&page=${pagination.nextPage}`) Next

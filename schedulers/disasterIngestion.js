@@ -17,9 +17,10 @@ function scheduleDisasterIngestion() {
   const tick = async (reason = 'scheduled') => {
     if (mongoose.connection.readyState !== 1) return;
     try {
-      await performanceMetrics.trackTask('disasterIngestion.runOnce', () => (
-        disasterIngestionService.runOnce({ reason })
-      ));
+      await Promise.all([
+        performanceMetrics.trackTask('disasterIngestion.runOnce', () => disasterIngestionService.runOnce({ reason })),
+        disasterIngestionService.runWeatherOnce(),
+      ]);
     } catch (error) {
       logger.error('Disaster ingestion run failed', {
         category: 'disaster_ingestion',

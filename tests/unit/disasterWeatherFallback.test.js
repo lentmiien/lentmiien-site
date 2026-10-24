@@ -220,3 +220,38 @@ describe('DisasterIngestionService OpenWeather integration', () => {
     expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('PRIVATE');
   });
 });
+
+describe('local current weather ingestion lifecycle', () => {
+  const localSummary = { saveWeather: jest.fn(), health: jest.fn(async () => {}), bootstrap: jest.fn(async () => {}) };
+  test('updates hourly history instead of setOnInsert, and persists latest compact current reading', async () => {
+    const findOneAndUpdate = jest.fn(async () => ({}));
+    const service = new DisasterIngestionService({ models: { DisasterWeatherObservation: { findOneAndUpdate } }, localSummary });
+    const observation = { locationName: 'Synthetic', latitude: 1, longitude: 1, source: 'openweathermap-current', observedAt: new Date(), temperatureC: 25 };
+    await service.saveWeatherObservation(observation);
+    expect(localSummary.saveWeather).toHaveBeenCalledWith(observation);
+    expect(findOneAndUpdate.mock.calls[0][1].$set.temperatureC).toBe(25);
+    expect(findOneAndUpdate.mock.calls[0][1].$setOnInsert).toBeUndefined();
+    expect(findOneAndUpdate.mock.calls[0][0].$or[0]).toEqual({ observedAt: { $lte: observation.observedAt } });
+  });
+  test('run flag always resets when initial state access fails', async () => {
+    const service = new DisasterIngestionService({ localSummary });
+    service.getState = jest.fn(async () => { throw new Error('synthetic failure'); });
+    await expect(service.runOnce()).rejects.toThrow('synthetic failure');
+    expect(service.running).toBe(false);
+  });
+  test('weather current saving runs before forecasts and is independent of active alert work', async () => {
+    const service = new DisasterIngestionService({ localSummary });
+    service.running = true;
+    const sequence = [];
+    service.refreshWeatherObservation = jest.fn(async () => { sequence.push('current'); return { _id: 'synthetic' }; });
+    service.refreshWeatherSnapshot = jest.fn(async () => { sequence.push('forecast'); });
+    await service.runWeatherOnce();
+    expect(sequence).toEqual(['current', 'forecast']);
+    expect(service.refreshWeatherSnapshot).toHaveBeenCalledWith({ observationAlreadySaved: true });
+    expect(service.weatherRunning).toBe(false);
+  });
+  test('old forecast entries cannot masquerade as current observations', () => {
+    const service = new DisasterIngestionService({ localSummary });
+    expect(service.buildObservationFromSnapshot({ hourly: [{ time: new Date(Date.now() - 5 * 3600000), temperatureC: 30 }] })).toBeNull();
+  });
+});

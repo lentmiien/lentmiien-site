@@ -13,7 +13,8 @@ const XML_OPTIONS = {
 const parser = new XMLParser(XML_OPTIONS);
 
 const EARTHQUAKE_TARGET_AREA = '横浜旭区';
-const PARSER_VERSION = 'jma-v2';
+const PARSER_VERSION = 'jma-v3-local';
+const { localIntensity, warningEvidence } = require('./disasterLocalEvidence');
 
 function asArray(value) {
   if (value === null || value === undefined) {
@@ -298,33 +299,8 @@ function collectIntensityAreas(observation) {
   return areas;
 }
 
-function findTargetIntensity(observation, targetArea = EARTHQUAKE_TARGET_AREA) {
-  let best = {
-    label: '0',
-    score: 0,
-  };
-
-  asArray(observation?.Pref).forEach((pref) => {
-    asArray(pref.Area).forEach((area) => {
-      asArray(area.City).forEach((city) => {
-        const cityName = textValue(city.Name);
-        const cityIntensity = normalizeShindoLabel(city.MaxInt);
-        if (cityName && cityName.includes(targetArea) && shindoScore(cityIntensity) > best.score) {
-          best = { label: cityIntensity, score: shindoScore(cityIntensity) };
-        }
-
-        asArray(city.IntensityStation).forEach((station) => {
-          const stationName = textValue(station.Name);
-          const stationIntensity = normalizeShindoLabel(station.Int);
-          if (stationName && stationName.includes(targetArea) && shindoScore(stationIntensity) > best.score) {
-            best = { label: stationIntensity, score: shindoScore(stationIntensity) };
-          }
-        });
-      });
-    });
-  });
-
-  return best.label;
+function findTargetIntensity(observation) {
+  return localIntensity(observation);
 }
 
 function extractEarthquake(report) {
@@ -461,6 +437,7 @@ function extractTyphoon(report) {
         prefectureCode: textValue(area.PrefectureCode),
         probability,
         windowHours: infoWindowHours,
+        validAt: parseDate(info.DateTime),
         windowName: textValue(info.Name),
       };
 
@@ -468,54 +445,26 @@ function extractTyphoon(report) {
         typhoon.maxWindProbability = probability;
         typhoon.maxWindProbabilityArea = areaName;
       }
-      if (probability > 0) {
+      if (probability >= 0 && probability <= 100) {
         typhoon.affectedAreas.push(affectedArea);
       }
     });
   });
 
   typhoon.affectedAreas = typhoon.affectedAreas
-    .sort((a, b) => (b.probability || 0) - (a.probability || 0))
-    .slice(0, 30);
+    .sort((a, b) => (b.probability || 0) - (a.probability || 0));
 
-  typhoon.track = collectByKey(body, 'Coordinate')
-    .map((coordinateNode) => {
-      const coordinate = parseCoordinate(coordinateNode);
-      return {
-        latitude: coordinate.latitude,
-        longitude: coordinate.longitude,
-        depthKm: coordinate.depthKm,
-        description: coordinate.coordinateDescription,
-      };
-    })
-    .filter((coordinate) => Number.isFinite(coordinate.latitude) && Number.isFinite(coordinate.longitude))
-    .slice(0, 30);
-
-  collectByKey(body, 'CenterPart').forEach((centerPart, index) => {
-    const coordinate = parseCoordinate(centerPart.Coordinate);
-    if (!Number.isFinite(coordinate.latitude) || !Number.isFinite(coordinate.longitude)) {
-      return;
-    }
-    const existing = typhoon.track[index] || {};
-    typhoon.track[index] = {
-      ...existing,
-      latitude: coordinate.latitude,
-      longitude: coordinate.longitude,
-      depthKm: coordinate.depthKm,
-      description: coordinate.coordinateDescription,
-      location: textValue(centerPart.Location),
-      direction: textValue(centerPart.Direction),
-      pressureHpa: numberValue(centerPart.Pressure),
-      speedKmh: asArray(centerPart.Speed)
-        .filter((speed) => cleanString(speed?.['@_unit']) === 'km/h')
-        .map(numberValue)
-        .find(Number.isFinite) || null,
-    };
-  });
-
-  typhoon.track = typhoon.track
-    .filter((coordinate) => Number.isFinite(coordinate.latitude) && Number.isFinite(coordinate.longitude))
-    .slice(0, 30);
+  // Keep each centre attached to its own validity time; unrelated coordinates are not a track.
+  typhoon.track = collectByKey(body, 'MeteorologicalInfo').flatMap(asArray).flatMap((info) => (
+    collectByKey(info, 'CenterPart').flatMap(asArray).map((center) => ({
+      ...parseCoordinate(center.Coordinate),
+      validAt: parseDate(info.DateTime),
+      location: textValue(center.Location),
+      pressureHpa: numberValue(center.Pressure),
+      direction: textValue(center.Direction),
+      speedKmh: asArray(center.Speed).filter(speed => speed?.['@_unit'] === 'km/h').map(numberValue).find(Number.isFinite) ?? null,
+    }))
+  )).filter(p => Number.isFinite(p.latitude) && Number.isFinite(p.longitude)).slice(0, 100);
 
   return typhoon;
 }
@@ -615,7 +564,7 @@ function parseJmaAlert({ xmlText, entry = {}, feed = {} }) {
   const targetAt = parseDate(head.TargetDateTime);
   const eventAt = earthquakeDetails.earthquake?.originTime || targetAt || reportAt || entry.updatedAt || null;
 
-  return {
+  const alert = {
     source: 'jma',
     sourceId: entry.id || entry.url || null,
     sourceUrl: entry.url || entry.id || null,
@@ -653,10 +602,25 @@ function parseJmaAlert({ xmlText, entry = {}, feed = {} }) {
     raw: report,
     parserVersion: PARSER_VERSION,
   };
+  const localState = warningEvidence(alert);
+  if (localState) {
+    alert.weather.localState = localState;
+    const active = localState.hazards.filter(h => h.active);
+    alert.severity = !localState.coverage ? 'info' : ['emergency', 'warning', 'advisory'].find(level => active.some(h => h.severity === level)) || 'cleared';
+    alert.severityScore = { emergency: 5, warning: 4, advisory: 2, info: 0, cleared: 0 }[alert.severity];
+  }
+  if (category === 'earthquake') {
+    const local = earthquakeDetails.earthquake?.yokohamaAsahiIntensity;
+    const score = local === null ? 0 : shindoScore(local);
+    alert.severity = score >= 5 ? 'warning' : score >= 3 ? 'advisory' : 'info';
+    alert.severityScore = score >= 5 ? 4 : score >= 3 ? 2 : 0;
+  }
+  return alert;
 }
 
 module.exports = {
   EARTHQUAKE_TARGET_AREA,
+  extractTyphoon,
   PARSER_VERSION,
   asArray,
   cleanString,

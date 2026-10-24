@@ -90,13 +90,13 @@ test('financial semantics include both fees, exclude transfers/income and keep c
   ] });
 });
 
-test('disaster fallback remains regional and absence is never an all-clear', async () => {
+test('disaster reads only six primary-key summary slots and absence is never an all-clear', async () => {
   const result = await data.load('disaster', await policy());
-  const reads = calls.filter(c => c.name === 'disaster_alert');
-  expect(reads).toHaveLength(3);
-  expect(reads.every(c => c.limit === 5 && c.filter.$and)).toBe(true);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ name: 'disaster_local_summary', limit: 6, projection: '_id data' });
+  expect(calls[0].filter._id.$in).toHaveLength(6);
   expect(result.note).toContain('not an all-clear');
-  expect(result.state).toBe('stale');
+  expect(result.state).toBe('unavailable');
 });
 
 const ledgerAccount = (id, date = 20260831) => ({ _id: id, name: `Synthetic ${id}`, currency: 'USD', balance: 100, balance_date: date });

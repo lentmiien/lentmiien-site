@@ -63,6 +63,7 @@ test('registered dashboard safety middleware covers case/trailing-slash variants
     module: { exports: {} }, __dirname: path.resolve('routes'), process: { env: {} },
     require: name => {
       if (name === 'express') return { Router: () => router, json: () => noop, urlencoded: () => noop };
+      if (name === '../middleware/disasterAccess') return { disasterAccess: () => (_req, _res, next) => next(), disasterCsrf: { issueToken: () => {}, requireToken: () => {} }, disasterRefreshLimit: () => {} };
       if (name === 'express-rate-limit') return { rateLimit: () => noop };
       if (name === '../middleware/requireCapabilities') return { createRequireCapabilities: () => noop };
       if (name === '../middleware/musicAccess') return { requireMusic: () => noop, CAPABILITIES: {}, csrf: { issueToken: noop, requireToken: noop } };

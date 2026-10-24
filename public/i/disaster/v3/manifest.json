@@ -1,0 +1,135 @@
+{
+  "version": 3,
+  "assets": [
+    {
+      "group": "weather",
+      "condition": "clear-day",
+      "url": "/i/disaster/v3/weather-clear-day.svg"
+    },
+    {
+      "group": "weather",
+      "condition": "clear-night",
+      "url": "/i/disaster/v3/weather-clear-night.svg"
+    },
+    {
+      "group": "weather",
+      "condition": "cloudy",
+      "url": "/i/disaster/v3/weather-cloudy.svg"
+    },
+    {
+      "group": "weather",
+      "condition": "rain",
+      "url": "/i/disaster/v3/weather-rain.svg"
+    },
+    {
+      "group": "weather",
+      "condition": "snow",
+      "url": "/i/disaster/v3/weather-snow.svg"
+    },
+    {
+      "group": "weather",
+      "condition": "storm",
+      "url": "/i/disaster/v3/weather-storm.svg"
+    },
+    {
+      "group": "weather",
+      "condition": "fog",
+      "url": "/i/disaster/v3/weather-fog.svg"
+    },
+    {
+      "group": "weather",
+      "condition": "unknown",
+      "url": "/i/disaster/v3/weather-unknown.svg"
+    },
+    {
+      "group": "weather",
+      "condition": "stale",
+      "url": "/i/disaster/v3/weather-stale.svg"
+    },
+    {
+      "group": "earthquake",
+      "condition": "unknown",
+      "url": "/i/disaster/v3/earthquake-unknown.svg"
+    },
+    {
+      "group": "earthquake",
+      "condition": "0",
+      "url": "/i/disaster/v3/earthquake-0.svg"
+    },
+    {
+      "group": "earthquake",
+      "condition": "1",
+      "url": "/i/disaster/v3/earthquake-1.svg"
+    },
+    {
+      "group": "earthquake",
+      "condition": "2",
+      "url": "/i/disaster/v3/earthquake-2.svg"
+    },
+    {
+      "group": "earthquake",
+      "condition": "3",
+      "url": "/i/disaster/v3/earthquake-3.svg"
+    },
+    {
+      "group": "earthquake",
+      "condition": "4",
+      "url": "/i/disaster/v3/earthquake-4.svg"
+    },
+    {
+      "group": "earthquake",
+      "condition": "5-",
+      "url": "/i/disaster/v3/earthquake-5minus.svg"
+    },
+    {
+      "group": "earthquake",
+      "condition": "5+",
+      "url": "/i/disaster/v3/earthquake-5plus.svg"
+    },
+    {
+      "group": "earthquake",
+      "condition": "6-",
+      "url": "/i/disaster/v3/earthquake-6minus.svg"
+    },
+    {
+      "group": "earthquake",
+      "condition": "6+",
+      "url": "/i/disaster/v3/earthquake-6plus.svg"
+    },
+    {
+      "group": "earthquake",
+      "condition": "7",
+      "url": "/i/disaster/v3/earthquake-7.svg"
+    },
+    {
+      "group": "typhoon",
+      "condition": "unknown",
+      "url": "/i/disaster/v3/typhoon-unknown.svg"
+    },
+    {
+      "group": "typhoon",
+      "condition": "proximity",
+      "url": "/i/disaster/v3/typhoon-proximity.svg"
+    },
+    {
+      "group": "typhoon",
+      "condition": "probability",
+      "url": "/i/disaster/v3/typhoon-probability.svg"
+    },
+    {
+      "group": "typhoon",
+      "condition": "advisory",
+      "url": "/i/disaster/v3/typhoon-advisory.svg"
+    },
+    {
+      "group": "typhoon",
+      "condition": "warning",
+      "url": "/i/disaster/v3/typhoon-warning.svg"
+    },
+    {
+      "group": "typhoon",
+      "condition": "emergency",
+      "url": "/i/disaster/v3/typhoon-emergency.svg"
+    }
+  ]
+}

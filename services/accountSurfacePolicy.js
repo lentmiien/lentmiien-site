@@ -16,6 +16,7 @@ const { BUNDLES: LOCAL_AI_BUNDLES } = require('./localAi/policy');
 const { ROLE_BUNDLES: PACKING_ROLE_BUNDLES } = require('../utils/smallestBoxPolicy');
 const { ROLE_BUNDLES: USER_SETTINGS_ROLE_BUNDLES } = require('../utils/userSettingsPolicy');
 
+const { ROLE_BUNDLES: DISASTER_BUNDLES, READ: DISASTER_READ } = require('../utils/disasterPolicy');
 const BASE = ['dashboard.account.read', 'dashboard.preferences.write'];
 const ADMIN = ['dashboard.operations.read', 'dashboard.personal.read', 'dashboard.personal.write', 'dashboard.embedding.search', 'finance.account.close'];
 const ROLE_BUNDLES = { admin: [...BASE, ...ADMIN], family: BASE, user: BASE };
@@ -64,7 +65,7 @@ const SECTIONS = [
   ['accounting', 'Accounting', '/accounting', 'accounting'],
   ['life', 'My Life Log', '/admin/life_log'],
   ['minute', 'Minute Logger', '/admin/minute-logger'],
-  ['disaster', 'Disaster & weather', '/admin/disasters'],
+  ['disaster', 'Disaster & weather', '/admin/disasters', null, DISASTER_READ],
   ['runpod', 'Tracked Runpod pods', '/admin/runpod', null, 'runpod.pod.read'],
   ['tapo', 'Household energy', '/admin/tapo'],
   ['gateway', 'AI Gateway', '/admin/ai-gateway'],
@@ -95,7 +96,7 @@ async function resolvePolicy(user, roleModel, ownerId) {
   const assigned = await loadAssignedCapabilities(user, roleModel);
   return {
     user, isAdmin: user.type_user === 'admin', isOwner: ownerMatches(user, ownerId),
-    capabilities: [...new Set([...assigned, ...roleBundleCapabilities(user, ROLE_BUNDLES), ...roleBundleCapabilities(user, USER_SETTINGS_ROLE_BUNDLES),
+    capabilities: [...new Set([...assigned, ...roleBundleCapabilities(user, DISASTER_BUNDLES), ...roleBundleCapabilities(user, ROLE_BUNDLES), ...roleBundleCapabilities(user, USER_SETTINGS_ROLE_BUNDLES),
       ...roleBundleCapabilities(user, PACKING_ROLE_BUNDLES), ...roleBundleCapabilities(user, LOCAL_AI_BUNDLES), ...roleBundleCapabilities(user, COMMONS_ROLE_BUNDLES), ...roleBundleCapabilities(user, TARIC_ROLE_BUNDLES), ...roleBundleCapabilities(user, MIIEN_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CHAT_TOOL_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CODEX_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, RUNPOD_ROLE_CAPABILITY_BUNDLES)])],
   };
 }
