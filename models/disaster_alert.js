@@ -108,6 +108,7 @@ const DisasterAlertSchema = new Schema({
   verifications: { type: [DisasterVerificationSchema], default: [] },
   rawXmlSizeBytes: { type: Number, default: 0 },
   raw: { type: Schema.Types.Mixed, default: {} },
+  localWarningCheck: { type: Schema.Types.Mixed, default: null },
   localSummaryVersion: { type: String, default: null },
   parserVersion: { type: String, trim: true, default: 'jma-v1' },
 }, {

@@ -1,4 +1,6 @@
 const axios = require('axios');
+const { XMLValidator } = require('fast-xml-parser');
+const warningReadiness = require('../utils/disasterJmaReadiness');
 const logger = require('../utils/logger');
 const { upstreamErrorMetadata } = require('../utils/upstreamErrorMetadata');
 const {
@@ -267,7 +269,7 @@ class DisasterIngestionService {
   async refreshExistingJmaAlert(existingAlert, parsedAlert) {
     const alert = await this.models.DisasterAlert.findByIdAndUpdate(
       existingAlert._id,
-      { $set: parsedAlert },
+      { $set: { ...parsedAlert, localSummaryVersion: null } },
       { new: true }
     );
     if (alert) {
@@ -279,109 +281,159 @@ class DisasterIngestionService {
     return alert;
   }
 
-  async pollJmaFeed(feedUrl, state, runCounters) {
-    const feedState = {
-      url: feedUrl,
-      title: null,
-      lastCheckedAt: new Date(),
-      lastUpdatedAt: null,
-      lastStatus: 'ok',
-      lastError: null,
-      newEntries: 0,
+  async pollJmaFeeds(state) {
+    const now = new Date();
+    const counters = { inserted: 0, duplicates: 0, updated: 0, skippedBeforeStart: 0,
+      detailFetches: 0, deferred: 0, feedErrors: 0, detailErrors: 0, warningCheckedAt: now,
+      warningPending: 0, warningFeedErrors: 0 };
+    const feeds = [];
+    const entries = new Map();
+    const maxDetails = parsePositiveInteger(process.env.DISASTER_JMA_MAX_NEW_DETAILS_PER_RUN, DEFAULT_MAX_NEW_DETAILS_PER_RUN);
+    const merge = (entry, feed, feedState) => {
+      const sourceUrl = entry.url || entry.id;
+      if (!sourceUrl) return;
+      const prior = entries.get(sourceUrl);
+      // Preserve the newest timestamp across short/long duplicates. Missing dates
+      // stay unknown; a dated duplicate must not silently hide uncertainty.
+      if (prior) {
+        if (!prior.entry.updatedAt || !entry.updatedAt) prior.entry.updatedAt = null;
+        else if (+entry.updatedAt > +prior.entry.updatedAt) prior.entry = entry;
+        return;
+      }
+      entries.set(sourceUrl, { entry: { ...entry }, feed, feedState });
     };
-
-    try {
-      const xmlText = await this.fetchText(feedUrl);
-      const feed = parseAtomFeed(xmlText, feedUrl);
-      feedState.title = feed.title;
-      feedState.lastUpdatedAt = feed.updatedAt;
-      const maxNewDetails = parsePositiveInteger(
-        process.env.DISASTER_JMA_MAX_NEW_DETAILS_PER_RUN,
-        DEFAULT_MAX_NEW_DETAILS_PER_RUN
-      );
-
-      for (const entry of feed.entries) {
-        if (entry.updatedAt && state.startedAt && entry.updatedAt < state.startedAt) {
-          runCounters.skippedBeforeStart += 1;
-          continue;
-        }
-        const sourceUrl = entry.url || entry.id;
-        const dedupeKey = `jma:${sourceUrl}`;
-        const existingAlert = await this.models.DisasterAlert.findOne({ dedupeKey })
-          .select({ category: 1, parserVersion: 1, localSummaryVersion: 1 })
-          .lean();
-        if (existingAlert) {
-          if (this.shouldRefreshExistingJmaAlert(existingAlert)) {
-            if (runCounters.detailFetches >= maxNewDetails) {
-              runCounters.deferred += 1;
-              runCounters.duplicates += 1;
-              continue;
-            }
-            const detailXml = await this.fetchText(sourceUrl);
-            runCounters.detailFetches += 1;
-            const parsedAlert = parseJmaAlert({ xmlText: detailXml, entry, feed });
-            await this.refreshExistingJmaAlert(existingAlert, parsedAlert);
-            runCounters.updated += 1;
-            continue;
+    // Fetch every feed before allocating the shared detail budget. Archive feed
+    // order must never consume all requests ahead of current warning candidates.
+    for (const feedUrl of getConfiguredJmaFeeds()) {
+      const feedState = { url: feedUrl, title: null, lastCheckedAt: now, lastUpdatedAt: null,
+        lastStatus: 'ok', lastError: null, newEntries: 0 };
+      const kind = warningReadiness.warningFeedKind(feedUrl);
+      try {
+        const xml = await this.fetchText(feedUrl);
+        if (XMLValidator.validate(xml) !== true) throw new Error('Invalid JMA feed XML');
+        const feed = parseAtomFeed(xml, feedUrl);
+        if (!feed.title || !feed.updatedAt) throw new Error('Missing JMA feed metadata');
+        feedState.title = feed.title;
+        feedState.lastUpdatedAt = feed.updatedAt;
+        for (const entry of feed.entries) merge(entry, feed, feedState);
+        if (kind !== 'irrelevant') {
+          // Long feeds update hourly, short feeds every minute. This is feed
+          // transport freshness, independent of six-hour bulletin validity.
+          const maxAge = (kind === 'long' ? 105 : 45) * 60000;
+          if (+now - +feed.updatedAt > maxAge || +feed.updatedAt - +now > 300000) {
+            throw new Error('JMA warning feed timestamp is stale or in the future');
           }
-          if (existingAlert.localSummaryVersion !== PARSER_VERSION) {
-            // Retry a prior summary-write failure from stored evidence without another provider call.
-            const stored = await this.models.DisasterAlert.findById(existingAlert._id);
+        }
+      } catch (error) {
+        feedState.lastStatus = 'error';
+        feedState.lastError = compactError(error);
+        counters.feedErrors += 1;
+        if (kind !== 'irrelevant') counters.warningFeedErrors += 1;
+        this.logger.warning('JMA disaster feed polling failed', {
+          category: 'disaster_ingestion',
+          metadata: { source: 'jma', feedIndex: DEFAULT_JMA_FEEDS.indexOf(feedUrl), ...upstreamErrorMetadata(error) },
+        });
+      }
+      feeds.push(feedState);
+    }
+    // Carry unresolved candidates across polls, including entries that have
+    // fallen out of the short feed before the hourly long feed catches up.
+    for (const pending of state.warningPending || []) {
+      const entry = { ...pending, updatedAt: pending.updatedAt ? new Date(pending.updatedAt) : null };
+      if (warningReadiness.needsWarningCheck(entry, now)) merge(entry, {}, null);
+    }
+    const pending = [];
+    const queue = [...entries.values()].sort((a, b) =>
+      warningReadiness.priority(a.entry, now) - warningReadiness.priority(b.entry, now) ||
+      (+b.entry.updatedAt || 0) - (+a.entry.updatedAt || 0));
+    for (const candidate of queue) {
+      const { entry, feed, feedState } = candidate;
+      const relevant = warningReadiness.needsWarningCheck(entry, now);
+      if (!relevant && entry.updatedAt && state.startedAt && entry.updatedAt < state.startedAt) {
+        counters.skippedBeforeStart += 1;
+        continue;
+      }
+      const sourceUrl = entry.url || entry.id;
+      const dedupeKey = `jma:${sourceUrl}`;
+      let resolved = false;
+      try {
+        const existing = await this.models.DisasterAlert.findOne({ dedupeKey })
+          .select({ parserVersion: 1, localSummaryVersion: 1, localWarningCheck: 1 }).lean();
+        const refresh = !existing || this.shouldRefreshExistingJmaAlert(existing) ||
+          (relevant && existing.localWarningCheck?.version !== warningReadiness.VERSION);
+        if (refresh) {
+          if (counters.detailFetches >= maxDetails) {
+            counters.deferred += 1;
+            if (existing) counters.duplicates += 1;
+          } else {
+            // Count attempts, including failures, so a failed provider cannot
+            // turn a capped run into an unbounded series of requests.
+            counters.detailFetches += 1;
+            const xml = await this.fetchText(sourceUrl);
+            if (XMLValidator.validate(xml) !== true) throw new Error('Invalid JMA detail XML');
+            const parsed = parseJmaAlert({ xmlText: xml, entry, feed });
+            if (!parsed.raw.Head || !parsed.raw.Control || !parsed.reportAt || !parsed.controlAt) {
+              throw new Error('Missing JMA detail metadata');
+            }
+            resolved = warningReadiness.warningResolved(parsed);
+            if (relevant && !resolved) this.logger.warning('JMA warning detail has unresolved municipality state', {
+              category: 'disaster_ingestion', metadata: { source: 'jma', operation: 'warning_readiness' },
+            });
+            parsed.localWarningCheck = { version: warningReadiness.VERSION, resolved };
+            if (existing) {
+              const saved = await this.refreshExistingJmaAlert(existing, parsed);
+              if (!saved) throw new Error('JMA detail disappeared during refresh');
+              counters.updated += 1;
+            } else {
+              const result = await this.saveAlert({ ...parsed, dedupeKey });
+              if (result.inserted) {
+                counters.inserted += 1;
+                if (feedState) feedState.newEntries += 1;
+              } else {
+                // A concurrent insert is not proof that its summary was saved.
+                resolved = false;
+                counters.duplicates += 1;
+              }
+            }
+          }
+        } else {
+          if (existing.localSummaryVersion !== PARSER_VERSION) {
+            const stored = await this.models.DisasterAlert.findById(existing._id);
             await this.localSummary.ingestAlert(stored);
             stored.localSummaryVersion = PARSER_VERSION;
             await stored.save();
           }
-          runCounters.duplicates += 1;
-          continue;
+          resolved = existing.localWarningCheck?.resolved === true;
+          counters.duplicates += 1;
         }
-        if (runCounters.detailFetches >= maxNewDetails) {
-          runCounters.deferred += 1;
-          continue;
-        }
-
-        const detailXml = await this.fetchText(sourceUrl);
-        runCounters.detailFetches += 1;
-        const parsedAlert = parseJmaAlert({ xmlText: detailXml, entry, feed });
-        const result = await this.saveAlert({
-          ...parsedAlert,
-          dedupeKey,
+      } catch (error) {
+        resolved = false;
+        counters.detailErrors += 1;
+        this.logger.warning('JMA disaster detail processing failed; candidate remains unresolved', {
+          category: 'disaster_ingestion',
+          metadata: { source: 'jma', warningCandidate: relevant, ...upstreamErrorMetadata(error) },
         });
-        if (result.inserted) {
-          feedState.newEntries += 1;
-          runCounters.inserted += 1;
-        } else {
-          runCounters.duplicates += 1;
+      }
+      if (relevant && !resolved) {
+        counters.warningPending += 1;
+        if (pending.length < warningReadiness.MAX_PENDING) {
+          pending.push({ id: entry.id, url: sourceUrl, updatedAt: entry.updatedAt,
+            title: String(entry.title || '').slice(0, 200), author: String(entry.author || '').slice(0, 100) });
         }
       }
-    } catch (error) {
-      feedState.lastStatus = 'error';
-      feedState.lastError = compactError(error);
-      runCounters.feedErrors += 1;
-      this.logger.warning('JMA disaster feed polling failed', {
-        category: 'disaster_ingestion',
-        metadata: { source: 'jma', feedIndex: DEFAULT_JMA_FEEDS.indexOf(feedUrl), ...upstreamErrorMetadata(error) },
+    }
+    state.warningPending = pending;
+    if (counters.warningPending > warningReadiness.MAX_PENDING) {
+      state.warningPendingOverflowUntil = new Date(+now + warningReadiness.WINDOW_MS);
+      this.logger.warning('Local JMA warning pending cap reached; readiness remains unknown', {
+        category: 'disaster_ingestion', metadata: { pending: counters.warningPending },
       });
     }
-
-    return feedState;
-  }
-
-  async pollJmaFeeds(state) {
-    const counters = {
-      inserted: 0,
-      duplicates: 0,
-      updated: 0,
-      skippedBeforeStart: 0,
-      detailFetches: 0,
-      deferred: 0,
-      feedErrors: 0,
-    };
-    const feeds = [];
-
-    for (const feedUrl of getConfiguredJmaFeeds()) {
-      feeds.push(await this.pollJmaFeed(feedUrl, state, counters));
-    }
-
+    const kinds = feeds.map(f => warningReadiness.warningFeedKind(f.url));
+    counters.warningFeedsPresent = kinds.includes('current') && kinds.includes('long');
+    counters.warningPendingOverflow = +new Date(state.warningPendingOverflowUntil || 0) > +now;
+    counters.warningReady = counters.warningFeedsPresent && counters.warningFeedErrors === 0 &&
+      counters.warningPending === 0 && !counters.warningPendingOverflow;
     return { feeds, counters };
   }
 
@@ -1126,6 +1178,8 @@ class DisasterIngestionService {
       state.running = true;
       state.lastRunAt = new Date();
       await state.save();
+      // Do not expose partially refreshed warnings under a previous healthy poll.
+      await this.localSummary.health(false);
       try { await this.localSummary.bootstrap(this.models); }
       catch (error) {
         this.logger.warning('Local disaster bootstrap incomplete; will retry next poll', {
@@ -1135,7 +1189,7 @@ class DisasterIngestionService {
       const jmaResult = await this.pollJmaFeeds(state);
       let backupCounters = null;
       if (jmaResult.counters.feedErrors === getConfiguredJmaFeeds().length) backupCounters = await this.ingestBackupSources(state);
-      await this.localSummary.health(jmaResult.counters.feedErrors === 0 && jmaResult.counters.deferred === 0);
+      await this.localSummary.health(jmaResult.counters.warningReady, jmaResult.counters);
       state.running = false;
       state.lastSuccessAt = new Date();
       state.lastError = null;

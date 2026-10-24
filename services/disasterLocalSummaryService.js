@@ -106,8 +106,11 @@ function createLocalSummaryService({ model = require('../models/disaster_local_s
     if (!date(observation?.observedAt)) return;
     await put(/hourly|forecast/.test(observation.source || '') ? 'estimate' : 'weather', weatherData(observation), order(observation.observedAt, observation.receivedAt || observation.updatedAt || observation.observedAt), { name: observation.locationName, latitude: observation.latitude, longitude: observation.longitude });
   }
-  async function health(ok) {
-    const at = now(); await put('health', { ok, at }, order(at));
+  async function health(ok, counters = {}) {
+    const at = now();
+    const diagnostics = Object.fromEntries(['warningPending', 'warningFeedErrors', 'warningFeedsPresent',
+      'warningPendingOverflow', 'deferred', 'detailErrors'].map(name => [name, counters[name] ?? null]));
+    await put('health', { ok, at: date(counters.warningCheckedAt) || at, ...diagnostics }, order(at));
   }
   async function read() {
     const records = await model.find({ _id: { $in: ids() } }).select(projection).limit(6).maxTimeMS(1500).lean().exec();

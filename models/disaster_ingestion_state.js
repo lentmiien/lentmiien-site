@@ -21,6 +21,8 @@ const DisasterIngestionStateSchema = new Schema({
   lastError: { type: String, trim: true, default: null },
   running: { type: Boolean, default: false },
   feeds: { type: [DisasterFeedStateSchema], default: [] },
+  warningPending: { type: [Schema.Types.Mixed], default: [] },
+  warningPendingOverflowUntil: { type: Date, default: null },
   counters: { type: Schema.Types.Mixed, default: {} },
 }, {
   minimize: false,
