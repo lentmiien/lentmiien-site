@@ -1,7 +1,10 @@
 const { date, warningEvidence } = require('./disasterLocalEvidence');
 const { PARSER_VERSION } = require('./disasterJmaParser');
-const { array, text, municipalityWarnings, completeMunicipalityWarnings } = require('./disasterJmaMunicipality');
-const VERSION = `${PARSER_VERSION}:warning-readiness-v2`;
+const { array, text, municipalityWarnings, municipalityProblem, MUNICIPAL_REASONS } = require('./disasterJmaMunicipality');
+const VERSION = `${PARSER_VERSION}:warning-readiness-v3`;
+const REASONS = Object.freeze([...MUNICIPAL_REASONS, 'missing_metadata', 'different_product',
+  'unknown_bulletin_status', 'non_operational_status', 'unknown_product', 'bulletin_retraction',
+  'local_coverage', 'unknown_local_state', 'nonlocal_municipalities', 'ambiguous_local_code']);
 const WINDOW_MS = 6 * 3600000;
 const MAX_PENDING = 512;
 
@@ -30,8 +33,9 @@ function classifyWarning(alert) {
   if (alert.status !== '通常') return result(['訓練', '試験'].includes(alert.status), 'non_operational_status');
   if (!/(?:^|[\/_\s-])VPWW(?:53|54)(?=[_.\s/-]|$)/.test(`${alert.sourceId} ${alert.sourceUrl}`)) return result(false, 'unknown_product');
   const warnings = municipalityWarnings(alert.raw);
-  if (!warnings.length) return result(false, 'missing_municipality_block');
-  if (!completeMunicipalityWarnings(warnings)) return result(false, 'incomplete_municipality_block');
+  const problem = municipalityProblem(warnings);
+  if (problem) return result(false, problem);
+  if (alert.infoType === '取消') return result(false, 'bulletin_retraction');
   const evidence = warningEvidence(alert);
   if (evidence) return result(evidence.coverage, evidence.coverage ? 'local_coverage' : 'unknown_local_state');
   // Only parsed municipality codes can establish a different region. Unknown
@@ -58,4 +62,4 @@ function warningFeedKind(url) {
   return 'unknown';
 }
 
-module.exports = { VERSION, WINDOW_MS, MAX_PENDING, needsWarningCheck, priority, classifyWarning, warningResolved, warningFeedKind, bulletinId };
+module.exports = { VERSION, REASONS, WINDOW_MS, MAX_PENDING, needsWarningCheck, priority, classifyWarning, warningResolved, warningFeedKind, bulletinId };

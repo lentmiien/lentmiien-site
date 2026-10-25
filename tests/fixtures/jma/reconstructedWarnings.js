@@ -9,7 +9,7 @@ const cases = [
   { id: '20261024230923_0_VPWW53_120000.xml', at: '2026-10-24T23:09:00Z', groups: 7, municipalities: 54, firstGroup: '120011' },
   { id: '20261024230725_0_VPWW53_140000.xml', at: '2026-10-24T23:07:00Z', groups: 7, municipalities: 35, firstGroup: '140011', local: true },
 ];
-const clear = '<Kind><Name>発表警報・注意報はなし</Name><Code>00</Code></Kind>';
+const clear = '<Kind><Status>発表警報・注意報はなし</Status></Kind>';
 const localKinds = '<Kind><Name>雷注意報</Name><Code>14</Code><Status>継続</Status></Kind>' +
   '<Kind><Name>強風注意報</Name><Code>15</Code><Status>発表</Status></Kind>' +
   '<Kind><Name>濃霧注意報</Name><Code>20</Code><Status>解除</Status></Kind>';

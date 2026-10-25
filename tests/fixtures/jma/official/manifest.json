@@ -1,0 +1,38 @@
+[
+  {
+    "file": "15_15_01_220314_VPWW54.xml",
+    "source": "https://xml.kishou.go.jp/jmaxml_20260917_Samples.zip",
+    "member": "15_15_01_220314_VPWW54.xml",
+    "sha256": "0f926d2b2aaeb18b60a04aebc1f01e19e3034e4152ecf54fba6b295978ad6add"
+  },
+  {
+    "file": "15_08_05_130412_VPWW53.xml",
+    "source": "https://xml.kishou.go.jp/jmaxml_20260917_Samples.zip",
+    "member": "15_08_05_130412_VPWW53.xml",
+    "sha256": "518d8ee208a37727b962b374c7ca5ccedcdfdf5a49265b2bc9c3a76cdc323abc"
+  },
+  {
+    "file": "15_08_04_160628_VPWW53.xml",
+    "source": "https://xml.kishou.go.jp/jmaxml_20260917_Samples.zip",
+    "member": "15_08_04_160628_VPWW53.xml",
+    "sha256": "971348ded35050b38b07922bcd31ed605638c4cd7dd0f4bc62563cb73e3a55a6"
+  },
+  {
+    "file": "15_09_03_130826_VPWW53.xml",
+    "source": "https://xml.kishou.go.jp/jmaxml_20260917_Samples.zip",
+    "member": "15_09_03_130826_VPWW53.xml",
+    "sha256": "bc0ece5833a7696bad085df30703bf3a5e4e772823cea2191133051d7cdc535a"
+  },
+  {
+    "file": "15_12_01_161130_VPWW54.xml",
+    "source": "https://xml.kishou.go.jp/jmaxml_20260917_Samples.zip",
+    "member": "15_12_01_161130_VPWW54.xml",
+    "sha256": "9702ffde0cc2818acbd7a8f86382cf6f98d8399c047b010365fc2ef28f48ee8a"
+  },
+  {
+    "file": "VPWW53_JPWA_20251028120000.xml",
+    "source": "https://www.jma.go.jp/jma/kishou/know/bosai/keiho-update2026/tech-info/zip/20260227_sample_keikasochi.zip",
+    "member": "SampleXML_VPWW_okinawa.zip / VPWW53_JPWA_20251028120000.xml",
+    "sha256": "9e23accbda78f469bcd71b3a882f006779b4245f4e4e9660969ac9042b8dfe97"
+  }
+]

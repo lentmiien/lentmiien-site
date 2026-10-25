@@ -1,5 +1,5 @@
 const { LOCALITY, localWarningCode, distanceKm, locationConfig } = require('./disasterLocality');
-const { municipalityWarnings, completeMunicipalityWarnings } = require('./disasterJmaMunicipality');
+const { municipalityWarnings, completeMunicipalityWarnings, municipalKind } = require('./disasterJmaMunicipality');
 const array = x => x == null ? [] : Array.isArray(x) ? x : [x];
 const text = x => x && typeof x === 'object' ? text(x['#text']) : x == null ? '' : String(x).trim();
 const date = x => x && Number.isFinite(new Date(x).getTime()) ? new Date(x) : null;
@@ -44,26 +44,21 @@ function warningEvidence(alert) {
       const kinds = array(item.Kind);
       if (!kinds.length) unknown = true;
       for (const kind of kinds) {
-        const name = text(kind?.Name);
-        const code = text(kind?.Code);
-        const status = text(kind?.Status);
-        const clear = code === '00' || /発表警報・注意報はなし|警報・注意報なし/.test(name);
-        const cancelled = /解除|取消/.test(status);
-        const severity = /特別警報|レベル５|レベル5/.test(name) ? 'emergency' : /危険警報|警報/.test(name) ? 'warning' : /注意報/.test(name) ? 'advisory' : null;
-        const active = /^(発表|継続|切替|警報から注意報)$/.test(status);
-        if (!clear && (!severity || (!active && !cancelled))) unknown = true;
-        tuples.push({ areaCode: LOCALITY.warningCode, code: code.slice(0, 12), name: name.slice(0, 120), status: status.slice(0, 40), severity, active: !clear && !cancelled && active && !!severity });
+        const parsed = municipalKind(kind);
+        if (parsed.state === 'unknown') { unknown = true; continue; }
+        const { code, name, status, severity } = parsed;
+        tuples.push({ areaCode: LOCALITY.warningCode, code, name, status, severity, active: parsed.state === 'active' });
       }
     }
   }
   if (!covered) return null;
   const seen = new Map();
   for (const tuple of tuples) {
-    const id = `${tuple.code}:${tuple.name}`;
+    const id = tuple.code;
     if (seen.has(id) && seen.get(id).active !== tuple.active) unknown = true;
     seen.set(id, tuple);
   }
-  if (tuples.some(t => t.code === '00') && tuples.some(t => t.active)) unknown = true;
+  if (tuples.some(t => t.code === '') && tuples.some(t => t.active)) unknown = true;
   if (seen.size > 30) unknown = true;
   const unique = [...seen.values()].sort((a, b) => a.code.localeCompare(b.code) || a.name.localeCompare(b.name));
   return { at, source: 'JMA', eventId: text(alert.eventId).slice(0, 100), coverage: !unknown, hazards: unique.slice(0, 30), product };

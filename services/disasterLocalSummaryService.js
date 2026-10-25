@@ -66,12 +66,20 @@ function buildSummary(records, now = new Date()) {
     fetchedAt: now.toISOString(), sourceCheckedAt: stamp(health?.at) };
 }
 function createLocalSummaryService({ model = require('../models/disaster_local_summary'), now = () => new Date() } = {}) {
-  async function put(slot, data, revision, location = locationConfig()) {
+  async function put(slot, data, revision, location = locationConfig(), previousWarning = null) {
     const id = key(slot, location);
     const signatureData = { ...data }; delete signatureData.product;
     const signature = createHash('sha256').update(JSON.stringify(signatureData)).digest('hex');
+    const matches = [{ order: { $lt: revision } }, { order: revision, signature }];
+    if (slot === 'warnings' && previousWarning) {
+      const previousData = { ...previousWarning }; delete previousData.product;
+      const previousSignature = createHash('sha256').update(JSON.stringify(previousData)).digest('hex');
+      // Migration may replace ONLY this raw bulletin's exact v2 signature at
+      // the same revision. Never replace a newer record or a conflict marker.
+      matches.push({ order: revision, signature: previousSignature });
+    }
     try {
-      await model.updateOne({ _id: id, $or: [{ order: { $lt: revision } }, { order: revision, signature }] },
+      await model.updateOne({ _id: id, $or: matches },
         { $set: { order: revision, signature, data } }, { upsert: true, maxTimeMS: 2000 });
     } catch (error) {
       if (error.code !== 11000) throw error;
@@ -80,7 +88,7 @@ function createLocalSummaryService({ model = require('../models/disaster_local_s
         { $set: { 'data.coverage': false, signature: 'conflict' } }, { maxTimeMS: 2000 });
     }
   }
-  async function ingestAlert(alert) {
+  async function ingestAlert(alert, { previousWarning = null } = {}) {
     const revision = order(alert.reportAt, alert.controlAt || alert.reportAt, alert.serial, /訂正|取消/.test(alert.infoType || ''));
     let warning = warningEvidence(alert);
     // Empty EventID is normal for warning bulletins. Never associate such a
@@ -103,7 +111,8 @@ function createLocalSummaryService({ model = require('../models/disaster_local_s
         const current = await model.findById(key(slot)).select('data.eventId').maxTimeMS(1500).lean();
         if (current?.data?.eventId !== data.eventId) continue;
       }
-      if (data) await put(slot, data, slot === 'earthquake' ? `${String(millis(data.at)).padStart(16, '0')}:${revision}` : revision);
+      if (data) await put(slot, data, slot === 'earthquake' ? `${String(millis(data.at)).padStart(16, '0')}:${revision}` : revision,
+        locationConfig(), slot === 'warnings' ? previousWarning : null);
     }
   }
   async function saveWeather(observation) {

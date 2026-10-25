@@ -22,7 +22,7 @@ function entry(id = 'local', { at = localAt, product = 'VPWW53', title = '神奈
   return { id: `https://example.test/${id}_${product}.xml`, url: `https://example.test/${id}_${product}.xml`, updatedAt: at, title, ...rest };
 }
 function detail(e, { clear = false, code = '1410011', infoType = '発表', body = true, reportAt = e.updatedAt || localAt, controlAt = reportAt, status = '通常', eventId = 'kanagawa' } = {}) {
-  const kinds = clear ? '<Kind><Name>発表警報・注意報はなし</Name><Code>00</Code></Kind>' :
+  const kinds = clear ? '<Kind><Status>発表警報・注意報はなし</Status></Kind>' :
     '<Kind><Name>強風注意報</Name><Code>15</Code><Status>継続</Status></Kind><Kind><Name>波浪注意報</Name><Code>16</Code><Status>発表</Status></Kind>';
   return `<Report><Control><Title>気象警報・注意報</Title><Status>${status}</Status><DateTime>${controlAt.toISOString()}</DateTime></Control><Head><Title>気象警報・注意報</Title><ReportDateTime>${reportAt.toISOString()}</ReportDateTime><InfoType>${infoType}</InfoType><EventID>${eventId}</EventID><Serial>1</Serial></Head>${body ? `<Body><Warning type="気象警報・注意報（市町村等をまとめた地域等）"><Item><Area><Code>140011</Code></Area>${kinds}</Item></Warning><Warning type="気象警報・注意報（市町村等）"><Item><Area><Code>${code}</Code></Area>${kinds}</Item></Warning></Body>` : ''}</Report>`;
 }
@@ -514,6 +514,96 @@ test('configured network budget cannot exceed 80 attempts', async () => {
   const h = harness(); const entries = Array.from({ length: 81 }, (_, i) => entry(`new-${i}`));
   h.feeds({ 'extra_l.xml': entries });
   expect((await h.poll()).counters).toMatchObject({ detailFetches: 80, detailErrors: 80, deferred: 1, warningPending: 81 });
+});
+
+test('48 v2 status-only bodies recover with 6,715 history deferrals and preserve two local advisories; fresh clear is explicit', async () => {
+  jest.setSystemTime(new Date('2026-10-24T23:54:00Z'));
+  const h = harness();
+  const v2 = `${PARSER_VERSION}:warning-readiness-v2`;
+  const remote = Array.from({ length: 48 }, (_, i) => {
+    const fixture = reconstructed.cases[i % 3];
+    const e = entry(`v2-status-only-${i}`, { at: new Date(fixture.at), product: i % 2 ? 'VPWW53' : 'VPWW54', title: 'Remote' });
+    const parsed = parseJmaAlert({ entry: e, xmlText: reconstructed.xml(fixture) });
+    h.seen(e, { ...parsed, localSummaryVersion: PARSER_VERSION,
+      localWarningCheck: { version: v2, resolved: false, reason: 'incomplete_municipality_block', checkedAt: new Date() } });
+    return e;
+  });
+  h.state.warningPending = remote;
+  const fixture = reconstructed.cases[3]; const local = reconstructedEntry(fixture);
+  const parsed = parseJmaAlert({ entry: local, xmlText: reconstructed.xml(fixture) });
+  h.seen(local, { ...parsed, localSummaryVersion: PARSER_VERSION, localWarningCheck: { version: v2, resolved: true } });
+  await h.localSummary.ingestAlert(parsed);
+  const history = Array.from({ length: 6795 }, (_, i) => entry(`history-48-${i}`, { at: new Date('2026-10-22T12:00:00Z'), product: 'VXSE53' }));
+  for (const e of history) { h.seen(e, { parserVersion: 'jma-v2' }); h.add(e); }
+  h.feeds({ 'extra.xml': [local, ...remote], 'extra_l.xml': [local, ...remote], 'eqvol_l.xml': history });
+  for (const name of feedNames) h.responses.set(base + name, h.responses.get(base + name).replace(now.toISOString(), new Date().toISOString()));
+  expect((await h.poll()).counters).toMatchObject({ warningReady: true, warningPending: 0, warningReclassified: 49,
+    warningReclassifyErrors: 0, detailFetches: 80, deferred: 6715 });
+  expect(h.fetches.some(url => [...remote, local].some(e => e.url === url))).toBe(false);
+  expect(h.warnings().active.map(hazard => hazard.code)).toEqual(['14', '15']);
+  expect(h.summaries.get(key('warnings')).data.hazards.find(k => k.code === '20').active).toBe(false);
+  for (const e of remote) expect(h.alerts.get(`jma:${e.url}`).localWarningCheck).toMatchObject({ version: VERSION, resolved: true });
+  const clear = entry('genuine-new-clear', { at: new Date() });
+  h.add(clear, { clear: true, eventId: '' }); h.feeds({ 'extra.xml': [clear], 'extra_l.xml': [clear] });
+  for (const name of feedNames) h.responses.set(base + name, h.responses.get(base + name).replace(now.toISOString(), new Date().toISOString()));
+  expect((await h.poll()).counters.warningReady).toBe(true);
+  expect(h.warnings()).toMatchObject({ state: 'clear', active: [], at: clear.updatedAt.toISOString() });
+});
+
+test.each(['clear', 'remote-clear-sibling', 'optional-name'])('v2 false local summary (%s) is repaired only by its exact legacy signature; conflict stays closed', async variant => {
+  const { warningEvidence: legacyEvidence } = require('../../utils/disasterJmaLegacyWarning');
+  const { order } = require('../../services/disasterLocalSummaryService');
+  for (const conflict of [false, true]) {
+    const h = harness(); const e = entry('local-repair');
+    const parsed = parseJmaAlert({ entry: e, xmlText: detail(e, { clear: variant === 'clear' }) });
+    if (variant === 'remote-clear-sibling') {
+      const block = parsed.raw.Body.Warning[1];
+      block.Item = [block.Item, { Area: { Code: '1310100' }, Kind: { Status: '発表警報・注意報はなし' } }];
+    }
+    if (variant === 'optional-name') delete parsed.raw.Body.Warning[1].Item.Kind[0].Name;
+    const old = legacyEvidence(parsed);
+    expect(old.coverage).toBe(false);
+    await h.localSummary.put('warnings', old, order(parsed.reportAt, parsed.controlAt, parsed.serial));
+    if (conflict) h.summaries.get(key('warnings')).signature = 'conflict';
+    h.seen(e, { ...parsed, localSummaryVersion: PARSER_VERSION,
+      localWarningCheck: { version: `${PARSER_VERSION}:warning-readiness-v2`, resolved: false } });
+    h.feeds({ 'extra_l.xml': [e] });
+    expect((await h.poll()).counters).toMatchObject({ warningReclassified: 1, detailFetches: 0, warningReady: true });
+    expect(h.warnings().state).toBe(conflict ? 'stale' : variant === 'clear' ? 'clear' : 'active');
+  }
+});
+
+test('historical deferrals are ignored only after current malformed evidence resolves', async () => {
+  const h = harness(); const local = entry('local-history-gate'); const pending = entry('unknown-history-gate', { title: 'Remote' });
+  h.seen(local, { localSummaryVersion: PARSER_VERSION });
+  const parsed = parseJmaAlert({ entry: pending, xmlText: detail(pending, { code: '1310100' }) });
+  parsed.raw.Body.Warning[1].Item.Kind = { Status: '解除' };
+  const doc = h.seen(pending, { ...parsed, localSummaryVersion: PARSER_VERSION,
+    localWarningCheck: { version: `${PARSER_VERSION}:warning-readiness-v2`, resolved: false } });
+  const history = Array.from({ length: 81 }, (_, i) => entry(`history-gate-${i}`, { at: new Date('2026-10-22T12:00:00Z'), product: 'VXSE53' }));
+  for (const e of history) { h.seen(e, { parserVersion: 'jma-v2' }); h.add(e); }
+  h.feeds({ 'extra_l.xml': [local, pending], 'eqvol_l.xml': history });
+  expect((await h.poll()).counters).toMatchObject({ deferred: 1, warningPending: 1, warningReady: false });
+  expect(h.warnings().state).toBe('stale');
+  // Test-only evidence replacement models a repaired stored projection; the
+  // production migration never edits raw bodies or needs a provider request.
+  doc.raw.Body.Warning[1].Item.Kind = { Status: '発表警報・注意報はなし' };
+  jest.setSystemTime(new Date(+now + 16 * 60000));
+  expect((await h.poll()).counters).toMatchObject({ warningReclassified: 1, warningPending: 0, warningReady: true });
+  expect(h.warnings().state).toBe('active');
+});
+
+test('specific unsupported variant reason is logged once on v2 upgrade', async () => {
+  const h = harness(); const e = entry();
+  const parsed = parseJmaAlert({ entry: e, xmlText: detail(e).replaceAll('<Code>15</Code>', '<Code>99</Code>') });
+  h.seen(e, { ...parsed, localSummaryVersion: PARSER_VERSION,
+    localWarningCheck: { version: `${PARSER_VERSION}:warning-readiness-v2`, resolved: false, reason: 'incomplete_municipality_block' } });
+  h.feeds({ 'extra_l.xml': [e] });
+  expect((await h.poll()).counters.warningReady).toBe(false);
+  expect(h.logger.warning.mock.calls[0][1].metadata).toMatchObject({ reason: 'unsupported_kind_code', version: VERSION });
+  h.logger.warning.mockClear();
+  await h.poll();
+  expect(h.logger.warning).not.toHaveBeenCalled();
 });
 
 test('reconstructed local duplicate and older revision cannot overwrite newer correction', async () => {

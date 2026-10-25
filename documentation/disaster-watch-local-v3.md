@@ -1,5 +1,13 @@
 # Local Disaster Watch v3
 
+## Follow-up: municipal readiness v3
+
+The status-only JMA schema repair, official-source review, exact acceptance rules,
+bounded v2 migration and pure pre-deployment diagnostic are documented in
+[JMA municipal readiness v3](disaster-jma-warning-readiness-v3.md). That follow-up
+supersedes the municipal Kind/readiness-v2 details below; local summary version
+and GET read paths remain unchanged.
+
 Security contract: logged-in; interactive admin and explicitly granted users; no machine HTTP principals. Public provider data plus private configured location; admin-managed fixed Asahi-ku scope, no request-selected objects or coordinates. Capabilities `disaster.local.read` and `disaster.sources.refresh`; admin gets both, family/user get neither by default. Existing /admin gate remains. Browser refresh is POST with shared session CSRF, one request/minute and ingestion concurrency guard. GETs are side-effect free, private/no-store, analytics disabled. No uploads; query parameters rejected on summary API; refresh body only CSRF. Escaped Pug/textContent, static allowlisted artwork. Coordinates/raw payloads never enter summary DTOs. Outbound providers remain ingestion-only; no generation at runtime. Operational failures use utils/logger without payloads. Fixed summary slots retain last known state; legacy history retention unchanged. Negative tests cover capabilities, CSRF, XSS, bounded reads and absent/stale local evidence.
 
 JMA references (verified 2026-10-25):

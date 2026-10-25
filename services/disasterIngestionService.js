@@ -328,7 +328,9 @@ class DisasterIngestionService {
         // Reapply local evidence even when the parser version was already current.
         // Remote coverage has no local state to put. Commit the marker only AFTER
         // summary processing succeeds; failed candidates remain retryable.
-        await this.localSummary.ingestAlert(stored);
+        const previousWarning = oldCheck?.version === `${PARSER_VERSION}:warning-readiness-v2` ?
+          require('../utils/disasterJmaLegacyWarning').warningEvidence(stored) : null;
+        await this.localSummary.ingestAlert(stored, { previousWarning });
         const saved = await this.models.DisasterAlert.updateOne({ _id: existing._id, parserVersion: PARSER_VERSION },
           { $set: { localWarningCheck: check, localSummaryVersion: PARSER_VERSION } }, { maxTimeMS: 2000 });
         if (saved.matchedCount !== 1) throw new Error('Stored JMA candidate changed during classification');
