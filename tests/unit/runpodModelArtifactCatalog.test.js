@@ -146,6 +146,7 @@ describe('Runpod model artifact catalog', () => {
         TUNNEL_TOKEN: '{{ RUNPOD_SECRET_lentmiien_cloudflare_tunnel_token }}',
         LLAMA_API_KEY: '{{ RUNPOD_SECRET_lentmiien_llm_api_key }}',
         NVIDIA_TF32_OVERRIDE: '0',
+        CLOUDFLARED_VERSION: '2026.10.4',
       },
     }));
     expect(shell).toBe(buildArtifactServerShell());
@@ -156,8 +157,8 @@ describe('Runpod model artifact catalog', () => {
     expect(shell).toContain('--n-predict -1');
     expect(shell).toContain('test -n "${LLAMA_API_KEY:-}"');
     expect(shell).not.toContain('--api-key "$LLAMA_API_KEY"');
-    expect(shell).toContain("cloudflared_url='https://github.com/cloudflare/cloudflared/releases/download/2026.8.3/cloudflared-linux-amd64'");
-    expect(shell).toContain("cloudflared_sha256='f29324fe934d1e100617484c78deef803c4dc2cd351d645bbde42e96b4fccc5e'");
+    expect(shell).toContain("cloudflared_url='https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-amd64'");
+    expect(shell).toContain("cloudflared_sha256='ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42'");
     expect(shell).not.toContain('$CLOUDFLARED_AMD64_URL');
     expect(shell).not.toContain('$CLOUDFLARED_AMD64_SHA256');
     expect(shell).toContain('seq 1 270');

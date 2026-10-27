@@ -182,6 +182,12 @@ block content
                       each gpu in largeModelGpuOptions
                         - const placement = (gpu.secureDataCenters || []).find((entry) => entry.id === largeModelArtifact.dataCenterId);
                         option(value=gpu.id, selected=gpu.name === 'RTX PRO 6000')= `2× ${gpu.name} · ${formatInteger(gpu.memoryGb * 2)} GB · ${formatUsd(gpu.securePrice * 2, 2)}/hr · ${placement ? `${placement.availability} ${largeModelArtifact.dataCenterId}` : 'placement checked on submit'}`
+                  label.runpod-field
+                    span Cloudflare Tunnel version
+                    select(name='cloudflaredVersion', required)
+                      each version in management.cloudflaredVersions
+                        option(value=version, selected=version === management.defaultCloudflaredVersion)= version === management.defaultCloudflaredVersion ? `${version} · default` : version
+                    small Applies to this new Pod; the download is checksum-verified.
                 p.runpod-form-help The model and runtime load directly from the network volume at /workspace. The default 40 GB container disk is sufficient. No Pod-local persistent disk is allocated.
                 label.runpod-check.runpod-check--warning
                   input(type='checkbox', name='billingAcknowledged', value='acknowledged', required)
@@ -769,6 +775,12 @@ block content
                       data-gateway-url=template.gatewayUrl || '',
                       selected=defaultServingTemplate && template.id === defaultServingTemplate.id
                     )= template.accessMode === 'cloudflare_access' ? `Cloudflare Access · ${template.gatewayUrl}` : 'Diagnostic Runpod public proxy'
+              label.runpod-field(data-cloudflared-version-field hidden=defaultServingTemplate && defaultServingTemplate.accessMode !== 'cloudflare_access')
+                span Cloudflare Tunnel version
+                select(name='cloudflaredVersion', data-cloudflared-version-select, required, disabled=defaultServingTemplate && defaultServingTemplate.accessMode !== 'cloudflare_access')
+                  each version in management.cloudflaredVersions
+                    option(value=version, selected=version === management.defaultCloudflaredVersion)= version === management.defaultCloudflaredVersion ? `${version} · default` : version
+                small Applies to this new Pod; the download is checksum-verified.
               label.runpod-field
                 span Pod name
                 input(type='text', name='name', maxlength='80', value='ollama-qwen', pattern='[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}', required)

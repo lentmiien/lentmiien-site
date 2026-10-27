@@ -1,5 +1,7 @@
 'use strict';
 
+const { cloudflaredInstallShell, cloudflaredRelease } = require('./runpodCloudflaredCatalog');
+
 const ARTIFACT_PATH_PATTERN = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]+$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 
@@ -17,9 +19,7 @@ const GLM53_FLASH_CONTEXT_TOKEN_OPTIONS = Object.freeze([
 ]);
 const MIN_ARTIFACT_SERVER_CONTEXT_TOKENS = 2_048;
 const MAX_ARTIFACT_SERVER_CONTEXT_TOKENS = 131_072;
-const CLOUDFLARED_VERSION = '2026.8.3';
-const CLOUDFLARED_AMD64_SHA256 = 'f29324fe934d1e100617484c78deef803c4dc2cd351d645bbde42e96b4fccc5e';
-const CLOUDFLARED_AMD64_URL = `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64`;
+
 const GLM53_FLASH_UD_IQ4_XS = Object.freeze({
   slug: GLM53_FLASH_UD_IQ4_XS_SLUG,
   name: 'GLM-5.3-Flash · UD-IQ4_XS',
@@ -511,6 +511,7 @@ function artifactPreparerProviderPayload(slug = GLM53_FLASH_UD_IQ4_XS_SLUG) {
 
 function buildArtifactServerShell(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, {
   contextTokens,
+  cloudflaredVersion,
   gpuCount = 2,
   originPort = GLM53_FLASH_LLAMA_CPP_ORIGIN_PORT,
 } = {}) {
@@ -545,9 +546,6 @@ artifact_root=${shellQuote(root)}
 ready_path=${shellQuote(readyPath)}
 server=${shellQuote(runtimePath)}
 model=${shellQuote(modelPath)}
-cloudflared=/usr/local/bin/cloudflared
-cloudflared_url=${shellQuote(CLOUDFLARED_AMD64_URL)}
-cloudflared_sha256=${shellQuote(CLOUDFLARED_AMD64_SHA256)}
 current_stage=validating_artifact
 
 fail() {
@@ -578,17 +576,9 @@ assert marker.get('source', {}).get('revision') == ${shellQuote(preset.sourceRev
 assert marker.get('runtime', {}).get('revision') == ${shellQuote(preset.runtimeRevision)}
 PY
 
-if [ ! -x "$cloudflared" ]; then
-  current_stage=installing_gateway
-  printf 'RUNPOD_LLM_STAGE stage=installing_gateway\\n'
-  apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ca-certificates curl >/dev/null
-  curl -fsSLo "$cloudflared" "$cloudflared_url"
-  chmod 0555 "$cloudflared"
-  rm -rf /var/lib/apt/lists/*
-fi
-printf '%s  %s\\n' "$cloudflared_sha256" "$cloudflared" | sha256sum -c - >/dev/null \
-  || fail CLOUDFLARED_CHECKSUM_INVALID installing_gateway
+current_stage=installing_gateway
+printf 'RUNPOD_LLM_STAGE stage=installing_gateway\\n'
+${cloudflaredInstallShell(cloudflaredVersion)}
 
 test -n "\${TUNNEL_TOKEN:-}" || fail CLOUDFLARE_TUNNEL_TOKEN_MISSING starting
 test -n "\${LLAMA_API_KEY:-}" || fail LLAMA_API_KEY_MISSING starting
@@ -669,6 +659,7 @@ function buildArtifactServerArgs(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, options = {}
 
 function artifactServerTemplate(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, {
   contextTokens,
+  cloudflaredVersion,
   gpuCount = 2,
   cloudflareTunnelSecretName = 'lentmiien_cloudflare_tunnel_token',
   llmApiSecretName = 'lentmiien_llm_api_key',
@@ -682,13 +673,14 @@ function artifactServerTemplate(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, {
     name: 'GLM-5.3 Flash · llama.cpp · Cloudflare Access',
     providerTemplateName: GLM53_FLASH_LLAMA_CPP_PROVIDER_TEMPLATE_NAME,
     image: preset.runtimeImage,
-    args: buildArtifactServerArgs(slug, { contextTokens, gpuCount }),
+    args: buildArtifactServerArgs(slug, { contextTokens, gpuCount, cloudflaredVersion }),
     diskGb: 40,
     ports: [],
     env: {
       TUNNEL_TOKEN: `{{ RUNPOD_SECRET_${cloudflareTunnelSecretName} }}`,
       LLAMA_API_KEY: `{{ RUNPOD_SECRET_${llmApiSecretName} }}`,
       NVIDIA_TF32_OVERRIDE: '0',
+      CLOUDFLARED_VERSION: cloudflaredRelease(cloudflaredVersion).version,
     },
     persistentDiskGb: 10,
     persistentPath: '/workspace',

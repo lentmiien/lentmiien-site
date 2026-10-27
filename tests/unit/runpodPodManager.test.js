@@ -991,7 +991,7 @@ describe('RunpodPodManager', () => {
     expect(JSON.stringify(template)).not.toContain('actual-secret-value');
   });
 
-  test('turns a ready artifact into a guarded llama.cpp Pod request', async () => {
+  test.each([undefined, '2026.8.3', '2026.10.4'])('passes the selected tunnel version %s to the GLM template and Pod', async (cloudflaredVersion) => {
     const fixture = createFixture();
     const artifactId = '507f191e810c19729de860ad';
     fixture.modelArtifactModel.findOne.mockImplementation(() => queryResult({
@@ -1009,6 +1009,7 @@ describe('RunpodPodManager', () => {
 
     await expect(fixture.manager.createModelArtifactPod({
       artifactId,
+      cloudflaredVersion,
       gpuId: 'NVIDIA RTX PRO 6000 Blackwell Server Edition',
       gpuCount: '2',
       contextTokens: '16384',
@@ -1020,10 +1021,11 @@ describe('RunpodPodManager', () => {
     expect(fixture.manager.saveModelArtifactServerTemplate).toHaveBeenCalledWith(
       'glm-5-3-flash-ud-iq4-xs',
       { name: 'admin' },
-      { contextTokens: 16384, gpuCount: 2 }
+      { contextTokens: 16384, gpuCount: 2, cloudflaredVersion: cloudflaredVersion || '2026.10.4' }
     );
     expect(fixture.manager._createManagedPod).toHaveBeenCalledWith(
       expect.objectContaining({
+        cloudflaredVersion: cloudflaredVersion || '2026.10.4',
         templateId: TEMPLATE_ID,
         networkVolumeId: 'provider-glm-volume-id',
         dataCenterId: 'EU-SE-1',
@@ -1085,7 +1087,9 @@ describe('RunpodPodManager', () => {
       status: 'RUNNING',
       actions: ['stop', 'terminate'],
       gpu: { id: 'NVIDIA RTX PRO 6000 Blackwell Server Edition', count: 2 },
+      env: { CLOUDFLARED_VERSION: '2026.8.3' },
       args: artifactServerProviderPayload(undefined, {
+        cloudflaredVersion: '2026.8.3',
         contextTokens: 16384,
         gpuCount: 2,
       }).args,
@@ -1107,6 +1111,9 @@ describe('RunpodPodManager', () => {
     const [providerPodId, update] = fixture.runpodService.updatePod.mock.calls[0];
     expect(providerPodId).toBe('glm-provider-pod-id');
     expect(artifactServerContextFromArgs(update.args)).toBe(32768);
+    expect(update.args).toBe(artifactServerProviderPayload(undefined, {
+      contextTokens: 32768, gpuCount: 2, cloudflaredVersion: '2026.8.3',
+    }).args);
     expect(fixture.podModel.updateOne).toHaveBeenCalledWith(
       { _id: POD_RECORD_ID, archivedAt: null },
       { $set: expect.objectContaining({
@@ -1687,9 +1694,9 @@ describe('RunpodPodManager', () => {
     expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
   });
 
-  test('creates a stable Cloudflare gateway Pod without exposing a Runpod HTTP port', async () => {
+  test.each([undefined, '2026.8.3', '2026.10.4'])('creates a gateway Pod with tunnel %s despite an older saved template', async (cloudflaredVersion) => {
     const fixture = createFixture({
-      template: cloudflareTemplate(),
+      template: { ...cloudflareTemplate(), args: cloudflareGatewayStartArgs('2026.8.3') },
       managerOptions: {
         fetchImpl: jest.fn()
           .mockResolvedValueOnce(new Response(null, {
@@ -1731,6 +1738,7 @@ describe('RunpodPodManager', () => {
 
     await expect(fixture.manager.createManagedPod(validCreateInput({
       templateId: TEMPLATE_ID,
+      cloudflaredVersion,
       networkVolumeId: 'volume-123',
       model: 'qwen3.8:27b',
       dataCenterId: 'EU-SE-1',
@@ -1739,8 +1747,10 @@ describe('RunpodPodManager', () => {
 
     expect(fixture.runpodService.createPod).toHaveBeenCalledWith(expect.objectContaining({
       templateId: 'provider-cloudflare-template-1',
+      args: cloudflareGatewayStartArgs(cloudflaredVersion),
       mounts: { network: [{ volumeId: 'volume-123', path: '/workspace' }] },
       env: {
+        CLOUDFLARED_VERSION: cloudflaredVersion || '2026.10.4',
         OLLAMA_CONTEXT_LENGTH: '65536',
         OLLAMA_FLASH_ATTENTION: '1',
         OLLAMA_HOST: '127.0.0.1:8080',
@@ -1758,6 +1768,20 @@ describe('RunpodPodManager', () => {
       ports: [],
     }));
   });
+
+  test.each(['latest', '2026.10.4; touch /tmp/injected', '', null, ['2026.10.4'], 'x'.repeat(2000)])(
+    'rejects invalid tunnel versions before provider work: %p', async (cloudflaredVersion) => {
+      const fixture = createFixture({ template: cloudflareTemplate() });
+      await expect(fixture.manager.createManagedPod(validCreateInput({ cloudflaredVersion })))
+        .rejects.toMatchObject({ code: 'RUNPOD_INPUT_INVALID' });
+      await expect(fixture.manager.createModelArtifactPod({ cloudflaredVersion }))
+        .rejects.toMatchObject({ code: 'RUNPOD_INPUT_INVALID' });
+      expect(fixture.runpodService.listPods).not.toHaveBeenCalled();
+      expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
+      expect(fixture.runpodService.createTemplate).not.toHaveBeenCalled();
+      expect(fixture.runpodService.updateTemplate).not.toHaveBeenCalled();
+    }
+  );
 
   test('prevents two active connectors from sharing the named Cloudflare Tunnel', async () => {
     const fixture = createFixture({

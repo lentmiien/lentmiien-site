@@ -1,3 +1,4 @@
+const { cloudflaredInstallShell, cloudflaredRelease } = require('./runpodCloudflaredCatalog');
 const { RunpodCreationIntentService } = require('./runpodCreationIntentService');
 const logger = require('../utils/logger');
 const {
@@ -57,9 +58,6 @@ const DEFAULT_CLOUDFLARE_GATEWAY_URL = 'https://llm.lentmiien.com';
 const DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME = 'lentmiien_cloudflare_tunnel_token';
 const DEFAULT_LLM_API_SECRET_NAME = 'lentmiien_llm_api_key';
 const RUNPOD_SECRET_NAME_PATTERN = /^[a-z][a-z0-9_]{0,79}$/u;
-const CLOUDFLARED_VERSION = '2026.8.3';
-const CLOUDFLARED_AMD64_SHA256 = 'f29324fe934d1e100617484c78deef803c4dc2cd351d645bbde42e96b4fccc5e';
-const CLOUDFLARED_AMD64_URL = `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64`;
 const ACTIVE_PROVIDER_STATUSES = new Set(['PROVISIONING', 'STARTING', 'RUNNING']);
 const PROVIDER_STATUSES = new Set([
   'PROVISIONING',
@@ -453,18 +451,16 @@ function runpodSecretReference(secretName) {
   return `{{ RUNPOD_SECRET_${normalizeRunpodSecretName(secretName)} }}`;
 }
 
-function cloudflareGatewayStartArgs() {
+function cloudflareGatewayStartArgs(cloudflaredVersion) {
   const script = [
     'set -Eeuo pipefail',
-    'cf=/usr/local/bin/cloudflared',
-    `if [ ! -x "$cf" ]; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl >/dev/null && curl -fsSLo "$cf" '${CLOUDFLARED_AMD64_URL}' && chmod 0755 "$cf"; fi`,
-    `printf '%s  %s\\n' '${CLOUDFLARED_AMD64_SHA256}' "$cf" | sha256sum -c - >/dev/null`,
+    cloudflaredInstallShell(cloudflaredVersion),
     '/bin/ollama serve & ollama_pid=$!',
-    '"$cf" tunnel --no-autoupdate run & tunnel_pid=$!',
+    '"$cloudflared" tunnel --no-autoupdate run & tunnel_pid=$!',
     'trap \'kill "$ollama_pid" "$tunnel_pid" 2>/dev/null || true\' EXIT INT TERM',
     'wait -n "$ollama_pid" "$tunnel_pid"',
     'exit 1',
-  ].join('; ');
+  ].join('\n');
   return JSON.stringify({
     entrypoint: ['/bin/bash', '-lc'],
     cmd: [script],
@@ -749,6 +745,7 @@ function normalizeModelArtifactServerTemplateInput(
   slug = GLM53_FLASH_UD_IQ4_XS_SLUG,
   {
     contextTokens,
+    cloudflaredVersion,
     gpuCount = 2,
     gatewayUrl = DEFAULT_CLOUDFLARE_GATEWAY_URL,
     tunnelSecretName = DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME,
@@ -766,6 +763,7 @@ function normalizeModelArtifactServerTemplateInput(
   const normalizedLlmApiSecretName = normalizeRunpodSecretName(llmApiSecretName);
   const template = artifactServerTemplate(preset.slug, {
     contextTokens,
+    cloudflaredVersion,
     gpuCount,
     cloudflareTunnelSecretName: normalizedTunnelSecretName,
     llmApiSecretName: normalizedLlmApiSecretName,
@@ -2534,6 +2532,7 @@ class RunpodPodManager {
   }
 
   async _createModelArtifactPod(input = {}, principal) {
+    const { version: cloudflaredVersion } = cloudflaredRelease(input.cloudflaredVersion);
     const artifactId = safeString(input.artifactId, 30);
     if (!OBJECT_ID_PATTERN.test(artifactId)) {
       throw new RunpodManagementError('Choose a verified model artifact.', {
@@ -2565,12 +2564,14 @@ class RunpodPodManager {
     });
     const template = await this.saveModelArtifactServerTemplate(preset.slug, principal, {
       contextTokens,
+      cloudflaredVersion,
       gpuCount,
     });
     const templateId = template?._id?.toString?.() || safeString(template?._id, 30);
     const name = safeString(input.name, 80) || `glm53-${gpuCount}gpu-${this.now().getTime().toString(36)}`;
     return this._createManagedPod({
       ...input,
+      cloudflaredVersion,
       name,
       templateId,
       networkVolumeId: artifact.providerNetworkVolumeId,
@@ -3043,6 +3044,9 @@ class RunpodPodManager {
       });
     }
     const accessMode = normalizeOllamaAccessMode(template.accessMode);
+    const cloudflaredVersion = accessMode === 'cloudflare_access'
+      ? cloudflaredRelease(input.cloudflaredVersion).version
+      : null;
     if (
       accessMode === 'cloudflare_access'
       && !this.gatewayConfiguration().serviceTokenConfigured
@@ -3249,11 +3253,15 @@ class RunpodPodManager {
         networkVolume: Boolean(selectedNetworkVolume),
         contextTokens,
       });
-    const shouldOverrideEnvironment = Boolean(selectedNetworkVolume)
+    if (cloudflaredVersion) runtimeEnv.CLOUDFLARED_VERSION = cloudflaredVersion;
+    const shouldOverrideEnvironment = Boolean(cloudflaredVersion) || Boolean(selectedNetworkVolume)
       || (podPurpose === 'ollama_service' && Number.isSafeInteger(contextTokens));
     const providerPayload = {
       name,
       templateId: template.providerTemplateId,
+      ...(cloudflaredVersion && podPurpose === 'ollama_service'
+        ? { args: cloudflareGatewayStartArgs(cloudflaredVersion) }
+        : {}),
       cloud,
       gpu: { id: gpuId, count: gpuCount },
       disk: diskGb,
@@ -4564,6 +4572,7 @@ class RunpodPodManager {
       });
       const runtime = artifactServerTemplate(preset.slug, {
         contextTokens,
+        cloudflaredVersion: templateEnvironment(current).CLOUDFLARED_VERSION,
         gpuCount,
         cloudflareTunnelSecretName: this.cloudflareTunnelSecretName,
         llmApiSecretName: this.llmApiSecretName,

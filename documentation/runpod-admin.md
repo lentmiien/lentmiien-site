@@ -337,6 +337,39 @@ The live v2 handoff check populated the retained 50 GB Standard volume
 package). A fresh Pod mounted the same volume, found the tag without a second
 pull, and completed an inference without downloading the model again.
 
+### Cloudflare Tunnel version for new Pods
+
+The Qwen/Ollama creator and GLM quick-launch form both expose **Cloudflare Tunnel
+version**. The default is `2026.10.4`; `2026.8.3` remains available for rollback.
+Select the version before starting a new Pod. This does not change a currently
+running Pod or its automatic-stop deadline. A stop/start retains that Pod's
+original startup command; create a replacement Pod to apply a new selection.
+
+Both starters share `services/runpodCloudflaredCatalog.js`. To offer a future
+release, add its version and official **cloudflared-linux-amd64 SHA-256** to
+`CLOUDFLARED_RELEASES`, then update `DEFAULT_CLOUDFLARED_VERSION` if desired.
+The current default checksum comes from the [Cloudflare 2026.10.4 release](https://github.com/cloudflare/cloudflared/releases/tag/2026.10.4).
+No `.env` setting or database migration is required. Deploy/restart the web app
+to load code changes. The Qwen creator overrides even an older saved template's
+startup command for the new Pod; GLM synchronizes its serving template on launch.
+The installer reuses only an executable with the selected checksum, otherwise
+downloads and verifies a replacement before installing it. Failed verification
+halts startup. GLM context reloads retain a version selected at creation.
+
+Security contract extension: this selector stays within the existing logged-in,
+admin-managed Runpod feature. Qwen requires `runpod.pod.create`; GLM requires
+`runpod.llama_cpp.create`. The admin
+bundle grants these; family/user have no default grants. Existing POST, session
+CSRF, private/no-store, form limits, cost limits, object checks, and production
+failure logging apply. The new field accepts only catalog version strings;
+URLs and hashes cannot be submitted by the browser. Downloads use fixed GitHub
+release paths, HTTPS redirects, bounded time/retries, and SHA-256 verification.
+Version metadata is non-secret and uses the existing provider environment/template
+retention; no new personal data, private media, credentials, or endpoints are
+introduced. Tests cover rejected versions before provider work, both launch
+paths, stale saved templates, binary replacement, checksum/download failures,
+and the existing mounted authorization/CSRF protections.
+
 ### Qwen3.8 27B context profiles
 
 Qwen3.8 27B advertises a 262,144-token native window. The managed Ollama

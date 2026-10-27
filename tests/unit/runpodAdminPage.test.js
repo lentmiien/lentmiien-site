@@ -131,6 +131,9 @@ describe('Runpod admin page', () => {
     expect(html).toContain('name="billingAcknowledged"');
     expect(html).toContain('Total context (prompt + thinking + answer)');
     expect(html).toContain('32,768 tokens · conservative default');
+    expect(html).toContain('name="cloudflaredVersion"');
+    expect(html).toContain('<option value="2026.10.4" selected>2026.10.4 · default</option>');
+    expect(html).toContain('<option value="2026.8.3">2026.8.3</option>');
   });
 
   test('renders v2 catalog, billing, template, picker, and lifecycle controls', () => {
@@ -481,6 +484,8 @@ describe('Runpod admin page', () => {
     expect(html).toContain('lentmiien_llm_api_key');
     expect(html).not.toContain('access-client-secret-value');
     expect(html).not.toContain('tunnel-token-value');
+    expect(html).toContain('name="cloudflaredVersion" data-cloudflared-version-select required');
+    expect(html).toContain('<option value="2026.10.4" selected>2026.10.4 · default</option>');
   });
 
   test('escapes provider-controlled text in every displayed catalog context', () => {

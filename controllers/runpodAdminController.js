@@ -1,3 +1,4 @@
+const { CLOUDFLARED_VERSION_OPTIONS, DEFAULT_CLOUDFLARED_VERSION } = require('../services/runpodCloudflaredCatalog');
 const logger = require('../utils/logger');
 const {
   BILLING_BUCKET_SIZES,
@@ -355,6 +356,8 @@ function buildPageModel(
     errorSections,
     notice: NOTICE_MESSAGES[filters.notice] || null,
     podManagement: {
+      cloudflaredVersions: CLOUDFLARED_VERSION_OPTIONS,
+      defaultCloudflaredVersion: DEFAULT_CLOUDFLARED_VERSION,
       pendingCreations: Array.isArray(management.pendingCreations) ? management.pendingCreations.slice(0, 2) : [],
       requestDiagnostics: management.requestDiagnostics || null,
       limits: {

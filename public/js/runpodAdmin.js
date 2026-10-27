@@ -23,6 +23,8 @@
     const createForm = picker.querySelector('[data-runpod-create-form]');
     const createButton = picker.querySelector('[data-runpod-create-button]');
     const templateSelect = picker.querySelector('[data-runpod-template-select]');
+    const cloudflaredField = picker.querySelector('[data-cloudflared-version-field]');
+    const cloudflaredSelect = picker.querySelector('[data-cloudflared-version-select]');
     const publicAccessAcknowledgement = picker.querySelector('[data-runpod-public-ack]');
     const publicAccessCheckbox = publicAccessAcknowledgement?.querySelector(
       'input[name="publicAccessAcknowledged"]'
@@ -105,6 +107,11 @@
       const accessMode = selected?.dataset.accessMode || 'runpod_proxy';
       const gatewayUrl = selected?.dataset.gatewayUrl || '';
       const usesCloudflare = accessMode === 'cloudflare_access';
+      if (cloudflaredField) cloudflaredField.hidden = !usesCloudflare;
+      if (cloudflaredSelect) {
+        cloudflaredSelect.disabled = !usesCloudflare;
+        cloudflaredSelect.required = usesCloudflare;
+      }
       if (publicAccessAcknowledgement) publicAccessAcknowledgement.hidden = usesCloudflare;
       if (publicAccessCheckbox) {
         publicAccessCheckbox.disabled = usesCloudflare;
