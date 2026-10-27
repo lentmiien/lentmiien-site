@@ -512,6 +512,7 @@ function artifactPreparerProviderPayload(slug = GLM53_FLASH_UD_IQ4_XS_SLUG) {
 function buildArtifactServerShell(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, {
   contextTokens,
   cloudflaredVersion,
+  cloudflaredSha256,
   gpuCount = 2,
   originPort = GLM53_FLASH_LLAMA_CPP_ORIGIN_PORT,
 } = {}) {
@@ -578,7 +579,7 @@ PY
 
 current_stage=installing_gateway
 printf 'RUNPOD_LLM_STAGE stage=installing_gateway\\n'
-${cloudflaredInstallShell(cloudflaredVersion)}
+${cloudflaredInstallShell(cloudflaredVersion, cloudflaredSha256)}
 
 test -n "\${TUNNEL_TOKEN:-}" || fail CLOUDFLARE_TUNNEL_TOKEN_MISSING starting
 test -n "\${LLAMA_API_KEY:-}" || fail LLAMA_API_KEY_MISSING starting
@@ -660,6 +661,7 @@ function buildArtifactServerArgs(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, options = {}
 function artifactServerTemplate(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, {
   contextTokens,
   cloudflaredVersion,
+  cloudflaredSha256,
   gpuCount = 2,
   cloudflareTunnelSecretName = 'lentmiien_cloudflare_tunnel_token',
   llmApiSecretName = 'lentmiien_llm_api_key',
@@ -673,14 +675,15 @@ function artifactServerTemplate(slug = GLM53_FLASH_UD_IQ4_XS_SLUG, {
     name: 'GLM-5.3 Flash · llama.cpp · Cloudflare Access',
     providerTemplateName: GLM53_FLASH_LLAMA_CPP_PROVIDER_TEMPLATE_NAME,
     image: preset.runtimeImage,
-    args: buildArtifactServerArgs(slug, { contextTokens, gpuCount, cloudflaredVersion }),
+    args: buildArtifactServerArgs(slug, { contextTokens, gpuCount, cloudflaredVersion, cloudflaredSha256 }),
     diskGb: 40,
     ports: [],
     env: {
       TUNNEL_TOKEN: `{{ RUNPOD_SECRET_${cloudflareTunnelSecretName} }}`,
       LLAMA_API_KEY: `{{ RUNPOD_SECRET_${llmApiSecretName} }}`,
       NVIDIA_TF32_OVERRIDE: '0',
-      CLOUDFLARED_VERSION: cloudflaredRelease(cloudflaredVersion).version,
+      CLOUDFLARED_SHA256: cloudflaredRelease(cloudflaredVersion, cloudflaredSha256).sha256,
+      CLOUDFLARED_VERSION: cloudflaredRelease(cloudflaredVersion, cloudflaredSha256).version,
     },
     persistentDiskGb: 10,
     persistentPath: '/workspace',

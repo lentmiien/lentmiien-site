@@ -1,4 +1,3 @@
-const { CLOUDFLARED_VERSION_OPTIONS, DEFAULT_CLOUDFLARED_VERSION } = require('../services/runpodCloudflaredCatalog');
 const logger = require('../utils/logger');
 const {
   BILLING_BUCKET_SIZES,
@@ -28,6 +27,14 @@ const SECTION_LABELS = Object.freeze({
   billing: 'Billing history',
 });
 const NOTICE_MESSAGES = Object.freeze({
+  'cloudflared-saved': { type: 'success', message: 'Cloudflare Tunnel versions saved. The launch forms now use the updated catalog.' },
+  'cloudflared-invalid': { type: 'error', message: 'Enter a release number such as 2026.10.4 and its 64-character SHA-256 for cloudflared-linux-amd64.' },
+  'cloudflared-exists': { type: 'error', message: 'That Cloudflare Tunnel version is already saved.' },
+  'cloudflared-full': { type: 'error', message: 'The catalog holds up to 50 versions. Delete an old entry before adding another.' },
+  'cloudflared-missing': { type: 'error', message: 'That Cloudflare Tunnel version is no longer saved. Select a current version and retry.' },
+  'cloudflared-default-required': { type: 'error', message: 'Choose another default before deleting this version.' },
+  'cloudflared-conflict': { type: 'error', message: 'The version catalog changed during this operation. Review the current entries and retry.' },
+  'cloudflared-failed': { type: 'error', message: 'The Cloudflare Tunnel version catalog could not be updated. Check the application logs and retry.' },
   'template-synced': { type: 'success', message: 'The Ollama workload template is synced with Runpod v2.' },
   'template-failed': { type: 'error', message: 'The Ollama workload template could not be synced.' },
   'gateway-template-synced': { type: 'success', message: 'The Cloudflare Access Ollama template is synced with Runpod v2.' },
@@ -356,8 +363,9 @@ function buildPageModel(
     errorSections,
     notice: NOTICE_MESSAGES[filters.notice] || null,
     podManagement: {
-      cloudflaredVersions: CLOUDFLARED_VERSION_OPTIONS,
-      defaultCloudflaredVersion: DEFAULT_CLOUDFLARED_VERSION,
+      cloudflaredCatalog: management.cloudflaredCatalog || null,
+      cloudflaredVersions: (management.cloudflaredCatalog?.releases || []).map(({ version }) => version),
+      defaultCloudflaredVersion: management.cloudflaredCatalog?.defaultVersion || '',
       pendingCreations: Array.isArray(management.pendingCreations) ? management.pendingCreations.slice(0, 2) : [],
       requestDiagnostics: management.requestDiagnostics || null,
       limits: {

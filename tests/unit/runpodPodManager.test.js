@@ -1,3 +1,5 @@
+const { RunpodCloudflaredVersionService, initialCatalog } = require('../../services/runpodCloudflaredVersionService');
+const { cloudflaredRelease } = require('../../services/runpodCloudflaredCatalog');
 const {
   OLLAMA_MODEL,
   OLLAMA_DOWNLOADER_MODEL,
@@ -260,7 +262,7 @@ function gpu(overrides = {}) {
   };
 }
 
-function createFixture({ template = ollamaTemplate(), localPod = null, managerOptions = {} } = {}) {
+function createFixture({ template = ollamaTemplate(), localPod = null, managerOptions = {}, cloudflaredCatalog = initialCatalog() } = {}) {
   const runpodService = {
     listPods: jest.fn().mockResolvedValue([]),
     listNetworkVolumes: jest.fn().mockResolvedValue([]),
@@ -316,7 +318,11 @@ function createFixture({ template = ollamaTemplate(), localPod = null, managerOp
     failed: jest.fn().mockResolvedValue(), reconcile: jest.fn().mockResolvedValue(),
     pending: jest.fn().mockResolvedValue([]), matches: jest.fn().mockReturnValue(false),
   };
+  const cloudflaredVersions = new RunpodCloudflaredVersionService({
+    model: { findById: () => queryResult(cloudflaredCatalog) }, appLogger,
+  });
   const manager = new RunpodPodManager({
+    cloudflaredVersions,
     creationIntents,
     runpodService,
     podModel,
@@ -991,8 +997,13 @@ describe('RunpodPodManager', () => {
     expect(JSON.stringify(template)).not.toContain('actual-secret-value');
   });
 
-  test.each([undefined, '2026.8.3', '2026.10.4'])('passes the selected tunnel version %s to the GLM template and Pod', async (cloudflaredVersion) => {
-    const fixture = createFixture();
+  test.each([undefined, '2026.8.3', '2026.10.4', '2026.11.1'])('passes the selected tunnel version %s to the GLM template and Pod', async (cloudflaredVersion) => {
+    const newRelease = { version: '2026.11.1', sha256: 'c'.repeat(64) };
+    const catalog = initialCatalog();
+    catalog.releases.push(newRelease);
+    const expectedRelease = cloudflaredVersion === newRelease.version
+      ? cloudflaredRelease(newRelease.version, newRelease.sha256) : cloudflaredRelease(cloudflaredVersion);
+    const fixture = createFixture({ cloudflaredCatalog: catalog });
     const artifactId = '507f191e810c19729de860ad';
     fixture.modelArtifactModel.findOne.mockImplementation(() => queryResult({
       _id: artifactId,
@@ -1021,7 +1032,7 @@ describe('RunpodPodManager', () => {
     expect(fixture.manager.saveModelArtifactServerTemplate).toHaveBeenCalledWith(
       'glm-5-3-flash-ud-iq4-xs',
       { name: 'admin' },
-      { contextTokens: 16384, gpuCount: 2, cloudflaredVersion: cloudflaredVersion || '2026.10.4' }
+      { contextTokens: 16384, gpuCount: 2, cloudflaredVersion: cloudflaredVersion || '2026.10.4', release: expectedRelease }
     );
     expect(fixture.manager._createManagedPod).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1044,7 +1055,8 @@ describe('RunpodPodManager', () => {
     );
   });
 
-  test('reloads a running managed llama.cpp Pod with a larger reviewed context', async () => {
+  test.each([false, true])('retains a legacy or deleted catalog pin during GLM reload (%s)', async (newPin) => {
+    const pinned = newPin ? cloudflaredRelease('2026.11.1', 'd'.repeat(64)) : cloudflaredRelease('2026.8.3');
     const artifactId = '507f191e810c19729de860ad';
     const localPod = {
       _id: POD_RECORD_ID,
@@ -1087,9 +1099,9 @@ describe('RunpodPodManager', () => {
       status: 'RUNNING',
       actions: ['stop', 'terminate'],
       gpu: { id: 'NVIDIA RTX PRO 6000 Blackwell Server Edition', count: 2 },
-      env: { CLOUDFLARED_VERSION: '2026.8.3' },
+      env: { CLOUDFLARED_VERSION: pinned.version, ...(newPin ? { CLOUDFLARED_SHA256: pinned.sha256 } : {}) },
       args: artifactServerProviderPayload(undefined, {
-        cloudflaredVersion: '2026.8.3',
+        cloudflaredVersion: pinned.version, cloudflaredSha256: pinned.sha256,
         contextTokens: 16384,
         gpuCount: 2,
       }).args,
@@ -1112,7 +1124,7 @@ describe('RunpodPodManager', () => {
     expect(providerPodId).toBe('glm-provider-pod-id');
     expect(artifactServerContextFromArgs(update.args)).toBe(32768);
     expect(update.args).toBe(artifactServerProviderPayload(undefined, {
-      contextTokens: 32768, gpuCount: 2, cloudflaredVersion: '2026.8.3',
+      contextTokens: 32768, gpuCount: 2, cloudflaredVersion: pinned.version, cloudflaredSha256: pinned.sha256,
     }).args);
     expect(fixture.podModel.updateOne).toHaveBeenCalledWith(
       { _id: POD_RECORD_ID, archivedAt: null },
@@ -1694,8 +1706,14 @@ describe('RunpodPodManager', () => {
     expect(fixture.runpodService.createPod).not.toHaveBeenCalled();
   });
 
-  test.each([undefined, '2026.8.3', '2026.10.4'])('creates a gateway Pod with tunnel %s despite an older saved template', async (cloudflaredVersion) => {
+  test.each([undefined, '2026.8.3', '2026.10.4', '2026.11.1'])('creates a gateway Pod with tunnel %s despite an older saved template', async (cloudflaredVersion) => {
+    const newRelease = { version: '2026.11.1', sha256: 'c'.repeat(64) };
+    const catalog = initialCatalog();
+    catalog.releases.push(newRelease);
+    const expectedRelease = cloudflaredVersion === newRelease.version
+      ? cloudflaredRelease(newRelease.version, newRelease.sha256) : cloudflaredRelease(cloudflaredVersion);
     const fixture = createFixture({
+      cloudflaredCatalog: catalog,
       template: { ...cloudflareTemplate(), args: cloudflareGatewayStartArgs('2026.8.3') },
       managerOptions: {
         fetchImpl: jest.fn()
@@ -1747,10 +1765,11 @@ describe('RunpodPodManager', () => {
 
     expect(fixture.runpodService.createPod).toHaveBeenCalledWith(expect.objectContaining({
       templateId: 'provider-cloudflare-template-1',
-      args: cloudflareGatewayStartArgs(cloudflaredVersion),
+      args: cloudflareGatewayStartArgs(expectedRelease.version, expectedRelease.sha256),
       mounts: { network: [{ volumeId: 'volume-123', path: '/workspace' }] },
       env: {
         CLOUDFLARED_VERSION: cloudflaredVersion || '2026.10.4',
+        CLOUDFLARED_SHA256: expectedRelease.sha256,
         OLLAMA_CONTEXT_LENGTH: '65536',
         OLLAMA_FLASH_ATTENTION: '1',
         OLLAMA_HOST: '127.0.0.1:8080',
@@ -1782,6 +1801,37 @@ describe('RunpodPodManager', () => {
       expect(fixture.runpodService.updateTemplate).not.toHaveBeenCalled();
     }
   );
+
+  test('refreshes the database default for both template builders without restarting the manager', async () => {
+    const catalog = initialCatalog();
+    catalog.releases.push({ version: '2026.11.1', sha256: 'c'.repeat(64) });
+    const f = createFixture({ cloudflaredCatalog: catalog, managerOptions: {
+      cloudflareAccessClientId: 'id', cloudflareAccessClientSecret: 'secret',
+      cloudflareTunnelTokenConfigured: true, llmApiKey: 'synthetic-key',
+    } });
+    f.manager._saveOllamaTemplate = jest.fn().mockResolvedValue({});
+    await f.manager.saveOllamaCloudflareTemplate({}, { name: 'admin' });
+    expect(f.manager._saveOllamaTemplate.mock.calls[0][0].args).toBe(cloudflareGatewayStartArgs());
+    catalog.defaultVersion = '2026.11.1';
+    await f.manager.saveOllamaCloudflareTemplate({}, { name: 'admin' });
+    expect(f.manager._saveOllamaTemplate.mock.calls[1][0].args)
+      .toBe(cloudflareGatewayStartArgs('2026.11.1', 'c'.repeat(64)));
+    await f.manager.saveModelArtifactServerTemplate('glm-5-3-flash-ud-iq4-xs', { name: 'admin' });
+    expect(f.manager._saveOllamaTemplate.mock.calls[2][0].env).toMatchObject({
+      CLOUDFLARED_VERSION: '2026.11.1', CLOUDFLARED_SHA256: 'c'.repeat(64),
+    });
+  });
+
+  test('blocks launch before provider work if a displayed version has been deleted or the catalog is unavailable', async () => {
+    const f = createFixture({ template: cloudflareTemplate() });
+    await expect(f.manager.createManagedPod(validCreateInput({ cloudflaredVersion: '2026.11.1' })))
+      .rejects.toMatchObject({ code: 'RUNPOD_CLOUDFLARED_VERSION_MISSING' });
+    f.manager.cloudflaredVersions.resolveRelease = jest.fn().mockRejectedValue({ code: 'RUNPOD_CLOUDFLARED_CATALOG_UNAVAILABLE' });
+    await expect(f.manager.createManagedPod(validCreateInput()))
+      .rejects.toMatchObject({ code: 'RUNPOD_CLOUDFLARED_CATALOG_UNAVAILABLE' });
+    expect(f.runpodService.listPods).not.toHaveBeenCalled();
+    expect(f.runpodService.createPod).not.toHaveBeenCalled();
+  });
 
   test('prevents two active connectors from sharing the named Cloudflare Tunnel', async () => {
     const fixture = createFixture({

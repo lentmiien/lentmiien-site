@@ -42,6 +42,27 @@ const post = (path, csrf = token, requestOrigin = origin) => fetch(`${origin}/ad
 });
 
 describe('mounted Runpod routes retain capability and CSRF checks', () => {
+  test.each([
+    ['/cloudflared-versions', 'addCloudflaredVersion'],
+    ['/cloudflared-versions/default', 'setDefaultCloudflaredVersion'],
+    ['/cloudflared-versions/delete', 'deleteCloudflaredVersion'],
+  ])('protects catalog mutation %s with capability, CSRF and POST', async (path, handler) => {
+    expect((await post(path, '')).status).toBe(403);
+    expect((await post(path, token, 'https://attacker.invalid')).status).toBe(403);
+    expect((await fetch(`${origin}/admin/runpod${path}`)).status).toBe(404);
+    for (const user of [null, { name: 'family', type_user: 'family' }, { name: 'user', type_user: 'user' }]) {
+      principal = user;
+      expect((await post(path)).status).toBe(403);
+    }
+    principal = { name: 'reader', type_user: 'user' };
+    RoleModel.findOne.mockResolvedValue({ permissions: RUNPOD_READ_CAPABILITIES });
+    expect((await post(path)).status).toBe(403);
+    expect(controller[handler]).not.toHaveBeenCalled();
+    principal = { name: 'admin', type_user: 'admin' };
+    expect((await post(path)).status).toBe(200);
+    expect(controller[handler]).toHaveBeenCalledTimes(1);
+  });
+
   test.each([null, { name: 'family', type_user: 'family' }, { name: 'user', type_user: 'user' }])('denies dashboard and mutations for %j', async (user) => {
     principal = user;
     expect((await fetch(`${origin}/admin/runpod/`)).status).toBe(403);

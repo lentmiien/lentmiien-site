@@ -196,6 +196,7 @@ const CodexTokenPrice = require('./models/codex_token_price');
 const CodexRequestProfile = require('./models/codex_request_profile');
 const CodexLogReviewRun = require('./models/codex_log_review_run');
 const DatabaseAvailabilityIncident = require('./models/database_availability_incident');
+const RunpodCloudflaredCatalog = require('./models/runpod_cloudflared_catalog');
 const RunpodCreationIntent = require('./models/runpod_creation_intent');
 const RunpodPod = require('./models/runpod_pod');
 const RunpodNetworkVolume = require('./models/runpod_network_volume');
@@ -359,6 +360,7 @@ module.exports = {
   CodexRequestProfile,
   CodexLogReviewRun,
   DatabaseAvailabilityIncident,
+  RunpodCloudflaredCatalog,
   RunpodCreationIntent,
   RunpodPod,
   RunpodNetworkVolume,

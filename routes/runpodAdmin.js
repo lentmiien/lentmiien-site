@@ -131,6 +131,27 @@ router.use(csrf.issueToken);
 router.use(requireBoundedRunpodForm);
 router.get('/', runpodReadLimiter, runpodAdminController.index);
 router.post(
+  '/cloudflared-versions',
+  runpodMutationLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.cloudflareVersionsManage),
+  runpodPodAdminController.addCloudflaredVersion
+);
+router.post(
+  '/cloudflared-versions/delete',
+  runpodMutationLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.cloudflareVersionsManage),
+  runpodPodAdminController.deleteCloudflaredVersion
+);
+router.post(
+  '/cloudflared-versions/default',
+  runpodMutationLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.cloudflareVersionsManage),
+  runpodPodAdminController.setDefaultCloudflaredVersion
+);
+router.post(
   '/network-volumes',
   runpodMutationLimiter,
   runpodStorageCreateLimiter,

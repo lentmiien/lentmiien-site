@@ -1292,3 +1292,14 @@
     gap: 0.2rem;
   }
 }
+
+.runpod-cloudflared-table td:nth-child(2) code {
+  display: block;
+  max-width: 32rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.runpod-cloudflared-table .runpod-status {
+  margin-left: 0.5rem;
+}

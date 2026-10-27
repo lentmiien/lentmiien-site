@@ -1,3 +1,4 @@
+const { runpodCloudflaredVersionService } = require('./runpodCloudflaredVersionService');
 const { cloudflaredInstallShell, cloudflaredRelease } = require('./runpodCloudflaredCatalog');
 const { RunpodCreationIntentService } = require('./runpodCreationIntentService');
 const logger = require('../utils/logger');
@@ -451,10 +452,10 @@ function runpodSecretReference(secretName) {
   return `{{ RUNPOD_SECRET_${normalizeRunpodSecretName(secretName)} }}`;
 }
 
-function cloudflareGatewayStartArgs(cloudflaredVersion) {
+function cloudflareGatewayStartArgs(cloudflaredVersion, cloudflaredSha256) {
   const script = [
     'set -Eeuo pipefail',
-    cloudflaredInstallShell(cloudflaredVersion),
+    cloudflaredInstallShell(cloudflaredVersion, cloudflaredSha256),
     '/bin/ollama serve & ollama_pid=$!',
     '"$cloudflared" tunnel --no-autoupdate run & tunnel_pid=$!',
     'trap \'kill "$ollama_pid" "$tunnel_pid" 2>/dev/null || true\' EXIT INT TERM',
@@ -636,6 +637,8 @@ function normalizeTemplateInput(input = {}) {
 }
 
 function normalizeCloudflareTemplateInput(input = {}, {
+  cloudflaredVersion,
+  cloudflaredSha256,
   gatewayUrl = DEFAULT_CLOUDFLARE_GATEWAY_URL,
   tunnelSecretName = DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME,
 } = {}) {
@@ -649,7 +652,7 @@ function normalizeCloudflareTemplateInput(input = {}, {
       input.providerTemplateName || OLLAMA_CLOUDFLARE_PROVIDER_TEMPLATE_NAME
     ),
     image: normalizeImage(input.image),
-    args: cloudflareGatewayStartArgs(),
+    args: cloudflareGatewayStartArgs(cloudflaredVersion, cloudflaredSha256),
     diskGb: strictInteger(input.diskGb || 20, {
       label: 'Container disk', min: 5, max: 500,
     }),
@@ -746,6 +749,7 @@ function normalizeModelArtifactServerTemplateInput(
   {
     contextTokens,
     cloudflaredVersion,
+    cloudflaredSha256,
     gpuCount = 2,
     gatewayUrl = DEFAULT_CLOUDFLARE_GATEWAY_URL,
     tunnelSecretName = DEFAULT_CLOUDFLARE_TUNNEL_SECRET_NAME,
@@ -764,6 +768,7 @@ function normalizeModelArtifactServerTemplateInput(
   const template = artifactServerTemplate(preset.slug, {
     contextTokens,
     cloudflaredVersion,
+    cloudflaredSha256,
     gpuCount,
     cloudflareTunnelSecretName: normalizedTunnelSecretName,
     llmApiSecretName: normalizedLlmApiSecretName,
@@ -1609,6 +1614,7 @@ class RunpodPodManager {
   constructor({
     runpodService = new RunpodApiV2Service(),
     creationIntents,
+    cloudflaredVersions = runpodCloudflaredVersionService,
     podModel = RunpodPod,
     networkVolumeModel = RunpodNetworkVolume,
     modelArtifactModel = RunpodModelArtifact,
@@ -1680,6 +1686,7 @@ class RunpodPodManager {
   } = {}) {
     this.runpodService = runpodService;
     this.creationIntents = creationIntents || new RunpodCreationIntentService({ appLogger, now });
+    this.cloudflaredVersions = cloudflaredVersions;
     this.podModel = podModel;
     this.networkVolumeModel = networkVolumeModel;
     this.modelArtifactModel = modelArtifactModel;
@@ -1944,6 +1951,7 @@ class RunpodPodManager {
 
   async getAdminState() {
     const operations = {
+      cloudflaredCatalog: () => this.cloudflaredVersions.getCatalog(),
       pendingCreations: () => this.creationIntents.pending(),
       templates: () => this.templateModel.find({ active: true }).sort({ name: 1 }).lean(),
       pods: () => this.podModel.find({}).sort({ createdAt: -1 }).limit(MAX_LOCAL_PODS).lean(),
@@ -1966,6 +1974,7 @@ class RunpodPodManager {
       entries.map(([, operation]) => Promise.resolve().then(operation))
     );
     const values = {
+      cloudflaredCatalog: null,
       pendingCreations: [],
       templates: [],
       pods: [],
@@ -1981,7 +1990,8 @@ class RunpodPodManager {
     settled.forEach((result, index) => {
       const key = entries[index][0];
       if (result.status === 'fulfilled') {
-        values[key] = Array.isArray(result.value) ? result.value : [];
+        values[key] = key === 'cloudflaredCatalog'
+          ? result.value : Array.isArray(result.value) ? result.value : [];
       } else {
         errors[key] = {
           code: safeString(result.reason?.code, 80) || 'RUNPOD_MANAGEMENT_ERROR',
@@ -2051,6 +2061,7 @@ class RunpodPodManager {
       });
 
     return {
+      cloudflaredCatalog: values.cloudflaredCatalog,
       pendingCreations: values.pendingCreations.map(({ _id, token, state, providerId, intendedStopAt }) => ({ kind: _id, operationId: token, state, providerId, intendedStopAt })),
       requestDiagnostics: this.runpodService.coordinator?.diagnostics?.() || null,
       limits: this.limits(),
@@ -2380,13 +2391,15 @@ class RunpodPodManager {
         { code: 'RUNPOD_CLOUDFLARE_NOT_CONFIGURED', status: 503 }
       );
     }
-    const operation = this.templateQueue.then(() => this._saveOllamaTemplate(
-      normalizeCloudflareTemplateInput(input, {
+    const operation = this.templateQueue.then(async () => {
+      const release = await this.cloudflaredVersions.resolveRelease(input?.cloudflaredVersion);
+      return this._saveOllamaTemplate(normalizeCloudflareTemplateInput(input, {
+        cloudflaredVersion: release.version,
+        cloudflaredSha256: release.sha256,
         gatewayUrl: this.cloudflareGatewayUrl,
         tunnelSecretName: this.cloudflareTunnelSecretName,
-      }),
-      principal
-    ));
+      }), principal);
+    });
     this.templateQueue = operation.catch(() => {});
     return operation;
   }
@@ -2417,15 +2430,17 @@ class RunpodPodManager {
         { code: 'RUNPOD_LLM_GATEWAY_NOT_CONFIGURED', status: 503 }
       );
     }
-    const operation = this.templateQueue.then(() => this._saveOllamaTemplate(
-      normalizeModelArtifactServerTemplateInput(presetSlug, {
+    const operation = this.templateQueue.then(async () => {
+      const release = options.release || await this.cloudflaredVersions.resolveRelease(options.cloudflaredVersion);
+      return this._saveOllamaTemplate(normalizeModelArtifactServerTemplateInput(presetSlug, {
         ...options,
+        cloudflaredVersion: release.version,
+        cloudflaredSha256: release.sha256,
         gatewayUrl: this.cloudflareGatewayUrl,
         tunnelSecretName: this.cloudflareTunnelSecretName,
         llmApiSecretName: this.llmApiSecretName,
-      }),
-      principal
-    ));
+      }), principal);
+    });
     this.templateQueue = operation.catch(() => {});
     return operation;
   }
@@ -2532,7 +2547,8 @@ class RunpodPodManager {
   }
 
   async _createModelArtifactPod(input = {}, principal) {
-    const { version: cloudflaredVersion } = cloudflaredRelease(input.cloudflaredVersion);
+    const release = await this.cloudflaredVersions.resolveRelease(input.cloudflaredVersion);
+    const cloudflaredVersion = release.version;
     const artifactId = safeString(input.artifactId, 30);
     if (!OBJECT_ID_PATTERN.test(artifactId)) {
       throw new RunpodManagementError('Choose a verified model artifact.', {
@@ -2565,6 +2581,7 @@ class RunpodPodManager {
     const template = await this.saveModelArtifactServerTemplate(preset.slug, principal, {
       contextTokens,
       cloudflaredVersion,
+      release,
       gpuCount,
     });
     const templateId = template?._id?.toString?.() || safeString(template?._id, 30);
@@ -2583,6 +2600,7 @@ class RunpodPodManager {
       autoStopMinutes: String(input.autoStopMinutes || this.defaultAutoStopMinutes),
     }, principal, {
       podPurpose: 'llama_cpp_service',
+      release,
       modelArtifactRecordId: artifact._id,
       contextTokens,
       requiredVramGb: preset.recommendedVramGb,
@@ -3044,9 +3062,10 @@ class RunpodPodManager {
       });
     }
     const accessMode = normalizeOllamaAccessMode(template.accessMode);
-    const cloudflaredVersion = accessMode === 'cloudflare_access'
-      ? cloudflaredRelease(input.cloudflaredVersion).version
+    const release = accessMode === 'cloudflare_access'
+      ? options.release || await this.cloudflaredVersions.resolveRelease(input.cloudflaredVersion)
       : null;
+    const cloudflaredVersion = release?.version;
     if (
       accessMode === 'cloudflare_access'
       && !this.gatewayConfiguration().serviceTokenConfigured
@@ -3253,14 +3272,17 @@ class RunpodPodManager {
         networkVolume: Boolean(selectedNetworkVolume),
         contextTokens,
       });
-    if (cloudflaredVersion) runtimeEnv.CLOUDFLARED_VERSION = cloudflaredVersion;
+    if (release) {
+      runtimeEnv.CLOUDFLARED_VERSION = release.version;
+      runtimeEnv.CLOUDFLARED_SHA256 = release.sha256;
+    }
     const shouldOverrideEnvironment = Boolean(cloudflaredVersion) || Boolean(selectedNetworkVolume)
       || (podPurpose === 'ollama_service' && Number.isSafeInteger(contextTokens));
     const providerPayload = {
       name,
       templateId: template.providerTemplateId,
       ...(cloudflaredVersion && podPurpose === 'ollama_service'
-        ? { args: cloudflareGatewayStartArgs(cloudflaredVersion) }
+        ? { args: cloudflareGatewayStartArgs(cloudflaredVersion, release.sha256) }
         : {}),
       cloud,
       gpu: { id: gpuId, count: gpuCount },
@@ -4570,9 +4592,15 @@ class RunpodPodManager {
       const gpuCount = strictInteger(current.gpu?.count ?? pod.gpu?.count, {
         label: 'GPU count', min: 1, max: this.maxGpuCount,
       });
+      const currentEnv = templateEnvironment(current);
+      // Retain the pod's pinned pair after catalog deletion, including legacy bundled pins.
+      const release = currentEnv.CLOUDFLARED_SHA256
+        ? cloudflaredRelease(currentEnv.CLOUDFLARED_VERSION, currentEnv.CLOUDFLARED_SHA256)
+        : cloudflaredRelease(currentEnv.CLOUDFLARED_VERSION || '2026.8.3');
       const runtime = artifactServerTemplate(preset.slug, {
         contextTokens,
-        cloudflaredVersion: templateEnvironment(current).CLOUDFLARED_VERSION,
+        cloudflaredVersion: release.version,
+        cloudflaredSha256: release.sha256,
         gpuCount,
         cloudflareTunnelSecretName: this.cloudflareTunnelSecretName,
         llmApiSecretName: this.llmApiSecretName,

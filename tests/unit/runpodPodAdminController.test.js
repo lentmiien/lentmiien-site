@@ -40,6 +40,25 @@ function billingService() {
 
 describe('Runpod Pod admin mutation controller', () => {
   test.each([
+    ['addCloudflaredVersion', 'add'], ['deleteCloudflaredVersion', 'delete'],
+    ['setDefaultCloudflaredVersion', 'default'],
+  ])('saves %s using the validated session principal and redirects to the catalog', async (method, action) => {
+    const cloudflaredVersions = { mutate: jest.fn().mockResolvedValue({}) };
+    const appLogger = { warning: jest.fn(), error: jest.fn() };
+    const controller = createRunpodPodAdminController({ cloudflaredVersions, appLogger });
+    const req = { body: { version: '2026.11.1', sha256: 'a'.repeat(64) }, user: { name: 'admin', type_user: 'admin' } };
+    const res = response();
+    await controller[method](req, res);
+    expect(cloudflaredVersions.mutate).toHaveBeenCalledWith(action, req.body, req.user);
+    expect(res.redirect).toHaveBeenCalledWith(303, '/admin/runpod?notice=cloudflared-saved#cloudflared-versions');
+    cloudflaredVersions.mutate.mockRejectedValue({ code: 'RUNPOD_CLOUDFLARED_DEFAULT_REQUIRED', message: 'private details' });
+    await controller[method](req, res);
+    expect(res.redirect).toHaveBeenLastCalledWith(303, '/admin/runpod?notice=cloudflared-default-required#cloudflared-versions');
+    expect(appLogger.warning).toHaveBeenCalled();
+    expect(JSON.stringify(appLogger.warning.mock.calls)).not.toContain('private details');
+  });
+
+  test.each([
     ['createNetworkVolume', 'createManagedNetworkVolume', {}, {}, NOTICE_KEYS.networkVolumeCreated, 'network-volumes'],
     ['deleteNetworkVolume', 'deleteManagedNetworkVolume', { id: 'volume-id' }, { confirmation: 'volume-name' }, NOTICE_KEYS.networkVolumeDeleted, 'network-volumes'],
     ['syncNetworkVolumes', 'syncProviderNetworkVolumes', {}, {}, NOTICE_KEYS.networkVolumesSynced, 'network-volumes'],

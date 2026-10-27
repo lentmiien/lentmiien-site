@@ -1,3 +1,4 @@
+const { initialCatalog } = require('../../services/runpodCloudflaredVersionService');
 const fs = require('fs');
 const path = require('path');
 const pug = require('pug');
@@ -19,7 +20,7 @@ function renderPage(dashboard = {}, management = {}, storedHistory = {}) {
     },
     errors: {},
     ...dashboard,
-  }, DEFAULT_FILTERS, management, storedHistory);
+  }, DEFAULT_FILTERS, { cloudflaredCatalog: initialCatalog(), ...management }, storedHistory);
 
   return pug.renderFile(projectFile('views', 'admin_runpod.pug'), {
     ...model,
@@ -34,6 +35,26 @@ function renderPage(dashboard = {}, management = {}, storedHistory = {}) {
 }
 
 describe('Runpod admin page', () => {
+  test('renders database catalog controls and reports catalog read failures', () => {
+    const catalog = { defaultVersion: '2026.11.1', releases: [
+      { version: '2026.11.1', sha256: 'a'.repeat(64) },
+      { version: '2026.10.4', sha256: 'b'.repeat(64) },
+    ] };
+    const html = renderPage({}, { cloudflaredCatalog: catalog });
+    expect(html).toContain('Cloudflare Tunnel versions');
+    expect(html).toContain('name="version" value="2026.11.1"');
+    expect(html).toContain('disabled aria-label="Delete 2026.11.1"');
+    expect(html).toContain('aria-label="Use 2026.10.4 as default"');
+    expect(html).toContain('action="/admin/runpod/cloudflared-versions"');
+    expect(html).toContain('name="sha256"');
+    const model = buildPageModel({}, DEFAULT_FILTERS, { cloudflaredCatalog: catalog });
+    expect(model.podManagement.cloudflaredVersions).toEqual(['2026.11.1', '2026.10.4']);
+    expect(model.podManagement.defaultCloudflaredVersion).toBe('2026.11.1');
+    const failed = renderPage({}, { cloudflaredCatalog: null });
+    expect(failed).toContain('The version catalog could not be loaded.');
+    expect(failed).not.toContain('action="/admin/runpod/cloudflared-versions"');
+  });
+
   test('renders escaped unresolved operation details and aggregate request diagnostics', () => {
     const html = renderPage({}, {
       pendingCreations: [{ kind: 'pod', state: 'unknown', operationId: '<script>unsafe</script>' }],
@@ -376,7 +397,10 @@ describe('Runpod admin page', () => {
     expect(html).toContain('provider-glm-volume-id');
     expect(html).toContain('HF_DOWNLOAD_TIMEOUT');
     expect(html).toContain('reuse completed shards and make a fresh bounded attempt');
-    expect(html).not.toMatch(/name="(?:repository|downloadUrl|command|sha256|runtimeRevision)"/u);
+    expect(html).not.toMatch(/name="(?:repository|downloadUrl|command|runtimeRevision)"/u);
+    const artifactSection = html.match(/<section[^>]*id="model-artifacts"[^>]*>[\s\S]*?<\/section>/u)?.[0];
+    expect(artifactSection).toBeDefined();
+    expect(artifactSection).not.toMatch(/name="(?:repository|downloadUrl|command|sha256|runtimeRevision)"/u);
     expect(html).toContain('Download an Ollama model to a volume');
     expect(html).toContain('Advanced downloader settings');
     expect(html).toContain('Automatic · cheapest compatible GPU');

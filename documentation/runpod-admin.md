@@ -339,36 +339,54 @@ pull, and completed an inference without downloading the model again.
 
 ### Cloudflare Tunnel version for new Pods
 
-The Qwen/Ollama creator and GLM quick-launch form both expose **Cloudflare Tunnel
-version**. The default is `2026.10.4`; `2026.8.3` remains available for rollback.
-Select the version before starting a new Pod. This does not change a currently
-running Pod or its automatic-stop deadline. A stop/start retains that Pod's
-original startup command; create a replacement Pod to apply a new selection.
+Use **Cloudflare Tunnel versions** on the Runpod page to add a release, set the
+default, or delete an old entry. Copy the version and **cloudflared-linux-amd64
+SHA-256** from the [official releases](https://github.com/cloudflare/cloudflared/releases).
+The default cannot be deleted: choose another default first. Duplicate versions
+are rejected; to correct a checksum, select another default if needed, delete
+the incorrect entry, then add it again.
 
-Both starters share `services/runpodCloudflaredCatalog.js`. To offer a future
-release, add its version and official **cloudflared-linux-amd64 SHA-256** to
-`CLOUDFLARED_RELEASES`, then update `DEFAULT_CLOUDFLARED_VERSION` if desired.
-The current default checksum comes from the [Cloudflare 2026.10.4 release](https://github.com/cloudflare/cloudflared/releases/tag/2026.10.4).
-No `.env` setting or database migration is required. Deploy/restart the web app
-to load code changes. The Qwen creator overrides even an older saved template's
-startup command for the new Pod; GLM synchronizes its serving template on launch.
-The installer reuses only an executable with the selected checksum, otherwise
-downloads and verifies a replacement before installing it. Failed verification
-halts startup. GLM context reloads retain a version selected at creation.
+The catalog is stored as one bounded document in `runpod_cloudflared_catalogs`.
+The initial values are `2026.10.4` (default) and `2026.8.3`. Before the first catalog
+change, reads use these initial values without writing on GET. The first successful
+management operation initializes the document; later reads and launches always
+use the saved catalog. Deleted entries are not re-seeded. Database failures block
+catalog-dependent operations rather than silently reverting to built-in values.
+There is no process cache: saves apply to the next page load and launch without
+restarting the app. Installing this feature requires one normal app deployment.
 
-Security contract extension: this selector stays within the existing logged-in,
-admin-managed Runpod feature. Qwen requires `runpod.pod.create`; GLM requires
-`runpod.llama_cpp.create`. The admin
-bundle grants these; family/user have no default grants. Existing POST, session
-CSRF, private/no-store, form limits, cost limits, object checks, and production
-failure logging apply. The new field accepts only catalog version strings;
-URLs and hashes cannot be submitted by the browser. Downloads use fixed GitHub
-release paths, HTTPS redirects, bounded time/retries, and SHA-256 verification.
-Version metadata is non-secret and uses the existing provider environment/template
-retention; no new personal data, private media, credentials, or endpoints are
-introduced. Tests cover rejected versions before provider work, both launch
-paths, stale saved templates, binary replacement, checksum/download failures,
-and the existing mounted authorization/CSRF protections.
+Both model launch forms offer the saved versions. New pods pin the selected
+version and checksum in their startup command and provider environment. Changing
+the default or deleting an entry does not alter existing pods; GLM context reloads
+reuse the pod's pinned pair even if the catalog entry was deleted. Older pods
+without a pinned checksum retain the bundled release checksum when available.
+Create a replacement pod to change its tunnel release. The installer verifies a
+download before replacing the binary and stops startup on verification failure.
+Standalone scripts retain the bundled catalog unless an explicit version/checksum
+pair is supplied by their calling code.
+
+Security contract:
+- Zone/principals: logged-in, existing validated browser sessions; no machine API.
+- Capabilities/scope: reads inherit the Runpod read capabilities; catalog writes
+  require `runpod.cloudflare_versions.manage`. All entries belong to the single
+  explicitly admin-managed app catalog. The admin bundle grants management;
+  family/user have no default grant. Identity comes from the session principal.
+- Mutations: POST with shared session CSRF, existing 30/minute mutation limit,
+  16 KiB/20-field form bounds, and a fixed singleton database ID.
+- Input/work: at most 50 unique versions; strict release-number and 64-hex checksum
+  validation. Atomic conditional updates prevent duplicate entries, deleting the
+  default, or selecting a missing version during concurrent changes.
+- Data/output: public release metadata in a private administration page; escaped
+  Pug output, private/no-store responses, no analytics or new private media.
+- Outbound: no network calls when managing entries. Pod downloads use the fixed
+  GitHub cloudflared release path, bounded HTTPS download, and SHA-256 checking;
+  arbitrary URLs cannot be submitted. No credentials are stored in this catalog.
+- Logging/retention: actionable read/write failures use `utils/logger` with bounded
+  operation/error codes, not submitted values. Catalog entries remain until
+  explicitly deleted; existing pod startup metadata follows pod retention.
+- Negative tests: capabilities/CSRF, malformed and duplicate input, size limits,
+  missing defaults, default deletion, database failure, and concurrent updates;
+  launch tests cover newly saved releases, default changes, and retained pod pins.
 
 ### Qwen3.8 27B context profiles
 

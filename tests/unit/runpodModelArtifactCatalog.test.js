@@ -147,6 +147,7 @@ describe('Runpod model artifact catalog', () => {
         LLAMA_API_KEY: '{{ RUNPOD_SECRET_lentmiien_llm_api_key }}',
         NVIDIA_TF32_OVERRIDE: '0',
         CLOUDFLARED_VERSION: '2026.10.4',
+        CLOUDFLARED_SHA256: 'ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42',
       },
     }));
     expect(shell).toBe(buildArtifactServerShell());

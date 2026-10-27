@@ -52,6 +52,7 @@ block content
       .runpod-hero__actions
         span.runpod-chip REST API #{apiVersion} · public beta
         span.runpod-chip.runpod-chip--muted= apiBaseUrl
+        a.runpod-button.runpod-button--secondary(href='#cloudflared-versions') Tunnel versions
         a.runpod-button.runpod-button--secondary(href=refreshHref) Refresh from Runpod
 
     .runpod-scope-note(role='note')
@@ -648,6 +649,59 @@ block content
                         span Type the exact Pod name: #{download.name}
                         input(type='text', name='confirmation', maxlength='120', autocomplete='off', required)
                       button.runpod-button.runpod-button--danger(type='submit') Delete Pod; keep volume
+
+    section#cloudflared-versions.runpod-panel(aria-labelledby='runpodCloudflaredHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Shared by Qwen and GLM
+          h2#runpodCloudflaredHeading Cloudflare Tunnel versions
+          p.runpod-panel__subtitle Add a release and choose the default for new Pods. Saved changes apply immediately to these launch forms.
+      if management.cloudflaredCatalog
+        .runpod-table-wrap
+          table.runpod-table.runpod-cloudflared-table
+            thead
+              tr
+                th Version
+                th SHA-256 · Linux AMD64
+                th Actions
+            tbody
+              each release in management.cloudflaredCatalog.releases
+                - const isDefault = release.version === management.defaultCloudflaredVersion;
+                tr
+                  td
+                    strong= release.version
+                    if isDefault
+                      span.runpod-status.runpod-status--ready Default
+                  td
+                    code= release.sha256
+                  td
+                    .runpod-model-actions
+                      if !isDefault
+                        form(method='post', action=`${adminPath}/cloudflared-versions/default`)
+                          input(type='hidden', name='_csrf', value=csrfToken)
+                          input(type='hidden', name='version', value=release.version)
+                          button.runpod-button.runpod-button--secondary(type='submit', aria-label=`Use ${release.version} as default`) Make default
+                      form(method='post', action=`${adminPath}/cloudflared-versions/delete`)
+                        input(type='hidden', name='_csrf', value=csrfToken)
+                        input(type='hidden', name='version', value=release.version)
+                        button.runpod-button.runpod-button--secondary(type='submit', disabled=isDefault, aria-label=`Delete ${release.version}`) Delete
+        p.runpod-form-help Choose another default before deleting the current one. Existing Pods keep their selected release.
+        form.runpod-form(method='post', action=`${adminPath}/cloudflared-versions`)
+          input(type='hidden', name='_csrf', value=csrfToken)
+          .runpod-form-grid
+            label.runpod-field
+              span Version
+              input(type='text', name='version', maxlength='12', pattern='20[0-9]{2}[.](?:[1-9]|1[0-2])[.](?:0|[1-9][0-9]{0,3})', placeholder='2026.10.4', required)
+            label.runpod-field.runpod-field--span-2
+              span SHA-256 for cloudflared-linux-amd64
+              input(type='text', name='sha256', minlength='64', maxlength='64', pattern='[a-fA-F0-9]{64}', autocomplete='off', spellcheck='false', required)
+          p.runpod-form-help
+            | Copy the checksum for cloudflared-linux-amd64 from the#{' '}
+            a(href='https://github.com/cloudflare/cloudflared/releases', target='_blank', rel='noopener noreferrer') official Cloudflare releases
+            | . Up to 50 versions can be saved.
+          button.runpod-button.runpod-button--primary(type='submit', disabled=management.cloudflaredVersions.length >= 50) Add version
+      else
+        .runpod-alert.runpod-alert--warning(role='alert') The version catalog could not be loaded. Refresh the page before managing versions or launching a tunnel Pod.
 
     section#workload-templates.runpod-panel(aria-labelledby='runpodWorkloadTemplateHeading')
       .runpod-panel__header

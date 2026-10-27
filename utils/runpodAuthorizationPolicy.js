@@ -20,6 +20,7 @@ const RUNPOD_CAPABILITIES = Object.freeze({
   networkVolumeDelete: 'runpod.network_volume.delete',
   networkVolumeSync: 'runpod.network_volume.sync',
   templateManage: 'runpod.template.manage',
+  cloudflareVersionsManage: 'runpod.cloudflare_versions.manage',
 });
 
 const RUNPOD_READ_CAPABILITIES = Object.freeze([

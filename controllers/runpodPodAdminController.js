@@ -1,3 +1,4 @@
+const { runpodCloudflaredVersionService } = require('../services/runpodCloudflaredVersionService');
 const logger = require('../utils/logger');
 const { runpodBillingHistoryService } = require('../services/runpodBillingHistoryService');
 const { runpodPodManager } = require('../services/runpodPodManager');
@@ -65,6 +66,7 @@ function redirectWithNotice(res, notice, fragment = 'pods') {
 }
 
 function failureNotice(error, fallback) {
+  if (error?.code === 'RUNPOD_CLOUDFLARED_VERSION_MISSING') return 'cloudflared-missing';
   if (error?.status === 402) return NOTICE_KEYS.insufficientBalance;
   if (error?.code === 'RUNPOD_COST_LIMIT_EXCEEDED') return NOTICE_KEYS.costLimit;
   if (error?.code === 'RUNPOD_NETWORK_VOLUME_COST_LIMIT_EXCEEDED') {
@@ -133,6 +135,11 @@ function ollamaReconfigureFailureNotice(error) {
 function logRejectedOperation(appLogger, action, error) {
   const expectedInputFailure = [
     'RUNPOD_INPUT_INVALID',
+    'RUNPOD_CLOUDFLARED_VERSION_EXISTS',
+    'RUNPOD_CLOUDFLARED_CATALOG_FULL',
+    'RUNPOD_CLOUDFLARED_VERSION_MISSING',
+    'RUNPOD_CLOUDFLARED_DEFAULT_REQUIRED',
+    'RUNPOD_CLOUDFLARED_CATALOG_CONFLICT',
     'RUNPOD_DELETE_CONFIRMATION_REQUIRED',
     'RUNPOD_PUBLIC_ACCESS_NOT_ACKNOWLEDGED',
     'RUNPOD_ACTION_CONFLICT',
@@ -190,10 +197,31 @@ function logRejectedOperation(appLogger, action, error) {
 
 function createRunpodPodAdminController({
   manager = runpodPodManager,
+  cloudflaredVersions = runpodCloudflaredVersionService,
   billingHistoryService = runpodBillingHistoryService,
   appLogger = logger,
 } = {}) {
+  const changeCloudflaredCatalog = (action) => async (req, res) => {
+    try {
+      await cloudflaredVersions.mutate(action, req.body || {}, req.user);
+      return redirectWithNotice(res, 'cloudflared-saved', 'cloudflared-versions');
+    } catch (error) {
+      logRejectedOperation(appLogger, `cloudflared_catalog_${action}`, error);
+      const notice = {
+        RUNPOD_INPUT_INVALID: 'cloudflared-invalid',
+        RUNPOD_CLOUDFLARED_VERSION_EXISTS: 'cloudflared-exists',
+        RUNPOD_CLOUDFLARED_CATALOG_FULL: 'cloudflared-full',
+        RUNPOD_CLOUDFLARED_VERSION_MISSING: 'cloudflared-missing',
+        RUNPOD_CLOUDFLARED_DEFAULT_REQUIRED: 'cloudflared-default-required',
+        RUNPOD_CLOUDFLARED_CATALOG_CONFLICT: 'cloudflared-conflict',
+      }[error?.code] || 'cloudflared-failed';
+      return redirectWithNotice(res, notice, 'cloudflared-versions');
+    }
+  };
   return {
+    addCloudflaredVersion: changeCloudflaredCatalog('add'),
+    deleteCloudflaredVersion: changeCloudflaredCatalog('delete'),
+    setDefaultCloudflaredVersion: changeCloudflaredCatalog('default'),
     async createNetworkVolume(req, res) {
       try {
         await manager.createManagedNetworkVolume(req.body || {}, req.user);
