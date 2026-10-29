@@ -1,4 +1,9 @@
-param([Parameter(Mandatory = $true)][string]$StoragePath)
+param(
+  [Parameter(Mandatory = $true)][string]$StoragePath,
+  # Provisioning preflight only: inspect an existing ancestor before a new root
+  # exists. Default callers still reject EVERY untrusted Allow on the root.
+  [switch]$AncestorOnly
+)
 $ErrorActionPreference = 'Stop'
 try {
   $trusted = @(
@@ -7,7 +12,7 @@ try {
     'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464'
   )
   $current = [System.IO.Path]::GetFullPath($StoragePath)
-  $isRoot = $true
+  $isRoot = !$AncestorOnly
   while ($true) {
     $item = Get-Item -LiteralPath $current -Force
     if (!$item.PSIsContainer -or ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) { throw 'Unsafe directory' }

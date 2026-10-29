@@ -352,33 +352,22 @@ inspection/removal an explicit operator action after confirming no process uses 
 Switching back similarly requires operator intent; do not use root changes to evade
 quotas or assume the old data's TTL still has an active sweeper. Use one process per store.
 
-### WinSW deployment notes (operator commands, not executed here)
+### WinSW deployment (one checked operator helper)
 
-After separate folder/ACL approval, the private Site `.env` needs only the new
-`EXPERIMENTAL_MODELS_STORAGE_ROOT` setting for this change. For the candidate above,
-the value would be `C:/ProgramData/Lentmiien/ExperimentalModels`, **only if approved**.
-Keep the existing present `MING_ADMIN_TOKEN`; this change does not require token
-regeneration/rotation. The existing `AI_GATEWAY_BASE_URL` default already matches;
-private authentication verification is a separate deployment check.
+Use the [first-rollout Windows operator runbook](experimental-models-windows-release.md)
+and `scripts/deploy-experimental-models.ps1` after the separate Gateway/Ming backend
+release. It includes one safe fetch/fast-forward bootstrap, private dotenv validation,
+passive Ming auth/capability checks, atomic protected creation of only the two new
+dedicated folders, maintenance, a bounded LennartWeb-only restart, local readiness
+verification and safe receipts. It refuses existing folders and configuration drift.
 
-From an elevated operator PowerShell, after clearing/draining old tests and updating
-the approved private configuration, fast-forward the clean checkout to the reviewed
-commit (substitute its full hash), then restart the existing service:
-
-```powershell
-Set-Location C:\Projects\lentmiien-site
-git status --short
-git fetch origin
-git merge --ff-only <reviewed-full-commit>
-Restart-Service LennartWeb
-Get-Service LennartWeb
-```
-
-Stop if the checkout is dirty or the fast-forward fails. Folder provisioning and
-the exact read-only ACL commands belong to the separate production procedure; none
-are executed by these source changes. Inspect safe application diagnostics after
-restart and complete the human browser/runtime/GPU validation separately. No Node
-upgrade, dependency installation, DB migration or `npm start` smoke test is needed.
+The Site `.env` must contain the approved external storage root and a corrected
+`MING_ADMIN_TOKEN` matching the **existing** Gateway secret; no rotation is needed.
+The earlier passive GET returned 401, so the presence of a token alone is not proof
+of authentication. The helper requires both HTTP 200 and ephemeral capability v1.
+The actual LocalSystem storage context is exercised by normal Site initialization
+and the single combined admin browser check, not an installed SYSTEM validation task.
+No production actions were performed while preparing this source helper.
 
 No DB migration, dependency change or curated OpenAPI change. Foundation manifests
 remain compatible (`jobs` defaults to empty). The shared cleanup scheduler and
