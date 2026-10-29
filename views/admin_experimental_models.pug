@@ -1,0 +1,33 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/experimental-models.css')
+
+block content
+  main.experimental-lab(data-csrf=csrfToken)
+    h1 Experimental Models
+    p.lab-warning Foundation stage — model testing is not yet implemented. Gateway contracts are pending. This page does not contact Gateway or load models.
+    p A permanent, admin-only lab with replaceable experiments. Test data is separate from Site documents, chat and other administrators’ data.
+    .lab-models
+      each experiment in experiments
+        section.lab-card
+          h2= experiment.title
+          p Status: awaiting verified contract
+          p= experiment.capabilitySource
+          p= experiment.warning
+          p= experiment.deferred
+          button(type='button', disabled) Runs unavailable — contract pending
+    section.lab-card
+      h2 Private test sessions
+      p Test sessions expire 24 hours after creation and become inaccessible immediately. Cleanup runs every minute while Site is running and retries after restart or storage errors. Closing the page does not delete data. Use Clear session to delete it now.
+      p Sessions belong to this admin account and browser login session. A different login cannot retrieve them. Limits: 2 sessions per admin, 16 overall; 8 images / 32 MiB per session, 64 MiB per admin, 256 MiB overall.
+      p Images are local staging only: PNG, JPEG or WebP, up to 8 MiB, 8 million pixels and 4096 pixels per edge. Site decodes and stores a metadata-free PNG; the normalized file must also fit 8 MiB. Reference audio and generated outputs are not available yet.
+      button#lab-create(type='button') New test session
+      button#lab-refresh(type='button') Refresh sessions
+      p#lab-status(role='status', aria-live='polite') Loading sessions…
+      #lab-sessions
+    section.lab-card
+      h2 Gateway integration pending
+      p No model defaults or normal Site tools are changed. No secrets are requested by this page. Ming authentication will use server-side MING_ADMIN_TOKEN forwarded as X-Ming-Token; it must not use the global LLM admin token. Auth setup and model-specific controls await contract review.
+      p Async jobs, sanitized request/response inspectors, audio playback and full result downloads will be added with verified adapters. This foundation makes no GPU cancellation or remote voice cleanup claims.
+  script(src='/js/experimental-models.js', defer)

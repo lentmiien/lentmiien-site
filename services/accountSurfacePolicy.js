@@ -34,6 +34,7 @@ function groupFor(item) {
   return GROUPS[2];
 }
 const NAVIGATION = MYPAGE_ICON_DEFINITIONS.map(item => ({ ...item, public: false }));
+NAVIGATION.push({ id: 'experimental_models', href: '/admin/experimental-models', label: 'Experimental Models', src: '/i/ai_gateway.svg', adminOnly: true });
 NAVIGATION.push({ id: 'user_settings', href: '/settings', label: 'User settings', src: '/i/product.svg', capability: 'account.profile.read', subgroup: 'Account' });
 NAVIGATION.push({ id: 'smallest_box', href: '/binpacking-smallest', label: 'Smallest Box Finder', src: '/i/binpacking.svg', capability: 'packing.container.read', subgroup: 'Packing tools' });
 NAVIGATION.push({ id: 'local_ai_queue', href: '/local-ai/queue', label: 'Local AI queue', src: '/i/batch.svg', capability: 'local_ai.jobs.use' });

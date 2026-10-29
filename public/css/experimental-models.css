@@ -1,0 +1,14 @@
+.experimental-lab { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; color: var(--text); }
+.lab-models { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+.lab-card, .lab-session { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+.lab-session { background: var(--surface-2); margin-top: 1rem; }
+.experimental-lab p { color: var(--text-secondary); line-height: 1.6; }
+.experimental-lab .lab-warning { padding: 1rem; color: var(--warning); background: var(--surface-2); border-left: 4px solid var(--warning); }
+.experimental-lab button { background: var(--brand); color: var(--text-inverse); border: 1px solid var(--brand); border-radius: 6px; padding: .55rem .8rem; margin: .3rem .5rem .3rem 0; }
+.experimental-lab button:disabled { background: var(--surface-3); color: var(--text-muted); border-color: var(--border); cursor: not-allowed; }
+.experimental-lab a { color: var(--accent); }
+.experimental-lab :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.experimental-lab input { max-width: 100%; display: block; margin: .75rem 0; color: var(--text); }
+.experimental-lab h2 { font-size: 1.4rem; }
+.experimental-lab h3 { font-size: 1.1rem; overflow-wrap: anywhere; }
+.experimental-lab #lab-status { color: var(--accent); }

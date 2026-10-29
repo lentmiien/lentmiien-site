@@ -51,3 +51,6 @@ __pycache__/
 
 /private_data/local-ai/
 /private_data/operations/
+
+# Ephemeral private Experimental Models lab staging
+/private_data/experimental-models/
