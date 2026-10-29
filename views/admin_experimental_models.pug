@@ -6,28 +6,109 @@ block styles
 block content
   main.experimental-lab(data-csrf=csrfToken)
     h1 Experimental Models
-    p.lab-warning Foundation stage — model testing is not yet implemented. Gateway contracts are pending. This page does not contact Gateway or load models.
-    p A permanent, admin-only lab with replaceable experiments. Test data is separate from Site documents, chat and other administrators’ data.
+    p.lab-warning Experimental outputs require inspection. Installation is not runtime qualification. Site elapsed time includes queueing and loading; it is not a model benchmark.
+    p Private admin experiments, separate from documents, history, chat and search. Only an explicit Run sends your inputs to the configured AI Gateway.
     .lab-models
       each experiment in experiments
         section.lab-card
           h2= experiment.title
-          p Status: awaiting verified contract
-          p= experiment.capabilitySource
           p= experiment.warning
           p= experiment.deferred
-          button(type='button', disabled) Runs unavailable — contract pending
+          p= experiment.capabilitySource
+          button.lab-capabilities(type='button', data-model=experiment.id) Check availability (no model load)
+          pre.lab-capability-result(aria-live='polite') Not checked
     section.lab-card
       h2 Private test sessions
-      p Test sessions expire 24 hours after creation and become inaccessible immediately. Cleanup runs every minute while Site is running and retries after restart or storage errors. Closing the page does not delete data. Use Clear session to delete it now.
-      p Sessions belong to this admin account and browser login session. A different login cannot retrieve them. Limits: 2 sessions per admin, 16 overall; 8 images / 32 MiB per session, 64 MiB per admin, 256 MiB overall.
-      p Images are local staging only: PNG, JPEG or WebP, up to 8 MiB, 8 million pixels and 4096 pixels per edge. Site decodes and stores a metadata-free PNG; the normalized file must also fit 8 MiB. Reference audio and generated outputs are not available yet.
+      p Sessions belong to this admin account and browser login. Absolute expiry is 24 hours. Closing the page does not cancel generation or delete data. Clear stops new runs, cancels local queued work and waits for active requests/downloads before deleting files. Expired sessions become inaccessible immediately; cleanup retries every minute once quiescent, including after restart.
+      p Limits: 2 sessions per admin, 16 overall; 8 files/results and 8 jobs per session; 32 MiB/session, 64 MiB/admin, 256 MiB/global. Pending results reserve their maximum size. One experiment is forwarded at a time, with up to 4 locally pending.
       button#lab-create(type='button') New test session
       button#lab-refresh(type='button') Refresh sessions
       p#lab-status(role='status', aria-live='polite') Loading sessions…
       #lab-sessions
     section.lab-card
-      h2 Gateway integration pending
-      p No model defaults or normal Site tools are changed. No secrets are requested by this page. Ming authentication will use server-side MING_ADMIN_TOKEN forwarded as X-Ming-Token; it must not use the global LLM admin token. Auth setup and model-specific controls await contract review.
-      p Async jobs, sanitized request/response inspectors, audio playback and full result downloads will be added with verified adapters. This foundation makes no GPU cancellation or remote voice cleanup claims.
+      h2 Run an experiment
+      label(for='lab-session') Test session
+      select#lab-session
+      p Images: PNG, JPEG or WebP only, up to 8 MiB, 16 million pixels, 32–16384 pixels per side and aspect ratio ≤200. Site applies EXIF orientation, converts to RGB and stores a metadata-free PNG without resizing. The normalized file must also fit 8 MiB. TIFF and BMP are not accepted by this Site adapter.
+      .lab-models
+        form#lab-wevis
+          h3 WeVis visual perception
+          label(for='wevis-file') Staged image
+          select#wevis-file(required)
+          img#wevis-preview(hidden, alt='EXIF-oriented image that will be sent to Gateway')
+          label(for='wevis-task') Task
+          select#wevis-task
+            option(value='ocr') OCR — read text
+            option(value='detection') Detection — object descriptions
+            option(value='referring') Referring — one expression
+            option(value='point') Point — object descriptions
+            option(value='count_box') Count with boxes
+            option(value='count_point') Count with points
+            option(value='ocr_grounding') OCR grounding — find text
+          label(for='wevis-query') Query
+          textarea#wevis-query(maxlength='1024', rows='3', disabled)
+          p#wevis-help OCR requires an empty query. Text remains in model generation order.
+          label(for='wevis-tokens') Maximum new tokens (1–4096)
+          input#wevis-tokens(type='number', min='1', max='4096', step='1', value='1024', required)
+          p Actual input plus output must fit 8192 tokens; Gateway can reject this budget.
+          details
+            summary Site request inspector (no transport headers)
+            pre#wevis-request
+          button(type='submit') Run WeVis
+        form#lab-ming
+          h3 Ming speech generation
+          label(for='ming-task') Task
+          select#ming-task
+            option(value='VOICE_DESIGN') Voice design
+            option(value='FREEFORM') Freeform instruction
+            each task in ['TTS', 'MULTILINGUAL', 'BASIC', 'EMOTION', 'DIALECT']
+              option(value=task, disabled)= task + ' — reference endpoint pending'
+          label(for='ming-language') Language (required)
+          select#ming-language(required)
+            option(value='en') English (en)
+            option(value='zh') Chinese (zh)
+          label(for='ming-text') Speech text (up to 500 characters)
+          textarea#ming-text(maxlength='500', rows='5', required)
+          details
+            summary Insert a speech tag at the cursor
+            #ming-tags
+          #ming-style-field
+            label(for='ming-style') Voice style (required, up to 512 characters)
+            textarea#ming-style(maxlength='512', rows='3', required)
+          #ming-instruction-field(hidden)
+            label(for='ming-instruction') Instruction (required, up to 512 characters)
+            textarea#ming-instruction(maxlength='512', rows='3', disabled)
+          label(for='ming-steps') Maximum decode steps (8–400)
+          input#ming-steps(type='number', min='8', max='400', step='1', value='200', required)
+          p Exhausting the decode budget is an error; partial audio is not returned. Output is validated PCM16 mono WAV, up to 60 seconds.
+          details
+            summary Site request inspector (no credentials or headers)
+            pre#ming-request
+          button(type='submit') Run Ming
+      details.lab-reference
+        summary Reference-conditioned tasks — draft, unavailable
+        p Waiting for the verified one-shot ephemeral reference endpoint. No upload, voice registration, catalog listing or persistent reference IDs are supported here.
+        fieldset(disabled)
+          legend Reference input draft — disabled
+          label Reference WAV (PCM16 mono/stereo, 16–48 kHz, 1–30 seconds, up to 6 MiB)
+            input(type='file', accept='audio/wav')
+          label Reference transcript (up to 2048 characters)
+            textarea(maxlength='2048', rows='3')
+          label Reference language
+            select
+              each language in ['zh', 'en', 'ja', 'ko', 'de', 'fr', 'es']
+                option= language
+          label
+            input(type='checkbox')
+            |  I have permission and affirmative consent to use this voice.
+          p TTS: zh/en, no controls. MULTILINGUAL: ja/ko/de/fr/es, no controls or tags. BASIC: zh/en with at least one of speed, pitch or volume. EMOTION: zh/en. DIALECT: zh only.
+          each values, control in { speed: ['慢速 (slow)', '中速 (medium)', '快速 (fast)'], pitch: ['低 (low)', '中 (medium)', '高 (high)'], volume: ['低 (low)', '中 (medium)', '高 (high)'], emotion: ['高兴 (happy)', '悲伤 (sad)', '愤怒 (angry)', '恐惧 (fear)', '厌恶 (disgust)', '惊讶 (surprise)', '中性 (neutral)'], dialect: ['chuanyu dialect', 'cantonese'] }
+            label= control
+              select
+                each value in values
+                  option= value
+    section.lab-card
+      h2 Runtime and privacy
+      p Jobs survive browser navigation. Site shows local queueing or waiting for Gateway; there are no upstream job IDs, progress or active cancellation handles. A completed response does not prove the GPU container has stopped. Timeout or Site restart can leave completion unknown; generation is never automatically replayed.
+      p Ming requires MING_ADMIN_TOKEN in server configuration, sent only as X-Ming-Token on Ming routes. This page never accepts secrets. Error inspectors omit arbitrary Gateway detail text, host paths and private inputs; full raw model text is unavailable on failed WeVis runs.
   script(src='/js/experimental-models.js', defer)

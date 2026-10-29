@@ -1,20 +1,20 @@
 const { fail } = require('./policy');
-
-// Public metadata is deliberately constructed here; never serialize an adapter,
-// environment, HTTP client, request headers or provider exception to the browser.
+const { parseInput, WEVIS_TASKS, TAGS, CONTROLS } = require('./contracts');
 const experiments = Object.freeze([
-  Object.freeze({ id: 'wevisone-vl', title: 'Tencent WeVisOne-VL-4B', status: 'contract_pending',
-    capabilitySource: 'Awaiting verified Gateway contract; no discovery request made.',
+  { id: 'wevisone-vl', title: 'Tencent WeVisOne-VL-4B', status: 'implemented',
+    capabilitySource: 'Passive Gateway capability check; installation is not runtime qualification.',
     warning: 'Experimental quality: the reported basic OCR test read OPEN as FEH.',
-    deferred: 'Masks, matting and streaming are deferred.', fields: [], renderer: null, serializer: null }),
-  Object.freeze({ id: 'ming-tts', title: 'Ming-3.0-TTS-0.5B', status: 'contract_pending',
-    capabilitySource: 'Awaiting verified Gateway contract; no discovery request made.',
-    warning: 'English voice design reportedly passed; other modes are not validated here.',
-    deferred: 'Voice cloning, reference audio and voice lifecycle require the full contract.', fields: [], renderer: null, serializer: null }),
+    deferred: 'No masks, matting, video, batch, segmentation or arbitrary prompts.', tasks: WEVIS_TASKS, renderer: 'wevis', serializer: 'wevis-multipart' },
+  { id: 'ming-tts', title: 'Ming-3.0-TTS-0.5B', status: 'reference_free',
+    capabilitySource: 'Passive Gateway capability check; Ming requires server configuration.',
+    warning: 'English voice design reportedly passed; other modes are not qualified here.',
+    deferred: 'Reference tasks await the ephemeral endpoint contract. No persistent voices are registered.',
+    tasks: ['VOICE_DESIGN', 'FREEFORM'], pendingTasks: ['TTS', 'MULTILINGUAL', 'BASIC', 'EMOTION', 'DIALECT'], tags: TAGS, controls: CONTROLS, renderer: 'audio', serializer: 'ming-json' },
 ]);
-function listExperiments() { return experiments.map(value => ({ ...value, fields: [...value.fields] })); }
+function listExperiments() { return structuredClone(experiments); }
 function requireAdapter(id) {
-  if (!experiments.some(value => value.id === id)) fail('unknown_experiment', 404, 'Experiment not found.');
-  fail('contract_pending', 503, 'Model runs are unavailable until the Gateway contract is verified and implemented.');
+  const model = experiments.find(value => value.id === id);
+  if (!model) fail('unknown_experiment', 404, 'Experiment not found.');
+  return { ...model, parse: input => parseInput(id, input), resultBytes: id === 'wevisone-vl' ? 1048576 : 6291456 };
 }
 module.exports = { listExperiments, requireAdapter };

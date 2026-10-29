@@ -7,8 +7,11 @@ const { createSessionCsrf } = require('../middleware/sessionCsrf');
 const { CAPABILITY, BUNDLES, ID, LIMITS, LabError, fail } = require('../services/experimentalModels/policy');
 const registry = require('../services/experimentalModels/registry');
 const logger = require('../utils/logger');
+const { LabJobs } = require('../services/experimentalModels/jobs');
+const { strictJson } = require('../utils/taricProtocol');
+const { dispatchAuthorization } = require('../services/experimentalModels/authorization');
 
-function createRouter({ store = require('../services/experimentalModels') } = {}) {
+function createRouter({ store = require('../services/experimentalModels'), gateway, jobs = new LabJobs({ store, gateway }), authorize = dispatchAuthorization } = {}) {
   const router = express.Router();
   const csrf = createSessionCsrf();
   let receivingUpload = false;
@@ -32,9 +35,17 @@ function createRouter({ store = require('../services/experimentalModels') } = {}
     if (Object.keys(req.query).length) fail('invalid_request', 400, 'Query parameters are not supported.');
     next();
   });
-  router.get('/', (req, res) => res.render('admin_experimental_models', { pageTitle: 'Experimental Models', experiments: registry.listExperiments() }));
+  router.get('/', (req, res) => {
+    res.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+    return res.render('admin_experimental_models', { pageTitle: 'Experimental Models', experiments: registry.listExperiments() });
+  });
   router.use('/api', rateLimit({ windowMs: 60000, limit: 120, keyGenerator: req => req.labOwner, standardHeaders: 'draft-8', legacyHeaders: false }));
-  router.get('/api/experiments', (_req, res) => res.json({ stage: 'foundation', experiments: registry.listExperiments(), limits: LIMITS }));
+  router.get('/api/experiments', (_req, res) => res.json({ stage: 'reference-free', experiments: registry.listExperiments(), limits: LIMITS }));
+  router.get('/api/experiments/:experimentId/capabilities', async (req, res) => {
+    registry.requireAdapter(req.params.experimentId);
+    res.json(await jobs.gateway.capabilities(req.params.experimentId));
+  });
+  router.get('/api/sessions/:id/jobs/:jobId', async (req, res) => res.json(await store.job(req.labOwner, req.labBinding, req.params.id, req.params.jobId)));
   router.get('/api/sessions', async (req, res) => res.json({ sessions: await store.list(req.labOwner, req.labBinding) }));
   router.get('/api/sessions/:id', async (req, res) => res.json(await store.get(req.labOwner, req.labBinding, req.params.id)));
   router.get('/api/sessions/:id/files/:fileId', async (req, res, next) => {
@@ -45,7 +56,7 @@ function createRouter({ store = require('../services/experimentalModels') } = {}
       const download = await store.download(req.labOwner, req.labBinding, req.params.id, req.params.fileId);
       handle = download.handle;
       const { asset } = download;
-      res.set({ 'Content-Type': asset.mime, 'Content-Disposition': `attachment; filename="test-image-${asset.id}.png"`,
+      res.set({ 'Content-Type': asset.mime, 'Content-Disposition': `attachment; filename="experiment-${asset.id}.${({ 'image/png': 'png', 'audio/wav': 'wav', 'application/json': 'json' })[asset.mime]}"`,
         'Content-Security-Policy': "default-src 'none'; sandbox", 'Content-Length': String(asset.bytes) });
       if (req.method === 'HEAD' || res.destroyed) { await handle.close(); handle = null; return res.end(); }
       stream = handle.createReadStream({ autoClose: true });
@@ -69,8 +80,8 @@ function createRouter({ store = require('../services/experimentalModels') } = {}
   }
   router.post('/api/sessions', mutations, noBody, async (req, res) => res.status(201).json(await store.create(req.labOwner, req.labBinding)));
   router.delete('/api/sessions/:id', mutations, noBody, async (req, res) => {
-    await store.clear(req.labOwner, req.labBinding, req.params.id);
-    res.json({ deleted: true });
+    const result = await store.clear(req.labOwner, req.labBinding, req.params.id);
+    res.status(result.deleted ? 200 : 202).json(result);
   });
   const upload = multer({ storage: multer.memoryStorage(), preservePath: true,
     limits: { fileSize: LIMITS.fileBytes, files: 1, fields: 0, parts: 1, fieldNameSize: 40, headerPairs: 20 } }).single('file');
@@ -99,19 +110,38 @@ function createRouter({ store = require('../services/experimentalModels') } = {}
       res.status(201).json(await store.upload(req.labOwner, req.labBinding, req.params.id, req.file));
     } finally { if (req.file) req.file.buffer = undefined; receivingUpload = false; }
   });
-  // A fail-closed seam, not a simulated inference endpoint. No request fields or
-  // provider paths are accepted before a verified adapter can validate them.
-  router.post('/api/sessions/:id/experiments/:experimentId/runs', mutations, noBody, async (req, _res) => {
+  const jsonParser = express.raw({ type: 'application/json', limit: 16384, inflate: false });
+  const jsonBody = (req, res, next) => {
+    const timer = setTimeout(() => { req.destroy(); }, 30000); timer.unref?.();
+    jsonParser(req, res, error => {
+      clearTimeout(timer);
+      if (error) return next(error);
+      try {
+        req.body = strictJson(new TextDecoder('utf-8', { fatal: true }).decode(req.body));
+        next();
+      } catch (_) { next(new LabError('invalid_request', 400, 'Use valid UTF-8 JSON with unique keys.')); }
+    });
+  };
+  router.post('/api/sessions/:id/experiments/:experimentId/runs', mutations, async (req, res, next) => {
     await store.get(req.labOwner, req.labBinding, req.params.id);
     registry.requireAdapter(req.params.experimentId);
+    const length = Number(req.get('content-length'));
+    if (!Number.isSafeInteger(length) || length < 1 || req.get('transfer-encoding')) fail('invalid_request', 400, 'A bounded JSON request body is required.');
+    if (length > 16384) fail('body_limit', 413, 'Task request exceeds 16 KiB.');
+    if (!req.is('application/json')) fail('invalid_type', 415, 'Use application/json.');
+    next();
+  }, jsonBody, async (req, res) => {
+    const job = await jobs.submit(req.labOwner, req.labBinding, req.params.id, req.params.experimentId, req.body, authorize(req));
+    res.status(202).json(job);
   });
   router.use((_req, res) => res.status(404).json({ error: 'Lab route not found.' }));
   router.use((error, req, res, _next) => {
-    const status = error instanceof LabError ? error.status : error instanceof multer.MulterError ? 413 : 503;
-    if (status >= 500 && error.code !== 'contract_pending') logger.error('Experimental Models operation failed; check private storage permissions and disk space', { category: 'experimental_models', metadata: { status } });
+    const status = error instanceof LabError ? error.status : error instanceof multer.MulterError || error.type === 'entity.too.large' ? 413 : ['entity.parse.failed', 'encoding.unsupported'].includes(error.type) ? 400 : 503;
+    if (status >= 500 && !['contract_pending', 'reference_pending'].includes(error.code)) logger.error('Experimental Models operation failed; check Gateway configuration or private storage', { category: 'experimental_models', metadata: { status } });
     if (res.headersSent) return res.destroy();
+    if (error.safeHeaders?.['Retry-After']) res.set('Retry-After', error.safeHeaders['Retry-After']);
     if (!res.destroyed) res.status(status).json({ code: error instanceof LabError ? error.code : 'lab_unavailable',
-      error: error instanceof LabError ? error.message : status === 413 ? 'Upload exceeds file or part limits.' : 'Test storage unavailable. Check application diagnostics.' });
+      error: error instanceof LabError ? error.message : status === 413 ? 'Request exceeds file or body limits.' : status === 400 ? 'Invalid request body.' : 'Lab unavailable. Check application diagnostics.' });
   });
   return router;
 }

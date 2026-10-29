@@ -18,7 +18,7 @@ let root, store, png;
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'experimental-models-test-'));
   store = new LabStore({ root });
-  png = await sharp({ create: { width: 4, height: 3, channels: 3, background: '#ff6600' } }).png().toBuffer();
+  png = await sharp({ create: { width: 64, height: 48, channels: 3, background: '#ff6600' } }).png().toBuffer();
 });
 afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
 const file = buffer => ({ buffer, mimetype: 'image/png', originalname: 'synthetic.png' });
@@ -31,7 +31,7 @@ describe('private staging lifecycle', () => {
     const result = await store.download(owner, binding, s.id, asset.id);
     const bytes = await result.handle.readFile(); await result.handle.close();
     expect((await sharp(bytes).metadata()).format).toBe('png');
-    expect(result.asset).toMatchObject({ width: 4, height: 3, mime: 'image/png' });
+    expect(result.asset).toMatchObject({ width: 64, height: 48, mime: 'image/png' });
     expect(JSON.stringify(s)).not.toMatch(/binding|owner|private_data/);
     for (const [user, login] of [[other, binding], [owner, foreignBinding]]) {
       expect(await store.list(user, login)).toEqual([]);
@@ -71,7 +71,7 @@ describe('private staging lifecycle', () => {
     const binding = randomUUID(), s = await store.create(owner, binding);
     const purge = jest.spyOn(store, 'purgeDirectory').mockRejectedValueOnce(new Error('synthetic disk failure'));
     await expect(store.clear(owner, binding, s.id)).rejects.toThrow();
-    await expect(store.get(owner, binding, s.id)).rejects.toMatchObject({ status: 404 });
+    expect((await store.get(owner, binding, s.id)).deletePending).toBe(true);
     expect(await store.list(owner, binding)).toEqual([]);
     purge.mockRestore();
     // Persisted pending marker survives a process restart.
@@ -109,15 +109,15 @@ describe('private staging lifecycle', () => {
     const save = jest.spyOn(store, 'save').mockRejectedValueOnce(new Error('synthetic failure'));
     await expect(store.upload(owner, binding, next.id, file(png))).rejects.toThrow('synthetic failure');
     expect(store.sessions.get(next.id).assets).toHaveLength(1);
-    await expect(store.get(owner, binding, next.id)).rejects.toMatchObject({ status: 404 });
+    expect((await store.get(owner, binding, next.id)).deletePending).toBe(true);
     save.mockRestore();
     await store.sweep();
     expect(await fs.readdir(root)).toEqual([]);
   });
   test('rejects bad magic, MIME mismatch, extension mismatch, traversal, excessive pixels and bytes', async () => {
     const binding = randomUUID(), s = await store.create(owner, binding);
-    const oversizeImage = await sharp({ create: { width: 4097, height: 1, channels: 3, background: '#000000' } }).png().toBuffer();
-    const excessPixels = await sharp({ create: { width: 3000, height: 3000, channels: 3, background: '#000000' } }).png().toBuffer();
+    const oversizeImage = await sharp({ create: { width: 16385, height: 32, channels: 3, background: '#000000' } }).png().toBuffer();
+    const excessPixels = await sharp({ create: { width: 4100, height: 4100, channels: 3, background: '#000000' } }).png().toBuffer();
     for (const input of [file(Buffer.from('<script>synthetic</script>')), { ...file(png), mimetype: 'image/jpeg' },
       { ...file(png), originalname: 'bad.jpg' }, { ...file(png), originalname: '../test.png' }, file(oversizeImage), file(excessPixels)]) {
       await expect(store.upload(owner, binding, s.id, input)).rejects.toMatchObject({ status: 400 });
@@ -175,7 +175,7 @@ describe('real Express route guards', () => {
   test.each(['anonymous', 'family', 'user'])('denies %s on page, every API, upload, download and clear', async role => {
     for (const [method, url] of [['GET', ''], ['GET', '/api/experiments'], ['GET', '/api/sessions'], ['POST', '/api/sessions'],
       ['GET', '/api/sessions/any'], ['POST', '/api/sessions/any/files'], ['GET', '/api/sessions/any/files/any'],
-      ['DELETE', '/api/sessions/any'], ['POST', '/api/sessions/any/experiments/ming-tts/runs']]) {
+      ['DELETE', '/api/sessions/any'], ['GET', '/api/sessions/any/jobs/any'], ['GET', '/api/experiments/ming-tts/capabilities'], ['POST', '/api/sessions/any/experiments/ming-tts/runs']]) {
       const response = await fetch(origin + url, { method, headers: { 'x-test-role': role } });
       expect(response.status).toBe(role === 'anonymous' ? 401 : 403);
       expect(response.headers.get('cache-control')).toContain('no-store');
@@ -184,7 +184,7 @@ describe('real Express route guards', () => {
   });
   test('valid CSRF creates; absent/wrong token and foreign origin cannot mutate or upload', async () => {
     const b = await browser();
-    expect(b.html).toContain('Foundation stage');
+    expect(b.html).toContain('Run an experiment');
     for (const headers of [{ 'X-CSRF-Token': '' }, { 'X-CSRF-Token': 'x'.repeat(43) }, { Origin: 'https://hostile.invalid' }]) {
       expect((await call(b, '/api/sessions', 'POST', headers)).status).toBe(403);
       expect((await call(b, '/api/sessions/any/files', 'POST', headers)).status).toBe(403);
@@ -227,18 +227,28 @@ describe('real Express route guards', () => {
     }
     expect((await (await call(b, `/api/sessions/${s.id}`)).json()).assets).toEqual([]);
   });
-  test('registry never loads models; runs remain unavailable and accept no guessed fields', async () => {
+  test('registry never loads models; unknown routes and guessed fields fail closed', async () => {
     const b = await browser(), s = await (await call(b, '/api/sessions', 'POST')).json();
     const metadata = await (await call(b, '/api/experiments')).json();
-    expect(metadata.stage).toBe('foundation');
+    expect(metadata.stage).toBe('reference-free');
     expect(metadata.experiments).toHaveLength(2);
     for (const experiment of metadata.experiments) {
-      expect(experiment.fields).toEqual([]);
+      expect(experiment.tasks.length).toBeGreaterThan(0);
       const run = await call(b, `/api/sessions/${s.id}/experiments/${experiment.id}/runs`, 'POST');
-      expect(run.status).toBe(503); expect((await run.json()).code).toBe('contract_pending');
+      expect(run.status).toBe(400);
     }
     expect((await call(b, `/api/sessions/${s.id}/experiments/unknown/runs`, 'POST')).status).toBe(404);
-    expect((await call(b, `/api/sessions/${s.id}/experiments/ming-tts/runs`, 'POST', { 'Content-Type': 'application/json' }, '{"url":"https://invalid.test","token":"secret"}')).status).toBe(400);
+    expect((await call(b, `/api/sessions/${s.id}/experiments/ming-tts/runs`, 'POST', { 'Content-Type': 'application/json' }, '{"url":"https://invalid.test","token":"secret"}')).status).toBe(422);
+  });
+  test('bounded strict JSON rejects duplicate keys, prototypes, compression and oversized bodies before dispatch', async () => {
+    const b = await browser(), s = await (await call(b, '/api/sessions', 'POST')).json();
+    const url = `/api/sessions/${s.id}/experiments/ming-tts/runs`;
+    for (const body of ['{"task":"FREEFORM","task":"VOICE_DESIGN"}', '{"controls":{"style":"a","style":"b"}}', '{"__proto__":{}}', '{bad json']) {
+      expect((await call(b, url, 'POST', { 'Content-Type': 'application/json' }, body)).status).toBe(400);
+    }
+    expect((await call(b, url, 'POST', { 'Content-Type': 'application/json' }, '{"text":"' + 'x'.repeat(16384) + '"}')).status).toBe(413);
+    expect((await call(b, url, 'POST', { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip' }, '{}')).status).toBe(400);
+    expect((await store.list(owner, store.sessions.get(s.id).binding))[0].jobs).toEqual([]);
   });
   test('internal errors never expose provider secrets, tokens, hashes, paths or payloads', async () => {
     const b = await browser();

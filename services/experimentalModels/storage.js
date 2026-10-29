@@ -8,17 +8,18 @@ const logger = require('../../utils/logger');
 const { ID, LIMITS, fail, sessionSchema } = require('./policy');
 
 function storageRoot() { return path.resolve(__dirname, '../../private_data/experimental-models'); }
-// This store is for local staging only. No upstream job may take a file lease
-// until durable job reconciliation and delete-pending handling are implemented.
+const extension = asset => ({ 'image/png': 'png', 'application/json': 'json', 'audio/wav': 'wav' })[asset.mime];
+// One process owns the store. Leases prevent removal during requests and streams.
 class LabStore {
   constructor({ root = storageRoot(), now = Date.now, limits = LIMITS, appLogger = logger } = {}) {
     this.root = path.resolve(root); this.now = now; this.limits = limits; this.logger = appLogger;
-    this.sessions = new Map(); this.ready = false; this.busy = false;
+    this.sessions = new Map(); this.ready = false; this.busy = false; this.leases = new Map(); this.waiters = [];
   }
-  async exclusive(work) {
+  async exclusive(work, wait = false) {
+    while (wait && this.busy) await new Promise(resolve => this.waiters.push(resolve));
     if (this.busy) fail('storage_busy', 429, 'Test storage is busy. Retry shortly.');
     this.busy = true;
-    try { await this.initialize(); return await work(); } finally { this.busy = false; }
+    try { await this.initialize(); return await work(); } finally { this.busy = false; this.waiters.splice(0).forEach(resolve => resolve()); }
   }
   async checkRoot() {
     const app = path.resolve(__dirname, '../..');
@@ -63,25 +64,34 @@ class LabStore {
       const directory = this.directory(entry.name);
       let session;
       try {
-        session = sessionSchema.parse(JSON.parse(await this.safeRead(directory, 'session.json', 16384)));
+        session = sessionSchema.parse(JSON.parse(await this.safeRead(directory, 'session.json', 262144)));
         if (session.id !== entry.name || session.expiresAt !== session.createdAt + this.limits.ttlMs
           || new Set(session.assets.map(asset => asset.id)).size !== session.assets.length) throw new Error('Invalid manifest');
       } catch (_) {
-        // Only local staging exists in this stage, so incomplete/orphan sessions
-        // have no remote resources to reconcile. Never apply this to future jobs.
+        // The process no longer holds requests or local file handles. Recovery never
+        // replays generation or attempts to delete Gateway voices.
         await this.purgeDirectory(entry.name);
         this.logger.warning('Removed invalid Experimental Models staging session during recovery', { category: 'experimental_models' });
         continue;
       }
       this.sessions.set(session.id, session);
-      const expected = new Set(['session.json', ...session.assets.map(asset => `${asset.id}.png`)]);
+      for (const job of session.jobs) {
+        if (['queued', 'waiting_gateway'].includes(job.state)) {
+          job.state = job.state === 'queued' ? 'cancelled' : 'interrupted';
+          job.error = job.state === 'interrupted' ? 'Site restarted. Gateway completion is unknown; generation was not replayed.' : 'Site restarted before forwarding; local job cancelled.';
+          job.endedAt = this.now(); job.reservedBytes = 0;
+          this.logger.warning('Experimental Models job interrupted by Site restart; generation not replayed', { category: 'experimental_models' });
+        }
+      }
+      await this.save(session);
+      const expected = new Set(['session.json', ...session.assets.map(asset => `${asset.id}.${extension(asset)}`)]);
       for (const file of await fs.readdir(directory)) {
         if (!expected.has(file)) await fs.rm(path.join(directory, file), { recursive: true, force: true });
       }
       // Missing or unsafe asset data invalidates this local-only session.
       try {
         for (const asset of session.assets) {
-          const bytes = await this.safeRead(directory, `${asset.id}.png`, this.limits.fileBytes);
+          const bytes = await this.safeRead(directory, `${asset.id}.${extension(asset)}`, this.limits.fileBytes);
           if (bytes.length !== asset.bytes) throw new Error('Invalid asset length');
         }
       } catch (_) {
@@ -97,22 +107,25 @@ class LabStore {
     await assertNoSymlinks(directory);
     const temp = path.join(directory, `${randomUUID()}.tmp`);
     const handle = await fs.open(temp, 'wx', 0o600);
-    try { await handle.writeFile(JSON.stringify(session)); await handle.sync(); } finally { await handle.close(); }
-    await fs.rename(temp, path.join(directory, 'session.json'));
+    try {
+      try { await handle.writeFile(JSON.stringify(session)); await handle.sync(); } finally { await handle.close(); }
+      await fs.rename(temp, path.join(directory, 'session.json'));
+    } catch (error) { await fs.rm(temp, { force: true }); throw error; }
   }
-  owned(owner, binding, id) {
+  owned(owner, binding, id, allowPending = false) {
     const session = ID.test(id) && this.sessions.get(id);
-    if (!session || session.owner !== owner || session.binding !== binding || session.deletePending || session.expiresAt <= this.now()) {
+    if (!session || session.owner !== owner || session.binding !== binding || (!allowPending && session.deletePending) || session.expiresAt <= this.now()) {
       fail('not_found', 404, 'Test session not found.');
     }
     return session;
   }
   summary(session) {
     return { id: session.id, createdAt: session.createdAt, expiresAt: session.expiresAt,
-      bytes: session.assets.reduce((sum, asset) => sum + asset.bytes, 0), assets: session.assets.map(asset => ({ ...asset })) };
+      deletePending: session.deletePending, jobs: session.jobs.map(job => ({ ...job })),
+      bytes: this.usage(session), assets: session.assets.map(asset => ({ ...asset })) };
   }
   list(owner, binding) {
-    return this.exclusive(async () => [...this.sessions.values()].filter(s => s.owner === owner && s.binding === binding && !s.deletePending && s.expiresAt > this.now()).map(s => this.summary(s)));
+    return this.exclusive(async () => [...this.sessions.values()].filter(s => s.owner === owner && s.binding === binding && (!s.deletePending || this.leases.get(s.id)) && s.expiresAt > this.now()).map(s => this.summary(s)));
   }
   create(owner, binding) {
     return this.exclusive(async () => {
@@ -122,14 +135,14 @@ class LabStore {
         fail('session_limit', 429, 'Test session limit reached. Clear a session or wait for expiry.');
       }
       const createdAt = this.now();
-      const session = { version: 1, id: randomUUID(), owner, binding, createdAt, expiresAt: createdAt + this.limits.ttlMs, deletePending: false, assets: [] };
+      const session = { version: 1, id: randomUUID(), owner, binding, createdAt, expiresAt: createdAt + this.limits.ttlMs, deletePending: false, assets: [], jobs: [] };
       await fs.mkdir(this.directory(session.id), { mode: 0o700 });
       this.sessions.set(session.id, session);
       try { await this.save(session); } catch (error) { session.deletePending = true; throw error; }
       return this.summary(session);
     });
   }
-  get(owner, binding, id) { return this.exclusive(async () => this.summary(this.owned(owner, binding, id))); }
+  get(owner, binding, id) { return this.exclusive(async () => this.summary(this.owned(owner, binding, id, true))); }
   async purgeDirectory(id) {
     await assertNoSymlinks(this.root);
     const directory = this.directory(id);
@@ -138,15 +151,21 @@ class LabStore {
   async purge(session) { await this.purgeDirectory(session.id); this.sessions.delete(session.id); }
   clear(owner, binding, id) {
     return this.exclusive(async () => {
-      const session = this.owned(owner, binding, id);
+      const session = this.owned(owner, binding, id, true);
       session.deletePending = true;
+      this.cancelQueued(session);
       await this.save(session);
-      await this.purge(session);
+      if (!this.leases.get(id)) await this.purge(session);
+      return { deleted: !this.sessions.has(id), deletePending: this.sessions.has(id) };
     });
   }
   async sweepUnlocked() {
     for (const session of this.sessions.values()) {
-      if (session.deletePending || session.expiresAt <= this.now()) await this.purge(session);
+      if (session.deletePending || session.expiresAt <= this.now()) {
+        session.deletePending = true; this.cancelQueued(session);
+        if (!this.leases.get(session.id)) await this.purge(session);
+        else await this.save(session);
+      }
     }
   }
   sweep() { return this.exclusive(() => this.sweepUnlocked()); }
@@ -160,24 +179,23 @@ class LabStore {
       if (!expected || typeof file.originalname !== 'string' || file.originalname.length > 200 || /[\\/\x00-\x1f]/.test(file.originalname) || !expected[1].test(file.originalname)) {
         fail('invalid_file', 400, 'Image type, filename and content must match.');
       }
-      if (session.assets.length >= this.limits.sessionFiles) fail('file_count', 429, 'Session file limit reached.');
+      if (session.assets.length + session.jobs.filter(j => j.reservedBytes).length >= this.limits.sessionFiles) fail('file_count', 429, 'Session file limit reached.');
       let bytes, metadata;
       try {
         const image = sharp(file.buffer, { limitInputPixels: this.limits.maxPixels, failOn: 'warning', animated: true }).timeout({ seconds: 10 });
         metadata = await image.metadata();
         if (metadata.format !== expected[0] || (metadata.pages || 1) !== 1 || !metadata.width || !metadata.height
-          || metadata.width > this.limits.maxEdge || metadata.height > this.limits.maxEdge) throw new Error('Invalid raster');
-        bytes = await image.png().toBuffer(); // Full decode, strips metadata; only normalized PNG is stored.
-      } catch (_) { fail('invalid_image', 400, 'Use a valid single-frame image, at most 8 million pixels and 4096 pixels per edge.'); }
+          || metadata.width < 32 || metadata.height < 32 || metadata.width > this.limits.maxEdge || metadata.height > this.limits.maxEdge
+          || Math.max(metadata.width / metadata.height, metadata.height / metadata.width) > 200) throw new Error('Invalid raster');
+        const normalized = await image.rotate().toColourspace('srgb').removeAlpha().png().toBuffer({ resolveWithObject: true });
+        bytes = normalized.data; metadata = normalized.info; // EXIF orientation before stripping metadata; coordinates match preview.
+      } catch (_) { fail('invalid_image', 400, 'Use a valid single-frame image, 32–16384 pixels per side, at most 16 million pixels and aspect ratio 200.'); }
       if (bytes.length > this.limits.fileBytes) fail('file_limit', 413, 'Normalized image exceeds 8 MiB.');
-      const usage = [...this.sessions.values()].map(s => ({ owner: s.owner, bytes: s.assets.reduce((sum, a) => sum + a.bytes, 0) }));
-      if (this.summary(session).bytes + bytes.length > this.limits.sessionBytes
-        || usage.filter(s => s.owner === owner).reduce((sum, s) => sum + s.bytes, 0) + bytes.length > this.limits.userBytes
-        || usage.reduce((sum, s) => sum + s.bytes, 0) + bytes.length > this.limits.globalBytes) fail('storage_limit', 429, 'Test storage quota reached. Clear test data first.');
+      this.checkQuota(session, bytes.length);
       // TTL may have elapsed during decode. Clear and upload share this lock.
       this.owned(owner, binding, id);
       const asset = { id: randomUUID(), mime: 'image/png', bytes: bytes.length, width: metadata.width, height: metadata.height };
-      const filePath = path.join(this.directory(id), `${asset.id}.png`);
+      const filePath = path.join(this.directory(id), `${asset.id}.${extension(asset)}`);
       const handle = await fs.open(filePath, 'wx', 0o600);
       // Reserve quota before I/O so write/flush/close failures cannot leave an
       // uncounted file. The whole session is then quarantined for cleanup.
@@ -192,13 +210,43 @@ class LabStore {
       return { ...asset };
     });
   }
+  usage(session) { return session.assets.reduce((sum, asset) => sum + asset.bytes, 0) + session.jobs.reduce((sum, job) => sum + job.reservedBytes, 0); }
+  checkQuota(session, bytes) {
+    const sessions = [...this.sessions.values()];
+    if (this.usage(session) + bytes > this.limits.sessionBytes
+      || sessions.filter(s => s.owner === session.owner).reduce((sum, s) => sum + this.usage(s), 0) + bytes > this.limits.userBytes
+      || sessions.reduce((sum, s) => sum + this.usage(s), 0) + bytes > this.limits.globalBytes) fail('storage_limit', 429, 'Test storage quota reached. Clear test data first.');
+  }
+  lease(id) { this.leases.set(id, (this.leases.get(id) || 0) + 1); }
+  release(id) {
+    const count = (this.leases.get(id) || 1) - 1;
+    if (count) this.leases.set(id, count); else this.leases.delete(id);
+  }
+  cancelQueued(session) {
+    this.onSessionClosing?.(session.id);
+    for (const job of session.jobs) if (job.state === 'queued') {
+      job.state = 'cancelled'; job.endedAt = this.now(); job.reservedBytes = 0;
+      job.error = 'Local job cancelled before forwarding to Gateway.';
+    }
+  }
+  job(owner, binding, id, jobId) {
+    return this.exclusive(async () => {
+      const session = this.owned(owner, binding, id, true);
+      const job = ID.test(jobId) && session.jobs.find(j => j.id === jobId);
+      if (!job) fail('not_found', 404, 'Test job not found.');
+      return { ...job };
+    });
+  }
   download(owner, binding, id, assetId) {
     return this.exclusive(async () => {
       const session = this.owned(owner, binding, id);
       const asset = ID.test(assetId) && session.assets.find(value => value.id === assetId);
       if (!asset) fail('not_found', 404, 'Test file not found.');
-      const { handle, stat } = await this.safeOpen(this.directory(id), `${asset.id}.png`, this.limits.fileBytes);
+      const { handle, stat } = await this.safeOpen(this.directory(id), `${asset.id}.${extension(asset)}`, this.limits.fileBytes);
       if (stat.size !== asset.bytes) { await handle.close(); throw new Error('Damaged lab asset'); }
+      this.lease(session.id);
+      const close = handle.close.bind(handle); let closed = false;
+      handle.close = async () => { try { return await close(); } finally { if (!closed) { closed = true; this.release(session.id); } } };
       return { handle, asset: { ...asset } };
     });
   }

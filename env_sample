@@ -322,3 +322,12 @@ LOCAL_AI_OUTPUT_OWNER_QUOTA_BYTES=2147483648
 # Optional: admin account ID whose saved boxes seed the shared packing catalog.
 # Leave empty to use the single nonempty admin catalog automatically.
 PACKING_CATALOG_SOURCE_OWNER_ID=
+
+# Experimental Models admin lab (/admin/experimental-models).
+# Reuses AI_GATEWAY_BASE_URL above. No live inference occurs without an explicit run.
+# Dedicated Ming credential only; never substitute LLM_ADMIN_TOKEN or a batch token.
+# Set on the Site server; forwarded only as X-Ming-Token on /tts/ming/* routes.
+MING_ADMIN_TOKEN=
+# Total outbound request deadline (includes queue, preparation and inference).
+# Allowed range: 1800000..2400000 ms. No automatic retries or active cancellation.
+EXPERIMENTAL_MODELS_TIMEOUT_MS=2000000
