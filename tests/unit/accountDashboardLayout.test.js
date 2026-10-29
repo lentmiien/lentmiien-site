@@ -24,7 +24,7 @@ function expectNaturalContent(win, selector) {
     expect(['', 'auto']).toContain(style.height);
     expect(['', 'visible']).toContain(style.overflow);
     expect(['', 'visible']).toContain(style.overflowY);
-    expect(['', 'auto']).toContain(style.overscrollBehavior);
+    expect(['', 'auto', 'auto auto']).toContain(style.overscrollBehavior);
   }
 }
 test('all rendered lists remain uncapped initially, after refresh and after expansion', async () => {

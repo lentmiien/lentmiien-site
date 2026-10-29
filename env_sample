@@ -54,7 +54,8 @@ STARTUP_MIN_DISK_MB=
 STARTUP_REQUIRED_ENV_VARS=
 STARTUP_SKIP_MONGO_CHECK=
 GALLERY_PATH=
-DISABLE_LOCAL=
+# LM Studio is deprecated; retained only for legacy configurations.
+DISABLE_LOCAL=TRUE
 employeeNo=
 employeeName=
 department=

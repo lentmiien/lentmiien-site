@@ -256,7 +256,7 @@ async function checkVisibleGrowth(page, label, from, to, minimumHeight, minimumG
     check('WebGL denial gives visible recovery guidance and disabled growth controls', await noGl.locator('#failureText').textContent().then(text => text.includes('WebGL 2')) && await noGl.locator('#playButton').isDisabled());
     await noGl.close();
     const missing = await browser.newPage();
-    await missing.route('**/vendor/three.core.min.js', route => route.abort());
+    await missing.route('**/vendor/three.core.js', route => route.abort());
     await missing.goto(base); await missing.locator('#failure').waitFor();
     check('missing local renderer module fails visibly', await missing.locator('#loading').isHidden());
     await missing.close();

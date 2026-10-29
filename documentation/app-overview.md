@@ -28,7 +28,7 @@ This document gives a high-level tour of the Lentmiien personal platform, highli
 ### Chat5 Studio
 - **Purpose:** Flagship chat workspace that orchestrates multi-model conversations, prompt engineering, and knowledge retrieval.
 - **Tools:**
-  - **Model Switcher:** Combines OpenAI, Anthropic, Gemini, Groq, and local LM Studio providers.
+  - **Model Switcher:** Combines OpenAI, Anthropic, Gemini, and Groq providers. The legacy LM Studio integration is deprecated; set `DISABLE_LOCAL=TRUE` to disable it.
   - **Knowledge Browser:** Surfaces tagged snippets through `KnowledgeService` for in-context injection.
   - **Template Library:** Stores reusable prompts via `TemplateService`, including search and quick insert.
   - **Batch Runner:** Delegates long-running jobs to `BatchService` and streams updates over Socket.IO.
@@ -117,7 +117,7 @@ This document gives a high-level tour of the Lentmiien personal platform, highli
 
 ## Integrations & External Services
 - **OpenAI:** Chat completions, Sora video, usage stats (keys: `OPENAI_API_KEY`, `OPENAI_API_KEY_PRIVATE`, `OPENAI_ADMIN_KEY`, `OPENAI_WEBHOOK_SECRET`).
-- **Anthropic / Gemini / Groq / LM Studio:** Optional chat providers toggled in Chat5.
+- **Anthropic / Gemini / Groq:** Optional chat providers toggled in Chat5. LM Studio is deprecated and retained only for legacy configurations.
 - **Dropbox:** Media backup via `dropbox.js` and `dropboxClient.js`.
 - **Mailgun:** Outbound notifications in `MessageService`.
 - **ComfyUI:** Local image generation through `COMFY_API_BASE` endpoints.

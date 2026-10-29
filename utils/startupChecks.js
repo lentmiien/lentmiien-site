@@ -3,7 +3,6 @@ const axios = require('axios');
 const Mailgun = require('mailgun.js');
 const FormData = require('form-data');
 const mongoose = require('mongoose');
-const checkDiskSpaceLib = require('check-disk-space').default || require('check-disk-space');
 const logger = require('./logger');
 
 const DEFAULT_REQUIRED_ENV_VARS = ['MONGOOSE_URL', 'SESSION_SECRET', 'OPENAI_API_KEY'];
@@ -58,11 +57,11 @@ function validateEnvVars(requiredVars = DEFAULT_REQUIRED_ENV_VARS, options = {})
 }
 
 async function checkDiskSpaceForPath(targetPath = process.cwd(), minBytes = MIN_DISK_BYTES, options = {}) {
-  const diskInfoProvider = options.diskInfoProvider || checkDiskSpaceLib;
   const resolvedPath = path.resolve(targetPath);
   const rootPath = path.parse(resolvedPath).root || resolvedPath;
 
   try {
+    const diskInfoProvider = options.diskInfoProvider || (await import('check-disk-space')).checkDiskSpace;
     const info = await diskInfoProvider(rootPath);
     const available = info.free ?? info.available ?? 0;
     const ok = available >= minBytes;

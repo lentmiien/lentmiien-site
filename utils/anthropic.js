@@ -62,7 +62,6 @@ const max_per_model = {
 
 const anthropic = async (messages, model) => {
   const max_tokens = max_per_model[model] ? max_per_model[model] : 32000;
-  const temperature = 1;
   let system = "You are a helpful assistant";
   if (messages[0].role === "system") {
     system = messages[0].content[0].text;
@@ -104,7 +103,6 @@ const anthropic = async (messages, model) => {
         messages,
         model,
         max_tokens,
-        temperature,
       })
       .on('text', text => {
         // Collect streamed text

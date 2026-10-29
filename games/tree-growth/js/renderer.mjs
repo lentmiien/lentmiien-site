@@ -1,4 +1,4 @@
-import * as THREE from '../vendor/three.module.min.js';
+import * as THREE from '../vendor/three.module.js';
 
 const { clamp, smooth, random, branchBirth, branchGrowth, GrowthFraming } = window.TreeGrowth;
 const UP = new THREE.Vector3(0, 1, 0);

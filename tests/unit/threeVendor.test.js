@@ -20,7 +20,8 @@ describe('Three.js browser assets', () => {
   });
 
   test.each([
-    ['build/three.module.min.js', () => path.join(THREE_BUILD_PATH, 'three.module.min.js')],
+    ['build/three.module.js', () => path.join(THREE_BUILD_PATH, 'three.module.js')],
+    ['build/three.core.js', () => path.join(THREE_BUILD_PATH, 'three.core.js')],
     ['OrbitControls', () => path.join(THREE_ADDONS_PATH, 'controls', 'OrbitControls.js')],
     ['GLTFLoader', () => path.join(THREE_ADDONS_PATH, 'loaders', 'GLTFLoader.js')],
     ['Draco decoder', () => path.join(THREE_ADDONS_PATH, 'libs', 'draco', 'draco_decoder.wasm')],

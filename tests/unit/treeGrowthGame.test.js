@@ -185,7 +185,8 @@ describe('Seed to Sky public asset and rendering boundaries', () => {
   });
 
   test('the bundled renderer and license exactly match the existing repository dependency', () => {
-    expect(read('vendor/README.md')).toContain('0.185.1');
+    const { version } = require('../../node_modules/three/package.json');
+    expect(read('vendor/README.md')).toContain(`three@${version}`);
     const records = read('vendor/SHA256SUMS').trim().split('\n');
     expect(records).toHaveLength(3);
     records.forEach(record => {

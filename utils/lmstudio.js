@@ -1,3 +1,4 @@
+// Deprecated: retained for legacy configurations only. Set DISABLE_LOCAL=TRUE to disable.
 const { LMStudioClient, Chat } = require('@lmstudio/sdk');
 
 const client = process.env.DISABLE_LOCAL === "TRUE" ? null : new LMStudioClient();

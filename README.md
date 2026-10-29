@@ -4,7 +4,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 
 ## Highlights
 
-- **Chat5 Studio:** Real-time chat workspace with Socket.IO, model switching (OpenAI, Anthropic, Google, Groq, LM Studio), knowledge injection, reusable templates, AI model cards, story mode playback, and audit-friendly message editing.
+- **Chat5 Studio:** Real-time chat workspace with Socket.IO, model switching (OpenAI, Anthropic, Google, Groq; deprecated LM Studio integration), knowledge injection, reusable templates, AI model cards, story mode playback, and audit-friendly message editing.
 - **Media Generation Pipeline:** Sora 2 Studio for OpenAI video jobs, background polling/webhooks, ComfyUI and OpenAI image generation with caching, PDF-to-image conversion, ASR/TTS workflows, OCR tooling, and gallery ratings with Dropbox backups.
 - **Operations & Productivity Suite:** Unified accounting workspace (budgets, cards, analytics), receipt OCR, customs-ready product summaries, payroll builder, cooking calendar v2 with cookbook-first recipe handling, a dedicated cookbook module, unified shopping list, health tracker, quick notes, emergency stock, and a schedule-task planner.
 - **Automation & Integrations:** Startup maintenance, OpenAI usage harvesting, Dropbox sync, GitHub repository mirroring, temporary file transfer tool, Mailgun notifications, performance metrics, database usage alerts, hidden public to-buy intake, and bearer-protected API access.
@@ -53,11 +53,11 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+ and npm.
+- Node.js 26.13.0 LTS and its bundled npm. The Node version is pinned in `package.json` for Volta; use the same version when running without Volta.
 - MongoDB instance reachable via `MONGOOSE_URL`.
 - API credentials for the services you plan to activate:
   - OpenAI (chat, Sora/video, usage API).
-  - Anthropic, Google Gemini, Groq, LM Studio (optional chat providers).
+  - Anthropic, Google Gemini, Groq (optional chat providers). LM Studio is deprecated and retained only for legacy configurations.
   - Dropbox API (image backups), Mailgun (notifications), GitHub PAT (repo mirroring).
   - ComfyUI and/or OpenAI image APIs for generated-image workflows.
   - AI Gateway/Ollama, ASR, TTS, OCR, and bin-packing HTTP backends if you enable those local tools.
@@ -76,13 +76,25 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
    ```
 3. Install dependencies  
    ```bash
-   npm install
+   npm ci
    ```
 4. Run the app (executes `setup.js` first to prep caches/logs and fetch usage)  
    ```bash
    npm start
    ```
 5. Visit `http://localhost:8080` (or your chosen `PORT`). Authenticated features require a Mongo user entry; create one manually or via the admin tools after logging in.
+
+### Node 26 dependency upgrade (2026-10-29)
+
+The project now targets [Node.js 26.13.0 LTS](https://nodejs.org/en/blog/release/v26.13.0). Install with `npm ci` after switching Node versions so native dependencies are installed for the correct runtime. If your shell bypasses Volta, use `volta run --node 26.13.0 npm ci` and the same prefix for tests. Existing historical validation notes retain the Node versions used at the time.
+
+All direct dependencies are updated to their current stable releases. Compatibility changes include dynamic loading of the ESM-only disk-space checker, removal of Anthropic's [unsupported sampling parameter](https://platform.claude.com/docs/en/api/migration-2026-10-21), and updated Three.js module paths and standalone game assets. The `gcp-metadata` override is narrowed to MongoDB and updated to 9.2.3, matching the version used by the current Google client libraries; the driver's metadata token call was checked against a synthetic loopback server.
+
+LM Studio is deprecated and no longer used by the project owner. Its adapter and dependency remain for legacy configurations; `env_sample` disables it with `DISABLE_LOCAL=TRUE`. Existing `.env` files are not changed. No LM Studio compatibility or security workaround is included.
+
+The dependency audit still reports seven findings from two underlying advisories: [Zod 3 used by the deprecated LM Studio SDK](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) (two high findings including its dependent SDK) and [deepmerge used by Jest](https://github.com/advisories/GHSA-gcqx-w48m-w2h4) (five low findings including dependent test packages). LM Studio still requires Zod 3, and deepmerge has no patched release. The application's direct Zod dependency is updated to 4.6.7. Do not use `npm audit fix --force` to apply the proposed legacy SDK/Jest downgrades.
+
+Validation on Node 26.13.0: full Jest coverage run (`npm test -- --maxWorkers=2 --coverageReporters=text-summary`) passed 442 suites / 6,035 tests, with 17 suites / 261 environment-dependent tests skipped and all coverage thresholds met. The four configured OpenAPI specs passed validation. The standalone tree game's Chromium harness passed 54 checks with zero uncaught errors using the updated renderer. Sharp native image processing and Poppler initialization also passed. Live provider calls, production startup, and database migrations were not exercised.
 
 ### Useful Local Routes
 
@@ -128,7 +140,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `OPENAI_PENDING_RECONCILE_INTERVAL_MS`, `OPENAI_PENDING_RECONCILE_BATCH_SIZE` | Cadence and batch size for recovering pending OpenAI or Ollama responses when webhook delivery is missed. |
 | `OPENAI_PENDING_MAX_AGE_MS`, `OPENAI_PENDING_MAX_ATTEMPTS` | Shared pending-response recovery limits (defaults: 48 hours and 50 attempts). Polling runs every minute for 10 minutes, every 5 minutes until one hour, hourly until one day, then every 6 hours. |
 | `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY` | Optional provider keys surfaced in Chat5. |
-| `DISABLE_LOCAL` | Set to `TRUE` to hide the LM Studio provider integration. |
+| `DISABLE_LOCAL` | Set to `TRUE` to disable the deprecated LM Studio integration (the default in `env_sample`). Does not disable Ollama or AI Gateway. |
 | `AI_GATEWAY_BASE_URL` | Local AI gateway base URL used by admin dashboards, music generation, and Ollama fallback clients. |
 | `RUNPOD_API_KEY` | Dedicated Runpod REST API v2 credential for catalog/billing reads plus Pod and private-template management. Use the narrowest provider scope that supports those operations. |
 | `RUNPOD_API_TIMEOUT_MS`, `RUNPOD_API_CACHE_TTL_MS` | Runpod v2 outbound request deadline and short in-memory cache duration (defaults: 10 seconds and 30 seconds). |

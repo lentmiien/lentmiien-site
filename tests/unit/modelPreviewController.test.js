@@ -172,7 +172,7 @@ describe('3D model preview page', () => {
     expect(html).toContain('data-preview-mode="wireframe" aria-pressed="false" disabled>');
     expect(html).toContain('id="modelPreviewReset"');
     expect(html).toContain('Keyboard: arrows rotate, +/− zoom, 0 resets');
-    expect(html).toContain(`"three":"${THREE_VENDOR_BASE_URL}/build/three.module.min.js"`);
+    expect(html).toContain(`"three":"${THREE_VENDOR_BASE_URL}/build/three.module.js"`);
     expect(html).toContain(`"three/addons/":"${THREE_VENDOR_BASE_URL}/addons/"`);
     expect(html).toContain('<script type="module" src="/js/model-previewer-bootstrap.js"></script>');
   });

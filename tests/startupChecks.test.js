@@ -44,6 +44,12 @@ describe('validateEnvVars', () => {
 });
 
 describe('checkDiskSpaceForPath', () => {
+  it('reads disk space with the installed ESM dependency', async () => {
+    const result = await checkDiskSpaceForPath(process.cwd(), 0);
+    expect(result).toMatchObject({ ok: true, availableBytes: expect.any(Number) });
+    expect(result.availableBytes).toBeGreaterThanOrEqual(0);
+  });
+
   it('fails when available space is below minimum', async () => {
     const diskInfoProvider = jest.fn(async () => ({ free: 10 }));
     const result = await checkDiskSpaceForPath('/', 100, { diskInfoProvider });
