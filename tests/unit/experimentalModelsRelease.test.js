@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 jest.mock('../../utils/logger', () => ({ error: jest.fn(), warning: jest.fn() }));
-const { configuration, passiveGateway, validateStorageLocation, inspectBootLines, verifyBoot, run } = require('../../scripts/experimental-models-release-check');
+const { configuration, readServiceEnvironment, passiveGateway, validateStorageLocation, inspectBootLines, verifyBoot, run } = require('../../scripts/experimental-models-release-check');
 const secret = 'synthetic-fixture-secret';
 const valid = `MING_ADMIN_TOKEN=${secret}\nEXPERIMENTAL_MODELS_STORAGE_ROOT=C:/ProgramData/Lentmiien/ExperimentalModels\n`;
 const target = 'a'.repeat(40);
@@ -34,9 +34,139 @@ test.each(['0', '-1', '65536', '3e3', 'pipe-name', ' 3000 '])('rejects ambiguous
   expect(() => configuration(valid + `PORT="${port}"`)).toThrow('invalid_health_port');
 });
 
-test.each(['MING_ADMIN_TOKEN', 'EXPERIMENTAL_MODELS_STORAGE_ROOT', 'AI_GATEWAY_BASE_URL', 'PORT', 'VUE_PATH',
-  'DOTENV_PATH', 'DOTENV_CONFIG_PATH', 'DOTENV_ENCODING', 'DOTENV_CONFIG_OVERRIDE', 'NODE_OPTIONS'])('refuses inherited %s overrides', key => {
-  expect(() => configuration(valid, { [key]: 'private override' })).toThrow('private_config_overridden');
+const ordinary = {
+  MING_ADMIN_TOKEN: secret, EXPERIMENTAL_MODELS_STORAGE_ROOT: 'C:/ProgramData/Lentmiien/ExperimentalModels',
+  AI_GATEWAY_BASE_URL: 'http://gateway.example.test:8080', EXPERIMENTAL_MODELS_TIMEOUT_MS: '2100000',
+  PORT: '3000', VUE_PATH: 'C:/Sites/fixture-日本語',
+};
+const explicit = Object.entries(ordinary).map(([key, value]) => `${key}="${value}"`).join('\n');
+const controls = ['NODE_OPTIONS', ...['PATH', 'ENCODING', 'OVERRIDE', 'FAST', 'DEBUG', 'QUIET']
+  .flatMap(option => [`DOTENV_${option}`, `DOTENV_CONFIG_${option}`])];
+function contextConfiguration(context, file, values) {
+  return configuration(file, context === 'operator' ? values : {}, {
+    machine: context === 'machine' ? values : {}, winsw: context === 'winsw' ? values : {},
+  });
+}
+
+test('observed matching WinSW PORT and operator PORT/VUE_PATH preserve the explicit Site configuration', () => {
+  const before = { ...process.env };
+  const result = configuration(explicit, { PORT: ordinary.PORT, VUE_PATH: ordinary.VUE_PATH }, { machine: {}, winsw: { PORT: ordinary.PORT } });
+  expect(result).toEqual(configuration(explicit));
+  expect(process.env).toEqual(before);
+});
+
+describe.each(['operator', 'machine', 'winsw'])('%s context', context => {
+  const code = context === 'operator' ? 'operator' : 'service';
+  test.each(Object.keys(ordinary))('allows explicit matching %s and rejects differing, empty or unconfigured values', key => {
+    expect(contextConfiguration(context, explicit, { [key.toLowerCase()]: ordinary[key] })).toEqual(configuration(explicit));
+    for (const value of ['different-private-value', '', null]) {
+      expect(() => contextConfiguration(context, explicit, { [key]: value })).toThrow(`${code}_configuration_mismatch`);
+    }
+    const withoutKey = explicit.split('\n').filter(line => !line.startsWith(`${key}=`)).join('\n');
+    expect(() => contextConfiguration(context, withoutKey, { [key]: ordinary[key] })).toThrow(`${code}_configuration_mismatch`);
+    expect(() => contextConfiguration(context, withoutKey, { [key]: '' })).toThrow(`${code}_configuration_mismatch`);
+  });
+  test.each(controls)('rejects %s presence even empty or matching the file', key => {
+    for (const value of ['', 'synthetic-control']) {
+      expect(() => contextConfiguration(context, explicit + `\n${key}="${value}"`, { [key.toLowerCase()]: value })).toThrow(`${code}_loader_control`);
+    }
+  });
+  test('absence permits existing defaults but inherited fallback-looking values require an explicit file entry', () => {
+    expect(contextConfiguration(context, valid, {}).port).toBe(8080);
+    for (const [key, value] of Object.entries({ PORT: '8080', AI_GATEWAY_BASE_URL: 'http://192.168.0.20:8080', EXPERIMENTAL_MODELS_TIMEOUT_MS: '2000000' })) {
+      expect(() => contextConfiguration(context, valid, { [key]: value })).toThrow(`${code}_configuration_mismatch`);
+    }
+    expect(contextConfiguration(context, valid + 'VUE_PATH=""', { VUE_PATH: '' }).env.VUE_PATH).toBe('');
+  });
+});
+
+test('matching WinSW cannot conceal a conflicting machine value and operator disagreement is separately identified', () => {
+  expect(() => configuration(explicit, {}, { machine: { PORT: '9999' }, winsw: { PORT: ordinary.PORT } })).toThrow('service_configuration_mismatch');
+  expect(() => configuration(explicit, { PORT: '9999' }, { machine: {}, winsw: { PORT: ordinary.PORT } })).toThrow('operator_configuration_mismatch');
+  expect(configuration(explicit, ordinary, { machine: ordinary, winsw: ordinary })).toEqual(configuration(explicit));
+});
+
+test('service expansion is refused even for a textually matching value', () => {
+  const file = explicit.replace(ordinary.VUE_PATH, 'C:/Sites/%PRIVATE_DIR%');
+  for (const context of ['machine', 'winsw']) {
+    expect(() => contextConfiguration(context, file, { VUE_PATH: 'C:/Sites/%PRIVATE_DIR%' })).toThrow('service_configuration_mismatch');
+  }
+});
+
+test('matching values still undergo existing root, origin, secret and timeout validation', () => {
+  for (const [key, value] of Object.entries({ MING_ADMIN_TOKEN: '', EXPERIMENTAL_MODELS_STORAGE_ROOT: 'C:/wrong',
+    AI_GATEWAY_BASE_URL: 'http://gateway.example.test/path', EXPERIMENTAL_MODELS_TIMEOUT_MS: '1' })) {
+    const file = explicit.split('\n').filter(line => !line.startsWith(`${key}=`)).concat(`${key}="${value}"`).join('\n');
+    expect(() => configuration(file, { [key]: value }, { machine: {}, winsw: { [key]: value } })).toThrow();
+  }
+});
+
+test('private comparisons emit no values or hashes, and errors carry only contextual codes', () => {
+  const stdout = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  const stderr = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  try {
+    configuration(explicit, ordinary, { machine: {}, winsw: ordinary });
+    for (const context of ['operator', 'machine', 'winsw']) {
+      let error;
+      try { contextConfiguration(context, explicit, { MING_ADMIN_TOKEN: 'different-private-token' }); } catch (caught) { error = caught; }
+      const code = `${context === 'operator' ? 'operator' : 'service'}_configuration_mismatch`;
+      expect(error.message).toBe(code);
+      expect(JSON.stringify(error)).toBe(JSON.stringify({ code }));
+      expect(error.stack).not.toContain(secret);
+      expect(error.stack).not.toContain('different-private-token');
+    }
+    expect(stdout).not.toHaveBeenCalled();
+    expect(stderr).not.toHaveBeenCalled();
+  } finally { stdout.mockRestore(); stderr.mockRestore(); }
+});
+
+test('private service pipe preserves Unicode, empty and absent entries without environment mutation', async () => {
+  const before = { ...process.env };
+  const service = { machine: {}, winsw: { ...ordinary, VUE_PATH: '' } };
+  const encoded = Buffer.from(JSON.stringify(service), 'utf8').toString('base64');
+  const { Readable } = require('stream');
+  expect(await readServiceEnvironment(Readable.from([encoded.slice(0, 12), encoded.slice(12) + '\r\n']))).toEqual(service);
+  expect(await readServiceEnvironment(Readable.from([Buffer.from(JSON.stringify({ machine: ordinary, winsw: {} })).toString('base64')]))).toEqual({ machine: ordinary, winsw: {} });
+  expect(process.env).toEqual(before);
+});
+
+test.each(['not JSON', 'null', '{}', '{"machine":[],"winsw":{}}', '{"machine":{},"winsw":{},"extra":{}}'])('rejects malformed service pipe %s', async value => {
+  await expect(readServiceEnvironment(require('stream').Readable.from([Buffer.from(value).toString('base64')]))).rejects.toMatchObject({ code: 'invalid_private_configuration' });
+});
+
+test('bounds private service pipe input', async () => {
+  await expect(readServiceEnvironment(require('stream').Readable.from(['a'.repeat(1048577)]))).rejects.toMatchObject({ code: 'invalid_private_configuration' });
+});
+
+test('companion command privately checks the exact Site file and its prerequisite probes keep configured auth/direct routing', async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  const stdin = Object.getOwnPropertyDescriptor(process, 'stdin');
+  const inherited = process.env;
+  const lstat = jest.spyOn(fs.promises, 'lstat').mockResolvedValue({ isFile: () => true, isSymbolicLink: () => false, size: Buffer.byteLength(explicit) });
+  const readFile = jest.spyOn(fs.promises, 'readFile').mockResolvedValue(Buffer.from(explicit));
+  const request = jest.spyOn(require('axios'), 'request').mockImplementation(mockGateway());
+  try {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    Object.defineProperty(process, 'stdin', { value: require('stream').Readable.from([
+      Buffer.from(JSON.stringify({ machine: {}, winsw: { PORT: ordinary.PORT } })).toString('base64'),
+    ]), configurable: true });
+    process.env = { PORT: ordinary.PORT, VUE_PATH: ordinary.VUE_PATH, HTTP_PROXY: 'http://127.0.0.1:9' };
+    expect(await run(['configuration'])).toEqual({ configurationMatched: true });
+    expect(request).not.toHaveBeenCalled();
+    expect(await run(['preflight', '--direct'])).toEqual({ authStatus: true, capability: true });
+    expect(readFile.mock.calls.every(([file]) => file === path.resolve(__dirname, '../../.env'))).toBe(true);
+    expect(lstat).toHaveBeenCalledWith(path.resolve(__dirname, '../../.env'));
+    expect(request.mock.calls.map(([options]) => options.url)).toEqual([
+      ordinary.AI_GATEWAY_BASE_URL + '/tts/ming/voices', ordinary.AI_GATEWAY_BASE_URL + '/tts/ming/capabilities',
+    ]);
+    for (const [options] of request.mock.calls) expect(options).toMatchObject({ proxy: false, headers: { 'X-Ming-Token': secret } });
+    expect(process.env.HTTP_PROXY).toBe('http://127.0.0.1:9');
+  } finally {
+    process.env = inherited;
+    Object.defineProperty(process, 'platform', platform);
+    Object.defineProperty(process, 'stdin', stdin);
+    lstat.mockRestore(); readFile.mockRestore(); request.mockRestore();
+  }
 });
 
 test('requires the existing Ming secret and checks source timeout constraints', () => {
@@ -164,6 +294,28 @@ test('operator failure uses the shared production logger with only a bounded sta
 // or real NTFS/LocalSystem qualification. No pwsh is installed in the source host.
 const ps = fs.readFileSync(path.join(__dirname, '../../scripts/deploy-experimental-models.ps1'), 'utf8');
 const acl = fs.readFileSync(path.join(__dirname, '../../scripts/assert-gpt-image-acl.ps1'), 'utf8');
+test('PowerShell source excludes loader controls before Node, preserves presence and privately checks service precedence', () => {
+  const check = ps.slice(ps.indexOf('function Assert-ServiceConfiguration'), ps.indexOf('function Invoke-NodeCheck'));
+  expect(check.indexOf("throw 'service_loader_control'")).toBeLessThan(check.indexOf('$version = & $Node'));
+  expect(check.indexOf("throw 'operator_loader_control'")).toBeLessThan(check.indexOf('$version = & $Node'));
+  expect(check.indexOf("throw 'service_environment_override'")).toBeLessThan(check.indexOf('$version = & $Node'));
+  expect(check).toContain("[Environment]::GetEnvironmentVariables('Machine').GetEnumerator()");
+  expect(check).toContain("[Environment]::GetEnvironmentVariables('Process').GetEnumerator()");
+  expect(check).toContain('$machine = @{}; $operator = @{}'); // PowerShell maps have case-insensitive keys.
+  expect(check).toContain('if ($machine.Contains($key))');
+  expect(check).toContain('$entries.Count -gt 1');
+  expect(check).toContain("!$entries[0].HasAttribute('value')");
+  expect(check).toContain('$serviceEnv.machine[$key]');
+  expect(check).toContain('$serviceEnv.winsw[$key]');
+  expect(check).toContain("Invoke-NodeCheck @('configuration') $inputBase64");
+  expect(check).toContain('[Text.Encoding]::UTF8.GetBytes($inputJson)');
+  expect(ps).toContain('$PrivateInput | & $Node');
+  expect(ps).not.toMatch(/SetEnvironmentVariable|\$env:\w+\s*=|Set-Content|Out-File/);
+  const companion = fs.readFileSync(path.join(__dirname, '../../scripts/experimental-models-release-check.js'), 'utf8');
+  expect(companion).toContain('dotenv.parse(file)');
+  expect(companion).not.toContain('dotenv.config(');
+});
+
 test('PowerShell source orders approval, atomic creation, validation, maintenance, restart and successful end', () => {
   const main = ps.slice(ps.indexOf("try {\n  if ($PSVersionTable"));
   const steps = ["Assert-Source", 'Assert-ServiceConfiguration', "Assert-Acl 'C:\\ProgramData' -AncestorOnly", 'Invoke-NodeCheck $checkArgs', 'Read-Host',
@@ -184,7 +336,7 @@ test('PowerShell source orders approval, atomic creation, validation, maintenanc
 test('PowerShell source guards checkout, target ancestry, dependencies and existing folders', () => {
   for (const guard of ['--show-toplevel', '--show-current', 'head_mismatch', '--untracked-files=all', '--is-ancestor', 'origin/main',
     'package-lock.json', 'git_operation_in_progress', 'elevation_required', 'existing_dedicated_folder_inspect_do_not_rerun',
-    'inherited_configuration_override', 'service_environment_override', 'node_version_mismatch', 'ntfs_required', 'restart_timeout_or_failure']) expect(ps).toContain(guard);
+    'operator_loader_control', 'service_loader_control', 'service_environment_override', 'node_version_mismatch', 'ntfs_required', 'restart_timeout_or_failure']) expect(ps).toContain(guard);
   expect(ps).toContain("[ValidateSet('LennartWeb')]");
   expect(ps).toContain("[ValidatePattern('^[0-9a-f]{40}$')]");
   expect(ps).not.toMatch(/Set-Acl\s+-|icacls|Set-ExecutionPolicy|ExecutionPolicy',?\s*['"]?Bypass|git\s+(?:reset|clean|stash)|npm\s+(?:ci|install|start)/);

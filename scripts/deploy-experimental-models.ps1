@@ -58,6 +58,7 @@ function Assert-Dedicated([string]$Path) {
   }
 }
 function Assert-ServiceConfiguration {
+  $script:Node = $null # Do not launch even the failure logger until loader controls are excluded.
   $service = Get-CimInstance Win32_Service -Filter "Name='LennartWeb'"
   if ($null -eq $service -or $service.StartName -ne 'LocalSystem' -or $service.State -ne 'Running' -or
       $service.PathName.Trim('"') -ine 'C:\Services\LennartWeb\LennartWeb.exe') { throw 'service_configuration_drift' }
@@ -78,30 +79,54 @@ function Assert-ServiceConfiguration {
   foreach ($element in @('startarguments', 'prestart', 'poststart', 'extensions', 'download')) {
     if ($null -ne $xml.SelectSingleNode("/service/$element")) { throw 'winsw_launch_override' }
   }
-  $keys = @('MING_ADMIN_TOKEN', 'EXPERIMENTAL_MODELS_STORAGE_ROOT', 'AI_GATEWAY_BASE_URL', 'EXPERIMENTAL_MODELS_TIMEOUT_MS', 'VUE_PATH', 'PORT', 'NODE_OPTIONS')
+  $configKeys = @('MING_ADMIN_TOKEN', 'EXPERIMENTAL_MODELS_STORAGE_ROOT', 'AI_GATEWAY_BASE_URL', 'EXPERIMENTAL_MODELS_TIMEOUT_MS', 'VUE_PATH', 'PORT')
+  $controlKeys = @('NODE_OPTIONS')
   # dotenv 18 accepts both prefixes; either could select a different private file
   # or parsing/override behavior than the explicit read-only companion.
-  foreach ($option in @('PATH', 'ENCODING', 'OVERRIDE', 'FAST', 'DEBUG', 'QUIET')) { $keys += "DOTENV_$option"; $keys += "DOTENV_CONFIG_$option" }
-  foreach ($key in $keys) {
-    if ($null -ne [Environment]::GetEnvironmentVariable($key, 'Machine') -or
-        $null -ne [Environment]::GetEnvironmentVariable($key, 'Process') -or
-        @($xml.SelectNodes('/service/env') | Where-Object { $_.GetAttribute('name') -ieq $key }).Count) { throw 'inherited_configuration_override' }
+  foreach ($option in @('PATH', 'ENCODING', 'OVERRIDE', 'FAST', 'DEBUG', 'QUIET')) { $controlKeys += "DOTENV_$option"; $controlKeys += "DOTENV_CONFIG_$option" }
+  # Enumerate presence separately from value so a defined empty entry is not lost.
+  $machine = @{}; $operator = @{}
+  foreach ($entry in [Environment]::GetEnvironmentVariables('Machine').GetEnumerator()) { $machine[$entry.Key] = $entry.Value }
+  foreach ($entry in [Environment]::GetEnvironmentVariables('Process').GetEnumerator()) { $operator[$entry.Key] = $entry.Value }
+  foreach ($key in $controlKeys) {
+    if ($machine.Contains($key) -or @($xml.SelectNodes('/service/env') | Where-Object { $_.GetAttribute('name') -ieq $key }).Count) { throw 'service_loader_control' }
+    if ($operator.Contains($key)) { throw 'operator_loader_control' }
   }
   $registry = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\LennartWeb'
   if ($null -ne $registry.PSObject.Properties['Environment']) { throw 'service_environment_override' }
+  $serviceEnv = @{ machine = @{}; winsw = @{} }
+  foreach ($key in $configKeys) {
+    if ($machine.Contains($key)) { $serviceEnv.machine[$key] = [string]$machine[$key] }
+    $entries = @($xml.SelectNodes('/service/env') | Where-Object { $_.GetAttribute('name') -ieq $key })
+    if ($entries.Count -gt 1 -or ($entries.Count -eq 1 -and !$entries[0].HasAttribute('value'))) { throw 'service_configuration_mismatch' }
+    if ($entries.Count -eq 1) { $serviceEnv.winsw[$key] = $entries[0].GetAttribute('value') }
+  }
   $script:Node = $executable
   $version = & $Node --version 2>$null
   if ($LASTEXITCODE -ne 0 -or $version -cne ('v' + (Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json).volta.node)) { throw 'node_version_mismatch' }
+  # Privately compare literal service layers and the actual child environment to
+  # dotenv.parse of the exact Site file, using the existing feature validators.
+  # Base64 is pipe transport only: no values/hashes in arguments, output or files.
+  $inputJson = $serviceEnv | ConvertTo-Json -Compress -Depth 3
+  $inputBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($inputJson))
+  $checked = Invoke-NodeCheck @('configuration') $inputBase64
+  if ($checked.configurationMatched -ne $true) { throw 'service_configuration_mismatch' }
 }
-function Invoke-NodeCheck([string[]]$Arguments) {
-  $output = @(& $Node (Join-Path $PSScriptRoot 'experimental-models-release-check.js') @Arguments 2>$null)
+function Invoke-NodeCheck([string[]]$Arguments, [string]$PrivateInput = '') {
+  if ($PrivateInput.Length) {
+    $output = @($PrivateInput | & $Node (Join-Path $PSScriptRoot 'experimental-models-release-check.js') @Arguments 2>$null)
+  } else {
+    $output = @(& $Node (Join-Path $PSScriptRoot 'experimental-models-release-check.js') @Arguments 2>$null)
+  }
   $exitCode = $LASTEXITCODE
   $result = ($output -join "`n") | ConvertFrom-Json
   if ($exitCode -ne 0) {
-    $codes = @('invalid_private_configuration', 'private_config_overridden', 'wrong_storage_root', 'invalid_health_port',
+    $codes = @('invalid_private_configuration', 'operator_configuration_mismatch', 'service_configuration_mismatch',
+      'operator_loader_control', 'service_loader_control', 'wrong_storage_root', 'invalid_health_port',
       'ming_auth_failed', 'ming_capability_missing', 'passive_gateway_failed', 'unsafe_storage_location',
       'storage_missing', 'site_health_timeout', 'lab_boot_failed', 'invalid_arguments', 'release_check_failed')
     if ($result.code -in $codes) { Write-Host ('CHECK: ' + $result.code) }
+    if ($result.code -in @('operator_configuration_mismatch', 'service_configuration_mismatch', 'operator_loader_control', 'service_loader_control')) { throw $result.code }
     throw 'node_check_failed'
   }
   return $result
@@ -141,7 +166,7 @@ try {
   if ($answer -cne 'RELEASE') { Write-Host 'STOP: no folders created and no service interrupted.'; exit 2 }
   Assert-Source
   Assert-ServiceConfiguration
-  # Re-read private input after the approval pause. No secret leaves this process.
+  # Re-read private input after the approval pause; no private values are emitted.
   $checks = Invoke-NodeCheck $checkArgs
   Assert-Acl 'C:\ProgramData' -AncestorOnly
   $Stage = 'create_protected_parent'
@@ -228,7 +253,8 @@ public static class ExperimentalModelsPrivateDirectory {
   $safeCodes = @('git_check_failed', 'checkout_mismatch', 'branch_mismatch', 'head_mismatch', 'worktree_not_clean',
     'git_operation_in_progress', 'acl_policy_failed', 'dedicated_owner_or_protection_drift', 'dedicated_acl_drift',
     'service_configuration_drift', 'winsw_launch_drift', 'node_launcher_unknown', 'winsw_launch_override',
-    'inherited_configuration_override', 'service_environment_override', 'node_version_mismatch', 'node_check_failed',
+    'operator_loader_control', 'service_loader_control', 'operator_configuration_mismatch', 'service_configuration_mismatch',
+    'service_environment_override', 'node_version_mismatch', 'node_check_failed',
     'windows_powershell_51_required', 'elevation_required', 'helper_checkout_mismatch', 'ntfs_required',
     'existing_dedicated_folder_inspect_do_not_rerun', 'gateway_prerequisite_failed', 'path_denied', 'descriptor_failed',
     'create_failed_inspect_before_resume', 'maintenance_start_failed', 'restart_timeout_or_failure', 'app_health_failed',

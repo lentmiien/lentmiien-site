@@ -10,16 +10,33 @@ const { within, assertNoSymlinks } = require('../services/gptImageStorageService
 const ROOT = 'C:\\ProgramData\\Lentmiien\\ExperimentalModels';
 const APP = path.resolve(__dirname, '..');
 const MAX_LOG_BYTES = 262144;
-const CODES = new Set(['invalid_private_configuration', 'private_config_overridden', 'wrong_storage_root', 'invalid_health_port',
+const CODES = new Set(['invalid_private_configuration', 'operator_configuration_mismatch', 'service_configuration_mismatch',
+  'operator_loader_control', 'service_loader_control', 'wrong_storage_root', 'invalid_health_port',
   'ming_auth_failed', 'ming_capability_missing', 'passive_gateway_failed', 'unsafe_storage_location',
   'storage_missing', 'site_health_timeout', 'lab_boot_failed', 'invalid_arguments', 'release_check_failed']);
 function fail(code) { throw Object.assign(new Error(code), { code }); }
 
-function configuration(file, inherited = {}) {
+const CONFIG_KEYS = ['MING_ADMIN_TOKEN', 'EXPERIMENTAL_MODELS_STORAGE_ROOT', 'AI_GATEWAY_BASE_URL', 'EXPERIMENTAL_MODELS_TIMEOUT_MS', 'VUE_PATH', 'PORT'];
+const CONTROL_KEYS = ['NODE_OPTIONS',
+  ...['PATH', 'ENCODING', 'OVERRIDE', 'FAST', 'DEBUG', 'QUIET'].flatMap(option => [`DOTENV_${option}`, `DOTENV_CONFIG_${option}`])];
+function assertEnvironment(env, inherited, context) {
+  // Windows names are case-insensitive. Empty strings are present and suppress
+  // dotenv; never equate them with absence or an application's fallback value.
+  for (const [name, value] of Object.entries(inherited)) {
+    const key = name.toUpperCase();
+    if (CONTROL_KEYS.includes(key)) fail(`${context}_loader_control`);
+    if (CONFIG_KEYS.includes(key) && (!Object.hasOwn(env, key) || typeof value !== 'string' || value !== env[key] ||
+        context === 'service' && value.includes('%'))) fail(`${context}_configuration_mismatch`);
+  }
+}
+function configuration(file, inherited = {}, service = { machine: {}, winsw: {} }) {
   const env = dotenv.parse(file);
-  const keys = ['MING_ADMIN_TOKEN', 'EXPERIMENTAL_MODELS_STORAGE_ROOT', 'AI_GATEWAY_BASE_URL', 'EXPERIMENTAL_MODELS_TIMEOUT_MS', 'VUE_PATH', 'PORT', 'NODE_OPTIONS',
-    ...['PATH', 'ENCODING', 'OVERRIDE', 'FAST', 'DEBUG', 'QUIET'].flatMap(option => [`DOTENV_${option}`, `DOTENV_CONFIG_${option}`])];
-  if (keys.some(key => inherited[key] !== undefined)) fail('private_config_overridden');
+  // Check both service layers, not just the winning WinSW value: every possible
+  // inherited value must agree with the explicit file. Registry blocks are
+  // refused by PowerShell. LocalSystem does not inherit the operator's User env.
+  assertEnvironment(env, service.machine, 'service');
+  assertEnvironment(env, service.winsw, 'service');
+  assertEnvironment(env, inherited, 'operator');
   let root, gateway;
   try {
     root = resolveStorageRoot(env.EXPERIMENTAL_MODELS_STORAGE_ROOT, 'win32');
@@ -32,11 +49,25 @@ function configuration(file, inherited = {}) {
   if (!/^[1-9]\d{0,4}$/.test(portText) || Number(portText) > 65535) fail('invalid_health_port');
   return { env, root, gateway, port: Number(portText) };
 }
-async function loadConfiguration() {
+async function loadConfiguration(service) {
   const file = path.join(APP, '.env');
   const stat = await fs.lstat(file);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 262144) fail('invalid_private_configuration');
-  return configuration(await fs.readFile(file), process.env);
+  return configuration(await fs.readFile(file), process.env, service);
+}
+async function readServiceEnvironment(input = process.stdin) {
+  // PowerShell 5.1's native pipe uses an ASCII encoding by default. Base64 of
+  // UTF-8 JSON preserves private Unicode values without arguments or temp files.
+  let encoded = '';
+  for await (const chunk of input) {
+    encoded += chunk.toString('ascii');
+    if (encoded.length > 1048576) fail('invalid_private_configuration');
+  }
+  let service;
+  try { service = JSON.parse(Buffer.from(encoded.trim(), 'base64').toString('utf8')); } catch (_) { fail('invalid_private_configuration'); }
+  if (!service || Object.keys(service).sort().join(',') !== 'machine,winsw' ||
+      ['machine', 'winsw'].some(key => !service[key] || typeof service[key] !== 'object' || Array.isArray(service[key]))) fail('invalid_private_configuration');
+  return service;
 }
 async function passiveGateway(config, { direct = false, request = axios.request } = {}) {
   // --direct is per-request only, matching the Site client; an inspecting proxy
@@ -144,6 +175,10 @@ async function run(args) {
     return { logged: true };
   }
   if (process.platform !== 'win32') fail('invalid_arguments');
+  if (command === 'configuration' && rest.length === 0) {
+    await loadConfiguration(await readServiceEnvironment());
+    return { configurationMatched: true };
+  }
   if (command === 'preflight' && (rest.length === 0 || rest.length === 1 && rest[0] === '--direct')) {
     return passiveGateway(await loadConfiguration(), { direct: rest[0] === '--direct' });
   }
@@ -161,4 +196,4 @@ if (require.main === module) {
     process.exitCode = 1;
   });
 }
-module.exports = { configuration, passiveGateway, validateStorageLocation, inspectBootLines, verifyBoot, run };
+module.exports = { configuration, readServiceEnvironment, passiveGateway, validateStorageLocation, inspectBootLines, verifyBoot, run };

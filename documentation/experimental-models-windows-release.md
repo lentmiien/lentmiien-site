@@ -14,13 +14,22 @@ It requires passive `GET /tts/ming/voices` HTTP 200 and
 `GET /tts/ming/capabilities` with numeric `ephemeral_reference.version === 1`.
 Neither response establishes that clone inference works.
 
-Finish the already planned **private edit of the existing Site `.env`**:
+The **existing Site `.env`** must already contain the planned private configuration:
 
-- Correct `MING_ADMIN_TOKEN` to match the existing Gateway secret. The earlier 401
-  was an authentication failure; do not generate or rotate a different secret.
+- `MING_ADMIN_TOKEN` matches the existing Gateway secret; do not generate or rotate
+  a different secret.
 - Set `EXPERIMENTAL_MODELS_STORAGE_ROOT=C:/ProgramData/Lentmiien/ExperimentalModels`.
 - Keep the existing HTTP(S) `AI_GATEWAY_BASE_URL` origin (default
   `http://192.168.0.20:8080`); no credentials, path, query or fragment.
+
+For the confirmed pre-creation retry from source
+`671fe61f849bcbf0f796b0211a2a141d41c73ea7`, the private edits are already complete
+and both dedicated directories remain absent. The old presence guard rejected
+the legitimate nonempty WinSW `PORT` even though it matched `.env`. The inspection
+process's `PORT` and `VUE_PATH` also matched; this does not establish the elevated
+operator's environment or which check it hit first. No provisioning, ACL changes,
+maintenance or restart occurred. Retry the corrected helper below without
+copying tokens, re-provisioning secrets, resuming ACL work or changing Gateway.
 
 No `.env` copy/rewrite, secret argument, fingerprint, token output, dependency
 install, Node upgrade, migration, policy change or unrelated ACL change is needed.
@@ -34,7 +43,8 @@ alerts; it is **not a request fence**.
 ## One copy/paste block, elevated Windows PowerShell 5.1
 
 Use the **actual full helper commit from the handoff** as `$target`. The bootstrap
-accepts only clean `main` at the inspected production commit or that exact target;
+accepts only clean `main` at the original production commit, the inspected
+pre-creation retry commit, or that exact target;
 it fetches `origin/main`, checks containment and ancestry, then fast-forwards.
 Ignored `.env` and private runtime data stay ignored. Untracked nonignored work
 also stops the block. Never continue after an error or substitute reset/stash/clean.
@@ -43,8 +53,10 @@ also stops the block. Never continue after an error or substitute reset/stash/cl
 & {
   $ErrorActionPreference = 'Stop'; Set-Location 'C:\Projects\lentmiien-site'
   $target = '<full 40-character helper commit from the handoff>'; $old = '3ef51e3e0b4cf1c1e6e00b5706ee6a4d67ec6d73'
+  $retry = '671fe61f849bcbf0f796b0211a2a141d41c73ea7'
   function g { $saved = $ErrorActionPreference; $ErrorActionPreference = 'Continue'; try { $r = @(& git @args 2>$null); $code = $LASTEXITCODE } finally { $ErrorActionPreference = $saved }; if ($code -ne 0) { throw 'STOP: Git check/update failed; preserve the checkout.' }; $r }
-  if ($target -cnotmatch '^[0-9a-f]{40}$' -or (g branch --show-current) -cne 'main' -or (g rev-parse HEAD) -notin @($old, $target) -or @(g status --porcelain --untracked-files=all).Count) { throw 'STOP: unexpected target, branch, HEAD or local work.' }
+  if ($target -cnotmatch '^[0-9a-f]{40}$' -or (g branch --show-current) -cne 'main' -or (g rev-parse HEAD) -notin @($old, $retry, $target) -or @(g status --porcelain --untracked-files=all).Count) { throw 'STOP: unexpected target, branch, HEAD or local work.' }
+  foreach ($operation in @('MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply')) { if (Test-Path -LiteralPath (g rev-parse --git-path $operation)) { throw 'STOP: Git operation in progress.' } }
   g fetch origin main; g merge-base --is-ancestor $target origin/main; g merge-base --is-ancestor $old $target; g merge-base --is-ancestor HEAD $target
   g diff --exit-code $old $target -- package.json package-lock.json; g merge --ff-only $target
   & .\scripts\deploy-experimental-models.ps1 -TargetCommit $target -SiteServiceName LennartWeb -DirectGateway
@@ -80,10 +92,33 @@ lock files must still match production. It does not run setup or `npm start`.
 It requires elevation, NTFS, the exact checkout and service, LocalSystem,
 `C:\Services\LennartWeb\LennartWeb.exe` and the known sibling WinSW XML,
 working directory `C:\Projects\lentmiien-site`, a direct Node/app launch and
-source-pinned Node **26.13.0**. Unknown launch forms, environment overrides,
-service environment blocks, or drift stop the helper; it never edits them. Machine,
-operator-process and WinSW overrides of the relevant `.env` keys are refused so
-the helper cannot silently validate different private input. The configured Node
+source-pinned Node **26.13.0**. Unknown launch forms, service environment blocks,
+or drift stop the helper; it never edits them. Ordinary configuration keys
+(`PORT`, `VUE_PATH`, Ming token, storage root, Gateway origin and timeout) may be
+inherited **only when exactly equal to an explicit entry in the Site `.env`**.
+The companion uses `dotenv.parse`, never `dotenv.config`, then the existing root,
+Gateway and port validators. No inferred default can justify an inherited value.
+Absent entries are distinct from defined empty strings, which suppress dotenv;
+empty mismatches stop, while an explicit matching empty value still undergoes
+the existing validators. Root confinement and runtime ACL checks are unchanged.
+
+Both Machine and WinSW layers must individually match, so a matching higher
+priority WinSW entry cannot hide a conflicting Machine value. Duplicate WinSW
+entries, missing value attributes, service expansion syntax (`%`) and any service
+registry Environment block stop. The actual operator child environment is checked
+separately: an operator-only mismatch yields `operator_configuration_mismatch`,
+while a service mismatch yields `service_configuration_mismatch`. LocalSystem does
+not use the interactive user's User environment; its effect on the operator is
+covered by the actual process environment. No environment is cleared or rewritten.
+
+`NODE_OPTIONS` and all twelve `DOTENV_*` / `DOTENV_CONFIG_*` controls remain strict
+**presence** stops, including empty or matching values. PowerShell checks these
+before launching Node, with `service_loader_control` / `operator_loader_control`
+codes. Private service values reach the companion only over an in-memory stdin
+pipe (UTF-8 JSON encoded as base64 for PowerShell 5.1 transport), never command
+arguments, files, values/hashes in output, or receipts. Only a success boolean or
+allowlisted error code returns. These checks run again after approval and before
+maintenance. The configured Node
 command's version is checked under the operator token. This is **not** a claim of
 CIM inspection of the actual Node runtime, which was previously denied. No helper
 installs a task/service or opens a SYSTEM shell to obtain that evidence.
@@ -126,7 +161,7 @@ The helper invokes the existing `node scripts/maintenance.js start 60 deployment
 then elevated `Restart-Service -Name LennartWeb` in a bounded transient operator
 PowerShell job (not a Scheduled Task). Restart and subsequent Running waits are
 bounded at 60 seconds each. It polls `/apphealth` for at most 120 seconds using
-`.env` `PORT` or the actual `app.js` default 8080, after excluding known overrides.
+`.env` `PORT` or the actual `app.js` default 8080, after checking known overrides.
 Invalid/ambiguous ports stop preflight; an HTTP 200 alone is insufficient without
 the expected readiness JSON. It changes no WinSW settings and restarts no workers.
 
@@ -160,6 +195,9 @@ also print a safe code (`ming_auth_failed`, `ming_capability_missing`,
   secret. A clean target checkout may run the helper again while both folders
   remain absent. Unexpected WinSW launch/override or Node version needs inspection
   and a separately reviewed change, not an automatic install/config edit.
+  A contextual operator mismatch is a stop for that operator environment, not
+  evidence that the LocalSystem service needs editing. Matching ordinary inherited
+  configuration is preserved; loader controls never receive that exception.
 - During/after creation: leave the minimal protected directories in place. A
   parent-only failure writes no private data. Inspect the printed stage and exact
   two paths explicitly before any separately reviewed resumption. The helper has
@@ -193,7 +231,16 @@ Gateway secret rotation, batch changes or global-admin changes are part of relea
 
 ## Source validation and limitations
 
-Validation on the source host (Node 24.22.1; no host upgrade performed):
+Matching-environment compatibility fix: **122 helper tests passed**. The focused
+run below passed **167 tests**, with four native Windows tests skipped, on Node
+24.22.1. JavaScript syntax and `git diff --check` passed. No full-suite rerun or
+production operation was performed for this helper-only change.
+
+```sh
+npm test -- tests/unit/experimentalModelsRelease.test.js tests/unit/experimentalModelsStorageConfig.test.js tests/unit/gptImageWindowsStorage.test.js --coverage=false --runInBand
+```
+
+Original validation on the source host (Node 24.22.1; no host upgrade performed):
 58 helper tests passed; the focused lab/storage/maintenance run passed 403 tests,
 and the shared storage/delivery follow-up passed 80. The full suite passed with
 `npm test -- --maxWorkers=2 --workerIdleMemoryLimit=512MB`: **450 suites / 6,435
