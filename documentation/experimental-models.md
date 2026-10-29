@@ -3,18 +3,24 @@
 ## Delivery status
 
 `/admin/experimental-models` is the permanent admin Tools entry. The implemented
-adapters support all seven verified WeVis tasks and reference-free Ming
-`VOICE_DESIGN` / `FREEFORM`. Forms, private inputs/results, asynchronous Site jobs,
+adapters support all seven verified WeVis tasks and all seven Ming tasks. Forms,
+private inputs/results, asynchronous Site jobs,
 polling, request/response inspectors, audio playback/download, optional region
 overlays, session clear and absolute expiry are implemented and tested locally.
 These are experimental integrations, not live model qualification.
 
 Ming reference-conditioned `TTS`, `MULTILINGUAL`, `BASIC`, `EMOTION` and `DIALECT`
-remain disabled. The UI contains a disabled reference upload/transcript/consent
-and controls draft. **The one-shot ephemeral reference endpoint contract is still
-required.** Site never registers persistent voices, lists the private catalog,
-accepts existing voice IDs or deletes voices. No temporary Gateway reference
-cleanup claim is made. There is no task named `CLONE`.
+are implemented, with a runtime gate requiring Site credentials and Gateway
+`ephemeral_reference.version === 1`. The supplied contract is Gateway commit
+`0a1b33ba6d357c1c2a896ffe444b82f1f85e147c`, documented there in
+`documentation/gateway/ming-ephemeral-reference.md`. **Both Gateway and Ming worker
+must be updated; that deployment is not part of this change.** Missing advertisement
+or HTTP 404 means unsupported Gateway; HTTP 501 means worker update required.
+Reference-free tasks remain available independently of this gate.
+
+Site never registers persistent voices, lists the private catalog, accepts existing
+voice IDs or deletes voices. There is no task named `CLONE`, podcast generation,
+speaker-embedding operation or multilingual control/tag support.
 
 The supplied verified Gateway contracts are the implementation authority. No live
 Gateway fetch, inference, GPU operation, deployment, database mutation or personal
@@ -39,11 +45,17 @@ sample was needed for this source/mocked-test phase.
   sides 32–16384, aspect ratio ≤200, ten-second decode limit. Sharp applies EXIF
   orientation, converts to RGB, strips metadata and re-encodes PNG without resizing.
   The PNG must also fit 8 MiB. TIFF/BMP/GIF/PDF/SVG, URLs and base64 are not accepted.
+- References: exactly one WAV part on the Site upload route, at most 6 MiB plus
+  8 KiB multipart overhead. Content must be PCM16LE mono/stereo, 16–48 kHz, 1–30
+  seconds. RIFF size, chunks, format, byte rate, alignment, duration and truncation
+  are checked; a `.wav` filename alone is insufficient. No automatic MP3 conversion
+  or recording. Transcript and consent are submitted separately with each run.
 - Quotas: eight files/results and eight jobs per session; 32 MiB/session,
   64 MiB/admin, 256 MiB/global; two sessions/admin, sixteen global. Queued/active jobs
   reserve maximum result bytes and a file slot. All accounts/logins count. Manifests
-  are capped at 256 KiB; requests/diagnostics are bounded. Reference uploads consume
-  no storage because their adapter is disabled.
+  are capped at 256 KiB. Actual manifest bytes (including sanitized prompts and
+  transcripts) count toward quotas, with 2 KiB reserved for terminal job metadata
+  growth. References, raw JSON and WAV results all count, including across restarts.
 - Storage: `private_data/experimental-models`, outside all static mounts, UUID names,
   0700 directories/0600 files, ancestor/ownership/symlink checks, bounded single-link
   reads and atomic synced manifests. No original filenames or browser paths persisted.
@@ -106,7 +118,9 @@ failed raw model output, so the lab does not pretend it exists.
 
 ## Verified Ming boundary and configuration
 
-Set `MING_ADMIN_TOKEN` on the **Site server** when provisioned. It is sent solely as
+Set `MING_ADMIN_TOKEN` privately on the **Site server**, matching the existing
+Gateway Ming credential. Never copy the value into the repository or browser.
+It is sent solely as
 `X-Ming-Token` on `/tts/ming/*` requests; never substitute `LLM_ADMIN_TOKEN`, the
 batch token or an API key entered in the browser. No usable default exists. Missing
 Ming configuration returns 503 before any network request, including discovery.
@@ -115,7 +129,7 @@ belongs in docs or git.
 
 Reuse `AI_GATEWAY_BASE_URL` (existing default `http://192.168.0.20:8080`). It must be
 an HTTP(S) origin with no embedded credentials, path, query or fragment. The new
-`EXPERIMENTAL_MODELS_TIMEOUT_MS` defaults to 2,000,000 ms; allowed 1,800,000–2,400,000.
+`EXPERIMENTAL_MODELS_TIMEOUT_MS` defaults to 2,000,000 ms; allowed 2,000,000–2,400,000.
 It bounds the complete outbound request, including connection/queue/preparation/
 inference/read, alongside axios byte limits. A 900-second queue plus 120-second
 preparation plus 630-second upstream budget and cleanup are why a two-minute proxy
@@ -133,14 +147,68 @@ no browser request must stay open for inference.
   Text accepts only the fourteen documented case-sensitive tags, inserted at cursor
   by UI buttons. Unknown/malformed square brackets fail. Inactive fields are omitted.
 
-Reference draft documents the future requirements without forwarding any upload:
-TTS zh/en no controls; MULTILINGUAL ja/ko/de/fr/es no tags/controls; BASIC zh/en a
-nonempty subset of speed/pitch/volume; EMOTION zh/en emotion; DIALECT zh only dialect.
-Exact Chinese values are preserved behind translated UI labels: speed 慢速/中速/快速,
-pitch and volume 低/中/高; emotion 高兴/悲伤/愤怒/恐惧/厌恶/惊讶/中性; dialect
-`chuanyu dialect` / `cantonese`. No mixed task controls or arbitrary reference IDs.
-The draft WAV/transcript/consent limits reflect the supplied existing reference
-format, **not** a claim that the forthcoming multipart contract is implemented.
+`POST /tts/ming/tasks/ephemeral` has exactly four multipart parts, serialized by
+Site with a library-generated boundary and known bounded Content-Length:
+
+| Part | Contract |
+| --- | --- |
+| `file` | Validated owned WAV bytes; fixed transport filename `reference.wav`, never a Site ID or path |
+| `request` | UTF-8 JSON **text part**, ≤16,384 bytes; only `task`, `text`, `language`, `controls`, `max_decode_steps` |
+| `transcript` | Nonblank, ≤2048 Unicode characters AND ≤8192 UTF-8 bytes; no angle brackets or controls except newline/tab |
+| `consent` | Text exactly `true`, derived from the user's affirmative unchecked-by-default checkbox |
+
+Whole Gateway multipart body is ≤6,320,128 bytes. Gateway upload read timeout is
+30 seconds and its pending ephemeral limit is four, including queued requests;
+Site still forwards only one job globally. Site validates task JSON before admission
+and before serialization. The `fileId` in the browser's Site request is only a lookup
+in that same account, login and test session. It never enters Gateway JSON. The
+bounded private file is read through a checked handle; no external URL/path or
+cross-session asset can select a source. Generated audio may be downloaded and
+manually uploaded if it fits the reference limits; affirmative consent is still needed.
+
+| Task | Languages | Controls |
+| --- | --- | --- |
+| `TTS` (default) | zh/en | None |
+| `MULTILINGUAL` | ja/ko/de/fr/es | None; no speech tags |
+| `BASIC` | zh/en | At least one of speed/pitch/volume |
+| `EMOTION` | zh/en | Exactly emotion |
+| `DIALECT` | zh | Exactly dialect |
+
+Explicit language and nonblank text ≤500 are required. Decode steps are integer
+8–400, default 200; booleans are rejected. The existing zh/en tag rules also apply.
+Exact enum values behind translated UI labels: speed 慢速/中速/快速; pitch and volume
+低/中/高; emotion 高兴/悲伤/愤怒/恐惧/厌恶/惊讶/中性; dialect `chuanyu dialect` /
+`cantonese`. Unknown keys, mixed controls, instructions, `reference_id`, `voice_id`,
+`reference_language`, URLs and paths are rejected. `VOICE_DESIGN` and `FREEFORM`
+remain JSON-only and reject reference inputs. There is no persistent fallback.
+
+Fictional Site run (IDs are placeholders from an owned upload/session; include the
+current login cookie and shared `X-CSRF-Token`, never a Ming token):
+
+```http
+POST /admin/experimental-models/api/sessions/11111111-1111-4111-8111-111111111111/experiments/ming-tts/runs
+Content-Type: application/json
+
+{"task":"BASIC","language":"en","text":"Synthetic demonstration.","controls":{"speed":"慢速"},"max_decode_steps":200,"fileId":"22222222-2222-4222-8222-222222222222","transcript":"Synthetic reference.","consent":true}
+```
+
+After scope and capability checks, the complete logical Gateway form is:
+
+```text
+POST <server-configured AI_GATEWAY_BASE_URL>/tts/ming/tasks/ephemeral
+X-Ming-Token: <server-injected; never shown in inspectors>
+Content-Type: multipart/form-data; boundary=<library-generated>
+Content-Length: <computed bounded byte count>
+
+file (filename=reference.wav, Content-Type=audio/wav): <owned validated WAV bytes>
+request (text): {"task":"BASIC","text":"Synthetic demonstration.","language":"en","controls":{"speed":"慢速"},"max_decode_steps":200}
+transcript (text): Synthetic reference.
+consent (text): true
+```
+
+This example's consent represents an explicit user action, not a default. Request
+inspectors show sanitized structured field values and WAV metadata, never binary,
+base64, credentials or filesystem paths. Failed responses never become WAV files.
 
 Success requires HTTP 200, no-store, audio/wav and `X-Generation-Complete: true`.
 RIFF/WAVE length and chunks, PCM16LE mono, actual 16–48 kHz sample rate, positive
@@ -150,7 +218,7 @@ not partial success. No invented transcripts, model/latency headers, seed or str
 
 ## Discovery and inspectors
 
-The explicit availability buttons call public passive
+The explicit availability buttons call passive
 `GET /perception/wevisone-vl/capabilities` or `GET /tts/ming/capabilities`, then
 `GET /limits`. `/limits` never receives the Ming token. Discovery exposes available,
 recognized container state, optional-installation boolean, experimental status and
@@ -159,6 +227,15 @@ controls/tasks live in the replaceable registry; unknown provider fields never c
 UI operations. `runtime_verified` remains false: installation is not qualification.
 No private `/voices` catalog or `/queue`/`/gpu` inference is used. OCR model metadata
 is optional and is not fetched.
+
+Discovery has a bounded two-model, 60-second cache (including failures) with
+concurrent request coalescing; no periodic warm-up or inference. Ming configuration
+is checked before cache access. Reference admission and dispatch recheck capability
+support through that cache; browser controls only enable after a successful check.
+An unsupported backend, a failed availability check, supported-but-unavailable Ming,
+and a runtime job failure have distinct UI messages. HTTP 501 asks for the worker
+update and leaves other adapters usable. All controls remain experimentally
+unqualified until separately tested on the deployed runtime.
 
 Safe raw response headers: Content-Type, Content-Length, Cache-Control,
 X-Generation-Complete, and numeric Retry-After bounded to one day. No header dumps.
@@ -179,13 +256,25 @@ be distinguished), `succeeded`, `failed`, `cancelled` (never forwarded), `interr
 position, progress, active-cancel endpoint, GPU-free badge or release claim exists.
 
 Clear returns 200 when removed or **202 deletePending** when leases remain. Browser
-polls the owned session list until it disappears. Busy sessions refuse new runs and
-uploads. Results received after clear/expiry are discarded. A restart cancels queued
+polls the owned session list until it disappears. Delete-pending sessions refuse new
+runs and uploads; a session with a pending job refuses another run. Results received
+after clear/expiry are discarded. A restart cancels queued
 jobs and records in-flight jobs interrupted/unknown, without replay; the old process
 has no remaining local writers/streams, so private files can be cleaned. Remote
 inference might still finish independently. Timeout/disconnection also gives unknown
 completion and no retry. It never proves the GPU stopped. No remote voices exist in
 this implementation to delete or reconcile.
+
+Gateway owns bounded request memory and the worker's private 0600 anonymous memfd.
+There is no registry entry, disk spool, transcript journal, scratch file or persistent
+voice artifact. Normal completion closes the descriptor; cancellation/failure retains
+ownership for reclamation. Unknown termination can leave cleanup pending, with no
+hard memory-erasure deadline. HTTP 200 and Site clear do not prove GPU shutdown,
+immediate remote cleanup or secure forensic erasure. Site deletes its own WAV
+references, manifests (prompts/transcripts/job records), raw results and outputs when
+local leases close. Browser clear removes drafts, consent and media sources too; no
+object URLs, localStorage or permanent history are used. Logout denies access and
+queued dispatch; inaccessible data still expires under the same 24-hour policy.
 
 ## Routes
 
@@ -200,12 +289,26 @@ private/no-store policy and owner+login scope on objects:
 | GET / POST | `/api/sessions` | List / create owned sessions |
 | GET / DELETE | `/api/sessions/:id` | Inspect / clear (200 or 202 pending) |
 | POST | `/api/sessions/:id/files` | Private image staging |
+| POST | `/api/sessions/:id/references` | Private PCM16 WAV staging, one `file` part |
 | GET | `/api/sessions/:id/files/:fileId` | Private PNG/JSON/WAV stream/download |
 | POST | `/api/sessions/:id/experiments/:experimentId/runs` | Strict task JSON → 202 owned job |
 | GET | `/api/sessions/:id/jobs/:jobId` | Owned job state and sanitized inspector metadata |
 
 Unknown experiments/routes/fields/query parameters and guessed endpoint controls
 fail closed. No voice catalog, registration, delete, client proxy or active cancel route.
+
+## Replacing or removing models
+
+Keep the permanent navigation and lab page. `services/experimentalModels/registry.js`
+is the admission/catalog authority: remove an entry to deny new runs/discovery and
+hide its form, or replace the entry and its fixed Gateway path, parser and renderer
+contract. Reuse the existing `wevis`/`audio` form renderer when its semantics match;
+new semantics require a reviewed adapter rather than arbitrary provider metadata.
+Update the model enum/recovery schema in `policy.js` when IDs change, account for
+existing sessions, and run the contract, HTTP lifecycle and DOM suites. Drain work
+and clear/expire sessions before removing support for their stored model IDs. Never
+turn a registry change into a client-controlled proxy or persistent voice operation.
+The permanent navigation/page shell does not need replacement when models rotate.
 
 ## Operations and validation
 
@@ -221,10 +324,10 @@ Gateway requests, plus real local Express HTTP and jsdom browser interactions.
 They cover form contracts, output schema/geometry, WAV metadata, auth/CSRF/IDOR,
 credentials/redaction, MIME/traversal/symlinks, quotas/reservations, global queue,
 clear/TTL/download leases, restart, revoked dispatch authority and inert rendering.
-No browser is connected in this environment, so visual screenshot validation is
-unavailable; Pug/DOM behavior is tested.
+Pug/DOM behavior is tested. Deployment and a human browser check remain separate
+from these local synthetic tests.
 
-## Validation recorded 2026-10-30
+## Foundation validation recorded 2026-10-30 (before ephemeral completion)
 
 - Focused lab plus authorization/CSRF/navigation/body/private-storage suites:
   **262 tests passed across 10 suites**.
@@ -243,3 +346,44 @@ unavailable; Pug/DOM behavior is tested.
   application startup, deployment, GPU operation or database mutation was performed.
 - Screenshot validation remains unavailable because no browser is connected;
   local Express HTTP, Pug rendering and jsdom interaction tests passed.
+
+
+## Ephemeral completion validation — 2026-10-30
+
+- Security review checked owner/login scope, CSRF before parsing, fixed outbound
+  operations, exact multipart fields, explicit consent, private-file permissions,
+  redaction, metadata/output quota reservations and clear/expiry/restart races.
+- Functionality review checked all 14 tasks, conditional languages/controls/tags,
+  passive v1 capability gating, unsupported Gateway versus worker-update errors,
+  binary WAV results, browser draft removal, and preserved WeVis behavior.
+- Final focused command covers all six `experimentalModels*.test.js` suites plus
+  `sessionCsrf`, `accountSurfacePolicy`, `accountSurfaceBody`,
+  `gptImageStorageReadiness` and `gptImageWindowsStorage`, with
+  `--coverage=false --maxWorkers=2`: **373 passed, 4 platform skips** (10 passing
+  suites and one skipped suite). The new ephemeral suite has 106 CPU-only cases.
+- Full coverage run in a source-only snapshot with no `.env` or runtime data:
+  **6,325 passed, 261 skipped, 5 failed**; 443 suites passed, 17 skipped, 5 failed.
+  Coverage thresholds passed. Only the same five missing ignored WAV-master checks
+  listed above failed; no generated game assets or those tests were changed.
+  The final UI-only input/draft guards were subsequently covered by the complete
+  14-test DOM suite and the final focused run above.
+- Real Express HTTP exercised the actual router, session store, dispatch authority,
+  CSRF middleware, private storage and worker queue against a localhost mock Gateway
+  that validates the four multipart parts and returns synthetic binary WAV.
+  Successful references made zero voice-registry calls; clear removed all local
+  files/manifests and discarded late output after pending deletion.
+- Local headless Firefox 157 / geckodriver exercised capability enabling, BASIC
+  selection, exact request preview, unchecked consent and responsive layout against
+  mocked capability/session endpoints. Desktop and narrow layouts had no horizontal
+  overflow. Screenshots contain fictional IDs and synthetic text only:
+  [desktop reference form](assets/experimental-models/reference-desktop.png),
+  [narrow reference form](assets/experimental-models/reference-narrow.png).
+- `git diff --check` passed. No live Gateway calls, GPU jobs, production startup,
+  deployment, config-secret inspection or database mutation occurred.
+
+Deployment coordinator: update Gateway **and** Ming worker, deploy this Site code,
+set the private matching `MING_ADMIN_TOKEN`, verify the configured
+`AI_GATEWAY_BASE_URL`, then perform the consolidated human browser/runtime check.
+No database migration or dependency installation is needed. Until that deployment,
+reference controls remain capability-gated; reference-free Ming and WeVis retain
+independent operation. This source change has no remaining implementation blocker.

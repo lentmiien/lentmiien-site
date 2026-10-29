@@ -1,15 +1,15 @@
 const { fail } = require('./policy');
-const { parseInput, WEVIS_TASKS, TAGS, CONTROLS } = require('./contracts');
+const { parseInput, REFERENCE_TASKS, WEVIS_TASKS, TAGS, CONTROLS } = require('./contracts');
 const experiments = Object.freeze([
   { id: 'wevisone-vl', title: 'Tencent WeVisOne-VL-4B', status: 'implemented',
     capabilitySource: 'Passive Gateway capability check; installation is not runtime qualification.',
     warning: 'Experimental quality: the reported basic OCR test read OPEN as FEH.',
     deferred: 'No masks, matting, video, batch, segmentation or arbitrary prompts.', tasks: WEVIS_TASKS, renderer: 'wevis', serializer: 'wevis-multipart' },
-  { id: 'ming-tts', title: 'Ming-3.0-TTS-0.5B', status: 'reference_free',
+  { id: 'ming-tts', title: 'Ming-3.0-TTS-0.5B', status: 'implemented',
     capabilitySource: 'Passive Gateway capability check; Ming requires server configuration.',
     warning: 'English voice design reportedly passed; other modes are not qualified here.',
-    deferred: 'Reference tasks await the ephemeral endpoint contract. No persistent voices are registered.',
-    tasks: ['VOICE_DESIGN', 'FREEFORM'], pendingTasks: ['TTS', 'MULTILINGUAL', 'BASIC', 'EMOTION', 'DIALECT'], tags: TAGS, controls: CONTROLS, renderer: 'audio', serializer: 'ming-json' },
+    deferred: 'Reference tasks require Gateway ephemeral reference v1 and an updated Ming worker. No persistent voices are registered.',
+    tasks: ['VOICE_DESIGN', 'FREEFORM', ...REFERENCE_TASKS], referenceTasks: REFERENCE_TASKS, tags: TAGS, controls: CONTROLS, renderer: 'audio', serializer: 'ming-json-or-ephemeral-multipart' },
 ]);
 function listExperiments() { return structuredClone(experiments); }
 function requireAdapter(id) {

@@ -3,6 +3,7 @@ const { constants } = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const sharp = require('sharp');
+const { validateWav } = require('./contracts');
 const { assertNoSymlinks, assertTrustedStorage, within } = require('../gptImageStorageService');
 const logger = require('../../utils/logger');
 const { ID, LIMITS, fail, sessionSchema } = require('./policy');
@@ -79,7 +80,7 @@ class LabStore {
         if (['queued', 'waiting_gateway'].includes(job.state)) {
           job.state = job.state === 'queued' ? 'cancelled' : 'interrupted';
           job.error = job.state === 'interrupted' ? 'Site restarted. Gateway completion is unknown; generation was not replayed.' : 'Site restarted before forwarding; local job cancelled.';
-          job.endedAt = this.now(); job.reservedBytes = 0;
+          job.endedAt = this.now(); job.reservedBytes = 0; job.reservedMetadataBytes = 0;
           this.logger.warning('Experimental Models job interrupted by Site restart; generation not replayed', { category: 'experimental_models' });
         }
       }
@@ -105,10 +106,12 @@ class LabStore {
   async save(session) {
     const directory = this.directory(session.id);
     await assertNoSymlinks(directory);
+    const serialized = JSON.stringify(session);
+    if (Buffer.byteLength(serialized) > 262144) throw new Error('Lab manifest exceeds limit');
     const temp = path.join(directory, `${randomUUID()}.tmp`);
     const handle = await fs.open(temp, 'wx', 0o600);
     try {
-      try { await handle.writeFile(JSON.stringify(session)); await handle.sync(); } finally { await handle.close(); }
+      try { await handle.writeFile(serialized); await handle.sync(); } finally { await handle.close(); }
       await fs.rename(temp, path.join(directory, 'session.json'));
     } catch (error) { await fs.rm(temp, { force: true }); throw error; }
   }
@@ -136,6 +139,7 @@ class LabStore {
       }
       const createdAt = this.now();
       const session = { version: 1, id: randomUUID(), owner, binding, createdAt, expiresAt: createdAt + this.limits.ttlMs, deletePending: false, assets: [], jobs: [] };
+      this.checkQuota(session, 0);
       await fs.mkdir(this.directory(session.id), { mode: 0o700 });
       this.sessions.set(session.id, session);
       try { await this.save(session); } catch (error) { session.deletePending = true; throw error; }
@@ -169,19 +173,22 @@ class LabStore {
     }
   }
   sweep() { return this.exclusive(() => this.sweepUnlocked()); }
-  upload(owner, binding, id, file) {
+  upload(owner, binding, id, file, reference = false) {
     return this.exclusive(async () => {
       const session = this.owned(owner, binding, id);
-      if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) fail('invalid_file', 400, 'Choose one PNG, JPEG or WebP image.');
+      if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) fail('invalid_file', 400, 'Choose one supported file.');
       if (file.buffer.length > this.limits.fileBytes) fail('file_limit', 413, 'Image exceeds 8 MiB.');
       const formats = { 'image/png': ['png', /\.png$/i], 'image/jpeg': ['jpeg', /\.jpe?g$/i], 'image/webp': ['webp', /\.webp$/i] };
-      const expected = formats[file.mimetype];
+      const expected = reference ? (['audio/wav', 'audio/x-wav', 'audio/wave'].includes(file.mimetype) ? ['wav', /\.wav$/i] : null) : formats[file.mimetype];
       if (!expected || typeof file.originalname !== 'string' || file.originalname.length > 200 || /[\\/\x00-\x1f]/.test(file.originalname) || !expected[1].test(file.originalname)) {
-        fail('invalid_file', 400, 'Image type, filename and content must match.');
+        fail('invalid_file', 400, 'File type, filename and content must match.');
       }
       if (session.assets.length + session.jobs.filter(j => j.reservedBytes).length >= this.limits.sessionFiles) fail('file_count', 429, 'Session file limit reached.');
-      let bytes, metadata;
-      try {
+      let bytes, metadata, audio;
+      if (reference) {
+        audio = validateWav(file.buffer, { reference: true });
+        bytes = file.buffer;
+      } else try {
         const image = sharp(file.buffer, { limitInputPixels: this.limits.maxPixels, failOn: 'warning', animated: true }).timeout({ seconds: 10 });
         metadata = await image.metadata();
         if (metadata.format !== expected[0] || (metadata.pages || 1) !== 1 || !metadata.width || !metadata.height
@@ -191,10 +198,11 @@ class LabStore {
         bytes = normalized.data; metadata = normalized.info; // EXIF orientation before stripping metadata; coordinates match preview.
       } catch (_) { fail('invalid_image', 400, 'Use a valid single-frame image, 32–16384 pixels per side, at most 16 million pixels and aspect ratio 200.'); }
       if (bytes.length > this.limits.fileBytes) fail('file_limit', 413, 'Normalized image exceeds 8 MiB.');
-      this.checkQuota(session, bytes.length);
+      this.checkQuota(session, bytes.length + 512);
       // TTL may have elapsed during decode. Clear and upload share this lock.
       this.owned(owner, binding, id);
-      const asset = { id: randomUUID(), mime: 'image/png', bytes: bytes.length, width: metadata.width, height: metadata.height };
+      const asset = { id: randomUUID(), mime: reference ? 'audio/wav' : 'image/png', bytes: bytes.length,
+        ...(reference ? { audio } : { width: metadata.width, height: metadata.height }) };
       const filePath = path.join(this.directory(id), `${asset.id}.${extension(asset)}`);
       const handle = await fs.open(filePath, 'wx', 0o600);
       // Reserve quota before I/O so write/flush/close failures cannot leave an
@@ -210,9 +218,10 @@ class LabStore {
       return { ...asset };
     });
   }
-  usage(session) { return session.assets.reduce((sum, asset) => sum + asset.bytes, 0) + session.jobs.reduce((sum, job) => sum + job.reservedBytes, 0); }
+  usage(session) { return Buffer.byteLength(JSON.stringify(session)) + session.assets.reduce((sum, asset) => sum + asset.bytes, 0) + session.jobs.reduce((sum, job) => sum + job.reservedBytes + (job.reservedMetadataBytes || 0), 0); }
   checkQuota(session, bytes) {
     const sessions = [...this.sessions.values()];
+    if (!this.sessions.has(session.id)) sessions.push(session);
     if (this.usage(session) + bytes > this.limits.sessionBytes
       || sessions.filter(s => s.owner === session.owner).reduce((sum, s) => sum + this.usage(s), 0) + bytes > this.limits.userBytes
       || sessions.reduce((sum, s) => sum + this.usage(s), 0) + bytes > this.limits.globalBytes) fail('storage_limit', 429, 'Test storage quota reached. Clear test data first.');
@@ -225,7 +234,7 @@ class LabStore {
   cancelQueued(session) {
     this.onSessionClosing?.(session.id);
     for (const job of session.jobs) if (job.state === 'queued') {
-      job.state = 'cancelled'; job.endedAt = this.now(); job.reservedBytes = 0;
+      job.state = 'cancelled'; job.endedAt = this.now(); job.reservedBytes = 0; job.reservedMetadataBytes = 0;
       job.error = 'Local job cancelled before forwarding to Gateway.';
     }
   }

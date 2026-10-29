@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const { ID, fail } = require('./policy');
 
+const REFERENCE_TASKS = ['TTS', 'MULTILINGUAL', 'BASIC', 'EMOTION', 'DIALECT'];
 const WEVIS_TASKS = ['ocr', 'detection', 'referring', 'point', 'count_box', 'count_point', 'ocr_grounding'];
 const TAGS = ['Breathing', 'Cough', 'Sigh', 'Laughter', 'Surprise-ah', 'Surprise-oh', 'Dissatisfaction-hnn', 'Uhm', 'Confirmation-en', 'Question-ei', 'Question-ah', 'Question-en', 'Question-oh', 'Question-huh'];
 const CONTROLS = { speed: ['慢速', '中速', '快速'], pitch: ['低', '中', '高'], volume: ['低', '中', '高'],
@@ -11,7 +12,10 @@ const inputText = max => z.string().max(max).refine(value => !/[<>\x00-\x08\x0b-
 const wevisInput = z.object({ fileId: z.string().regex(ID), task: z.enum(WEVIS_TASKS), query: inputText(1024).default(''),
   max_new_tokens: z.number().int().min(1).max(4096).default(1024) }).strict().refine(value => value.task === 'ocr' ? value.query === '' : value.query.length > 0);
 const mingInput = z.object({ task: z.enum(['VOICE_DESIGN', 'FREEFORM', 'TTS', 'MULTILINGUAL', 'BASIC', 'EMOTION', 'DIALECT']).default('TTS'),
-  text: inputText(500).refine(Boolean), language: z.enum(['zh', 'en', 'ja', 'ko', 'de', 'fr', 'es']), reference_id: z.null().optional(),
+  text: inputText(500).refine(Boolean), language: z.enum(['zh', 'en', 'ja', 'ko', 'de', 'fr', 'es']), fileId: z.string().regex(ID).optional(),
+  transcript: z.string().refine(value => Array.from(value).length <= 2048 && Buffer.byteLength(value, 'utf8') <= 8192
+    && !/[<>\x00-\x08\x0b-\x1f\x7f]/.test(value)).transform(value => value.trim()).refine(Boolean).optional(),
+  consent: z.literal(true).optional(),
   instruction: inputText(512).nullable().optional(), controls: z.object({ style: inputText(512),
     ...Object.fromEntries(Object.entries(CONTROLS).map(([key, values]) => [key, z.enum(values)])) }).partial().strict().default({}),
   max_decode_steps: z.number().int().min(8).max(400).default(200) }).strict();
@@ -31,9 +35,11 @@ function parseInput(model, input) {
     const allowed = { TTS: [], MULTILINGUAL: [], BASIC: ['speed', 'pitch', 'volume'], EMOTION: ['emotion'], DIALECT: ['dialect'] }[value.task];
     const languages = value.task === 'MULTILINGUAL' ? ['ja', 'ko', 'de', 'fr', 'es'] : value.task === 'DIALECT' ? ['zh'] : ['zh', 'en'];
     if (!languages.includes(value.language) || keys.some(key => !allowed.includes(key)) || (allowed.length && !keys.length)
-      || (input.instruction !== undefined && input.instruction !== null)) fail('invalid_fields', 422, 'Invalid language or mixed controls for this reference task.');
-    fail('reference_pending', 503, 'Reference-conditioned tasks await the ephemeral reference endpoint. No voice is registered.');
+      || input.instruction !== undefined || !value.fileId || !value.transcript || value.consent !== true) fail('invalid_fields', 422, 'Invalid language or mixed controls for this reference task.');
+    return { task: value.task, text: value.text, language: value.language, controls: value.controls,
+      max_decode_steps: value.max_decode_steps, fileId: value.fileId, transcript: value.transcript, consent: true };
   }
+  if (['fileId', 'transcript', 'consent'].some(key => input[key] !== undefined)) fail('invalid_fields', 422, 'Reference-free tasks do not accept reference inputs.');
   if (!['zh', 'en'].includes(value.language)) fail('invalid_fields', 422, 'Voice design and freeform support zh/en only.');
   const keys = Object.keys(value.controls);
   if (value.task === 'VOICE_DESIGN' ? !(keys.length === 1 && value.controls.style && !value.instruction) : !(keys.length === 0 && value.instruction)) {
@@ -77,25 +83,26 @@ function validateWevis(value, request, asset) {
   if (['count_box', 'count_point'].includes(data.task) && data.count !== data.regions.length) fail('invalid_response', 502, 'Gateway region count does not match.');
   return data;
 }
-function validateWav(bytes) {
-  const invalid = () => fail('invalid_audio', 502, 'Gateway returned invalid or incomplete PCM WAV audio.');
-  if (!Buffer.isBuffer(bytes) || bytes.length < 44 || bytes.length > 6291456 || bytes.toString('ascii', 0, 4) !== 'RIFF'
-    || bytes.toString('ascii', 8, 12) !== 'WAVE' || bytes.readUInt32LE(4) + 8 !== bytes.length) invalid();
+function validateWav(bytes, { reference = false } = {}) {
+  const invalid = () => fail(reference ? 'invalid_reference' : 'invalid_audio', reference ? 422 : 502,
+    reference ? 'Use a complete PCM16 WAV, mono/stereo, 16–48 kHz, 1–30 seconds, up to 6 MiB.' : 'Gateway returned invalid or incomplete PCM WAV audio.');
+  if (!Buffer.isBuffer(bytes) || bytes.length < 44 || bytes.length > 6291456 || bytes.toString('latin1', 0, 4) !== 'RIFF'
+    || bytes.toString('latin1', 8, 12) !== 'WAVE' || bytes.readUInt32LE(4) + 8 !== bytes.length) invalid();
   let fmt, dataSize, offset = 12;
   while (offset + 8 <= bytes.length) {
-    const type = bytes.toString('ascii', offset, offset + 4), length = bytes.readUInt32LE(offset + 4); offset += 8;
+    const type = bytes.toString('latin1', offset, offset + 4), length = bytes.readUInt32LE(offset + 4); offset += 8;
     if (offset + length > bytes.length) invalid();
     if (type === 'fmt ') {
-      if (fmt || length < 16) invalid();
+      if (fmt || length < 16 || length === 17 || (length >= 18 && length !== 18 + bytes.readUInt16LE(offset + 16))) invalid();
       fmt = { codec: bytes.readUInt16LE(offset), channels: bytes.readUInt16LE(offset + 2), sampleRate: bytes.readUInt32LE(offset + 4),
         byteRate: bytes.readUInt32LE(offset + 8), blockAlign: bytes.readUInt16LE(offset + 12), bitsPerSample: bytes.readUInt16LE(offset + 14) };
-    } else if (type === 'data') { if (dataSize !== undefined) invalid(); dataSize = length; }
+    } else if (type === 'data') { if (!fmt || dataSize !== undefined) invalid(); dataSize = length; }
     offset += length + length % 2;
   }
-  if (offset !== bytes.length || !fmt || !dataSize || fmt.codec !== 1 || fmt.channels !== 1 || fmt.bitsPerSample !== 16
-    || fmt.sampleRate < 16000 || fmt.sampleRate > 48000 || fmt.blockAlign !== 2 || fmt.byteRate !== fmt.sampleRate * 2 || dataSize % 2) invalid();
+  if (offset !== bytes.length || !fmt || !dataSize || fmt.codec !== 1 || !(reference ? [1, 2] : [1]).includes(fmt.channels) || fmt.bitsPerSample !== 16
+    || fmt.sampleRate < 16000 || fmt.sampleRate > 48000 || fmt.blockAlign !== fmt.channels * 2 || fmt.byteRate !== fmt.sampleRate * fmt.blockAlign || dataSize % fmt.blockAlign) invalid();
   const durationSeconds = dataSize / fmt.byteRate;
-  if (durationSeconds <= 0 || durationSeconds > 60) invalid();
-  return { sampleRate: fmt.sampleRate, channels: 1, bitsPerSample: 16, durationSeconds };
+  if (durationSeconds <= 0 || durationSeconds > (reference ? 30 : 60) || (reference && durationSeconds < 1)) invalid();
+  return { sampleRate: fmt.sampleRate, channels: fmt.channels, bitsPerSample: 16, durationSeconds };
 }
-module.exports = { WEVIS_TASKS, TAGS, CONTROLS, parseInput, validateWevis, validateWav };
+module.exports = { REFERENCE_TASKS, WEVIS_TASKS, TAGS, CONTROLS, parseInput, validateWevis, validateWav };

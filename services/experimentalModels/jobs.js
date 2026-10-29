@@ -3,7 +3,7 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const { fail, LabError } = require('./policy');
 const { requireAdapter } = require('./registry');
-const { LabGateway, PATHS } = require('./gateway');
+const { LabGateway, PATHS, mingReferenceRequest } = require('./gateway');
 const logger = require('../../utils/logger');
 
 async function authorizedWithin(check) {
@@ -29,19 +29,24 @@ class LabJobs {
   async submit(owner, binding, sessionId, model, body, authorize) {
     const adapter = requireAdapter(model), input = adapter.parse(body);
     this.gateway.config(model); // Missing credentials fail before admission or any network request.
+    if (model === 'ming-tts' && input.fileId) await this.gateway.requireReference();
     const job = await this.store.exclusive(async () => {
       const session = this.store.owned(owner, binding, sessionId);
       if (this.pending.length >= this.store.limits.pendingJobs) fail('queue_full', 429, 'Site experiment queue is full. Retry manually later.');
       if (session.jobs.some(j => ['queued', 'waiting_gateway'].includes(j.state))) fail('session_busy', 409, 'This session already has a pending experiment.');
       if (session.jobs.length >= this.store.limits.sessionJobs || session.assets.length >= this.store.limits.sessionFiles) fail('job_limit', 429, 'Session result/job limit reached. Clear test data first.');
       if (model === 'wevisone-vl' && !session.assets.some(a => a.id === input.fileId && a.mime === 'image/png')) fail('not_found', 404, 'Staged image not found.');
-      this.store.checkQuota(session, adapter.resultBytes);
+      if (model === 'ming-tts' && input.fileId && !session.assets.some(a => a.id === input.fileId && a.mime === 'audio/wav' && a.audio)) fail('not_found', 404, 'Staged reference not found.');
       const asset = input.fileId && session.assets.find(a => a.id === input.fileId);
-      const preview = { method: 'POST', endpoint: PATHS[model],
+      const preview = model === 'ming-tts' && asset ? { method: 'POST', endpoint: '/tts/ming/tasks/ephemeral', contentType: 'multipart/form-data',
+        file: { mime: asset.mime, bytes: asset.bytes, audio: asset.audio },
+        fields: { request: mingReferenceRequest(input), transcript: input.transcript, consent: input.consent }
+      } : { method: 'POST', endpoint: PATHS[model],
         ...(asset ? { contentType: 'multipart/form-data', file: { ...asset }, fields: { task: input.task, query: input.query, max_new_tokens: input.max_new_tokens } }
           : { contentType: 'application/json', json: input }) };
-      const value = { id: randomUUID(), model, state: 'queued', createdAt: this.store.now(), reservedBytes: adapter.resultBytes,
+      const value = { id: randomUUID(), model, state: 'queued', createdAt: this.store.now(), reservedBytes: adapter.resultBytes, reservedMetadataBytes: 2048,
         request: JSON.stringify(preview, (_key, value) => typeof value === 'string' ? this.gateway.sanitize(value) : value, 2), ...(input.fileId ? { fileId: input.fileId } : {}) };
+      this.store.checkQuota(session, adapter.resultBytes + value.reservedMetadataBytes + Buffer.byteLength(JSON.stringify(value)) + 64);
       session.jobs.push(value);
       try { await this.store.save(session); } catch (error) { session.deletePending = true; throw error; }
       this.pending.push({ owner, binding, sessionId, jobId: value.id, input, authorize });
@@ -71,9 +76,9 @@ class LabJobs {
           if (!job || job.state !== 'queued') return;
           this.store.lease(session.id); leased = true;
           if (job.fileId) {
-            const asset = session.assets.find(a => a.id === job.fileId && a.mime === 'image/png');
-            if (!asset) fail('not_found', 404, 'Staged image not found.');
-            source = { asset, bytes: await this.store.safeRead(this.store.directory(session.id), `${asset.id}.png`, this.store.limits.fileBytes) };
+            const asset = session.assets.find(a => a.id === job.fileId && a.mime === (job.model === 'ming-tts' ? 'audio/wav' : 'image/png'));
+            if (!asset) fail('not_found', 404, 'Staged source not found.');
+            source = { asset, bytes: await this.store.safeRead(this.store.directory(session.id), `${asset.id}.${asset.mime === 'audio/wav' ? 'wav' : 'png'}`, this.store.limits.fileBytes) };
           }
           job.state = 'waiting_gateway'; job.startedAt = this.store.now();
           // Persist uncertainty before forwarding. A restart never replays this job.
@@ -92,7 +97,7 @@ class LabJobs {
           try {
             try { await handle.writeFile(result.bytes); await handle.sync(); } finally { await handle.close(); }
           } catch (error) { session.deletePending = true; throw error; }
-          job.reservedBytes = 0;
+          job.reservedBytes = 0; job.reservedMetadataBytes = 0;
           Object.assign(job, { state: 'succeeded', endedAt: this.store.now(), resultId: asset.id, status: 200, headers: result.headers });
           if (result.mime === 'audio/wav') job.audio = result.metadata;
           try { await this.store.save(session); } catch (error) { session.deletePending = true; throw error; }
@@ -105,7 +110,7 @@ class LabJobs {
           const current = session?.jobs.find(j => j.id === entry.jobId);
           if (!current || current.state === 'cancelled') return;
           Object.assign(current, { state: (['completion_unknown', 'gateway_transport'].includes(safe.code) || [499, 504].includes(safe.gatewayStatus)) ? 'interrupted' : 'failed',
-            endedAt: this.store.now(), reservedBytes: 0, error: safe.message, code: safe.code, status: safe.gatewayStatus || safe.status,
+            endedAt: this.store.now(), reservedBytes: 0, reservedMetadataBytes: 0, error: safe.message, code: safe.code, status: safe.gatewayStatus || safe.status,
             headers: safe.safeHeaders || {} });
           await this.store.save(session);
         }, true);

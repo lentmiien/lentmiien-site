@@ -9,6 +9,8 @@ async function page(fetch) {
     csrfToken: 'A'.repeat(43), loggedIn: true, admin: true, permissions: [], htmlPaths: [], bookmarks: [],
   });
   dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://site.invalid/admin/experimental-models' });
+  dom.window.HTMLMediaElement.prototype.pause = jest.fn();
+  dom.window.HTMLMediaElement.prototype.load = jest.fn();
   dom.window.fetch = fetch;
   dom.window.eval(fs.readFileSync('public/js/experimental-models.js', 'utf8'));
   await settle();
@@ -34,7 +36,7 @@ test('working staging controls send header CSRF, refresh state, clear without ex
   expect(call[1].headers['X-CSRF-Token']).toBe('A'.repeat(43));
   expect(call[1].credentials).toBe('same-origin');
   expect(call[1].body).toBeUndefined();
-  expect(document.querySelector('.lab-reference fieldset').disabled).toBe(true);
+  expect(document.getElementById('ming-reference').disabled).toBe(true);
   Array.from(document.querySelectorAll('.lab-session button')).find(button => button.textContent.startsWith('Clear session')).click();
   await settle();
   expect(document.querySelectorAll('.lab-session')).toHaveLength(0);
@@ -130,4 +132,101 @@ test('pending deletion polls until gone and preserves typed forms while waiting'
   document.getElementById('ming-text').value = 'Keep this draft';
   pending = false; document.getElementById('lab-refresh').click(); await settle();
   expect(document.querySelector('.lab-session')).toBeNull(); expect(document.getElementById('ming-text').value).toBe('Keep this draft');
+});
+
+test('capability v1 enables all reference forms with exact conditional fields, languages, preview and explicit consent', async () => {
+  const asset = { id: '22222222-2222-4222-8222-222222222222', mime: 'audio/wav', bytes: 64044,
+    audio: { sampleRate: 16000, channels: 2, bitsPerSample: 16, durationSeconds: 1 } };
+  const fetch = jest.fn(async (url, options = {}) => response(url.endsWith('/capabilities') ? { available: true, referenceAdapter: 'available', ephemeral_reference: { version: 1 } }
+    : options.method ? {} : { sessions: [{ ...session, assets: [asset] }] }));
+  const document = await page(fetch);
+  document.querySelector('.lab-capabilities[data-model="ming-tts"]').click(); await settle();
+  for (const task of ['TTS', 'MULTILINGUAL', 'BASIC', 'EMOTION', 'DIALECT']) {
+    expect(document.querySelector(`option[value="${task}"]`).disabled).toBe(false);
+    const select = document.getElementById('ming-task'); select.value = task; select.dispatchEvent(new dom.window.Event('change'));
+    expect(document.getElementById('ming-reference').disabled).toBe(false);
+    expect(document.getElementById('ming-style').disabled).toBe(true);
+    expect(document.getElementById('ming-instruction').disabled).toBe(true);
+    const languages = Array.from(document.getElementById('ming-language').options).map(option => option.value);
+    expect(languages).toEqual(task === 'MULTILINGUAL' ? ['ja', 'ko', 'de', 'fr', 'es'] : task === 'DIALECT' ? ['zh'] : ['en', 'zh']);
+    expect(document.getElementById('ming-tag-field').hidden).toBe(task === 'MULTILINGUAL');
+    if (task === 'BASIC') document.getElementById('ming-speed').value = '慢速';
+    if (task === 'EMOTION') document.getElementById('ming-emotion').value = '高兴';
+    if (task === 'DIALECT') document.getElementById('ming-dialect').value = 'cantonese';
+    document.getElementById('ming-text').value = 'Synthetic text'; document.getElementById('ming-transcript').value = 'Synthetic transcript';
+    document.getElementById('ming-consent').checked = false;
+    const before = fetch.mock.calls.filter(([, o]) => o.method === 'POST').length;
+    document.getElementById('lab-ming').dispatchEvent(new dom.window.Event('submit', { cancelable: true })); await settle();
+    expect(fetch.mock.calls.filter(([, o]) => o.method === 'POST')).toHaveLength(before);
+    document.getElementById('ming-consent').checked = true;
+    document.getElementById('lab-ming').dispatchEvent(new dom.window.Event('submit', { cancelable: true })); await settle();
+    const posted = JSON.parse(fetch.mock.calls.filter(([, o]) => o.method === 'POST').at(-1)[1].body);
+    expect(posted).toEqual({ task, text: 'Synthetic text', transcript: 'Synthetic transcript', fileId: asset.id, consent: true,
+      language: task === 'MULTILINGUAL' ? 'ja' : task === 'DIALECT' ? 'zh' : 'en',
+      controls: { BASIC: { speed: '慢速' }, EMOTION: { emotion: '高兴' }, DIALECT: { dialect: 'cantonese' } }[task] || {}, max_decode_steps: 200 });
+  }
+  expect(document.getElementById('ming-reference-preview').src).toContain(`/sessions/${session.id}/files/${asset.id}`);
+  expect(document.getElementById('ming-reference-metadata').textContent).toContain('2 channel(s), PCM16, 16000 Hz');
+  document.getElementById('ming-file').dispatchEvent(new dom.window.Event('change'));
+  expect(document.getElementById('ming-consent').checked).toBe(false);
+});
+
+test.each(['unsupported', 'failed', 'unavailable'])('reference feature gate stays closed for %s backend', async kind => {
+  const fetch = jest.fn(async url => url.endsWith('/capabilities') ? kind === 'failed' ? { ok: false, json: async () => ({ error: 'Ming server credential missing.' }) }
+    : response({ available: kind !== 'unavailable', referenceAdapter: kind === 'unsupported' ? 'unsupported' : 'available' }) : response({ sessions: [] }));
+  const document = await page(fetch);
+  document.querySelector('.lab-capabilities[data-model="ming-tts"]').click(); await settle();
+  expect(document.querySelector('option[value="TTS"]').disabled).toBe(true);
+  expect(document.querySelector('option[value="VOICE_DESIGN"]').disabled).toBe(false);
+  expect(document.getElementById('ming-availability').textContent).toMatch(kind === 'unsupported' ? /Unsupported Gateway/ : kind === 'failed' ? /check failed/ : /currently unavailable/);
+});
+
+test('reference upload supplies one file, leaves consent unchecked, and clearing removes drafts and playback sources', async () => {
+  let removed = false;
+  const fetch = jest.fn(async (url, options = {}) => {
+    if (options.method === 'DELETE') removed = true;
+    return response(url.endsWith('/capabilities') ? { available: true, referenceAdapter: 'available' } : options.method ? {} : { sessions: removed ? [] : [session] });
+  });
+  const document = await page(fetch);
+  document.querySelector('.lab-capabilities[data-model="ming-tts"]').click(); await settle();
+  const task = document.getElementById('ming-task'); task.value = 'TTS'; task.dispatchEvent(new dom.window.Event('change'));
+  Object.defineProperty(document.getElementById('ming-upload'), 'files', { value: [new dom.window.File(['synthetic'], 'reference.wav', { type: 'audio/wav' })] });
+  document.getElementById('ming-upload-button').click(); await settle();
+  const call = fetch.mock.calls.find(([url]) => url.endsWith('/references'));
+  expect(Array.from(call[1].body.keys())).toEqual(['file']); expect(call[1].headers['Content-Type']).toBeUndefined();
+  expect(document.getElementById('ming-consent').checked).toBe(false);
+  document.getElementById('ming-text').value = 'Remove text'; document.getElementById('ming-transcript').value = 'Remove transcript';
+  document.getElementById('ming-consent').checked = true;
+  Array.from(document.querySelectorAll('.lab-session button')).find(button => button.textContent.startsWith('Clear session')).click(); await settle();
+  expect(document.getElementById('ming-text').value).toBe(''); expect(document.getElementById('ming-transcript').value).toBe('');
+  expect(document.getElementById('ming-consent').checked).toBe(false);
+  expect(document.getElementById('ming-reference-preview').hasAttribute('src')).toBe(false);
+  expect(document.getElementById('lab-ming').getAttribute('autocomplete')).toBe('off');
+});
+
+test('UI blocks empty BASIC controls and typed multilingual tags before posting', async () => {
+  const fetch = jest.fn(async url => response(url.endsWith('/capabilities') ? { available: true, referenceAdapter: 'available' } : { sessions: [session] }));
+  const document = await page(fetch);
+  document.querySelector('.lab-capabilities[data-model="ming-tts"]').click(); await settle();
+  for (const [task, text, error] of [['BASIC', 'hello', /at least one/], ['MULTILINGUAL', '[Uhm] hello', /accepts no tags/]]) {
+    const select = document.getElementById('ming-task'); select.value = task; select.dispatchEvent(new dom.window.Event('change'));
+    document.getElementById('ming-text').value = text; document.getElementById('ming-consent').checked = true;
+    document.getElementById('lab-ming').dispatchEvent(new dom.window.Event('submit', { cancelable: true })); await settle();
+    expect(document.getElementById('lab-status').textContent).toMatch(error);
+  }
+  expect(fetch.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
+});
+
+test('pagehide and expired authorization remove browser snapshots, drafts and inspectors', async () => {
+  let revoked = false;
+  const fetch = jest.fn(async () => revoked ? { ok: false, status: 401, json: async () => ({ error: 'Login required.' }) } : response({ sessions: [session] }));
+  const document = await page(fetch);
+  document.getElementById('ming-text').value = 'Private draft';
+  dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+  expect(document.getElementById('ming-text').value).toBe(''); expect(document.querySelector('.lab-session')).toBeNull();
+  document.getElementById('lab-refresh').click(); await settle();
+  expect(document.querySelector('.lab-session')).not.toBeNull();
+  document.getElementById('ming-transcript').value = 'Private transcript'; revoked = true;
+  document.getElementById('lab-refresh').click(); await settle();
+  expect(document.getElementById('ming-transcript').value).toBe(''); expect(document.querySelector('.lab-session')).toBeNull();
 });

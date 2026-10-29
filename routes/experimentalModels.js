@@ -40,7 +40,7 @@ function createRouter({ store = require('../services/experimentalModels'), gatew
     return res.render('admin_experimental_models', { pageTitle: 'Experimental Models', experiments: registry.listExperiments() });
   });
   router.use('/api', rateLimit({ windowMs: 60000, limit: 120, keyGenerator: req => req.labOwner, standardHeaders: 'draft-8', legacyHeaders: false }));
-  router.get('/api/experiments', (_req, res) => res.json({ stage: 'reference-free', experiments: registry.listExperiments(), limits: LIMITS }));
+  router.get('/api/experiments', (_req, res) => res.json({ stage: 'implemented', experiments: registry.listExperiments(), limits: LIMITS }));
   router.get('/api/experiments/:experimentId/capabilities', async (req, res) => {
     registry.requireAdapter(req.params.experimentId);
     res.json(await jobs.gateway.capabilities(req.params.experimentId));
@@ -83,33 +83,38 @@ function createRouter({ store = require('../services/experimentalModels'), gatew
     const result = await store.clear(req.labOwner, req.labBinding, req.params.id);
     res.status(result.deleted ? 200 : 202).json(result);
   });
-  const upload = multer({ storage: multer.memoryStorage(), preservePath: true,
-    limits: { fileSize: LIMITS.fileBytes, files: 1, fields: 0, parts: 1, fieldNameSize: 40, headerPairs: 20 } }).single('file');
-  router.post('/api/sessions/:id/files', mutations, async (req, res) => {
-    await store.get(req.labOwner, req.labBinding, req.params.id); // Ownership before allocating upload memory.
-    if (receivingUpload) fail('upload_busy', 429, 'Another upload is being processed. Retry shortly.');
-    const length = Number(req.get('content-length'));
-    if (!Number.isSafeInteger(length) || length <= 0 || req.get('transfer-encoding')) fail('length_required', 411, 'A bounded Content-Length is required.');
-    if (length > LIMITS.fileBytes + 8192) fail('file_limit', 413, 'Upload exceeds 8 MiB.');
-    if (!req.is('multipart/form-data')) fail('invalid_type', 415, 'Upload one multipart image file.');
-    receivingUpload = true;
-    try {
-      await new Promise((resolve, reject) => {
-        let settled = false;
-        const finish = error => {
-          if (settled) return;
-          settled = true; clearTimeout(timer); req.off('aborted', aborted);
-          error ? reject(error) : resolve();
-        };
-        const aborted = () => finish(new LabError('upload_interrupted', 400, 'Upload interrupted.'));
-        const timer = setTimeout(() => { finish(new LabError('upload_timeout', 408, 'Upload timed out.')); req.destroy(); }, 30000);
-        req.once('aborted', aborted);
-        upload(req, res, finish);
-      });
-      if (req.aborted) fail('upload_interrupted', 400, 'Upload interrupted.');
-      res.status(201).json(await store.upload(req.labOwner, req.labBinding, req.params.id, req.file));
-    } finally { if (req.file) req.file.buffer = undefined; receivingUpload = false; }
-  });
+  function uploadRoute(reference) {
+    const maxBytes = reference ? LIMITS.referenceBytes : LIMITS.fileBytes;
+    const upload = multer({ storage: multer.memoryStorage(), preservePath: true,
+      limits: { fileSize: maxBytes, files: 1, fields: 0, parts: 1, fieldNameSize: 40, headerPairs: 20 } }).single('file');
+    return async (req, res) => {
+      await store.exclusive(async () => { store.owned(req.labOwner, req.labBinding, req.params.id); }); // Deny closing sessions before allocating memory.
+      if (receivingUpload) fail('upload_busy', 429, 'Another upload is being processed. Retry shortly.');
+      const length = Number(req.get('content-length'));
+      if (!Number.isSafeInteger(length) || length <= 0 || req.get('transfer-encoding')) fail('length_required', 411, 'A bounded Content-Length is required.');
+      if (length > maxBytes + 8192) fail('file_limit', 413, reference ? 'Reference upload exceeds 6 MiB.' : 'Upload exceeds 8 MiB.');
+      if (!req.is('multipart/form-data')) fail('invalid_type', 415, 'Upload one multipart file.');
+      receivingUpload = true;
+      try {
+        await new Promise((resolve, reject) => {
+          let settled = false;
+          const finish = error => {
+            if (settled) return;
+            settled = true; clearTimeout(timer); req.off('aborted', aborted);
+            error ? reject(error) : resolve();
+          };
+          const aborted = () => finish(new LabError('upload_interrupted', 400, 'Upload interrupted.'));
+          const timer = setTimeout(() => { finish(new LabError('upload_timeout', 408, 'Upload timed out.')); req.destroy(); }, 30000);
+          req.once('aborted', aborted);
+          upload(req, res, finish);
+        });
+        if (req.aborted) fail('upload_interrupted', 400, 'Upload interrupted.');
+        res.status(201).json(await store.upload(req.labOwner, req.labBinding, req.params.id, req.file, reference));
+      } finally { if (req.file) req.file.buffer = undefined; receivingUpload = false; }
+    };
+  }
+  router.post('/api/sessions/:id/files', mutations, uploadRoute(false));
+  router.post('/api/sessions/:id/references', mutations, uploadRoute(true));
   const jsonParser = express.raw({ type: 'application/json', limit: 16384, inflate: false });
   const jsonBody = (req, res, next) => {
     const timer = setTimeout(() => { req.destroy(); }, 30000); timer.unref?.();
@@ -137,7 +142,7 @@ function createRouter({ store = require('../services/experimentalModels'), gatew
   router.use((_req, res) => res.status(404).json({ error: 'Lab route not found.' }));
   router.use((error, req, res, _next) => {
     const status = error instanceof LabError ? error.status : error instanceof multer.MulterError || error.type === 'entity.too.large' ? 413 : ['entity.parse.failed', 'encoding.unsupported'].includes(error.type) ? 400 : 503;
-    if (status >= 500 && !['contract_pending', 'reference_pending'].includes(error.code)) logger.error('Experimental Models operation failed; check Gateway configuration or private storage', { category: 'experimental_models', metadata: { status } });
+    if (status >= 500) logger.error('Experimental Models operation failed; check Gateway configuration or private storage', { category: 'experimental_models', metadata: { status } });
     if (res.headersSent) return res.destroy();
     if (error.safeHeaders?.['Retry-After']) res.set('Retry-After', error.safeHeaders['Retry-After']);
     if (!res.destroyed) res.status(status).json({ code: error instanceof LabError ? error.code : 'lab_unavailable',

@@ -174,7 +174,7 @@ describe('real Express route guards', () => {
   }
   test.each(['anonymous', 'family', 'user'])('denies %s on page, every API, upload, download and clear', async role => {
     for (const [method, url] of [['GET', ''], ['GET', '/api/experiments'], ['GET', '/api/sessions'], ['POST', '/api/sessions'],
-      ['GET', '/api/sessions/any'], ['POST', '/api/sessions/any/files'], ['GET', '/api/sessions/any/files/any'],
+      ['GET', '/api/sessions/any'], ['POST', '/api/sessions/any/files'], ['POST', '/api/sessions/any/references'], ['GET', '/api/sessions/any/files/any'],
       ['DELETE', '/api/sessions/any'], ['GET', '/api/sessions/any/jobs/any'], ['GET', '/api/experiments/ming-tts/capabilities'], ['POST', '/api/sessions/any/experiments/ming-tts/runs']]) {
       const response = await fetch(origin + url, { method, headers: { 'x-test-role': role } });
       expect(response.status).toBe(role === 'anonymous' ? 401 : 403);
@@ -230,7 +230,7 @@ describe('real Express route guards', () => {
   test('registry never loads models; unknown routes and guessed fields fail closed', async () => {
     const b = await browser(), s = await (await call(b, '/api/sessions', 'POST')).json();
     const metadata = await (await call(b, '/api/experiments')).json();
-    expect(metadata.stage).toBe('reference-free');
+    expect(metadata.stage).toBe('implemented');
     expect(metadata.experiments).toHaveLength(2);
     for (const experiment of metadata.experiments) {
       expect(experiment.tasks.length).toBeGreaterThan(0);

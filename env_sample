@@ -329,5 +329,5 @@ PACKING_CATALOG_SOURCE_OWNER_ID=
 # Set on the Site server; forwarded only as X-Ming-Token on /tts/ming/* routes.
 MING_ADMIN_TOKEN=
 # Total outbound request deadline (includes queue, preparation and inference).
-# Allowed range: 1800000..2400000 ms. No automatic retries or active cancellation.
+# Allowed range: 2000000..2400000 ms. No automatic retries or active cancellation.
 EXPERIMENTAL_MODELS_TIMEOUT_MS=2000000

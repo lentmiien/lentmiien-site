@@ -4,6 +4,8 @@ block styles
   link(rel='stylesheet', href='/css/experimental-models.css')
 
 block content
+  - const wevisModel = experiments.find(model => model.renderer === 'wevis');
+  - const mingModel = experiments.find(model => model.renderer === 'audio');
   main.experimental-lab(data-csrf=csrfToken)
     h1 Experimental Models
     p.lab-warning Experimental outputs require inspection. Installation is not runtime qualification. Site elapsed time includes queueing and loading; it is not a model benchmark.
@@ -31,7 +33,7 @@ block content
       select#lab-session
       p Images: PNG, JPEG or WebP only, up to 8 MiB, 16 million pixels, 32–16384 pixels per side and aspect ratio ≤200. Site applies EXIF orientation, converts to RGB and stores a metadata-free PNG without resizing. The normalized file must also fit 8 MiB. TIFF and BMP are not accepted by this Site adapter.
       .lab-models
-        form#lab-wevis
+        form#lab-wevis(autocomplete='off', hidden=!wevisModel, data-model=wevisModel && wevisModel.id)
           h3 WeVis visual perception
           label(for='wevis-file') Staged image
           select#wevis-file(required)
@@ -55,21 +57,22 @@ block content
             summary Site request inspector (no transport headers)
             pre#wevis-request
           button(type='submit') Run WeVis
-        form#lab-ming
+        form#lab-ming(autocomplete='off', hidden=!mingModel, data-model=mingModel && mingModel.id)
           h3 Ming speech generation
           label(for='ming-task') Task
           select#ming-task
             option(value='VOICE_DESIGN') Voice design
             option(value='FREEFORM') Freeform instruction
             each task in ['TTS', 'MULTILINGUAL', 'BASIC', 'EMOTION', 'DIALECT']
-              option(value=task, disabled)= task + ' — reference endpoint pending'
+              option(value=task, disabled)= task + ' — check availability first'
+          p#ming-availability(role='status') Reference tasks need a successful availability check: Gateway ephemeral reference v1 and Site Ming credentials.
           label(for='ming-language') Language (required)
           select#ming-language(required)
             option(value='en') English (en)
             option(value='zh') Chinese (zh)
           label(for='ming-text') Speech text (up to 500 characters)
           textarea#ming-text(maxlength='500', rows='5', required)
-          details
+          details#ming-tag-field
             summary Insert a speech tag at the cursor
             #ming-tags
           #ming-style-field
@@ -78,6 +81,30 @@ block content
           #ming-instruction-field(hidden)
             label(for='ming-instruction') Instruction (required, up to 512 characters)
             textarea#ming-instruction(maxlength='512', rows='3', disabled)
+          fieldset#ming-reference(hidden, disabled)
+            legend Private reference audio
+            p Use PCM16 WAV (16-bit signed little-endian PCM), mono or stereo, 16–48 kHz, 1–30 seconds, up to 6 MiB. Export this format in an audio editor first; MP3 conversion and browser recording are not provided.
+            label(for='ming-upload') Upload a reference WAV to the selected session
+            input#ming-upload(type='file', accept='.wav,audio/wav')
+            button#ming-upload-button(type='button') Upload reference WAV
+            label(for='ming-file') Staged reference WAV
+            select#ming-file(required)
+            audio#ming-reference-preview(controls, preload='none', hidden)
+            p#ming-reference-metadata
+            label(for='ming-transcript') Reference transcript (nonblank, up to 2048 characters and 8192 UTF-8 bytes)
+            textarea#ming-transcript(maxlength='2048', rows='3', required)
+            label(for='ming-consent')
+              input#ming-consent(type='checkbox', required)
+              |  I have permission and affirmative consent to use this voice for this request.
+            p A generated synthetic clip can be downloaded and manually uploaded if it meets these limits. Consent is still required. No persistent voice is registered.
+          each values, control in { speed: [['慢速', 'Slow'], ['中速', 'Medium'], ['快速', 'Fast']], pitch: [['低', 'Low'], ['中', 'Medium'], ['高', 'High']], volume: [['低', 'Low'], ['中', 'Medium'], ['高', 'High']], emotion: [['高兴', 'Happy'], ['悲伤', 'Sad'], ['愤怒', 'Angry'], ['恐惧', 'Fear'], ['厌恶', 'Disgust'], ['惊讶', 'Surprise'], ['中性', 'Neutral']], dialect: [['chuanyu dialect', 'Chuanyu dialect'], ['cantonese', 'Cantonese']] }
+            div(id='ming-' + control + '-field', hidden)
+              label(for='ming-' + control)= control
+              select(id='ming-' + control, disabled)
+                option(value='') Choose a value
+                each entry in values
+                  option(value=entry[0])= entry[1] + ' (' + entry[0] + ')'
+          p#ming-control-help
           label(for='ming-steps') Maximum decode steps (8–400)
           input#ming-steps(type='number', min='8', max='400', step='1', value='200', required)
           p Exhausting the decode budget is an error; partial audio is not returned. Output is validated PCM16 mono WAV, up to 60 seconds.
@@ -85,30 +112,9 @@ block content
             summary Site request inspector (no credentials or headers)
             pre#ming-request
           button(type='submit') Run Ming
-      details.lab-reference
-        summary Reference-conditioned tasks — draft, unavailable
-        p Waiting for the verified one-shot ephemeral reference endpoint. No upload, voice registration, catalog listing or persistent reference IDs are supported here.
-        fieldset(disabled)
-          legend Reference input draft — disabled
-          label Reference WAV (PCM16 mono/stereo, 16–48 kHz, 1–30 seconds, up to 6 MiB)
-            input(type='file', accept='audio/wav')
-          label Reference transcript (up to 2048 characters)
-            textarea(maxlength='2048', rows='3')
-          label Reference language
-            select
-              each language in ['zh', 'en', 'ja', 'ko', 'de', 'fr', 'es']
-                option= language
-          label
-            input(type='checkbox')
-            |  I have permission and affirmative consent to use this voice.
-          p TTS: zh/en, no controls. MULTILINGUAL: ja/ko/de/fr/es, no controls or tags. BASIC: zh/en with at least one of speed, pitch or volume. EMOTION: zh/en. DIALECT: zh only.
-          each values, control in { speed: ['慢速 (slow)', '中速 (medium)', '快速 (fast)'], pitch: ['低 (low)', '中 (medium)', '高 (high)'], volume: ['低 (low)', '中 (medium)', '高 (high)'], emotion: ['高兴 (happy)', '悲伤 (sad)', '愤怒 (angry)', '恐惧 (fear)', '厌恶 (disgust)', '惊讶 (surprise)', '中性 (neutral)'], dialect: ['chuanyu dialect', 'cantonese'] }
-            label= control
-              select
-                each value in values
-                  option= value
     section.lab-card
       h2 Runtime and privacy
       p Jobs survive browser navigation. Site shows local queueing or waiting for Gateway; there are no upstream job IDs, progress or active cancellation handles. A completed response does not prove the GPU container has stopped. Timeout or Site restart can leave completion unknown; generation is never automatically replayed.
+      p Gateway holds ephemeral request memory; its worker uses a private anonymous memory descriptor, with no voice registry entry or disk spool. Normal completion closes it; failure or unknown termination can leave cleanup pending. Clearing Site data does not prove immediate GPU shutdown or forensic memory erasure.
       p Ming requires MING_ADMIN_TOKEN in server configuration, sent only as X-Ming-Token on Ming routes. This page never accepts secrets. Error inspectors omit arbitrary Gateway detail text, host paths and private inputs; full raw model text is unavailable on failed WeVis runs.
   script(src='/js/experimental-models.js', defer)

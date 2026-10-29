@@ -1,7 +1,7 @@
 const axios = require('axios');
 const FormData = require('form-data');
 const { LabError, fail } = require('./policy');
-const { validateWevis, validateWav } = require('./contracts');
+const { validateWevis, validateWav, REFERENCE_TASKS, parseInput } = require('./contracts');
 
 const PATHS = { 'wevisone-vl': '/perception/wevisone-vl', 'ming-tts': '/tts/ming/tasks' };
 function redact(value, secrets = []) {
@@ -21,7 +21,8 @@ function safeHeaders(headers = {}) {
   if (/^\d{1,5}$/.test(String(headers['retry-after'] || '')) && Number(headers['retry-after']) <= 86400) result['Retry-After'] = String(headers['retry-after']);
   return result;
 }
-const ERROR_MESSAGES = { 401: 'Gateway authentication failed. Check server configuration.', 408: 'Gateway upload read timed out.',
+const ERROR_MESSAGES = { 404: 'Gateway operation is unsupported. Deploy the updated Gateway and worker.',
+  501: 'Gateway worker update required for this operation. No persistent fallback is used.', 401: 'Gateway authentication failed. Check server configuration.', 408: 'Gateway upload read timed out.',
   409: 'Gateway is busy or admission conflicted.', 413: 'Gateway rejected the request size.', 422: 'Gateway rejected the task fields or generation budget.',
   429: 'Gateway GPU queue is busy. Retry manually later.', 499: 'Gateway reported a disconnected request; completion is unknown.',
   502: 'Gateway runtime, response schema or output size failed.', 503: 'Gateway model is unavailable or unconfigured.', 504: 'Gateway timed out; completion is unknown.' };
@@ -31,13 +32,13 @@ function gatewayFailure(response) {
   let batchBusy = false;
   try { batchBusy = JSON.parse(Buffer.from(response.data).toString('utf8')).detail?.code === 'gpu_batch_session_busy'; } catch (_) { /* generic status only */ }
   const status = Object.hasOwn(ERROR_MESSAGES, response.status) ? response.status : 502;
-  const error = new LabError(batchBusy ? 'gpu_batch_session_busy' : 'gateway_error', status,
+  const error = new LabError(batchBusy ? 'gpu_batch_session_busy' : response.status === 501 ? 'worker_update_required' : response.status === 404 ? 'gateway_unsupported' : 'gateway_error', status,
     batchBusy ? 'Another Gateway batch owns the GPU. Retry manually after it finishes.' : ERROR_MESSAGES[status]);
   error.safeHeaders = safeHeaders(response.headers); error.gatewayStatus = response.status;
   return error;
 }
 class LabGateway {
-  constructor({ http = axios, env = process.env } = {}) { this.http = http; this.env = env; }
+  constructor({ http = axios, env = process.env } = {}) { this.http = http; this.env = env; this.discovery = new Map(); }
   config(model) {
     if (!Object.hasOwn(PATHS, model)) fail('unknown_experiment', 404, 'Experiment not found.');
     const token = this.env.MING_ADMIN_TOKEN;
@@ -46,12 +47,12 @@ class LabGateway {
     try { base = new URL(this.env.AI_GATEWAY_BASE_URL || 'http://192.168.0.20:8080'); } catch (_) { fail('missing_configuration', 503, 'Invalid AI Gateway server configuration.'); }
     if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash || !['', '/'].includes(base.pathname)) fail('missing_configuration', 503, 'AI_GATEWAY_BASE_URL must be a server-configured HTTP origin.');
     const configured = Number(this.env.EXPERIMENTAL_MODELS_TIMEOUT_MS || 2000000);
-    if (!Number.isSafeInteger(configured) || configured < 1800000 || configured > 2400000) fail('missing_configuration', 503, 'Experimental Models timeout must be between 1800000 and 2400000 milliseconds.');
+    if (!Number.isSafeInteger(configured) || configured < 2000000 || configured > 2400000) fail('missing_configuration', 503, 'Experimental Models timeout must be between 2000000 and 2400000 milliseconds.');
     return { origin: base.origin, timeout: configured, headers: model === 'ming-tts' ? { 'X-Ming-Token': token } : {} };
   }
   sanitize(value) { return redact(value, [this.env.MING_ADMIN_TOKEN]); }
   async send(model, path, { data, headers = {}, maxBytes, timeout, method = 'POST' }) {
-    const allowed = model === 'ming-tts' ? ['GET /tts/ming/capabilities', 'POST /tts/ming/tasks']
+    const allowed = model === 'ming-tts' ? ['GET /tts/ming/capabilities', 'POST /tts/ming/tasks', 'POST /tts/ming/tasks/ephemeral']
       : model === 'wevisone-vl' ? ['GET /limits', 'GET /perception/wevisone-vl/capabilities', 'POST /perception/wevisone-vl'] : [];
     if (!allowed.includes(`${method} ${path}`)) fail('unknown_operation', 404, 'Gateway operation is not supported by this experiment.');
     const config = this.config(model), controller = new AbortController();
@@ -60,7 +61,7 @@ class LabGateway {
     try {
       const response = await this.http.request({ url: config.origin + path, method, data,
         headers: { ...headers, ...config.headers }, responseType: 'arraybuffer', timeout: deadline, signal: controller.signal,
-        maxContentLength: maxBytes, maxBodyLength: 8404992, maxRedirects: 0, proxy: false, validateStatus: () => true });
+        maxContentLength: maxBytes, maxBodyLength: path === '/tts/ming/tasks/ephemeral' ? 6320128 : 8404992, maxRedirects: 0, proxy: false, validateStatus: () => true });
       if (!Buffer.isBuffer(response.data)) response.data = Buffer.from(response.data);
       if (response.data.length > maxBytes) fail('response_limit', 502, 'Gateway response exceeded its size limit.');
       if (response.status !== 200) throw gatewayFailure(response);
@@ -84,9 +85,27 @@ class LabGateway {
       successors: { wevisone_vl: numbers(value?.successors?.wevisone_vl), ming_tts: numbers(value?.successors?.ming_tts) } };
   }
   async capabilities(model) {
-    this.config(model);
+    const config = this.config(model);
+    const existing = this.discovery.get(model);
+    // Only two registry models; coalesce concurrent reads and cache failures too.
+    if (existing && existing.until > Date.now() && existing.origin === config.origin && existing.token === config.headers['X-Ming-Token']) return existing.promise;
+    const promise = this.readCapabilities(model);
+    this.discovery.set(model, { until: Date.now() + 60000, origin: config.origin, token: config.headers['X-Ming-Token'], promise });
+    return promise;
+  }
+  async requireReference() {
+    const capabilities = await this.capabilities('ming-tts');
+    if (capabilities.referenceAdapter !== 'available') fail('gateway_unsupported', 503, 'Ephemeral references are unsupported by this Gateway. Deploy the updated Gateway and Ming worker.');
+    if (!capabilities.available) fail('model_unavailable', 503, 'Gateway advertises ephemeral references but Ming is currently unavailable.');
+  }
+  async readCapabilities(model) {
     const path = model === 'ming-tts' ? '/tts/ming/capabilities' : '/perception/wevisone-vl/capabilities';
-    const response = await this.send(model, path, { method: 'GET', maxBytes: 65536, timeout: 10000 });
+    let response;
+    try { response = await this.send(model, path, { method: 'GET', maxBytes: 65536, timeout: 10000 }); }
+    catch (error) {
+      if (model === 'ming-tts' && error.gatewayStatus === 404) return { available: false, runtime_verified: false, experimental: true, referenceAdapter: 'unsupported', ephemeral_reference: { version: null }, limits: {} };
+      throw error;
+    }
     let value;
     try { value = JSON.parse(response.data.toString('utf8')); } catch (_) { fail('invalid_response', 502, 'Invalid Gateway capability response.'); }
     if (!value || typeof value.available !== 'boolean') fail('invalid_response', 502, 'Gateway capability availability is missing.');
@@ -95,9 +114,11 @@ class LabGateway {
     return { available: value.available, runtime_verified: false, experimental: true,
       container_state: ['running', 'stopped', 'starting', 'missing', 'unavailable', 'not_installed'].includes(value.container_state) ? value.container_state : 'unknown',
       optional_installation: typeof value.optional_installation === 'boolean' ? value.optional_installation : null,
-      referenceAdapter: 'contract_pending', limits: await this.limits() };
+      ...(model === 'ming-tts' ? { referenceAdapter: value.ephemeral_reference?.version === 1 ? 'available' : 'unsupported',
+        ephemeral_reference: { version: value.ephemeral_reference?.version === 1 ? 1 : null } } : {}), limits: await this.limits() };
   }
   async run(model, input, source) {
+    input = parseInput(model, input);
     let response;
     if (model === 'wevisone-vl') {
       const form = new FormData();
@@ -113,11 +134,31 @@ class LabGateway {
       const sanitized = JSON.stringify(value, (_key, item) => typeof item === 'string' ? this.sanitize(item) : item);
       return { bytes: Buffer.from(sanitized), mime: 'application/json', metadata: {}, headers: safeHeaders(response.headers), status: 200 };
     }
-    const data = JSON.stringify(input);
-    if (Buffer.byteLength(data) > 16384) fail('body_limit', 413, 'Ming request exceeds 16 KiB.');
-    response = await this.send(model, PATHS[model], { data, headers: { 'Content-Type': 'application/json' }, maxBytes: 6291456 });
+    if (REFERENCE_TASKS.includes(input.task)) {
+      // Recheck at dispatch after any local queue wait. No voice-registry operations.
+      await this.requireReference();
+      validateWav(source?.bytes, { reference: true });
+      const request = mingReferenceRequest(input), data = JSON.stringify(request);
+      if (Buffer.byteLength(data) > 16384) fail('body_limit', 413, 'Ming request exceeds 16 KiB.');
+      const form = new FormData();
+      form.append('file', source.bytes, { filename: 'reference.wav', contentType: 'audio/wav', knownLength: source.bytes.length });
+      form.append('request', data);
+      form.append('transcript', input.transcript);
+      form.append('consent', String(input.consent));
+      const length = form.getLengthSync();
+      if (length > 6320128) fail('body_limit', 413, 'Ephemeral multipart request exceeds Gateway limit.');
+      response = await this.send(model, '/tts/ming/tasks/ephemeral', { data: form,
+        headers: { ...form.getHeaders(), 'Content-Length': String(length) }, maxBytes: 6291456 });
+    } else {
+      const data = JSON.stringify(input);
+      if (Buffer.byteLength(data) > 16384) fail('body_limit', 413, 'Ming request exceeds 16 KiB.');
+      response = await this.send(model, PATHS[model], { data, headers: { 'Content-Type': 'application/json' }, maxBytes: 6291456 });
+    }
     if (!/^audio\/wav(?:;|$)/i.test(response.headers['content-type'] || '') || response.headers['x-generation-complete'] !== 'true') fail('invalid_audio', 502, 'Gateway audio is missing terminal completion headers.');
     return { bytes: response.data, mime: 'audio/wav', metadata: validateWav(response.data), headers: safeHeaders(response.headers), status: 200 };
   }
 }
-module.exports = { LabGateway, safeHeaders, redact, PATHS };
+function mingReferenceRequest(input) {
+  return { task: input.task, text: input.text, language: input.language, controls: input.controls, max_decode_steps: input.max_decode_steps };
+}
+module.exports = { mingReferenceRequest, LabGateway, safeHeaders, redact, PATHS };

@@ -30,7 +30,7 @@ describe('verified form contracts', () => {
     expect(() => parseInput('wevisone-vl', { fileId, task: 'ocr', ...change })).toThrow();
   });
   test.each(['zh', 'en'])('Ming reference-free task serializers for %s omit inactive fields', language => {
-    expect(parseInput('ming-tts', { ...ming, language, reference_id: null, instruction: null })).toEqual({ ...ming, language, max_decode_steps: 200 });
+    expect(parseInput('ming-tts', { ...ming, language, instruction: null })).toEqual({ ...ming, language, max_decode_steps: 200 });
     expect(parseInput('ming-tts', { task: 'FREEFORM', language, text: 'Hello', instruction: 'Speak calmly', controls: {} })).toEqual({ task: 'FREEFORM', language, text: 'Hello', instruction: 'Speak calmly', max_decode_steps: 200 });
   });
   test.each([
@@ -40,9 +40,9 @@ describe('verified form contracts', () => {
     { max_decode_steps: true }, { max_decode_steps: 7 }, { max_decode_steps: 401 }, { task: 'CLONE' }, { text: '[breathing]' }, { text: '[Uhm' },
     { text: '[[Uhm]]' }, { prompt: 'injected' }, { headers: {} }, { seed: 1 }, { controls: { style: '<secret>' } },
   ])('rejects invalid Ming fields %j', change => { expect(() => parseInput('ming-tts', { ...ming, ...change })).toThrow(); });
-  test.each(['TTS', 'MULTILINGUAL', 'BASIC', 'EMOTION', 'DIALECT'])('keeps %s pending without persistent fallback', task => {
+  test.each(['TTS', 'MULTILINGUAL', 'BASIC', 'EMOTION', 'DIALECT'])('requires an owned reference and consent for %s', task => {
     const controls = { BASIC: { speed: '慢速' }, EMOTION: { emotion: '高兴' }, DIALECT: { dialect: 'cantonese' } }[task];
-    expect(() => parseInput('ming-tts', { task, text: 'Synthetic', language: task === 'MULTILINGUAL' ? 'ja' : 'zh', controls })).toThrow(/ephemeral/);
+    expect(() => parseInput('ming-tts', { task, text: 'Synthetic', language: task === 'MULTILINGUAL' ? 'ja' : 'zh', controls })).toThrow(/reference task/);
   });
   test.each(TAGS)('accepts exact speech tag [%s]', tag => { expect(parseInput('ming-tts', { ...ming, text: `[${tag}] Hello` }).text).toContain(tag); });
   test('freeform rejects mixed controls and missing instruction', () => {
@@ -106,7 +106,7 @@ describe('fixed Gateway transport, privacy and no GPU calls in tests', () => {
   });
   test('capabilities are passive and cannot enable reference registration', async () => {
     http.request.mockResolvedValue(ok({ available: true, runtime_verified: true, container_state: 'stopped', optional_installation: true, private_catalog: ['secret'] }));
-    expect(await gateway.capabilities('ming-tts')).toMatchObject({ available: true, runtime_verified: false, referenceAdapter: 'contract_pending' });
+    expect(await gateway.capabilities('ming-tts')).toMatchObject({ available: true, runtime_verified: false, referenceAdapter: 'unsupported' });
     expect(http.request.mock.calls[0][0]).toMatchObject({ method: 'GET', url: 'http://gateway.invalid:8080/tts/ming/capabilities' });
   });
   test.each([401, 408, 409, 413, 422, 429, 499, 502, 503, 504])('HTTP %i does not produce partial artifacts or expose details', async status => {
@@ -157,4 +157,20 @@ describe('fixed Gateway transport, privacy and no GPU calls in tests', () => {
     expect(redact('Bearer abc.def sk-testsecret token=arbitrary-secret synthetic-token', ['synthetic-token'])).not.toMatch(/abc.def|sk-testsecret|arbitrary-secret|synthetic-token/);
     expect(safeHeaders({ 'content-type': 'text/html', 'retry-after': '/secret', authorization: 'secret', 'cache-control': 'secret' })).toEqual({});
   });
+});
+
+test('passive capability cache coalesces reads, expires after one minute and bounds failures', async () => {
+  let now = 1000; const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+  const http = { request: jest.fn(async config => ok(config.url.endsWith('/limits') ? {} : { available: true, ephemeral_reference: { version: 1 } })) };
+  const gateway = new LabGateway({ http, env: { AI_GATEWAY_BASE_URL: 'http://gateway.invalid', MING_ADMIN_TOKEN: 'synthetic' } });
+  try {
+    const results = await Promise.all(Array.from({ length: 10 }, () => gateway.capabilities('ming-tts')));
+    expect(results.every(value => value.referenceAdapter === 'available')).toBe(true); expect(http.request).toHaveBeenCalledTimes(2);
+    now += 60001; await gateway.capabilities('ming-tts'); expect(http.request).toHaveBeenCalledTimes(4);
+    now += 60001; http.request.mockRejectedValue(new Error('private error'));
+    for (let i = 0; i < 3; i += 1) await expect(gateway.capabilities('ming-tts')).rejects.toMatchObject({ code: 'gateway_transport' });
+    expect(http.request).toHaveBeenCalledTimes(5);
+    expect(http.request.mock.calls.every(([config]) => config.method === 'GET')).toBe(true);
+    expect(gateway.discovery.size).toBe(1);
+  } finally { clock.mockRestore(); }
 });
