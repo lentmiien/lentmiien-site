@@ -2,6 +2,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { LabError, fail } = require('./policy');
 const { validateWevis, validateWav, REFERENCE_TASKS, parseInput } = require('./contracts');
+const { storageRoot } = require('./storage');
 
 const PATHS = { 'wevisone-vl': '/perception/wevisone-vl', 'ming-tts': '/tts/ming/tasks' };
 function redact(value, secrets = []) {
@@ -50,7 +51,12 @@ class LabGateway {
     if (!Number.isSafeInteger(configured) || configured < 2000000 || configured > 2400000) fail('missing_configuration', 503, 'Experimental Models timeout must be between 2000000 and 2400000 milliseconds.');
     return { origin: base.origin, timeout: configured, headers: model === 'ming-tts' ? { 'X-Ming-Token': token } : {} };
   }
-  sanitize(value) { return redact(value, [this.env.MING_ADMIN_TOKEN]); }
+  sanitize(value) {
+    // Inspectors and JSON results must not echo the server's private directory,
+    // including Windows separator/case variants. JSON strings are parsed first.
+    const rootPattern = storageRoot().split(/[\\/]/).map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\\\/]');
+    return redact(value, [this.env.MING_ADMIN_TOKEN]).replace(new RegExp(rootPattern, 'gi'), '[private storage]');
+  }
   async send(model, path, { data, headers = {}, maxBytes, timeout, method = 'POST' }) {
     const allowed = model === 'ming-tts' ? ['GET /tts/ming/capabilities', 'POST /tts/ming/tasks', 'POST /tts/ming/tasks/ephemeral']
       : model === 'wevisone-vl' ? ['GET /limits', 'GET /perception/wevisone-vl/capabilities', 'POST /perception/wevisone-vl'] : [];

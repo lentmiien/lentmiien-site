@@ -250,6 +250,12 @@ DASHBOARD_MINUTE_LOGGER_DEVICE_ID=
 # Startup and every provider call require a successful private read/write/delete probe.
 # GPT_IMAGE_STORAGE_DIR=/srv/lentmiien-private/gpt-image
 
+# Optional Experimental Models private root; unset retains private_data/experimental-models.
+# Set an absolute, protected path outside static roots; blank is invalid. Restart required.
+# Windows: pre-provision for the actual service identity and pass the existing ACL checker.
+# No automatic migration or cleanup of a previous root. See documentation/experimental-models.md.
+# EXPERIMENTAL_MODELS_STORAGE_ROOT=/absolute/protected/path/experimental-models
+
 # TARIC assisted API: disabled in Mongo until explicitly enabled at /admin/taric.
 # Fixed, operator-controlled Gateway origin; must also appear verbatim in allowlist.
 # No fallback to the legacy gateway or global API key. HTTP is only for a trusted private LAN.

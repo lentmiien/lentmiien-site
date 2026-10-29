@@ -8,12 +8,41 @@ const { assertNoSymlinks, assertTrustedStorage, within } = require('../gptImageS
 const logger = require('../../utils/logger');
 const { ID, LIMITS, fail, sessionSchema } = require('./policy');
 
-function storageRoot() { return path.resolve(__dirname, '../../private_data/experimental-models'); }
+// Capture server configuration once, shared by the store and static delivery guard.
+// Changing the root requires a restart; never discover or migrate a previous store.
+const configuredRoot = process.env.EXPERIMENTAL_MODELS_STORAGE_ROOT;
+function configurationError() {
+  return Object.assign(new Error('Experimental Models storage configuration is invalid.'), { code: 'EXPERIMENTAL_MODELS_STORAGE_CONFIG' });
+}
+function resolveStorageRoot(value, platform = process.platform) {
+  const paths = platform === 'win32' ? path.win32 : path.posix;
+  if (typeof value !== 'string' || !value || value.trim() !== value || /[\x00-\x1f\x7f]/.test(value) || !paths.isAbsolute(value)) throw configurationError();
+  const parts = value.split(platform === 'win32' ? /[\\/]/ : /\//);
+  // Do not normalize away a component that could be a symlink/junction.
+  if (parts.some(part => part === '.' || part === '..')) throw configurationError();
+  if (platform === 'win32') {
+    const portable = value.replace(/\\/g, '/');
+    // Require a drive-qualified or UNC path. Reject drive-relative/root-relative
+    // paths, device namespaces, ADS, and Win32 aliases (trailing dots/spaces).
+    const drive = /^[a-z]:\//i.test(portable);
+    if (!drive && !/^\/\/[^/]+\/[^/]+(?:\/|$)/.test(portable)) throw configurationError();
+    const names = drive ? parts.slice(1) : parts.slice(2);
+    if (names.some(part => /[<>:"|?*]|[. ]$/.test(part) || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) throw configurationError();
+  }
+  return paths.resolve(value);
+}
+function storageRoot() {
+  return configuredRoot === undefined ? path.resolve(__dirname, '../../private_data/experimental-models') : resolveStorageRoot(configuredRoot);
+}
 const extension = asset => ({ 'image/png': 'png', 'application/json': 'json', 'audio/wav': 'wav' })[asset.mime];
 // One process owns the store. Leases prevent removal during requests and streams.
 class LabStore {
-  constructor({ root = storageRoot(), now = Date.now, limits = LIMITS, appLogger = logger } = {}) {
-    this.root = path.resolve(root); this.now = now; this.limits = limits; this.logger = appLogger;
+  constructor({ root, now = Date.now, limits = LIMITS, appLogger = logger } = {}) {
+    // Defer invalid config to the normal operation/cleanup error handlers, which
+    // log safe diagnostics without stopping unrelated Site features on import.
+    try { this.root = root === undefined ? storageRoot() : resolveStorageRoot(root); }
+    catch (error) { this.configurationError = error; }
+    this.now = now; this.limits = limits; this.logger = appLogger;
     this.sessions = new Map(); this.ready = false; this.busy = false; this.leases = new Map(); this.waiters = [];
   }
   async exclusive(work, wait = false) {
@@ -23,6 +52,7 @@ class LabStore {
     try { await this.initialize(); return await work(); } finally { this.busy = false; this.waiters.splice(0).forEach(resolve => resolve()); }
   }
   async checkRoot() {
+    if (this.configurationError) throw this.configurationError;
     const app = path.resolve(__dirname, '../..');
     for (const mount of [path.join(app, 'public'), path.join(app, 'games'), path.join(app, 'node_modules'), process.env.VUE_PATH].filter(Boolean)) {
       const real = await fs.realpath(mount).catch(error => { if (error.code === 'ENOENT') return path.resolve(mount); throw error; });
@@ -30,9 +60,15 @@ class LabStore {
     }
     let ancestor = this.root;
     while (!await fs.lstat(ancestor).catch(error => { if (error.code === 'ENOENT') return null; throw error; })) ancestor = path.dirname(ancestor);
-    await assertNoSymlinks(ancestor); await assertTrustedStorage(ancestor, ancestor !== this.root);
+    await assertNoSymlinks(ancestor);
+    // Reject filesystem aliases (including Windows short names) so the static
+    // guard and every store operation refer to the same canonical directory.
+    if (path.relative(ancestor, await fs.realpath(ancestor))) throw new Error('Unsafe lab root');
+    await assertTrustedStorage(ancestor, ancestor !== this.root);
     await fs.mkdir(this.root, { recursive: true, mode: 0o700 });
-    await assertNoSymlinks(this.root); await assertTrustedStorage(this.root);
+    await assertNoSymlinks(this.root);
+    if (path.relative(this.root, await fs.realpath(this.root))) throw new Error('Unsafe lab root');
+    await assertTrustedStorage(this.root);
   }
   directory(id) {
     if (!ID.test(id)) fail('not_found', 404, 'Test session not found.');
@@ -260,4 +296,4 @@ class LabStore {
     });
   }
 }
-module.exports = { LabStore, storageRoot };
+module.exports = { LabStore, storageRoot, resolveStorageRoot };

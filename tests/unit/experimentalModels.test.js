@@ -194,6 +194,9 @@ describe('real Express route guards', () => {
     expect((await call(b, '/api/sessions', 'GET')).status).toBe(200);
     expect((await call(b, '/api/sessions', 'POST', { 'Content-Type': 'application/json' }, '{"owner":"other"}')).status).toBe(400);
     expect((await call(b, '/api/sessions?owner=other')).status).toBe(400);
+    expect((await call(b, '/api/sessions?EXPERIMENTAL_MODELS_STORAGE_ROOT=/tmp/other')).status).toBe(400);
+    expect((await call(b, '/api/sessions', 'POST', { 'Content-Type': 'application/json' }, '{"root":"/tmp/other"}')).status).toBe(400);
+    expect(store.root).toBe(root);
   });
   test('stages real image, downloads actual PNG, blocks IDOR and deletes through CSRF', async () => {
     const b = await browser(), foreignLogin = await browser();
@@ -252,10 +255,13 @@ describe('real Express route guards', () => {
   });
   test('internal errors never expose provider secrets, tokens, hashes, paths or payloads', async () => {
     const b = await browser();
-    jest.spyOn(store, 'list').mockRejectedValueOnce(Object.assign(new Error('X-Ming-Token synthetic-secret /private/path synthetic-prompt'), { token: 'synthetic-secret', response: { data: 'synthetic-private-output' } }));
+    jest.spyOn(store, 'list').mockRejectedValueOnce(Object.assign(new Error(`X-Ming-Token synthetic-secret ${root} /private/path synthetic-prompt`), { token: 'synthetic-secret', response: { data: 'synthetic-private-output' } }));
     const response = await call(b, '/api/sessions');
     expect(response.status).toBe(503);
-    expect(await response.text()).not.toMatch(/synthetic|X-Ming|private\/path/);
+    const responseText = await response.text();
+    expect(responseText).not.toMatch(/synthetic|X-Ming|private\/path/);
+    expect(responseText).not.toContain(root);
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain(root);
     expect(JSON.stringify(logger.error.mock.calls)).not.toMatch(/synthetic-secret|private\/path|synthetic-prompt|synthetic-private/);
   });
 });

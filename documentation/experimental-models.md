@@ -56,7 +56,7 @@ sample was needed for this source/mocked-test phase.
   are capped at 256 KiB. Actual manifest bytes (including sanitized prompts and
   transcripts) count toward quotas, with 2 KiB reserved for terminal job metadata
   growth. References, raw JSON and WAV results all count, including across restarts.
-- Storage: `private_data/experimental-models`, outside all static mounts, UUID names,
+- Storage: `EXPERIMENTAL_MODELS_STORAGE_ROOT` (default `private_data/experimental-models`), outside all static mounts, UUID names,
   0700 directories/0600 files, ancestor/ownership/symlink checks, bounded single-link
   reads and atomic synced manifests. No original filenames or browser paths persisted.
 - Delivery: account and login checks on files and polls; two simultaneous bounded
@@ -312,6 +312,74 @@ The permanent navigation/page shell does not need replacement when models rotate
 
 ## Operations and validation
 
+### Optional protected storage root
+
+`EXPERIMENTAL_MODELS_STORAGE_ROOT` is a server-only optional absolute directory,
+captured once when the storage module initializes. Unset preserves the checkout's
+`private_data/experimental-models` default for existing installations/Linux development.
+Setting it to blank, whitespace, a relative path, a control-character-containing
+path or a path with `.`/`..` components fails closed. Configuration is never accepted
+from clients or returned as a server path; inspectors redact the configured root.
+Restart is required after changing it. No public-storage fallback exists.
+
+Use a protected external directory when checkout ancestors are broadly writable.
+All existing checks still apply: no overlap in either direction with `public`,
+`games`, `node_modules`, `VUE_PATH` or their canonical aliases; no symlink/junction
+root or ancestors; trusted ownership and ancestor permissions. Static delivery
+guards also deny file aliases and compressed aliases into the configured store.
+POSIX paths must be absolute; private directories/files retain 0700/0600 modes.
+Windows accepts fully qualified drive paths (backslashes or forward slashes) and
+UNC share paths. Drive-relative/root-relative paths, device namespaces, alternate
+streams, reserved device names and trailing-dot/space components are rejected.
+Use canonical directory names; short-name aliases whose real path differs are rejected.
+
+On Windows, **pre-provision** the directory for the actual WinSW service identity
+(`LennartWeb`, currently LocalSystem), SYSTEM and Administrators, subject to the
+**existing** read-only `scripts/assert-gpt-image-acl.ps1` policy. The root and every
+ancestor must pass that checker **under the actual service identity**. An elevated
+interactive administrator check alone does not establish that result. The application
+does not chmod Windows directories or weaken the checker. Do not broaden or rewrite
+ACLs across `C:\Projects` to make the checkout pass. A proposed path such as
+`C:\ProgramData\Lentmiien\ExperimentalModels` is only a candidate: the separate
+production inspection must establish its safety. If the existing policy rejects it,
+record the precise failed condition and choose a compliant location before rollout.
+
+Every upload, output, quota, recovery pass and expiry sweep uses the configured
+root. **Changing roots does not migrate, inspect, expire or delete the old store.**
+Clear old test sessions and let active requests/download leases finish before a
+planned switch. If that is impossible, retain the old store and make its eventual
+inspection/removal an explicit operator action after confirming no process uses it.
+Switching back similarly requires operator intent; do not use root changes to evade
+quotas or assume the old data's TTL still has an active sweeper. Use one process per store.
+
+### WinSW deployment notes (operator commands, not executed here)
+
+After separate folder/ACL approval, the private Site `.env` needs only the new
+`EXPERIMENTAL_MODELS_STORAGE_ROOT` setting for this change. For the candidate above,
+the value would be `C:/ProgramData/Lentmiien/ExperimentalModels`, **only if approved**.
+Keep the existing present `MING_ADMIN_TOKEN`; this change does not require token
+regeneration/rotation. The existing `AI_GATEWAY_BASE_URL` default already matches;
+private authentication verification is a separate deployment check.
+
+From an elevated operator PowerShell, after clearing/draining old tests and updating
+the approved private configuration, fast-forward the clean checkout to the reviewed
+commit (substitute its full hash), then restart the existing service:
+
+```powershell
+Set-Location C:\Projects\lentmiien-site
+git status --short
+git fetch origin
+git merge --ff-only <reviewed-full-commit>
+Restart-Service LennartWeb
+Get-Service LennartWeb
+```
+
+Stop if the checkout is dirty or the fast-forward fails. Folder provisioning and
+the exact read-only ACL commands belong to the separate production procedure; none
+are executed by these source changes. Inspect safe application diagnostics after
+restart and complete the human browser/runtime/GPU validation separately. No Node
+upgrade, dependency installation, DB migration or `npm start` smoke test is needed.
+
 No DB migration, dependency change or curated OpenAPI change. Foundation manifests
 remain compatible (`jobs` defaults to empty). The shared cleanup scheduler and
 static guards remain. Cloudflare must preserve application authorization and no-store;
@@ -382,8 +450,29 @@ from these local synthetic tests.
   deployment, config-secret inspection or database mutation occurred.
 
 Deployment coordinator: update Gateway **and** Ming worker, deploy this Site code,
-set the private matching `MING_ADMIN_TOKEN`, verify the configured
+retain the private matching `MING_ADMIN_TOKEN` (already present on the current Site), verify the configured
 `AI_GATEWAY_BASE_URL`, then perform the consolidated human browser/runtime check.
 No database migration or dependency installation is needed. Until that deployment,
 reference controls remain capability-gated; reference-free Ming and WeVis retain
 independent operation. This source change has no remaining implementation blocker.
+
+## Storage override validation — 2026-10-30
+
+- Pinned, already-installed Node 26.13.0; CPU-only synthetic tests, no live Gateway calls.
+- `npm test -- tests/unit/experimentalModels tests/unit/sessionCsrf.test.js
+  tests/unit/accountSurfacePolicy.test.js tests/unit/accountSurfaceBody.test.js
+  tests/unit/gptImageStorageReadiness.test.js tests/unit/gptImageWindowsStorage.test.js
+  tests/unit/gptImageMedia.test.js --coverage=false --maxWorkers=2`:
+  **442 passed, 4 Windows integration skips**, 12 passing suites, one skipped suite.
+- Full `npm test -- --maxWorkers=2 --workerIdleMemoryLimit=256MB` in a source-only
+  snapshot with a Git index, no `.env`/runtime data and a 4 GiB worker heap cap:
+  **6,372 passed, 261 skipped, 5 failed**; 444 passing suites, 17 skipped, five failed.
+  Coverage thresholds passed. Failures are only the same missing ignored WAV masters
+  in the five game suites listed above.
+- Config tests cover Windows/POSIX syntax, literal ACL-checker arguments and denial,
+  static/canonical aliases, custom-root restart/quotas/ownership/expiry/lease cleanup,
+  keeping the previous store untouched, client override denial and path redaction.
+  Windows mocks do not qualify a real production directory or its ACLs.
+- `git diff --check` passed. No production files, ACLs, configuration, service state,
+  database, dependencies or Node installation were changed. Runtime/browser/GPU
+  qualification remains a separate operator task.
