@@ -78,7 +78,8 @@ sample was needed for this source/mocked-test phase.
   inputs are deliberately omitted (they can contain private inputs and host paths).
   Safe HTTP status messages, recognized batch-busy code and allowlisted headers remain.
   Logs use `utils/logger`, category `experimental_models`, stable failure messages,
-  status/code only; never request/client config, provider exceptions or model text.
+  status/code and bounded reference reason/stage/numeric diagnostics only; never
+  filenames, request/client config, provider exceptions or model text.
 - Retention: absolute 24-hour TTL; reads deny immediately on expiry, never slide it.
   Sweep every minute independent of DB readiness. Clear marks delete-pending, stops
   admission and cancels local queued jobs. Active request/download leases defer purge
@@ -163,8 +164,9 @@ Site still forwards only one job globally. Site validates task JSON before admis
 and before serialization. The `fileId` in the browser's Site request is only a lookup
 in that same account, login and test session. It never enters Gateway JSON. The
 bounded private file is read through a checked handle; no external URL/path or
-cross-session asset can select a source. Generated audio may be downloaded and
-manually uploaded if it fits the reference limits; affirmative consent is still needed.
+cross-session asset can select a source. Eligible generated audio can be reused
+with Use as reference without copying; download/manual upload remains available.
+The proposed transcript must be verified and affirmative consent is still needed.
 
 | Task | Languages | Controls |
 | --- | --- | --- |
@@ -465,3 +467,124 @@ independent operation. This source change has no remaining implementation blocke
 - `git diff --check` passed. No production files, ACLs, configuration, service state,
   database, dependencies or Node installation were changed. Runtime/browser/GPU
   qualification remains a separate operator task.
+
+## Production-evidence follow-up — 2026-10-30
+
+The reported live baseline is `aa898ee`. The user observed WeVis HTTP 502 with
+status/headers and `gateway_error` only, successful Ming `VOICE_DESIGN`, reference
+upload HTTP 400, and successful cleanup. Production evidence did **not** retain
+that upload or its rejection reason after the session was cleared. Its exact
+historical cause is unknown. No evidence established a body-parser ordering bug,
+wrong FormData field, missing consent on upload, HTML masquerading as generated
+WAV, or a duration failure (WAV validation rejects with 422). This change improves
+compatibility and observability; it does not claim to reproduce that old 400.
+
+### Reference compatibility and diagnostics
+
+- Safe filenames must be 1–200 characters, have no path separators/control
+  characters, and end in `.wav` (case-insensitive). Recognized MIME declarations:
+  `audio/wav`, `audio/x-wav`, `audio/wave`, `audio/vnd.wave`, plus absent/empty MIME
+  or `application/octet-stream` (including Multer's empty-browser-MIME fallback).
+  Explicit other media types such as HTML, JSON or MP3 remain rejected, even with
+  WAV bytes. MIME admission is not content proof.
+- Every admitted file still passes the full strict PCM16 WAV validator **before**
+  writing or reserving its persisted asset: RIFF/chunk sizes, truncation, PCM codec,
+  16-bit samples, alignment/byte rate, 1–2 channels, 16000–48000 Hz, 1–30 seconds,
+  at most 6 MiB. Renamed HTML/JSON, oversized or malformed bytes fail closed.
+- Reference errors expose HTTP status, fixed `reference_<reason>` code, stage,
+  reason, fixed user-facing message, and relevant numeric bounds/observations.
+  Reasons include `empty_file`, `mime`, `filename`, `extension`, `size`,
+  `wav_format`, `rate`, `channels`, `duration`, `parts`, `interrupted`, `timeout`.
+  Upload requests receive a server-generated request ID. The page displays status,
+  code and reason, with a text-only diagnostic inspector. No filename, path,
+  audio, transcript, token, cookie, parser exception or upstream detail is echoed.
+- Actionable reference 4xx warnings use `utils/logger` / `experimental_models`,
+  capped at twelve per minute per router process, with only fixed operational
+  fields, selected finite numbers and a generated request ID. Existing auth,
+  CSRF, quotas, rate limits and non-reference errors keep their policies.
+
+### Reuse a generated result
+
+The security contract above also covers reuse: logged-in admin capability, owner
+account **and** browser binding **and** session scope, shared run CSRF, unchanged
+quotas/TTL/storage delivery, no admin override and no new external operations.
+
+`Use as reference` selects a successful Ming job's existing WAV asset in its own
+session. It does not create a file, copy, registration or persistent voice. The
+server resolver permits only validated uploaded WAVs or WAV results tied to a
+successful Ming job. It rechecks scope, provenance, actual bytes and strict
+reference bounds at admission and again at dispatch under the storage lock and
+active session lease. Missing, foreign, expired, cleared, pending-deletion,
+nonterminal/failed, arbitrary and non-audio result assets cannot be references.
+Only ephemeral multipart `file`, `request`, `transcript`, `consent` are forwarded;
+no Site asset ID or Gateway persistent reference ID is forwarded.
+
+The original output remains downloadable at its existing >0–60-second bounds;
+reference eligibility is 1–30 seconds. Ineligible outputs have a disabled action
+and an explanation. Eligible output consumes no second input-file slot or audio
+bytes; each new run still reserves its own result and metadata quota. Clear waits
+for active run/download leases and discards late results. Existing manifests need
+no migration: eligibility is derived for display and actual bytes are revalidated.
+
+The action proposes the same job's sanitized submitted text as the transcript,
+labels it `VERIFY_TRANSCRIPT`, selects TTS or MULTILINGUAL and the submitted language,
+and resets consent to **unchecked**. This text is not a transcription; the user must
+listen and correct it. Selection never runs inference or grants consent.
+
+### WeVis failure inspection: preparation only
+
+Site currently reports a disabled `contract_pending` registry flag. Passive
+capabilities expose only whether `failure_inspection.version === 1` was advertised;
+advertisement alone cannot enable forwarding. Ordinary WeVis calls still send
+exactly their existing four multipart fields; the browser cannot inject
+`experimental_inspect_failure` or other arbitrary Gateway keys. Ming is independent.
+
+The failure UI labels the sanitized Gateway status and explicitly marks rejected
+model output unavailable. Failed jobs remain failed (or interrupted when completion
+is unknown), with no geometry overlay, fabricated success, or raw error artifact.
+Provider `detail`, `message`, stack/config strings and secret/path-bearing generic
+errors remain discarded. Rendering uses escaped text only.
+
+**Pending exact Gateway contract:** integrate the fixed admin-lab-only opt-in,
+versioned finite code/stage schema, 16 KiB bounded sanitized rejected output and
+explicit predecode-unavailable semantics after the coordinator supplies the final
+schema. That follow-up must store validated error artifacts as owned private files
+with existing TTL, quota reservations, leases and deletion rules, keep jobs failed
+with invalid-output semantics, test hostile strings/truncation and old capabilities,
+and preserve ordinary Gateway tools/defaults. This commit deliberately does not
+invent those wire fields or enable an unfinished adapter. No quality tuning,
+production edits, deployment, restart, live Gateway requests or GPU inference is
+part of this source change; release helpers at `aa898ee` remain untouched.
+
+### Validation and review
+
+- Pinned Node **26.13.0**; all network tests used localhost mocks. Final focused
+  run: `npm test -- tests/unit/experimentalModels tests/unit/sessionCsrf.test.js
+  tests/unit/accountSurfacePolicy.test.js tests/unit/accountSurfaceBody.test.js
+  tests/unit/gptImageStorageReadiness.test.js tests/unit/gptImageWindowsStorage.test.js
+  tests/unit/gptImageMedia.test.js --coverage=false --maxWorkers=2` — **613 passed,
+  4 platform skips** (13 passing suites, one skipped). This includes final added
+  contract-pending, dispatch revalidation and restart reuse cases.
+- Full `npm test -- --maxWorkers=2 --workerIdleMemoryLimit=256MB` in an isolated
+  source-only snapshot without `.env` or runtime data, with a 4 GiB worker heap:
+  **6,534 passed, 261 skipped, 5 failed**. Coverage thresholds passed. The failures
+  are only the known missing ignored WAV masters in `lentmancGame`,
+  `galaxyCenterJourneyGame`, `dinosaurHistoryGame`, `deepOceanJourneyGame`, and
+  `kardashevGame`. Final additions after this run were tests/docs/screenshots only;
+  all final source changes were included in the full run.
+- Reviewed MIME admission versus full byte validation; capability/owner/browser/
+  session boundaries; terminal-result provenance; admission and dispatch checks;
+  existing private-root confinement; no duplicated input or persistent references;
+  output quota reservations; expiry, deletion and active leases; fixed diagnostic
+  privacy; consent reset; and all 14 existing task contracts. No changes to release
+  helpers, deployments, dependencies, ordinary Gateway tools or quality parameters.
+- Real Firefox **157.0**, localhost mock endpoints with synthetic audio/text only:
+  working reuse action, transcript prefill/verification, unchecked consent, disabled
+  ineligible audio, HTTP/code/reason inspector, and no invalid geometry. Desktop
+  (1440-pixel window) and narrow (**500 CSS-pixel actual viewport**, Firefox minimum)
+  had no horizontal overflow. Screenshots were visually inspected:
+  [desktop reuse](assets/experimental-models/reuse-reference-desktop.png),
+  [narrow transcript verification](assets/experimental-models/reuse-reference-narrow.png),
+  [narrow upload diagnostics](assets/experimental-models/reference-error-narrow.png).
+- `git diff --check` passed. No live Site/Gateway requests, production changes,
+  application startup, secrets inspection, database operations or GPU inference.

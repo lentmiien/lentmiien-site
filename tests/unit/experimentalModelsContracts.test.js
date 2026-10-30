@@ -25,6 +25,7 @@ describe('verified form contracts', () => {
   test.each([
     { task: 'OCR' }, { task: 'ocr', query: ' ' }, { task: 'point', query: '' }, { task: 'point', query: ' '.repeat(1025) },
     { task: 'point', query: '<box>' }, { task: 'point', query: 'a\rb' }, { task: 'video' }, { url: 'https://invalid' },
+    { experimental_inspect_failure: true }, { failure_inspection: { version: 1 } },
     { max_new_tokens: true }, { max_new_tokens: 0 }, { max_new_tokens: 4097 }, { max_new_tokens: '1024' }, { task: ['ocr', 'point'] }, { fileId: '../x' },
   ])('rejects invalid WeVis input %j', change => {
     expect(() => parseInput('wevisone-vl', { fileId, task: 'ocr', ...change })).toThrow();
@@ -96,6 +97,24 @@ describe('fixed Gateway transport, privacy and no GPU calls in tests', () => {
     const config = http.request.mock.calls[0][0], wire = config.data.getBuffer().toString();
     expect(config.url).toBe('http://gateway.invalid:8080/perception/wevisone-vl'); expect(config.headers).not.toHaveProperty('X-Ming-Token');
     expect([...wire.matchAll(/ name="([^"]+)"(?:;|\r)/g)].map(m => m[1])).toEqual(['file', 'task', 'query', 'max_new_tokens']);
+  });
+  test.each([undefined, 1, 2, '1'])('failure inspection advertisement %s stays disabled until the exact contract is integrated', async version => {
+    http.request.mockResolvedValueOnce(ok({ available: true, failure_inspection: { version, detail: '/private/path token=secret' } }))
+      .mockResolvedValueOnce(ok({})).mockResolvedValueOnce(ok(vision()));
+    const capabilities = await gateway.capabilities('wevisone-vl');
+    expect(capabilities.failureInspection).toEqual({ enabled: false, status: 'contract_pending', advertisedVersion: version === 1 ? 1 : null });
+    expect(JSON.stringify(capabilities)).not.toMatch(/private.path|token=secret/);
+    await gateway.run('wevisone-vl', { fileId, task: 'ocr' }, source);
+    const wire = http.request.mock.calls[2][0].data.getBuffer().toString();
+    expect([...wire.matchAll(/ name="([^"]+)"(?:;|\r)/g)].map(m => m[1])).toEqual(['file', 'task', 'query', 'max_new_tokens']);
+  });
+  test('uncontracted WeVis 502 diagnostics and generic detail never escape as raw output or secrets', async () => {
+    http.request.mockResolvedValue({ status: 502, data: Buffer.from(JSON.stringify({ detail: { code: 'output_not_valid', message: 'token=secret /private/path',
+      failure_inspection: { version: 1, raw_text: '<img onerror=alert(1)> synthetic-private-token C:\\private\\file' } } })), headers: {} });
+    await expect(gateway.run('wevisone-vl', { fileId, task: 'ocr' }, source)).rejects.toMatchObject({ code: 'gateway_error', status: 502 });
+    try { await gateway.run('wevisone-vl', { fileId, task: 'ocr' }, source); } catch (error) {
+      expect(JSON.stringify(error)).not.toMatch(/private|token=|img|raw_text|failure_inspection/);
+    }
   });
   test('missing Ming configuration and invalid origins fail without a request', async () => {
     for (const env of [{}, { MING_ADMIN_TOKEN: 'x', AI_GATEWAY_BASE_URL: 'https://user:password@gateway.invalid' }, { MING_ADMIN_TOKEN: 'x', EXPERIMENTAL_MODELS_TIMEOUT_MS: '120000' }]) {

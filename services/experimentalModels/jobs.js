@@ -36,8 +36,8 @@ class LabJobs {
       if (session.jobs.some(j => ['queued', 'waiting_gateway'].includes(j.state))) fail('session_busy', 409, 'This session already has a pending experiment.');
       if (session.jobs.length >= this.store.limits.sessionJobs || session.assets.length >= this.store.limits.sessionFiles) fail('job_limit', 429, 'Session result/job limit reached. Clear test data first.');
       if (model === 'wevisone-vl' && !session.assets.some(a => a.id === input.fileId && a.mime === 'image/png')) fail('not_found', 404, 'Staged image not found.');
-      if (model === 'ming-tts' && input.fileId && !session.assets.some(a => a.id === input.fileId && a.mime === 'audio/wav' && a.audio)) fail('not_found', 404, 'Staged reference not found.');
-      const asset = input.fileId && session.assets.find(a => a.id === input.fileId);
+      const reference = model === 'ming-tts' && input.fileId ? await this.store.referenceSource(owner, binding, sessionId, input.fileId) : null;
+      const asset = reference?.asset || (input.fileId && session.assets.find(a => a.id === input.fileId));
       const preview = model === 'ming-tts' && asset ? { method: 'POST', endpoint: '/tts/ming/tasks/ephemeral', contentType: 'multipart/form-data',
         file: { mime: asset.mime, bytes: asset.bytes, audio: asset.audio },
         fields: { request: mingReferenceRequest(input), transcript: input.transcript, consent: input.consent }
@@ -75,7 +75,9 @@ class LabJobs {
           job = session.jobs.find(j => j.id === entry.jobId);
           if (!job || job.state !== 'queued') return;
           this.store.lease(session.id); leased = true;
-          if (job.fileId) {
+          if (job.fileId && job.model === 'ming-tts') {
+            source = await this.store.referenceSource(entry.owner, entry.binding, entry.sessionId, job.fileId);
+          } else if (job.fileId) {
             const asset = session.assets.find(a => a.id === job.fileId && a.mime === (job.model === 'ming-tts' ? 'audio/wav' : 'image/png'));
             if (!asset) fail('not_found', 404, 'Staged source not found.');
             source = { asset, bytes: await this.store.safeRead(this.store.directory(session.id), `${asset.id}.${asset.mime === 'audio/wav' ? 'wav' : 'png'}`, this.store.limits.fileBytes) };

@@ -92,8 +92,8 @@ describe('real Site HTTP, session, dispatch authority, storage, queue and mock G
     return { Cookie: response.headers.get('set-cookie').split(';')[0], 'X-CSRF-Token': /data-csrf="([^"]+)"/.exec(html)[1] };
   }
   const call = (b, url, method = 'GET', body) => fetch(origin + '/api' + url, { method, headers: { ...b, ...(body && !(body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}) }, body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined });
-  async function upload(b, id, bytes = wav(16000, 1, 2), fields = []) {
-    const form = new FormData(); form.append('file', new Blob([bytes], { type: 'audio/wav' }), 'synthetic.wav');
+  async function upload(b, id, bytes = wav(16000, 1, 2), fields = [], { type = 'audio/wav', filename = 'synthetic.wav' } = {}) {
+    const form = new FormData(); form.append('file', new File([bytes], filename, { type }));
     for (const [key, value] of fields) form.append(key, value);
     return call(b, `/sessions/${id}/references`, 'POST', form);
   }
@@ -108,6 +108,127 @@ describe('real Site HTTP, session, dispatch authority, storage, queue and mock G
     await until(() => !jobs.running);
     return (await call(b, `/sessions/${s.id}/jobs/${job.id}`)).json();
   }
+  test.each(['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave', 'application/octet-stream', ''])('native File MIME %s admits strict WAV bytes and normalizes stored MIME', async type => {
+    const b = await browser(), s = await (await call(b, '/sessions', 'POST')).json();
+    const response = await upload(b, s.id, wav(), [], { type, filename: 'experiment-11111111-1111-4111-8111-111111111111.wav' });
+    expect(response.status).toBe(201);
+    const asset = await response.json(); expect(asset).toMatchObject({ mime: 'audio/wav', audio: { durationSeconds: 1 } });
+    expect(await fs.readFile(path.join(root, s.id, `${asset.id}.wav`))).toEqual(wav());
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+  test.each([
+    ['empty_file', 400, Buffer.alloc(0), {}],
+    ['mime', 400, wav(), { type: 'text/html' }],
+    ['mime', 400, wav(), { type: 'audio/mpeg' }],
+    ['mime', 400, wav(), { type: 'application/json' }],
+    ['extension', 400, wav(), { filename: 'synthetic.mp3' }],
+    ['filename', 400, wav(), { filename: 'a'.repeat(197) + '.wav' }],
+    ['filename', 400, wav(), { filename: '../synthetic.wav' }],
+    ['filename', 400, wav(), { filename: 'C:\\private\\synthetic.wav' }],
+    ['wav_format', 422, Buffer.from('<html>not audio</html>'), { type: 'application/octet-stream' }],
+    ['wav_format', 422, Buffer.from('{"token":"private transcript"}'), { type: '' }],
+    ['rate', 422, wav(8000), {}], ['channels', 422, wav(16000, 1, 3), {}],
+    ['duration', 422, wav(16000, 0.5), {}], ['duration', 422, wav(16000, 30.01), {}],
+    ['size', 413, Buffer.alloc(6291457), {}],
+  ])('reference %s returns safe HTTP %s diagnostics without persisting or logging content', async (reason, status, bytes, options) => {
+    const b = await browser(), s = await (await call(b, '/sessions', 'POST')).json();
+    const response = await upload(b, s.id, bytes, [], options), body = await response.json();
+    expect(response.status).toBe(status);
+    expect(body).toMatchObject({ status, code: `reference_${reason}`, reason, stage: expect.any(String), requestId: expect.any(String) });
+    expect(logger.warning).toHaveBeenCalledWith(expect.any(String), { category: 'experimental_models', metadata: expect.objectContaining({ status, code: body.code, reason, requestId: body.requestId }) });
+    expect(JSON.stringify(body) + JSON.stringify(logger.warning.mock.calls)).not.toMatch(/synthetic\.wav|private transcript|private\\synthetic|<html>/);
+    expect(await fs.readdir(path.join(root, s.id))).toEqual(['session.json']); expect(calls).toEqual([]);
+  });
+  const design = { task: 'VOICE_DESIGN', text: 'Synthetic speech.', language: 'en', controls: { style: 'Calm' } };
+  test('generated result is reused as the exact four-part ephemeral bytes without copying or reference registration', async () => {
+    const b = await browser(), s = await (await call(b, '/sessions', 'POST')).json();
+    const generated = await run(b, s, design);
+    const before = await (await call(b, `/sessions/${s.id}`)).json();
+    expect(before.assets).toHaveLength(1);
+    expect(before.assets[0]).toMatchObject({ id: generated.resultId, referenceEligible: true, audio: generated.audio });
+    for (const consent of [false, undefined]) {
+      expect((await call(b, `/sessions/${s.id}/experiments/ming-tts/runs`, 'POST', { ...reference(generated.resultId), consent })).status).toBe(422);
+    }
+    const reused = await run(b, s, reference(generated.resultId));
+    expect(reused.state).toBe('succeeded');
+    expect(calls.find(c => c.path.endsWith('/ephemeral')).reference).toEqual(output);
+    const after = await (await call(b, `/sessions/${s.id}`)).json();
+    expect(after.assets).toHaveLength(2); // Only two outputs, no copied reference.
+    expect((await fs.readdir(path.join(root, s.id))).sort()).toEqual([`${generated.resultId}.wav`, `${reused.resultId}.wav`, 'session.json'].sort());
+    await call(b, `/sessions/${s.id}`, 'DELETE'); expect(await fs.readdir(root)).toEqual([]);
+  });
+  test.each([0.5, 30.01])('successful %s second output remains downloadable but cannot be a reference', async seconds => {
+    const b = await browser(), s = await (await call(b, '/sessions', 'POST')).json(); output = wav(16000, seconds);
+    const generated = await run(b, s, design); expect(generated.state).toBe('succeeded');
+    const summary = await (await call(b, `/sessions/${s.id}`)).json(); expect(summary.assets[0].referenceEligible).toBe(false);
+    const rejected = await call(b, `/sessions/${s.id}/experiments/ming-tts/runs`, 'POST', reference(generated.resultId));
+    expect(rejected.status).toBe(422); expect(await rejected.json()).toMatchObject({ reason: 'duration', numeric: { durationSeconds: seconds, minSeconds: 1, maxSeconds: 30 } });
+    expect((await call(b, `/sessions/${s.id}/files/${generated.resultId}`)).status).toBe(200);
+    expect(calls.filter(c => c.method === 'POST')).toHaveLength(1);
+  });
+  test.each(['owner', 'browser', 'session', 'expired', 'cleared', 'failed', 'queued', 'arbitrary', 'json', 'tampered'])('generated reference denies %s before inference', async kind => {
+    const b = await browser(), s = await (await call(b, '/sessions', 'POST')).json();
+    const generated = await run(b, s, design), local = store.sessions.get(s.id);
+    let headers = b, sessionId = s.id, assetId = generated.resultId;
+    if (kind === 'owner') headers = { ...b, 'x-owner': 'b'.repeat(24) };
+    if (kind === 'browser') headers = await browser();
+    if (kind === 'session') sessionId = (await (await call(b, '/sessions', 'POST')).json()).id;
+    if (kind === 'expired') now = s.expiresAt;
+    if (kind === 'cleared') await call(b, `/sessions/${s.id}`, 'DELETE');
+    if (['failed', 'queued'].includes(kind)) local.jobs[0].state = kind;
+    if (kind === 'arbitrary') { local.jobs[0].resultId = randomUUID(); }
+    if (kind === 'json') local.assets[0].mime = 'application/json';
+    if (kind === 'tampered') { const bytes = Buffer.alloc(output.length); await fs.writeFile(path.join(root, s.id, `${assetId}.wav`), bytes); }
+    const rejected = await call(headers, `/sessions/${sessionId}/experiments/ming-tts/runs`, 'POST', reference(assetId));
+    expect(rejected.status).toBe(kind === 'queued' ? 409 : kind === 'tampered' ? 422 : 404);
+    expect(calls.filter(c => c.method === 'POST')).toHaveLength(1);
+  });
+  test('reuse reserves output quota and clear waits for its lease, rejects new uses and discards late output', async () => {
+    const b = await browser(), s = await (await call(b, '/sessions', 'POST')).json();
+    const generated = await run(b, s, design);
+    for (const key of ['sessionBytes', 'userBytes', 'globalBytes']) {
+      store.limits = { ...LIMITS, [key]: output.length + 6291456 };
+      expect((await call(b, `/sessions/${s.id}/experiments/ming-tts/runs`, 'POST', reference(generated.resultId))).status).toBe(429);
+    }
+    store.limits = LIMITS; hold = true;
+    expect((await call(b, `/sessions/${s.id}/experiments/ming-tts/runs`, 'POST', reference(generated.resultId))).status).toBe(202);
+    await until(() => releases.length === 1);
+    expect((await call(b, `/sessions/${s.id}`, 'DELETE')).status).toBe(202);
+    expect((await call(b, `/sessions/${s.id}/experiments/ming-tts/runs`, 'POST', reference(generated.resultId))).status).toBe(404);
+    expect((await fs.readdir(path.join(root, s.id))).sort()).toEqual([`${generated.resultId}.wav`, 'session.json'].sort());
+    releases[0](); await until(() => !jobs.running);
+    expect(await fs.readdir(root)).toEqual([]);
+  });
+  test('queued generated reference revalidates bytes at dispatch after another session releases the worker', async () => {
+    const b = await browser(), s = await (await call(b, '/sessions', 'POST')).json();
+    const generated = await run(b, s, design), second = await (await call(b, '/sessions', 'POST')).json();
+    hold = true;
+    await call(b, `/sessions/${second.id}/experiments/ming-tts/runs`, 'POST', design); await until(() => releases.length === 1);
+    const response = await call(b, `/sessions/${s.id}/experiments/ming-tts/runs`, 'POST', reference(generated.resultId));
+    expect(response.status).toBe(202); const queued = await response.json();
+    await fs.writeFile(path.join(root, s.id, `${generated.resultId}.wav`), Buffer.alloc(output.length));
+    releases[0](); await until(() => !jobs.running);
+    expect(await (await call(b, `/sessions/${s.id}/jobs/${queued.id}`)).json()).toMatchObject({ state: 'failed', code: 'reference_wav_format' });
+    expect(calls.some(c => c.path.endsWith('/ephemeral'))).toBe(false); expect(store.leases.size).toBe(0);
+  });
+  test('restart derives generated reference eligibility without changing the manifest or copying audio', async () => {
+    const b = await browser(), s = await (await call(b, '/sessions', 'POST')).json();
+    const generated = await run(b, s, design), binding = store.sessions.get(s.id).binding;
+    const recovered = new LabStore({ root, now: () => now });
+    const summary = await recovered.get(owner, binding, s.id);
+    expect(summary.assets[0]).toMatchObject({ id: generated.resultId, referenceEligible: true });
+    expect((await recovered.exclusive(() => recovered.referenceSource(owner, binding, s.id, generated.resultId))).bytes).toEqual(output);
+    const manifest = JSON.parse(await fs.readFile(path.join(root, s.id, 'session.json')));
+    expect(manifest.assets).toHaveLength(1); expect(manifest.assets[0].audio).toBeUndefined();
+  });
+  test('download lease keeps reused asset until close, while delete-pending denies reference resolution', async () => {
+    const b = await browser(), s = await (await call(b, '/sessions', 'POST')).json();
+    const generated = await run(b, s, design), binding = store.sessions.get(s.id).binding;
+    const download = await store.download(owner, binding, s.id, generated.resultId);
+    expect((await call(b, `/sessions/${s.id}`, 'DELETE')).status).toBe(202);
+    await expect(store.exclusive(() => store.referenceSource(owner, binding, s.id, generated.resultId))).rejects.toMatchObject({ status: 404 });
+    await download.handle.close(); await store.sweep(); expect(await fs.readdir(root)).toEqual([]);
+  });
   test.each([...REFERENCE_TASKS, 'VOICE_DESIGN', 'FREEFORM'])('Ming %s completes, exposes safe WAV metadata, clears every local artifact', async task => {
     const { b, s, asset } = await setup();
     const input = REFERENCE_TASKS.includes(task) ? reference(asset.id, task) : { task, text: 'Synthetic speech', language: 'en', ...(task === 'VOICE_DESIGN' ? { controls: { style: 'Calm' } } : { instruction: 'Speak softly' }) };

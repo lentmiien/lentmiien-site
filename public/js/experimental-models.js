@@ -13,7 +13,14 @@
       headers: { Accept: 'application/json', 'X-CSRF-Token': root.dataset.csrf, ...options.headers } });
     const body = await response.json().catch(() => null);
     if ([401, 403].includes(response.status)) clearBrowserData();
-    if (!response.ok) throw new Error(body?.error || 'Request failed. Refresh and try again.');
+    if (!response.ok) {
+      const code = /^[a-z][a-z0-9_]{0,79}$/.test(body?.code || '') ? body.code : 'request_failed';
+      const reason = /^[a-z][a-z0-9_]{0,79}$/.test(body?.reason || '') ? ` · ${body.reason}` : '';
+      const prefix = Number.isInteger(response.status) ? `HTTP ${response.status} · ${code}${reason}: ` : '';
+      const error = new Error(prefix + (body?.error || 'Request failed. Refresh and try again.'));
+      error.inspection = { status: response.status, code, stage: body?.stage, reason: body?.reason, numeric: body?.numeric, requestId: body?.requestId };
+      throw error;
+    }
     return body;
   }
   function element(tag, text) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; return node; }
@@ -31,9 +38,12 @@
   }
   async function action(work) {
     if (busy) return;
-    busy = true; status.textContent = 'Working…';
+    busy = true; status.textContent = 'Working…'; $('lab-error-inspector').replaceChildren();
     root.querySelectorAll('button:not(fieldset button)').forEach(b => { b.dataset.disabled = String(b.disabled); b.disabled = true; });
-    try { await work(); await refresh(); } catch (error) { status.textContent = error.message; }
+    try { await work(); await refresh(); } catch (error) {
+      status.textContent = error.message;
+      if (error.inspection) $('lab-error-inspector').replaceChildren(inspector('Request failure (safe diagnostics)', error.inspection));
+    }
     finally {
       root.querySelectorAll('button[data-disabled]').forEach(b => { b.disabled = b.dataset.disabled === 'true'; delete b.dataset.disabled; });
       busy = false; updateMingTask();
@@ -47,7 +57,7 @@
   function updateImages() {
     const session = snapshot.find(s => s.id === $('lab-session').value);
     updateSelect($('wevis-file'), (session?.assets || []).filter(a => a.mime === 'image/png').map(a => [a.id, `${a.id.slice(0, 8)} · ${a.width} × ${a.height}`]));
-    updateSelect($('ming-file'), (session?.assets || []).filter(a => a.mime === 'audio/wav' && a.audio).map(a => [a.id, `${a.id.slice(0, 8)} · ${a.audio.sampleRate} Hz · ${a.audio.durationSeconds.toFixed(2)} s`]));
+    updateSelect($('ming-file'), (session?.assets || []).filter(a => a.mime === 'audio/wav' && a.audio && a.referenceEligible !== false).map(a => [a.id, `${a.id.slice(0, 8)} · ${a.audio.sampleRate} Hz · ${a.audio.durationSeconds.toFixed(2)} s`]));
     updateImagePreview(); updateReferencePreview(); updatePreviews();
   }
   function updateImagePreview() {
@@ -68,12 +78,12 @@
     container.querySelectorAll('audio').forEach(audio => { audio.pause(); audio.removeAttribute('src'); audio.load(); });
   }
   function clearBrowserData() {
-    clearDrafts(); snapshot = []; signature = ''; sessions.replaceChildren();
+    clearDrafts(); snapshot = []; signature = ''; sessions.replaceChildren(); $('lab-error-inspector').replaceChildren();
     updateSelect($('lab-session'), []); updateImages();
   }
   function clearDrafts() {
     for (const id of ['ming-text', 'ming-style', 'ming-instruction', 'ming-transcript', 'wevis-query', 'ming-upload']) $(id).value = '';
-    $('ming-consent').checked = false;
+    $('ming-consent').checked = false; $('ming-transcript-verification').hidden = true;
     stopAudio(root);
     updatePreviews();
   }
@@ -127,14 +137,35 @@
     const elapsed = ((job.endedAt || Date.now()) - job.createdAt) / 1000;
     card.append(element('p', `Site elapsed at last refresh: ${Math.max(0, elapsed).toFixed(1)} s · ${job.id.slice(0, 8)}`));
     card.append(inspector('Submitted request (sanitized)', job.request || '{}'));
-    if (job.status) card.append(inspector('Gateway response / Site failure status and safe headers', { status: job.status, headers: job.headers || {}, code: job.code }));
+    if (job.status) card.append(inspector('Sanitized Gateway response / Site failure status and safe headers', { status: job.status, headers: job.headers || {}, code: job.code }));
     if (job.error) card.append(element('p', job.error));
+    if (job.model === 'wevisone-vl' && ['failed', 'interrupted'].includes(job.state)) {
+      card.append(element('p', 'Rejected model output: unavailable. No validated failure diagnostics were received; failure may have occurred before decoding. Output is not valid and no overlay is shown.'));
+    }
     if (job.resultId && job.state === 'succeeded') {
       const url = fileUrl(session.id, job.resultId);
       card.append(link(job.audio ? 'Download complete WAV' : 'Download complete sanitized JSON', url));
       if (job.audio) {
         const audio = element('audio'); audio.controls = true; audio.preload = 'none'; audio.src = url;
         card.append(audio, inspector('Site-parsed WAV metadata (not Gateway JSON)', job.audio));
+        const asset = session.assets.find(a => a.id === job.resultId);
+        const reuse = button('Use as reference', () => {
+          if (busy) return;
+          if (!referenceAvailable) { status.textContent = 'Check Ming availability before using reference audio.'; return; }
+          clearDrafts(); $('lab-session').value = session.id; updateImages();
+          let submitted = {};
+          try { const preview = JSON.parse(job.request); submitted = preview.json || preview.fields?.request || {}; } catch (_) { /* verify manually */ }
+          $('ming-task').value = ['ja', 'ko', 'de', 'fr', 'es'].includes(submitted.language) ? 'MULTILINGUAL' : 'TTS';
+          updateMingTask();
+          if (Array.from($('ming-language').options).some(option => option.value === submitted.language)) $('ming-language').value = submitted.language;
+          $('ming-file').value = asset.id; updateReferencePreview();
+          $('ming-transcript').value = typeof submitted.text === 'string' ? submitted.text : '';
+          $('ming-transcript-verification').hidden = false; $('ming-consent').checked = false;
+          updatePreviews(); $('ming-transcript').focus();
+          status.textContent = 'VERIFY_TRANSCRIPT: listen and correct the proposed transcript, then give explicit consent. Existing audio is reused without another upload.';
+        });
+        reuse.disabled = asset?.referenceEligible !== true;
+        card.append(reuse, element('p', asset?.referenceReason || 'Reference eligibility is unavailable. Refresh this session.'));
       } else {
         const output = element('div');
         const load = button('Inspect result and overlay', async () => {
@@ -235,7 +266,7 @@
     updatePreviews();
   }
   $('ming-task').addEventListener('change', updateMingTask);
-  $('ming-file').addEventListener('change', () => { $('ming-consent').checked = false; updateReferencePreview(); updatePreviews(); });
+  $('ming-file').addEventListener('change', () => { $('ming-consent').checked = false; $('ming-transcript').value = ''; $('ming-transcript-verification').hidden = true; updateReferencePreview(); updatePreviews(); });
   $('ming-upload-button').addEventListener('click', () => action(async () => {
     const id = $('lab-session').value, file = $('ming-upload').files[0];
     if (!id || !file || file.size > 6291456) throw new Error('Select a session and one PCM16 WAV up to 6 MiB.');
@@ -253,6 +284,11 @@
     try {
       const capabilities = await request(`/experiments/${control.dataset.model}/capabilities`);
       output.textContent = JSON.stringify(capabilities, null, 2);
+      if (control.dataset.model === $('lab-wevis').dataset.model) {
+        $('wevis-inspection-status').textContent = capabilities.failureInspection?.advertisedVersion === 1
+          ? 'Gateway advertises failure inspection v1. Site integration awaits the exact diagnostics contract; inspection is not requested yet.'
+          : 'Failure inspection unavailable: Gateway does not advertise the supported version. Ordinary WeVis runs remain available.';
+      }
       if (control.dataset.model === $('lab-ming').dataset.model) {
         referenceAvailable = capabilities.referenceAdapter === 'available' && capabilities.available === true;
         $('ming-availability').textContent = capabilities.referenceAdapter !== 'available' ? 'Unsupported Gateway: deploy the updated Gateway and Ming worker for ephemeral references.'

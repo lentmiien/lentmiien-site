@@ -121,7 +121,8 @@ class LabGateway {
       container_state: ['running', 'stopped', 'starting', 'missing', 'unavailable', 'not_installed'].includes(value.container_state) ? value.container_state : 'unknown',
       optional_installation: typeof value.optional_installation === 'boolean' ? value.optional_installation : null,
       ...(model === 'ming-tts' ? { referenceAdapter: value.ephemeral_reference?.version === 1 ? 'available' : 'unsupported',
-        ephemeral_reference: { version: value.ephemeral_reference?.version === 1 ? 1 : null } } : {}), limits: await this.limits() };
+        ephemeral_reference: { version: value.ephemeral_reference?.version === 1 ? 1 : null } }
+        : { failureInspection: { enabled: false, status: 'contract_pending', advertisedVersion: value.failure_inspection?.version === 1 ? 1 : null } }), limits: await this.limits() };
   }
   async run(model, input, source) {
     input = parseInput(model, input);

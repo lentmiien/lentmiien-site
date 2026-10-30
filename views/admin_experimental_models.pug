@@ -26,6 +26,7 @@ block content
       button#lab-create(type='button') New test session
       button#lab-refresh(type='button') Refresh sessions
       p#lab-status(role='status', aria-live='polite') Loading sessions…
+      #lab-error-inspector
       #lab-sessions
     section.lab-card
       h2 Run an experiment
@@ -53,6 +54,7 @@ block content
           label(for='wevis-tokens') Maximum new tokens (1–4096)
           input#wevis-tokens(type='number', min='1', max='4096', step='1', value='1024', required)
           p Actual input plus output must fit 8192 tokens; Gateway can reject this budget.
+          p#wevis-inspection-status Failure inspection is unavailable while the exact Gateway diagnostics contract is pending. Failed output is never treated as valid geometry.
           details
             summary Site request inspector (no transport headers)
             pre#wevis-request
@@ -93,10 +95,11 @@ block content
             p#ming-reference-metadata
             label(for='ming-transcript') Reference transcript (nonblank, up to 2048 characters and 8192 UTF-8 bytes)
             textarea#ming-transcript(maxlength='2048', rows='3', required)
+            p#ming-transcript-verification.lab-warning(hidden) VERIFY_TRANSCRIPT: this is the same job’s submitted text, not a transcription. Listen to the audio and correct it before running.
             label(for='ming-consent')
               input#ming-consent(type='checkbox', required)
               |  I have permission and affirmative consent to use this voice for this request.
-            p A generated synthetic clip can be downloaded and manually uploaded if it meets these limits. Consent is still required. No persistent voice is registered.
+            p Use as reference reuses eligible generated audio in this session without copying or uploading it again. Verify the proposed transcript and give consent for every run. No persistent voice is registered.
           each values, control in { speed: [['慢速', 'Slow'], ['中速', 'Medium'], ['快速', 'Fast']], pitch: [['低', 'Low'], ['中', 'Medium'], ['高', 'High']], volume: [['低', 'Low'], ['中', 'Medium'], ['高', 'High']], emotion: [['高兴', 'Happy'], ['悲伤', 'Sad'], ['愤怒', 'Angry'], ['恐惧', 'Fear'], ['厌恶', 'Disgust'], ['惊讶', 'Surprise'], ['中性', 'Neutral']], dialect: [['chuanyu dialect', 'Chuanyu dialect'], ['cantonese', 'Cantonese']] }
             div(id='ming-' + control + '-field', hidden)
               label(for='ming-' + control)= control
@@ -116,5 +119,5 @@ block content
       h2 Runtime and privacy
       p Jobs survive browser navigation. Site shows local queueing or waiting for Gateway; there are no upstream job IDs, progress or active cancellation handles. A completed response does not prove the GPU container has stopped. Timeout or Site restart can leave completion unknown; generation is never automatically replayed.
       p Gateway holds ephemeral request memory; its worker uses a private anonymous memory descriptor, with no voice registry entry or disk spool. Normal completion closes it; failure or unknown termination can leave cleanup pending. Clearing Site data does not prove immediate GPU shutdown or forensic memory erasure.
-      p Ming requires MING_ADMIN_TOKEN in server configuration, sent only as X-Ming-Token on Ming routes. This page never accepts secrets. Error inspectors omit arbitrary Gateway detail text, host paths and private inputs; full raw model text is unavailable on failed WeVis runs.
+      p Ming requires MING_ADMIN_TOKEN in server configuration, sent only as X-Ming-Token on Ming routes. This page never accepts secrets. Error inspectors omit arbitrary Gateway detail text, host paths and private inputs; rejected WeVis output is unavailable until the versioned failure-inspection contract is integrated. No arbitrary upstream error text is displayed.
   script(src='/js/experimental-models.js', defer)

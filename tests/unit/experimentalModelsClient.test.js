@@ -230,3 +230,63 @@ test('pagehide and expired authorization remove browser snapshots, drafts and in
   document.getElementById('lab-refresh').click(); await settle();
   expect(document.getElementById('ming-transcript').value).toBe(''); expect(document.querySelector('.lab-session')).toBeNull();
 });
+
+test('upload failures show HTTP status, stable code, reason and numeric bounds as inert text', async () => {
+  const fetch = jest.fn(async (url, options = {}) => options.method === 'POST'
+    ? { ok: false, status: 422, json: async () => ({ error: 'Reference duration must be 1–30 seconds.', code: 'reference_duration', stage: 'content', reason: 'duration', numeric: { durationSeconds: 31, maxSeconds: 30 } }) }
+    : response(url.endsWith('/capabilities') ? { available: true, referenceAdapter: 'available' } : { sessions: [session] }));
+  const document = await page(fetch);
+  document.querySelector('.lab-capabilities[data-model="ming-tts"]').click(); await settle();
+  document.getElementById('ming-task').value = 'TTS'; document.getElementById('ming-task').dispatchEvent(new dom.window.Event('change'));
+  Object.defineProperty(document.getElementById('ming-upload'), 'files', { value: [new dom.window.File(['synthetic'], 'reference.wav', { type: '' })] });
+  document.getElementById('ming-upload-button').click(); await settle();
+  expect(document.getElementById('lab-status').textContent).toContain('HTTP 422 · reference_duration · duration');
+  expect(document.getElementById('lab-error-inspector').textContent).toMatch(/content[\s\S]*durationSeconds[\s\S]*31/);
+  expect(fetch.mock.calls.find(([url]) => url.endsWith('/references'))[1].headers['Content-Type']).toBeUndefined();
+});
+
+test('Use as reference selects the same result, prefills only its submitted transcript and resets consent without uploading', async () => {
+  const asset = { id: '22222222-2222-4222-8222-222222222222', mime: 'audio/wav', bytes: 32044,
+    audio: { channels: 1, bitsPerSample: 16, sampleRate: 16000, durationSeconds: 1 }, referenceEligible: true, referenceReason: 'Verify transcript.' };
+  const job = { id: '33333333-3333-4333-8333-333333333333', model: 'ming-tts', state: 'succeeded', resultId: asset.id, audio: asset.audio, createdAt: 0, endedAt: 1,
+    request: JSON.stringify({ json: { task: 'VOICE_DESIGN', text: 'Same job text.', language: 'zh' } }) };
+  const fetch = jest.fn(async url => response(url.endsWith('/capabilities') ? { available: true, referenceAdapter: 'available' } : { sessions: [{ ...session, assets: [asset], jobs: [job] }] }));
+  const document = await page(fetch);
+  document.querySelector('.lab-capabilities[data-model="ming-tts"]').click(); await settle();
+  document.getElementById('ming-consent').checked = true;
+  document.getElementById('ming-text').value = 'Unrelated draft';
+  const reuse = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Use as reference');
+  expect(reuse.disabled).toBe(false); reuse.click(); await settle();
+  expect(document.getElementById('ming-file').value).toBe(asset.id);
+  expect(document.getElementById('ming-transcript').value).toBe('Same job text.');
+  expect(document.getElementById('ming-text').value).toBe('');
+  expect(document.getElementById('ming-task').value).toBe('TTS'); expect(document.getElementById('ming-language').value).toBe('zh');
+  expect(document.getElementById('ming-consent').checked).toBe(false);
+  expect(document.getElementById('ming-transcript-verification').hidden).toBe(false);
+  expect(document.getElementById('ming-transcript-verification').textContent).toContain('VERIFY_TRANSCRIPT');
+  expect(fetch.mock.calls.some(([, options]) => options?.method)).toBe(false);
+  document.getElementById('ming-text').value = 'Next speech';
+  document.getElementById('lab-ming').dispatchEvent(new dom.window.Event('submit', { cancelable: true })); await settle();
+  expect(document.getElementById('lab-status').textContent).toContain('affirmative consent');
+  expect(fetch.mock.calls.some(([, options]) => options?.method)).toBe(false);
+});
+
+test('ineligible generated audio has a disabled reference action and stays downloadable', async () => {
+  const asset = { id: '22222222-2222-4222-8222-222222222222', mime: 'audio/wav', bytes: 32044,
+    audio: { channels: 1, bitsPerSample: 16, sampleRate: 16000, durationSeconds: 31 }, referenceEligible: false, referenceReason: 'Reference requires 1–30 seconds.' };
+  const document = await page(jest.fn(async () => response({ sessions: [{ ...session, assets: [asset], jobs: [{ id: asset.id, model: 'ming-tts', state: 'succeeded', audio: asset.audio, resultId: asset.id }] }] })));
+  expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Use as reference').disabled).toBe(true);
+  expect(document.querySelector('.lab-job').textContent).toContain('1–30 seconds');
+  expect(document.querySelector('.lab-job a').textContent).toContain('Download complete WAV');
+  expect(document.getElementById('ming-file').options.length).toBe(0);
+});
+
+test('failed WeVis shows sanitized status and explicit unavailable output, escapes hostile text and never draws geometry', async () => {
+  const document = await page(jest.fn(async () => response({ sessions: [{ ...session, jobs: [{ id: session.id, model: 'wevisone-vl', state: 'failed', status: 502,
+    code: 'gateway_error', error: '<img src=x onerror=alert(1)>', resultId: session.id, request: '<script>alert(1)</script>' }] }] })));
+  const card = document.querySelector('.lab-job');
+  expect(card.textContent).toContain('Sanitized Gateway response'); expect(card.textContent).toContain('Rejected model output: unavailable');
+  expect(card.textContent).toContain('502'); expect(card.textContent).toContain('gateway_error');
+  expect(card.querySelector('img, svg, script')).toBeNull();
+  expect(card.querySelector('button')).toBeNull();
+});

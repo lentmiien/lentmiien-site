@@ -6,6 +6,7 @@ const { createRequireCapabilities } = require('../middleware/requireCapabilities
 const { createSessionCsrf } = require('../middleware/sessionCsrf');
 const { CAPABILITY, BUNDLES, ID, LIMITS, LabError, fail } = require('../services/experimentalModels/policy');
 const registry = require('../services/experimentalModels/registry');
+const { referenceError } = require('../services/experimentalModels/referenceDiagnostics');
 const logger = require('../utils/logger');
 const { LabJobs } = require('../services/experimentalModels/jobs');
 const { strictJson } = require('../utils/taricProtocol');
@@ -16,6 +17,7 @@ function createRouter({ store = require('../services/experimentalModels'), gatew
   const csrf = createSessionCsrf();
   let receivingUpload = false;
   let downloads = 0;
+  let warningWindow = 0, warningCount = 0;
   router.use((req, res, next) => {
     res.set({ 'Cache-Control': 'private, no-store, max-age=0', 'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow' });
@@ -88,11 +90,16 @@ function createRouter({ store = require('../services/experimentalModels'), gatew
     const upload = multer({ storage: multer.memoryStorage(), preservePath: true,
       limits: { fileSize: maxBytes, files: 1, fields: 0, parts: 1, fieldNameSize: 40, headerPairs: 20 } }).single('file');
     return async (req, res) => {
+      req.labReferenceUpload = reference;
+      req.labRequestId = randomUUID();
       await store.exclusive(async () => { store.owned(req.labOwner, req.labBinding, req.params.id); }); // Deny closing sessions before allocating memory.
       if (receivingUpload) fail('upload_busy', 429, 'Another upload is being processed. Retry shortly.');
       const length = Number(req.get('content-length'));
       if (!Number.isSafeInteger(length) || length <= 0 || req.get('transfer-encoding')) fail('length_required', 411, 'A bounded Content-Length is required.');
-      if (length > maxBytes + 8192) fail('file_limit', 413, reference ? 'Reference upload exceeds 6 MiB.' : 'Upload exceeds 8 MiB.');
+      if (length > maxBytes + 8192) {
+        if (reference) throw referenceError('size');
+        fail('file_limit', 413, 'Upload exceeds 8 MiB.');
+      }
       if (!req.is('multipart/form-data')) fail('invalid_type', 415, 'Upload one multipart file.');
       receivingUpload = true;
       try {
@@ -103,12 +110,15 @@ function createRouter({ store = require('../services/experimentalModels'), gatew
             settled = true; clearTimeout(timer); req.off('aborted', aborted);
             error ? reject(error) : resolve();
           };
-          const aborted = () => finish(new LabError('upload_interrupted', 400, 'Upload interrupted.'));
-          const timer = setTimeout(() => { finish(new LabError('upload_timeout', 408, 'Upload timed out.')); req.destroy(); }, 30000);
+          const aborted = () => finish(reference ? referenceError('interrupted') : new LabError('upload_interrupted', 400, 'Upload interrupted.'));
+          const timer = setTimeout(() => { finish(reference ? referenceError('timeout') : new LabError('upload_timeout', 408, 'Upload timed out.')); req.destroy(); }, 30000);
           req.once('aborted', aborted);
           upload(req, res, finish);
         });
-        if (req.aborted) fail('upload_interrupted', 400, 'Upload interrupted.');
+        if (req.aborted) {
+          if (reference) throw referenceError('interrupted');
+          fail('upload_interrupted', 400, 'Upload interrupted.');
+        }
         res.status(201).json(await store.upload(req.labOwner, req.labBinding, req.params.id, req.file, reference));
       } finally { if (req.file) req.file.buffer = undefined; receivingUpload = false; }
     };
@@ -141,11 +151,17 @@ function createRouter({ store = require('../services/experimentalModels'), gatew
   });
   router.use((_req, res) => res.status(404).json({ error: 'Lab route not found.' }));
   router.use((error, req, res, _next) => {
+    if (req.labReferenceUpload && error instanceof multer.MulterError) error = referenceError(error.code === 'LIMIT_FILE_SIZE' ? 'size' : 'parts');
     const status = error instanceof LabError ? error.status : error instanceof multer.MulterError || error.type === 'entity.too.large' ? 413 : ['entity.parse.failed', 'encoding.unsupported'].includes(error.type) ? 400 : 503;
     if (status >= 500) logger.error('Experimental Models operation failed; check Gateway configuration or private storage', { category: 'experimental_models', metadata: { status } });
+    if (status >= 400 && status < 500 && error.diagnostic) {
+      if (Date.now() - warningWindow >= 60000) { warningWindow = Date.now(); warningCount = 0; }
+      if (warningCount++ < 12) logger.warning('Experimental Models reference rejected; check the reported input requirement', {
+        category: 'experimental_models', metadata: { status, code: error.code, ...error.diagnostic, requestId: req.labRequestId || randomUUID() } });
+    }
     if (res.headersSent) return res.destroy();
     if (error.safeHeaders?.['Retry-After']) res.set('Retry-After', error.safeHeaders['Retry-After']);
-    if (!res.destroyed) res.status(status).json({ code: error instanceof LabError ? error.code : 'lab_unavailable',
+    if (!res.destroyed) res.status(status).json({ status, ...(error.diagnostic || {}), ...(req.labRequestId ? { requestId: req.labRequestId } : {}), code: error instanceof LabError ? error.code : 'lab_unavailable',
       error: error instanceof LabError ? error.message : status === 413 ? 'Request exceeds file or body limits.' : status === 400 ? 'Invalid request body.' : 'Lab unavailable. Check application diagnostics.' });
   });
   return router;

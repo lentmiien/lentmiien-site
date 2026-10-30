@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { ID, fail } = require('./policy');
+const { referenceError } = require('./referenceDiagnostics');
 
 const REFERENCE_TASKS = ['TTS', 'MULTILINGUAL', 'BASIC', 'EMOTION', 'DIALECT'];
 const WEVIS_TASKS = ['ocr', 'detection', 'referring', 'point', 'count_box', 'count_point', 'ocr_grounding'];
@@ -84,8 +85,11 @@ function validateWevis(value, request, asset) {
   return data;
 }
 function validateWav(bytes, { reference = false } = {}) {
-  const invalid = () => fail(reference ? 'invalid_reference' : 'invalid_audio', reference ? 422 : 502,
-    reference ? 'Use a complete PCM16 WAV, mono/stereo, 16–48 kHz, 1–30 seconds, up to 6 MiB.' : 'Gateway returned invalid or incomplete PCM WAV audio.');
+  const invalid = (reason = 'wav_format', observed) => {
+    if (reference) throw referenceError(reason, observed);
+    fail('invalid_audio', 502, 'Gateway returned invalid or incomplete PCM WAV audio.');
+  };
+  if (Buffer.isBuffer(bytes) && bytes.length > 6291456) invalid('size', { bytes: bytes.length });
   if (!Buffer.isBuffer(bytes) || bytes.length < 44 || bytes.length > 6291456 || bytes.toString('latin1', 0, 4) !== 'RIFF'
     || bytes.toString('latin1', 8, 12) !== 'WAVE' || bytes.readUInt32LE(4) + 8 !== bytes.length) invalid();
   let fmt, dataSize, offset = 12;
@@ -99,10 +103,12 @@ function validateWav(bytes, { reference = false } = {}) {
     } else if (type === 'data') { if (!fmt || dataSize !== undefined) invalid(); dataSize = length; }
     offset += length + length % 2;
   }
-  if (offset !== bytes.length || !fmt || !dataSize || fmt.codec !== 1 || !(reference ? [1, 2] : [1]).includes(fmt.channels) || fmt.bitsPerSample !== 16
-    || fmt.sampleRate < 16000 || fmt.sampleRate > 48000 || fmt.blockAlign !== fmt.channels * 2 || fmt.byteRate !== fmt.sampleRate * fmt.blockAlign || dataSize % fmt.blockAlign) invalid();
+  if (offset !== bytes.length || !fmt || dataSize === undefined || fmt.codec !== 1 || fmt.bitsPerSample !== 16) invalid();
+  if (!(reference ? [1, 2] : [1]).includes(fmt.channels)) invalid('channels', { channels: fmt.channels });
+  if (fmt.sampleRate < 16000 || fmt.sampleRate > 48000) invalid('rate', { sampleRate: fmt.sampleRate });
+  if (fmt.blockAlign !== fmt.channels * 2 || fmt.byteRate !== fmt.sampleRate * fmt.blockAlign || dataSize % fmt.blockAlign) invalid();
   const durationSeconds = dataSize / fmt.byteRate;
-  if (durationSeconds <= 0 || durationSeconds > (reference ? 30 : 60) || (reference && durationSeconds < 1)) invalid();
+  if (durationSeconds <= 0 || durationSeconds > (reference ? 30 : 60) || (reference && durationSeconds < 1)) invalid('duration', { durationSeconds });
   return { sampleRate: fmt.sampleRate, channels: fmt.channels, bitsPerSample: 16, durationSeconds };
 }
 module.exports = { REFERENCE_TASKS, WEVIS_TASKS, TAGS, CONTROLS, parseInput, validateWevis, validateWav };

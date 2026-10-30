@@ -4,6 +4,7 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const sharp = require('sharp');
 const { validateWav } = require('./contracts');
+const { referenceError } = require('./referenceDiagnostics');
 const { assertNoSymlinks, assertTrustedStorage, within } = require('../gptImageStorageService');
 const logger = require('../../utils/logger');
 const { ID, LIMITS, fail, sessionSchema } = require('./policy');
@@ -161,7 +162,16 @@ class LabStore {
   summary(session) {
     return { id: session.id, createdAt: session.createdAt, expiresAt: session.expiresAt,
       deletePending: session.deletePending, jobs: session.jobs.map(job => ({ ...job })),
-      bytes: this.usage(session), assets: session.assets.map(asset => ({ ...asset })) };
+      bytes: this.usage(session), assets: session.assets.map(asset => {
+        const result = session.jobs.find(job => job.resultId === asset.id);
+        if (asset.mime !== 'audio/wav' || !result) return { ...asset };
+        const audio = result.audio;
+        const eligible = result.model === 'ming-tts' && result.state === 'succeeded' && audio?.bitsPerSample === 16
+          && [1, 2].includes(audio.channels) && audio.sampleRate >= 16000 && audio.sampleRate <= 48000
+          && audio.durationSeconds >= 1 && audio.durationSeconds <= 30 && asset.bytes <= this.limits.referenceBytes;
+        return { ...asset, audio, referenceEligible: eligible,
+          referenceReason: eligible ? 'Verify the transcript and explicitly consent before running.' : 'Reference requires successful PCM16 audio, 16–48 kHz, 1–30 seconds, up to 6 MiB.' };
+      }) };
   }
   list(owner, binding) {
     return this.exclusive(async () => [...this.sessions.values()].filter(s => s.owner === owner && s.binding === binding && (!s.deletePending || this.leases.get(s.id)) && s.expiresAt > this.now()).map(s => this.summary(s)));
@@ -209,13 +219,35 @@ class LabStore {
     }
   }
   sweep() { return this.exclusive(() => this.sweepUnlocked()); }
+  // Caller holds the storage lock. Read and validate under the same ownership
+  // check at admission and dispatch; the dispatch lease protects the bytes in use.
+  async referenceSource(owner, binding, id, assetId) {
+    const session = this.owned(owner, binding, id);
+    const asset = ID.test(assetId) && session.assets.find(value => value.id === assetId && value.mime === 'audio/wav');
+    const result = asset && session.jobs.find(job => job.resultId === asset.id);
+    if (!asset || (result ? result.model !== 'ming-tts' || result.state !== 'succeeded' || !result.audio : !asset.audio)) {
+      fail('not_found', 404, 'Eligible session reference not found.');
+    }
+    const bytes = await this.safeRead(this.directory(id), `${asset.id}.wav`, this.limits.fileBytes);
+    if (bytes.length !== asset.bytes) throw new Error('Damaged lab reference');
+    const audio = validateWav(bytes, { reference: true });
+    this.owned(owner, binding, id); // Expiry may elapse during the bounded read.
+    return { asset: { ...asset, audio }, bytes };
+  }
   upload(owner, binding, id, file, reference = false) {
     return this.exclusive(async () => {
       const session = this.owned(owner, binding, id);
+      if (reference) {
+        if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) throw referenceError('empty_file');
+        if (file.buffer.length > this.limits.referenceBytes) throw referenceError('size', { bytes: file.buffer.length });
+        if (typeof file.originalname !== 'string' || !file.originalname.length || file.originalname.length > 200 || /[\\/\x00-\x1f\x7f]/.test(file.originalname)) throw referenceError('filename');
+        if (!/\.wav$/i.test(file.originalname)) throw referenceError('extension');
+        if (![undefined, '', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave', 'application/octet-stream'].includes(file.mimetype)) throw referenceError('mime');
+      }
       if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) fail('invalid_file', 400, 'Choose one supported file.');
       if (file.buffer.length > this.limits.fileBytes) fail('file_limit', 413, 'Image exceeds 8 MiB.');
       const formats = { 'image/png': ['png', /\.png$/i], 'image/jpeg': ['jpeg', /\.jpe?g$/i], 'image/webp': ['webp', /\.webp$/i] };
-      const expected = reference ? (['audio/wav', 'audio/x-wav', 'audio/wave'].includes(file.mimetype) ? ['wav', /\.wav$/i] : null) : formats[file.mimetype];
+      const expected = reference ? ['wav', /\.wav$/i] : formats[file.mimetype];
       if (!expected || typeof file.originalname !== 'string' || file.originalname.length > 200 || /[\\/\x00-\x1f]/.test(file.originalname) || !expected[1].test(file.originalname)) {
         fail('invalid_file', 400, 'File type, filename and content must match.');
       }
