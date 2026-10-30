@@ -101,16 +101,21 @@
     const page = lifecycle;
     busy = true; clearTimeout(timer); status.textContent = 'Working…'; $('lab-error-inspector').replaceChildren();
     disableButtons();
-    let refreshed = false;
+    let refreshed = false, completed = false;
     try {
       // Coalesce an already running poll, then keep polls paused until this owned
       // action and its one final refresh settle. Never overlap list requests.
       if (refreshing) await refreshing.catch(() => {});
       if (page.signal.aborted) return;
-      await work();
+      if (work) { await work(); completed = true; }
       if (page.signal.aborted) return;
       await refresh(); refreshed = true;
-    } catch (error) { if (!page.signal.aborted) showFailure(error); }
+    } catch (error) {
+      if (!page.signal.aborted) {
+        if (completed) error.message = 'Action completed; session refresh failed. Refresh to check its current state. ' + error.message;
+        showFailure(error);
+      }
+    }
     finally {
       root.querySelectorAll('button[data-disabled]').forEach(b => { b.disabled = b.dataset.disabled === 'true'; delete b.dataset.disabled; });
       busy = false; updateMingTask();
@@ -395,13 +400,13 @@
   $('wevis-file').addEventListener('change', updateImagePreview);
   root.addEventListener('input', updatePreviews);
   $('lab-create').addEventListener('click', () => action(() => request('/sessions', { method: 'POST' })));
-  $('lab-refresh').addEventListener('click', () => action(async () => {}));
+  $('lab-refresh').addEventListener('click', () => action());
   window.addEventListener('pagehide', clearBrowserData);
   window.addEventListener('pageshow', async event => {
     if (!event.persisted) return;
     if (activeAction) await activeAction;
     if (refreshing) await refreshing.catch(() => {});
-    lifecycle = new AbortController(); stopped = false; action(async () => {});
+    lifecycle = new AbortController(); stopped = false; action();
   });
-  updateMingTask(); action(async () => {});
+  updateMingTask(); action();
 })();

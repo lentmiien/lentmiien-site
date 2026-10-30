@@ -220,6 +220,31 @@ describe('real Express route guards', () => {
     expect((await call(b, `/api/sessions/${created.id}`, 'DELETE')).status).toBe(200);
     expect(await fs.readdir(root)).toEqual([]);
   });
+  test.each(['decode', 'committed result'])('one process upload slot bounds image/reference allocations through %s', async stage => {
+    const b = await browser(), s = await (await call(b, '/api/sessions', 'POST')).json();
+    let release, entered;
+    const reached = new Promise(resolve => { entered = resolve; });
+    const method = stage === 'decode' ? 'decodeUpload' : 'upload';
+    const original = store[method].bind(store);
+    const held = jest.spyOn(store, method).mockImplementationOnce(async (...args) => {
+      const result = stage === 'committed result' ? await original(...args) : null;
+      entered(); await new Promise(resolve => { release = resolve; });
+      return result || original(...args);
+    });
+    const data = () => { const value = new FormData(); value.append('file', new Blob([png], { type: 'image/png' }), 'test.png'); return value; };
+    const first = call(b, `/api/sessions/${s.id}/files`, 'POST', {}, data());
+    try {
+      await reached;
+      for (const route of ['files', 'references']) {
+        const denied = await call(b, `/api/sessions/${s.id}/${route}`, 'POST', {}, data());
+        expect(denied.status).toBe(429); expect((await denied.json()).code).toBe('upload_busy');
+      }
+      expect((await call(b, '/api/sessions')).status).toBe(200);
+      expect(held).toHaveBeenCalledTimes(1);
+    } finally { release?.(); await first; held.mockRestore(); }
+    expect((await first).status).toBe(201);
+    expect((await call(b, `/api/sessions/${s.id}/files`, 'POST', {}, data())).status).toBe(201);
+  });
   test('upload parser rejects unknown parts, multiple files, bad magic and oversized requests', async () => {
     const b = await browser(), s = await (await call(b, '/api/sessions', 'POST')).json();
     for (const kind of ['field', 'two', 'magic', 'size']) {

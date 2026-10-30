@@ -373,6 +373,23 @@ test('persistent busy becomes visible after four retries and stops automatic pol
   expect(document.getElementById('lab-error-inspector').textContent).toContain('429');
   await clock.advance(100000); expect(fetch).toHaveBeenCalledTimes(5); expect(clock.count()).toBe(0);
 });
+test('successful generation with exhausted refresh retries stays distinct from mutation failure', async () => {
+  const clock = browserClock(); let completed = false;
+  const fetch = jest.fn(async (url, options) => {
+    if (options.method === 'POST') { completed = true; return response({ id: 'job' }); }
+    return completed ? storageBusy() : response({ sessions: [session] });
+  });
+  const document = await page(fetch, clock.install);
+  document.getElementById('ming-text').value = 'Synthetic speech'; document.getElementById('ming-style').value = 'Calm';
+  document.getElementById('lab-ming').dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+  await settle(); await clock.advance(20000);
+  expect(document.getElementById('lab-status').textContent).toMatch(/Action completed; session refresh failed.*HTTP 429 · storage_busy.*Automatic read retries stopped/);
+  expect(document.getElementById('lab-error-inspector').textContent).toContain('429');
+  await clock.advance(100000);
+  expect(fetch.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1);
+  expect(fetch.mock.calls.filter(([, options]) => !options.method)).toHaveLength(6);
+  expect(clock.count()).toBe(0);
+});
 test('Retry-After beyond the read deadline does not trigger an early retry', async () => {
   const clock = browserClock(), fetch = jest.fn().mockResolvedValue(storageBusy('120'));
   const document = await page(fetch, clock.install);

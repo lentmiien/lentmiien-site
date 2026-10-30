@@ -98,6 +98,9 @@ class LabStore {
     // guard and every store operation refer to the same canonical directory.
     if (path.relative(ancestor, await fs.realpath(ancestor))) throw new Error('Unsafe lab root');
     await assertTrustedStorage(ancestor, ancestor !== this.root);
+    // The existing root and its ancestors have just been validated. No creation
+    // intervenes, so a second identical Windows ACL subprocess adds no protection.
+    if (ancestor === this.root) return;
     await fs.mkdir(this.root, { recursive: true, mode: 0o700 });
     await assertNoSymlinks(this.root);
     if (path.relative(this.root, await fs.realpath(this.root))) throw new Error('Unsafe lab root');

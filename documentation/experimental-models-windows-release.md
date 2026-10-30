@@ -13,7 +13,15 @@ Site `.env` and the matching Gateway token were already verified. Do **not** rep
 secret entry, root creation or ACL setup. No dependencies changed relative to this
 source. Human production operation only; this procedure was prepared, not executed.
 
-This update only settles ordinary storage contention and browser polling. The
+This source-only update settles ordinary storage contention and browser polling,
+removes the duplicate ACL subprocess for an already-existing trusted root, and
+distinguishes successful actions from failed follow-up refreshes. Fresh per-operation
+ACL/ancestor/symlink checks and pre/post-creation validation remain intact. Upload
+decoding remains limited to one operation through the existing router admission
+guard. Fake-clock 5–10 second ACL checks passed concurrent poll/submission/cleanup
+and exactly-once mocked dispatch; this does not claim native Windows qualification.
+See [the final latency/security check](experimental-models.md#final-windows-latencysecurity-check-2026-10-30)
+for exact queue, decoding and retry bounds. The
 Gateway agent separately handles OCR comma separators; coordinate that release
 without changing Ming, credentials, models or quality parameters. The observed
 count-box result (26 regions versus declared 31) remains a genuine invalid model

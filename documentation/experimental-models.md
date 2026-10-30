@@ -738,3 +738,61 @@ Validation for this correction:
 - Final review and `git diff --check` passed. Package/lock files, ACL/root helpers,
   release-helper implementation, API v1, model parameters and existing WAV
   admission/reuse behavior are unchanged from `c9f71aa`.
+
+### Final Windows latency/security check (2026-10-30)
+
+The supplied production read-only findings establish immediate `storage_busy` in
+old `c9f71aa`, with `checkRoot` running before the ready check and launching two
+identical native ACL validations for an existing healthy root. Each PowerShell
+call has a ten-second timeout. The observed HTTP 400 upload took about seven
+seconds, but lock durations were not logged: that request time is not a measured
+lock duration or proof of the historical 400 cause. There is no cross-process
+lock or filesystem `EBUSY` mapping here; the deployment contract is one Site
+process and one lab router/store.
+
+- Existing roots now return after the first fresh root/ancestor ACL, canonical
+  path and symlink validation. The redundant mkdir and second identical check
+  had no intervening creation or meaningful mutation. Missing roots still require
+  ancestor validation before creation and root validation afterward. No permission
+  cache, TTL, native ACL rule change or shared GPT Image helper change was made.
+- Exact bounds remain **one lock holder + 32 waiters**, **30 seconds per admission
+  wait** (not an entire HTTP-operation deadline); **four pending experiment jobs**
+  plus one dispatcher; **one upload receive/decode/commit at a time**. The router
+  retains `receivingUpload` until `store.upload` settles, rejecting other image
+  and reference uploads before Multer allocation. It is the only production
+  caller of `store.upload`; direct internal store calls have no separate decode
+  semaphore. Consequently no additional cap is needed for this single-router
+  process contract. Tests hold both decoding and a committed result and verify
+  competing uploads are rejected, reads work, and the slot becomes reusable.
+- Encoded/normalized images remain at most **8 MiB**, input at most **16 million
+  pixels**, decode timeout **10 seconds**; references at most **6 MiB**. The one
+  decode slot bounds concurrent raster work, not Sharp's exact native RSS. Disk
+  quotas and reserved result bytes/file slots are rechecked atomically at commit;
+  they are not being used as an in-memory admission guarantee.
+- Reads retain **45 seconds total**, up to **four retries / five attempts**, only
+  for GET `429 storage_busy`; delays are max(Retry-After, 1/2/4/8 seconds) plus
+  0–249 ms jitter, subject to the deadline. Polling is single-flight, scheduled
+  five seconds after settlement and paused during actions. Successful actions
+  followed by failed refreshes now explicitly say the action completed and the
+  session refresh failed; a refresh-only failure does not claim action success.
+  No mutation is automatically retried.
+- Fake-clock 5- and 10-second ACL mocks with real temporary-file storage exercise
+  concurrent polling, submission, cleanup, dispatch and result commit: six fresh
+  ACL checks, at most two waiters, one mocked Gateway request, empty queues at
+  completion and no timeout warning. Separately, 33 arrivals behind a held lock
+  prove the 32-waiter limit, exact 30-second expiry, removal without late execution,
+  and subsequent recovery. These are latency/security regressions, not native
+  Windows execution or measured production throughput. Sustained overload can
+  still exhaust the deliberately bounded queue.
+- Pinned Node **26.13.0** focused CPU/mocked-browser run: **501 passed, four
+  platform skips**, nine passing suites and one skipped. This includes storage
+  contention/configuration, route memory admission, browser retry/rendering,
+  jobs, release contracts, inspection and Ming ephemeral behavior. The prior
+  full-suite result above was not rerun for this narrow follow-up. Final review
+  and `git diff --check` passed; dependencies and release helper are unchanged.
+
+The final handoff remains source-only from live `c9f71aa`, using the final full SHA
+and the existing `-UpdateOnly` helper on the already protected root. No production
+operation or reconfiguration, inference, credential access or ACL mutation was
+performed. Raw inspection v1, `count_mismatch` quality failure and Ming behavior
+remain unchanged.
