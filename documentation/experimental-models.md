@@ -2,6 +2,75 @@
 
 ## Delivery status
 
+**DONE — all requested functional acceptance is complete as of 2026-10-30,
+10:38:49 UTC. No further operator action is needed for this delivery.** The human
+reported PASS after the requested short test, confirming final OCR output delivery,
+normal UI/storage contention behavior and Clear. Initial outputs were encouraging;
+comparison with existing models remains the user's decision after testing.
+
+### Final acceptance checkpoint — 2026-10-30
+
+This checkpoint records supplied human/live evidence; it performs no new live
+checks. The deployed Site **code** remains
+`bb624682cfe513a5803d98cc7a93b5cc982cf864`. The commit containing this documentation
+checkpoint is documentation-only and is **not a deployed code version**.
+
+- **09:36 UTC, human UpdateOnly SUCCESS:** `LennartWeb` running, `/apphealth` ready,
+  maintenance ended, storage protected, Ming authentication and ephemeral capability
+  available. The original ProgramData storage root, `.env`, ACLs and provisioning
+  receipts were unchanged.
+- **Earlier human checks on 2026-10-30:** Ming `VOICE_DESIGN`, ephemeral TTS,
+  generated-audio reuse/reference workflow, external WAV upload and cleanup worked.
+  **10:38:49 UTC PASS** completes the final OCR/UI/contention/Clear acceptance.
+  All fourteen tasks expose their supported inputs in the UI. This does not qualify
+  every individual Ming mode, model quality or GPU lifecycle under stress.
+- **10:39 UTC, supplied read-only backend snapshot:** health/readiness HTTP 200,
+  failure inspection v1 and ephemeral reference v1 available; workers stopped with
+  lazy/heavy/post-job-stop behavior, 25 mounts, original warming enabled and
+  authentication preserved. Defaults remain OCR `hunyuanocr` and TTS `piper_en`.
+  At **09:09 UTC**, human fence removal was confirmed: the fence was absent and
+  removal was limited to the owned table.
+
+Backend versions recorded in that snapshot:
+
+| Component | Image digest / source revision |
+| --- | --- |
+| Gateway image | `33d513dbb5f5f898a6653e6a87f1e5028af63be60f8da777a6c0267c0ecb98d5` |
+| WeVis image | `b1b6b64bf45cb490466febdbf4a4f47cdfc947f8fd1dae909aa4080ed7a006ec` |
+| Gateway/WeVis source labels (OCR comma-separator fix) | `d2a081d965a247a883b5e9fc7406dec424429ebd` |
+| Ming image | `ff3fc2f135929d4b1433179ee60e45c9531e23f01ea38192531e2fa81391f19a` |
+| Ming source | `0a1b33ba6d357c1c2a896ffe444b82f1f85e147c` |
+
+Safe journal observability revision `d90` was reported present and merged through
+normal backend PR #1 to main. The original latched persistence cause remains
+**unknown**; a controlled restart resolved the observed condition. Earlier failures
+below remain historical evidence. In particular, `count_box` returning **26 boxes
+versus 31 declared** remains a genuine model-output inconsistency, with raw output
+visible privately. Functional PASS is not a model benchmark or a claim of perfect
+quality.
+
+The permanent admin-only `/admin/experimental-models` lab and replaceable registry
+remain as documented under [Replacing or removing models](#replacing-or-removing-models).
+Supported inputs are specified in the [WeVis](#verified-wevis-boundary) and
+[Ming](#verified-ming-boundary-and-configuration) contracts. Bounded FIFO storage
+waiting, read-only retries, single-flight polling and fresh per-operation ACL
+validation preserve the security boundary. Output rendering remains HTML-escaped;
+raw diagnostics remain private and bounded; the Ming token stays server-only.
+The lab registers no persistent Gateway voices. Quotas, absolute **24-hour expiry**,
+explicit Clear and deferred cleanup for in-flight leases remain unchanged; see
+[Security contract](#security-contract) and [Site jobs, clear and restart](#site-jobs-clear-and-restart).
+
+Last source validation remains **6,667 passed, 261 skipped, five known missing
+ignored-WAV failures at `1c624c8`**, followed by **501 passed, four platform skips
+at `bb62468`**. The full suite was not rerun for that follow-up or this documentation
+checkpoint. This checkpoint is limited to documentation diff/format review and a
+normal main commit/push: no implementation, tests, model runs, GPU/live operations,
+deployment, configuration or ACL changes.
+
+### Initial implementation record (historical)
+
+The following source-phase record predates the completed live acceptance above.
+
 `/admin/experimental-models` is the permanent admin Tools entry. The implemented
 adapters support all seven verified WeVis tasks and all seven Ming tasks. Forms,
 private inputs/results, asynchronous Site jobs,
@@ -39,7 +108,8 @@ sample was needed for this source/mocked-test phase.
   query parameters, compressed bodies and caller-selected destinations fail closed.
 - Limits: 120 API reads/requests per minute/admin, 12 mutations/minute/admin; one
   upload parser and storage/decode operation at a time; 30-second upload/JSON receive
-  deadline. Storage contention returns 429; the single worker waits for the lock.
+  deadline. Storage admission uses bounded FIFO waiting; overflow or timeout returns
+  429. The single worker waits for the lock.
 - Images: exactly one PNG/JPEG/WebP part, at most 8 MiB plus 8 KiB multipart overhead,
   extension/MIME/decoded format agreement, one frame, 16 million decoded pixels,
   sides 32–16384, aspect ratio ≤200, ten-second decode limit. Sharp applies EXIF
@@ -791,8 +861,10 @@ process and one lab router/store.
   full-suite result above was not rerun for this narrow follow-up. Final review
   and `git diff --check` passed; dependencies and release helper are unchanged.
 
-The final handoff remains source-only from live `c9f71aa`, using the final full SHA
-and the existing `-UpdateOnly` helper on the already protected root. No production
-operation or reconfiguration, inference, credential access or ACL mutation was
-performed. Raw inspection v1, `count_mismatch` quality failure and Ming behavior
-remain unchanged.
+At this source-validation stage, the handoff was source-only from live `c9f71aa`,
+using the final full SHA and the existing `-UpdateOnly` helper on the already
+protected root. No production operation or reconfiguration, inference, credential
+access or ACL mutation was
+performed during that source follow-up. Raw inspection v1, `count_mismatch` quality
+failure and Ming behavior remained unchanged. The later human deployment and
+functional acceptance are recorded in the [final checkpoint](#final-acceptance-checkpoint--2026-10-30).
