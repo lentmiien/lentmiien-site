@@ -5,23 +5,63 @@
   const $ = id => document.getElementById(id);
   const status = $('lab-status'), sessions = $('lab-sessions'), base = '/admin/experimental-models/api';
   const idPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
-  let busy = false, snapshot = [], timer, signature = '', referenceAvailable = false;
+  let busy = false, snapshot = [], timer, signature = '', referenceAvailable = false, refreshing = null, activeAction = null, stopped = false;
+  let lifecycle = new AbortController();
   const referenceTasks = ['TTS', 'MULTILINGUAL', 'BASIC', 'EMOTION', 'DIALECT'];
   const speechTags = ['Breathing', 'Cough', 'Sigh', 'Laughter', 'Surprise-ah', 'Surprise-oh', 'Dissatisfaction-hnn', 'Uhm', 'Confirmation-en', 'Question-ei', 'Question-ah', 'Question-en', 'Question-oh', 'Question-huh'];
+  function delay(ms, signal) {
+    return new Promise((resolve, reject) => {
+      const aborted = () => { clearTimeout(wait); reject(new DOMException('Page closed', 'AbortError')); };
+      const wait = setTimeout(() => { signal.removeEventListener('abort', aborted); resolve(); }, ms);
+      signal.addEventListener('abort', aborted, { once: true });
+      if (signal.aborted) aborted();
+    });
+  }
   async function request(path, options = {}) {
-    const response = await fetch(base + path, { ...options, credentials: 'same-origin', cache: 'no-store',
-      headers: { Accept: 'application/json', 'X-CSRF-Token': root.dataset.csrf, ...options.headers } });
-    const body = await response.json().catch(() => null);
-    if ([401, 403].includes(response.status)) clearBrowserData();
-    if (!response.ok) {
-      const code = /^[a-z][a-z0-9_]{0,79}$/.test(body?.code || '') ? body.code : 'request_failed';
-      const reason = /^[a-z][a-z0-9_]{0,79}$/.test(body?.reason || '') ? ` · ${body.reason}` : '';
-      const prefix = Number.isInteger(response.status) ? `HTTP ${response.status} · ${code}${reason}: ` : '';
-      const error = new Error(prefix + (body?.error || 'Request failed. Refresh and try again.'));
-      error.inspection = { status: response.status, code, stage: body?.stage, reason: body?.reason, numeric: body?.numeric, requestId: body?.requestId };
+    const read = !options.method || options.method === 'GET';
+    const controller = new AbortController(), page = lifecycle;
+    const abort = () => controller.abort();
+    page.signal.addEventListener('abort', abort, { once: true });
+    const deadline = Date.now() + 45000;
+    const timeout = read ? setTimeout(abort, 45000) : null;
+    let lastBusy;
+    try {
+      for (let attempt = 0; ; attempt += 1) {
+        if (page.signal.aborted) throw new DOMException('Page closed', 'AbortError');
+        const response = await fetch(base + path, { ...options, signal: controller.signal, credentials: 'same-origin', cache: 'no-store',
+          headers: { Accept: 'application/json', 'X-CSRF-Token': root.dataset.csrf, ...options.headers } });
+        const body = await response.json().catch(() => null);
+        if (controller.signal.aborted) throw new DOMException('Read aborted', 'AbortError');
+        if ([401, 403].includes(response.status)) { clearBrowserData(); status.textContent = 'Authorization expired. Reload the page.'; }
+        if (response.ok) return body;
+        const code = /^[a-z][a-z0-9_]{0,79}$/.test(body?.code || '') ? body.code : 'request_failed';
+        const reason = /^[a-z][a-z0-9_]{0,79}$/.test(body?.reason || '') ? ` · ${body.reason}` : '';
+        const prefix = Number.isInteger(response.status) ? `HTTP ${response.status} · ${code}${reason}: ` : '';
+        const error = new Error(prefix + (body?.error || 'Request failed. Refresh and try again.'));
+        error.inspection = { status: response.status, code, stage: body?.stage, reason: body?.reason, numeric: body?.numeric, requestId: body?.requestId };
+        // Only this safe read failure is retried. Mutations are never replayed,
+        // including immediate busy responses and uncertain network outcomes.
+        if (!read || response.status !== 429 || code !== 'storage_busy') throw error;
+        lastBusy = error;
+        const retryAfter = response.headers?.get('Retry-After');
+        const retryMs = retryAfter && /^\d+(?:\.\d+)?$/.test(retryAfter) ? Number(retryAfter) * 1000
+          : retryAfter ? Math.max(0, Date.parse(retryAfter) - Date.now()) : 0;
+        const wait = Math.max(Number.isFinite(retryMs) ? retryMs : 0, 1000 * 2 ** attempt) + Math.floor(Math.random() * 250);
+        if (attempt >= 4 || Date.now() + wait >= deadline) {
+          error.message += ' Automatic read retries stopped; refresh to check again.'; throw error;
+        }
+        status.textContent = 'Waiting for test storage…';
+        await delay(wait, controller.signal);
+      }
+    } catch (error) {
+      if (controller.signal.aborted && !page.signal.aborted) {
+        if (lastBusy) lastBusy.message += ' Read deadline reached; refresh to check again.';
+        throw lastBusy || new Error('Session read timed out. Refresh to check its current state.');
+      }
       throw error;
+    } finally {
+      clearTimeout(timeout); page.signal.removeEventListener('abort', abort);
     }
-    return body;
   }
   function element(tag, text) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; return node; }
   function button(text, handler) { const node = element('button', text); node.type = 'button'; node.addEventListener('click', handler); return node; }
@@ -36,17 +76,45 @@
     details.append(element('pre', text.length > 65536 ? text.slice(0, 65536) + '\n[Preview truncated; download full sanitized result.]' : text));
     return details;
   }
-  async function action(work) {
-    if (busy) return;
-    busy = true; status.textContent = 'Working…'; $('lab-error-inspector').replaceChildren();
-    root.querySelectorAll('button:not(fieldset button)').forEach(b => { b.dataset.disabled = String(b.disabled); b.disabled = true; });
-    try { await work(); await refresh(); } catch (error) {
-      status.textContent = error.message;
-      if (error.inspection) $('lab-error-inspector').replaceChildren(inspector('Request failure (safe diagnostics)', error.inspection));
-    }
+  function showFailure(error) {
+    status.textContent = error.message;
+    if (error.inspection) $('lab-error-inspector').replaceChildren(inspector('Request failure (safe diagnostics)', error.inspection));
+  }
+  function schedulePoll() {
+    clearTimeout(timer);
+    if (stopped || busy || !snapshot.some(s => s.deletePending || (s.jobs || []).some(j => ['queued', 'waiting_gateway'].includes(j.state)))) return;
+    timer = setTimeout(async () => {
+      if (stopped || busy) return;
+      try { await refresh(); if (!busy) schedulePoll(); }
+      catch (error) { if (!stopped && !busy) showFailure(error); } // Persistent failure stops automatic polling.
+    }, 5000);
+  }
+  function disableButtons() {
+    root.querySelectorAll('button:not([data-disabled])').forEach(b => { b.dataset.disabled = String(b.disabled); b.disabled = true; });
+  }
+  function action(work) {
+    if (busy || stopped) return;
+    activeAction = performAction(work).finally(() => { activeAction = null; });
+    return activeAction;
+  }
+  async function performAction(work) {
+    const page = lifecycle;
+    busy = true; clearTimeout(timer); status.textContent = 'Working…'; $('lab-error-inspector').replaceChildren();
+    disableButtons();
+    let refreshed = false;
+    try {
+      // Coalesce an already running poll, then keep polls paused until this owned
+      // action and its one final refresh settle. Never overlap list requests.
+      if (refreshing) await refreshing.catch(() => {});
+      if (page.signal.aborted) return;
+      await work();
+      if (page.signal.aborted) return;
+      await refresh(); refreshed = true;
+    } catch (error) { if (!page.signal.aborted) showFailure(error); }
     finally {
       root.querySelectorAll('button[data-disabled]').forEach(b => { b.disabled = b.dataset.disabled === 'true'; delete b.dataset.disabled; });
       busy = false; updateMingTask();
+      if (refreshed) schedulePoll();
     }
   }
   function updateSelect(select, choices) {
@@ -78,6 +146,7 @@
     container.querySelectorAll('audio').forEach(audio => { audio.pause(); audio.removeAttribute('src'); audio.load(); });
   }
   function clearBrowserData() {
+    stopped = true; clearTimeout(timer); lifecycle.abort();
     clearDrafts(); snapshot = []; signature = ''; sessions.replaceChildren(); $('lab-error-inspector').replaceChildren();
     updateSelect($('lab-session'), []); updateImages();
   }
@@ -185,10 +254,8 @@
         const load = button('Inspect result and overlay', async () => {
           load.disabled = true;
           try {
-            const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
-            if ([401, 403].includes(response.status)) clearBrowserData();
-    if (!response.ok) throw new Error('Result unavailable. Refresh the session.');
-            const result = await response.json();
+            const result = await request(`/sessions/${session.id}/files/${job.resultId}`);
+            if (stopped) return;
             output.replaceChildren(element('p', `Count: ${result.count ?? 'not provided'} · declared: ${result.declared_count ?? 'not provided'}`),
               inspector('Extracted text (generation order)', result.text ?? ''), inspector('Raw model text (sanitized)', result.raw_text || ''),
               overlay(session, job, result), inspector('Full structured response (preview)', result));
@@ -220,18 +287,22 @@
     }
     card.append(files, ...(session.jobs || []).map(job => renderJob(session, job))); return card;
   }
-  async function refresh() {
+  function refresh() {
+    if (refreshing) return refreshing;
+    refreshing = readSessions().finally(() => { refreshing = null; });
+    return refreshing;
+  }
+  async function readSessions() {
+    const page = lifecycle;
     const data = await request('/sessions');
+    if (page.signal.aborted) return;
     if (snapshot.some(s => s.id === $('lab-session').value) && !data.sessions.some(s => s.id === $('lab-session').value && !s.deletePending)) clearDrafts();
     snapshot = data.sessions;
     const nextSignature = JSON.stringify(snapshot);
     if (signature !== nextSignature) { stopAudio(sessions); sessions.replaceChildren(...snapshot.map(renderSession)); signature = nextSignature; }
     updateSelect($('lab-session'), snapshot.filter(s => !s.deletePending).map(s => [s.id, `Session ${s.id.slice(0, 8)}`])); updateImages();
+    if (busy) disableButtons();
     status.textContent = snapshot.length ? `${snapshot.length} private test session(s).` : 'No test data in this browser session.';
-    clearTimeout(timer);
-    if (snapshot.some(s => s.deletePending || (s.jobs || []).some(j => ['queued', 'waiting_gateway'].includes(j.state)))) {
-      timer = setTimeout(async () => { if (!busy) { try { await refresh(); } catch (error) { status.textContent = error.message; timer = setTimeout(() => action(async () => {}), 10000); } } else timer = setTimeout(() => action(async () => {}), 5000); }, 5000);
-    }
   }
   function validateMing(input) {
     const validText = (value, max) => typeof value === 'string' && value.trim() && value.length <= max && !/[<>\x00-\x08\x0b-\x1f\x7f]/.test(value);
@@ -325,7 +396,12 @@
   root.addEventListener('input', updatePreviews);
   $('lab-create').addEventListener('click', () => action(() => request('/sessions', { method: 'POST' })));
   $('lab-refresh').addEventListener('click', () => action(async () => {}));
-  window.addEventListener('pagehide', () => { clearTimeout(timer); clearBrowserData(); });
-  window.addEventListener('pageshow', event => { if (event.persisted) action(async () => {}); });
+  window.addEventListener('pagehide', clearBrowserData);
+  window.addEventListener('pageshow', async event => {
+    if (!event.persisted) return;
+    if (activeAction) await activeAction;
+    if (refreshing) await refreshing.catch(() => {});
+    lifecycle = new AbortController(); stopped = false; action(async () => {});
+  });
   updateMingTask(); action(async () => {});
 })();

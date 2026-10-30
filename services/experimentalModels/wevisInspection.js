@@ -16,7 +16,7 @@ const OUTPUT_MESSAGES = Object.freeze({
   incomplete_geometry: 'Model output contained incomplete geometry.',
   invalid_box: 'Model output contained an invalid box.',
   region_limit_exceeded: 'Model output exceeded the region limit.',
-  count_mismatch: 'Model output counts did not match.',
+  count_mismatch: 'Model declared count disagrees with returned regions; raw output retained.',
   unrecognized_output: 'Model output did not match the required format.',
   empty_output: 'The decoded model output was empty.',
 });

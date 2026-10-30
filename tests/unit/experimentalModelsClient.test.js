@@ -2,7 +2,7 @@ const fs = require('fs');
 const pug = require('pug');
 let dom;
 afterEach(() => dom?.window.close());
-async function page(fetch) {
+async function page(fetch, prepare = () => {}) {
   const { JSDOM } = await import('jsdom');
   const html = pug.renderFile('views/admin_experimental_models.pug', {
     experiments: require('../../services/experimentalModels/registry').listExperiments(),
@@ -11,7 +11,7 @@ async function page(fetch) {
   dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://site.invalid/admin/experimental-models' });
   dom.window.HTMLMediaElement.prototype.pause = jest.fn();
   dom.window.HTMLMediaElement.prototype.load = jest.fn();
-  dom.window.fetch = fetch;
+  dom.window.fetch = fetch; prepare(dom.window);
   dom.window.eval(fs.readFileSync('public/js/experimental-models.js', 'utf8'));
   await settle();
   return dom.window.document;
@@ -224,7 +224,7 @@ test('pagehide and expired authorization remove browser snapshots, drafts and in
   document.getElementById('ming-text').value = 'Private draft';
   dom.window.dispatchEvent(new dom.window.Event('pagehide'));
   expect(document.getElementById('ming-text').value).toBe(''); expect(document.querySelector('.lab-session')).toBeNull();
-  document.getElementById('lab-refresh').click(); await settle();
+  dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true })); await settle();
   expect(document.querySelector('.lab-session')).not.toBeNull();
   document.getElementById('ming-transcript').value = 'Private transcript'; revoked = true;
   document.getElementById('lab-refresh').click(); await settle();
@@ -304,4 +304,153 @@ test.each(['raw', 'empty', 'unavailable', 'truncated'])('failed inspection %s is
   if (kind !== 'unavailable') expect(card.textContent).toContain(raw);
   expect(card.querySelector('img, svg, script')).toBeNull(); expect(dom.window.pwned).toBeUndefined();
   expect(card.textContent).toContain('Failed'); expect(card.textContent).not.toContain('Inspect result and overlay');
+});
+
+// Control only browser timers; filesystem/jsdom setup continues on the real clock.
+function browserClock() {
+  let now = 1000, serial = 0;
+  const tasks = new Map();
+  return {
+    install(window) {
+      window.Date.now = () => now; window.Math.random = () => 0.5;
+      window.setTimeout = (fn, ms) => { const id = ++serial; tasks.set(id, { at: now + ms, fn }); return id; };
+      window.clearTimeout = id => tasks.delete(id);
+    },
+    async advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        const next = [...tasks].filter(([, task]) => task.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!next) break;
+        tasks.delete(next[0]); now = next[1].at; next[1].fn(); await settle();
+      }
+      now = end; await settle();
+    },
+    count: () => tasks.size,
+  };
+}
+const storageBusy = (retryAfter = '1') => ({ ok: false, status: 429, headers: { get: () => retryAfter },
+  json: async () => ({ code: 'storage_busy', error: 'Test storage is busy. Retry shortly.' }) });
+
+test('one poll at a time; an owned upload waits for that poll and disables all mutation buttons', async () => {
+  const clock = browserClock(); let release, listCalls = 0, posting;
+  const data = { ...session, jobs: [{ id: '44444444-4444-4444-8444-444444444444', model: 'ming-tts', state: 'waiting_gateway', createdAt: 0 }] };
+  const fetch = jest.fn((url, options) => {
+    if (options.method === 'POST') return new Promise(resolve => { posting = () => resolve(response({})); });
+    listCalls += 1;
+    return listCalls === 2 ? new Promise(resolve => { release = () => resolve(response({ sessions: [{ ...data, bytes: 101 }] })); }) : Promise.resolve(response({ sessions: [data] }));
+  });
+  const document = await page(fetch, clock.install);
+  const picker = document.querySelector('.lab-session input[type=file]');
+  Object.defineProperty(picker, 'files', { value: [new dom.window.File(['synthetic'], 'test.png', { type: 'image/png' })] });
+  await clock.advance(5000); expect(listCalls).toBe(2);
+  await clock.advance(15000); expect(listCalls).toBe(2);
+  [...document.querySelectorAll('button')].find(b => b.textContent === 'Upload image').click(); await settle();
+  expect(fetch.mock.calls.filter(([, options]) => options.method)).toHaveLength(0);
+  expect([...document.querySelectorAll('.experimental-lab button')].every(b => b.disabled)).toBe(true);
+  release(); await settle(); expect(posting).toBeDefined();
+  expect([...document.querySelectorAll('.experimental-lab button')].every(b => b.disabled)).toBe(true);
+  await clock.advance(10000); expect(listCalls).toBe(2);
+  posting(); await settle(); expect(listCalls).toBe(3);
+  expect(fetch.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1);
+  await clock.advance(5000); expect(listCalls).toBe(4);
+});
+test.each(['2', new Date(4000).toUTCString()])('transient read 429 waits quietly, honors Retry-After %s, then recovers', async retryAfter => {
+  const clock = browserClock(), fetch = jest.fn().mockResolvedValueOnce(storageBusy(retryAfter)).mockResolvedValue(response({ sessions: [session] }));
+  const document = await page(fetch, clock.install);
+  expect(document.getElementById('lab-status').textContent).toBe('Waiting for test storage…');
+  expect(document.getElementById('lab-error-inspector').textContent).toBe('');
+  await clock.advance(1999); expect(fetch).toHaveBeenCalledTimes(1);
+  await clock.advance(2000); expect(fetch).toHaveBeenCalledTimes(2);
+  expect(document.getElementById('lab-status').textContent).toContain('1 private test session');
+  expect(clock.count()).toBe(0);
+});
+test('persistent busy becomes visible after four retries and stops automatic polling', async () => {
+  const clock = browserClock(), fetch = jest.fn().mockResolvedValue(storageBusy());
+  const document = await page(fetch, clock.install);
+  await clock.advance(20000);
+  expect(fetch).toHaveBeenCalledTimes(5);
+  expect(document.getElementById('lab-status').textContent).toMatch(/HTTP 429 · storage_busy.*Automatic read retries stopped/);
+  expect(document.getElementById('lab-error-inspector').textContent).toContain('429');
+  await clock.advance(100000); expect(fetch).toHaveBeenCalledTimes(5); expect(clock.count()).toBe(0);
+});
+test('Retry-After beyond the read deadline does not trigger an early retry', async () => {
+  const clock = browserClock(), fetch = jest.fn().mockResolvedValue(storageBusy('120'));
+  const document = await page(fetch, clock.install);
+  expect(document.getElementById('lab-status').textContent).toContain('Automatic read retries stopped');
+  await clock.advance(120000); expect(fetch).toHaveBeenCalledTimes(1);
+});
+test.each(['create', 'upload', 'run', 'clear'])('never replays %s mutations on storage_busy', async operation => {
+  const clock = browserClock();
+  const fetch = jest.fn(async (url, options) => options.method ? storageBusy() : response({ sessions: [session] }));
+  const document = await page(fetch, clock.install);
+  if (operation === 'create') document.getElementById('lab-create').click();
+  if (operation === 'upload') {
+    Object.defineProperty(document.querySelector('.lab-session input[type=file]'), 'files', { value: [new dom.window.File(['synthetic'], 'test.png', { type: 'image/png' })] });
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Upload image').click();
+  }
+  if (operation === 'run') {
+    document.getElementById('ming-text').value = 'Synthetic speech'; document.getElementById('ming-style').value = 'Calm';
+    document.getElementById('lab-ming').dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+  }
+  if (operation === 'clear') [...document.querySelectorAll('button')].find(b => b.textContent.startsWith('Clear session')).click();
+  await settle(); await clock.advance(100000);
+  expect(fetch.mock.calls.filter(([, options]) => options.method)).toHaveLength(1);
+  expect(document.getElementById('lab-status').textContent).toContain('HTTP 429 · storage_busy');
+});
+test('pagehide cancels pending read backoff and clears private drafts without stale rendering', async () => {
+  const clock = browserClock(), fetch = jest.fn().mockResolvedValue(storageBusy());
+  const document = await page(fetch, clock.install);
+  document.getElementById('ming-text').value = 'Private draft';
+  dom.window.dispatchEvent(new dom.window.Event('pagehide')); await settle();
+  await clock.advance(100000); expect(fetch).toHaveBeenCalledTimes(1); expect(clock.count()).toBe(0);
+  expect(document.getElementById('ming-text').value).toBe(''); expect(document.querySelector('.lab-session')).toBeNull();
+  expect(document.querySelector('[src^="blob:"]')).toBeNull();
+});
+test('a read that never responds is aborted at the deadline and leaves no timer loop', async () => {
+  const clock = browserClock(), fetch = jest.fn((url, options) => new Promise((resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(new dom.window.DOMException('Aborted', 'AbortError')), { once: true });
+  }));
+  const document = await page(fetch, clock.install);
+  await clock.advance(45000);
+  expect(document.getElementById('lab-status').textContent).toContain('read timed out');
+  expect(fetch).toHaveBeenCalledTimes(1); expect(clock.count()).toBe(0);
+});
+
+test('uncertain generation transport failure is never resubmitted', async () => {
+  const clock = browserClock();
+  const fetch = jest.fn(async (url, options) => {
+    if (options.method === 'POST') throw new TypeError('Synthetic connection closed after submission');
+    return response({ sessions: [session] });
+  });
+  const document = await page(fetch, clock.install);
+  document.getElementById('ming-text').value = 'Synthetic speech'; document.getElementById('ming-style').value = 'Calm';
+  document.getElementById('lab-ming').dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+  await settle(); await clock.advance(100000);
+  expect(fetch.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1);
+  expect(document.getElementById('lab-status').textContent).toContain('connection closed');
+});
+test('a late poll response after navigation cannot restore private snapshots or timers', async () => {
+  const clock = browserClock(); let resolve;
+  const fetch = jest.fn(() => new Promise(done => { resolve = done; }));
+  const document = await page(fetch, clock.install);
+  dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+  resolve(response({ sessions: [{ ...session, deletePending: true }] })); await settle();
+  expect(document.querySelector('.lab-session')).toBeNull();
+  await clock.advance(100000); expect(fetch).toHaveBeenCalledTimes(1); expect(clock.count()).toBe(0);
+});
+
+test('bfcache restore waits for an aborted mutation to settle, then only reads fresh state', async () => {
+  const clock = browserClock();
+  const fetch = jest.fn((url, options) => options.method ? new Promise((resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(new dom.window.DOMException('Aborted', 'AbortError')), { once: true });
+  }) : Promise.resolve(response({ sessions: [session] })));
+  const document = await page(fetch, clock.install);
+  document.getElementById('lab-create').click(); await settle();
+  dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+  dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+  await settle();
+  expect(document.querySelector('.lab-session')).not.toBeNull();
+  expect(fetch.mock.calls.filter(([, options]) => options.method)).toHaveLength(1);
+  expect(fetch.mock.calls.filter(([, options]) => !options.method)).toHaveLength(2);
+  expect(clock.count()).toBe(0);
 });

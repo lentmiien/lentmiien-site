@@ -85,8 +85,11 @@ class LabJobs {
           job.state = 'waiting_gateway'; job.startedAt = this.store.now();
           // Persist uncertainty before forwarding. A restart never replays this job.
           await this.store.save(session);
-        }, true);
+        });
         if (!leased) continue;
+        // Storage admission may have waited. Recheck revocation outside the lock
+        // immediately before the only Gateway forwarding attempt.
+        if (!await authorizedWithin(entry.authorize)) fail('authorization_revoked', 403, 'Experiment authorization expired before dispatch.');
         const result = await this.gateway.run(job.model, entry.input, source);
         await this.store.exclusive(async () => {
           const session = this.store.sessions.get(entry.sessionId);
@@ -103,7 +106,7 @@ class LabJobs {
           Object.assign(job, { state: 'succeeded', endedAt: this.store.now(), resultId: asset.id, status: 200, headers: result.headers });
           if (result.mime === 'audio/wav') job.audio = result.metadata;
           try { await this.store.save(session); } catch (error) { session.deletePending = true; throw error; }
-        }, true);
+        });
       } catch (error) {
         const safe = error instanceof LabError ? error : new LabError('job_failed', 503, 'Experiment failed. Check application diagnostics.');
         logger.warning('Experimental Models job failed; check Gateway availability or private storage', { category: 'experimental_models', metadata: { code: safe.code, status: safe.status } });
@@ -127,11 +130,11 @@ class LabJobs {
             endedAt: this.store.now(), reservedBytes: 0, reservedMetadataBytes: 0, error: safe.message, code: safe.code, status: safe.gatewayStatus || safe.status,
             headers: safe.safeHeaders || {} });
           try { await this.store.save(session); } catch (error) { session.deletePending = true; throw error; }
-        }, true);
+        });
       } finally {
         source = null; entry.input = null; entry.authorize = null;
         if (leased) this.store.release(entry.sessionId);
-        await this.store.exclusive(() => this.store.sweepUnlocked(), true);
+        await this.store.exclusive(() => this.store.sweepUnlocked());
       }
     }
   }

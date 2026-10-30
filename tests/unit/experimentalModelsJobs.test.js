@@ -170,6 +170,21 @@ test('preserves EXIF-oriented dimensions without logical resizing; unsupported f
   }
 });
 
+test('revocation while dispatch waits for storage prevents the only forwarding attempt', async () => {
+  const s = await store.create(owner, binding);
+  const kick = jest.spyOn(jobs, 'kick').mockImplementation(() => {});
+  let allowed = true;
+  const authorize = jest.fn(async () => allowed);
+  const job = await submit(s, { authorize }); kick.mockRestore();
+  let resume, entered = false;
+  const active = store.exclusive(() => new Promise(resolve => { entered = true; resume = resolve; }));
+  await until(() => entered); jobs.kick(); await until(() => store.waiters.length === 1);
+  allowed = false; resume(); await active; await finish();
+  expect(authorize).toHaveBeenCalledTimes(2); expect(gateway.run).not.toHaveBeenCalled();
+  expect(await store.job(owner, binding, s.id, job.id)).toMatchObject({ state: 'failed', code: 'authorization_revoked', reservedBytes: 0 });
+  expect(store.leases.size).toBe(0);
+});
+
 describe('async HTTP lifecycle', () => {
   let server, origin, sessionStore;
   beforeEach(async () => {
@@ -187,6 +202,48 @@ describe('async HTTP lifecycle', () => {
   afterEach(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
   async function browser() { const response = await fetch(origin), html = await response.text(); return { Cookie: response.headers.get('set-cookie').split(';')[0], 'X-CSRF-Token': /data-csrf="([^"]+)"/.exec(html)[1] }; }
   const call = (headers, url, method = 'GET', value) => fetch(origin + '/api' + url, { method, headers: { ...headers, ...(value ? { 'Content-Type': 'application/json' } : {}) }, body: value ? JSON.stringify(value) : undefined });
+  test.each(['upload', 'finish', 'clear', 'ttl'])('same-owner GET polls settle during %s, retaining owner/browser/CSRF guards', async phase => {
+    const b = await browser(), foreign = await browser();
+    const s = await (await call(b, '/sessions', 'POST')).json();
+    if (phase === 'finish') {
+      expect((await call(b, `/sessions/${s.id}/experiments/ming-tts/runs`, 'POST', body)).status).toBe(202);
+      await until(() => releases.length === 1); await idle();
+    }
+    let entered = false, resume;
+    const gate = new Promise(resolve => { resume = resolve; });
+    const method = phase === 'ttl' ? 'purgeDirectory' : 'save', original = store[method].bind(store);
+    jest.spyOn(store, method).mockImplementationOnce(async (...args) => { entered = true; await gate; return original(...args); });
+    let operation;
+    if (phase === 'upload') {
+      const png = await sharp({ create: { width: 64, height: 48, channels: 3, background: '#f60' } }).png().toBuffer();
+      const form = new FormData(); form.append('file', new Blob([png], { type: 'image/png' }), 'synthetic.png');
+      operation = fetch(origin + `/api/sessions/${s.id}/files`, { method: 'POST', headers: b, body: form });
+    } else if (phase === 'finish') { releases[0](result()); operation = finish(); }
+    else if (phase === 'clear') operation = call(b, `/sessions/${s.id}`, 'DELETE');
+    else { store.now = () => s.expiresAt; operation = store.sweep(); }
+    await until(() => entered);
+    const poll = call(b, '/sessions'), otherBrowser = call(foreign, `/sessions/${s.id}`), otherOwner = call({ ...b, 'x-owner': other }, `/sessions/${s.id}`);
+    await until(() => store.waiters.length === 3);
+    expect((await call({ ...b, 'X-CSRF-Token': '' }, `/sessions/${s.id}`, 'DELETE')).status).toBe(403);
+    resume();
+    const resultResponse = await operation;
+    if (phase === 'upload' || phase === 'clear') expect(resultResponse.status).toBe(phase === 'upload' ? 201 : 200);
+    expect((await poll).status).toBe(200);
+    expect((await otherBrowser).status).toBe(404); expect((await otherOwner).status).toBe(404);
+    expect(gateway.run).toHaveBeenCalledTimes(phase === 'finish' ? 1 : 0);
+    expect(store.waiters).toEqual([]); expect(store.leases.size).toBe(0);
+  });
+  test('queue overload returns safe Retry-After without starting a mutation', async () => {
+    const b = await browser(), s = await (await call(b, '/sessions', 'POST')).json();
+    let resume, entered = false;
+    const active = store.exclusive(() => new Promise(resolve => { entered = true; resume = resolve; }));
+    await until(() => entered); store.maxWaiters = 0;
+    const response = await call(b, `/sessions/${s.id}`, 'DELETE');
+    expect(response.status).toBe(429); expect(response.headers.get('Retry-After')).toBe('1');
+    expect(await response.json()).toMatchObject({ status: 429, code: 'storage_busy' });
+    expect(store.sessions.get(s.id).deletePending).toBe(false);
+    resume(); await active;
+  });
   test('202 job/poll/download ownership, CSRF and pending deletion stay guarded after navigation', async () => {
     const b = await browser(), foreign = await browser();
     const s = await (await call(b, '/sessions', 'POST')).json();

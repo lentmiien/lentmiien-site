@@ -131,3 +131,16 @@ test('redaction expansion cannot exceed the raw byte cap', async () => {
   const error = await gateway.run('wevisone-vl', input, source).catch(e => e);
   expect(error.code).toBe('gateway_error'); expect(error.inspectionBytes).toBeUndefined();
 });
+
+test('count mismatch stays invalid with raw evidence and a finite model-inconsistency explanation', async () => {
+  const raw = 'Synthetic declared count 31; returned regions 26. <script>untrusted</script>';
+  const failure = envelope({ task: 'count_box', reason: 'count_mismatch', raw_text: raw, raw_length: raw.length });
+  const { gateway, http } = client(response(failure, 502));
+  const error = await gateway.run('wevisone-vl', { ...input, task: 'count_box', query: 'synthetic objects' }, source).catch(value => value);
+  expect(error).toMatchObject({ code: 'model_output_invalid', status: 502,
+    message: 'Model declared count disagrees with returned regions; raw output retained.' });
+  const retained = JSON.parse(error.inspectionBytes).detail;
+  expect(retained.model_output_valid).toBe(false); expect(retained.diagnostics.raw_text).toBe(raw);
+  expect(retained.regions).toBeUndefined(); expect(retained.count).toBeUndefined();
+  expect(http.request.mock.calls.filter(([options]) => options.method === 'POST')).toHaveLength(1);
+});

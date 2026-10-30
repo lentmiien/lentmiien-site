@@ -78,14 +78,15 @@ describe('private staging lifecycle', () => {
     await new LabStore({ root }).sweep();
     expect(await fs.readdir(root)).toEqual([]);
   });
-  test('serializes clear with active storage work; rejects contention without queuing', async () => {
+  test('serializes clear with active storage work without manual retry', async () => {
     const binding = randomUUID(), s = await store.create(owner, binding);
     let release;
     const active = store.exclusive(() => new Promise(resolve => { release = resolve; }));
     while (!release) await new Promise(resolve => setImmediate(resolve));
-    await expect(store.clear(owner, binding, s.id)).rejects.toMatchObject({ code: 'storage_busy', status: 429 });
+    const clearing = store.clear(owner, binding, s.id);
+    expect(store.waiters).toHaveLength(1);
     release(); await active;
-    await store.clear(owner, binding, s.id);
+    await expect(clearing).resolves.toMatchObject({ deleted: true });
     await expect(store.upload(owner, binding, s.id, file(png))).rejects.toMatchObject({ status: 404 });
   });
   test('enforces session and per-session/user/global byte quotas', async () => {

@@ -5,33 +5,32 @@ For the already provisioned host, use **Code-only update** immediately below. So
 Default provisioning mode refuses existing folders; explicit `-UpdateOnly` validates and reuses them. Nothing in this document
 has been executed against production by the source agent.
 
-## Code-only update from aa898ee (current handoff)
+## Code-only update from c9f71aa (current handoff)
 
-The actual Site source is `aa898ee59125c3bd99da93a91125b546481ce4e0`.
+The human-confirmed live Site source is `c9f71aa7ad3ea2658ae949a535ed57194f4680c4`.
 `C:\ProgramData\Lentmiien\ExperimentalModels` is already provisioned and working;
 Site `.env` and the matching Gateway token were already verified. Do **not** repeat
 secret entry, root creation or ACL setup. No dependencies changed relative to this
 source. Human production operation only; this procedure was prepared, not executed.
 
-First complete the separate **paired Gateway + WeVis** human release using the
-prepared `c108b80` cpu2 images (validation documentation `3e758bc`). Preserve the
-working Ming ephemeral image/configuration, all 25 Gateway mounts and existing
-credentials. Candidate builds alone are not a live release. Do not use this Site
-helper to alter the backend or start GPU jobs. It requires exact WeVis inspection
-v1 discovery and existing Ming auth/ephemeral v1, using bounded passive GETs only.
-Site itself remains compatible with older capability-absent Gateways.
+This update only settles ordinary storage contention and browser polling. The
+Gateway agent separately handles OCR comma separators; coordinate that release
+without changing Ming, credentials, models or quality parameters. The observed
+count-box result (26 regions versus declared 31) remains a genuine invalid model
+output, not an API success or a geometry repair. The existing helper requires
+WeVis inspection v1 and Ming auth/ephemeral v1 through bounded passive GETs.
 
 Drain lab requests/downloads and avoid concurrent releases. Run this single block
 in elevated **Windows PowerShell 5.1**, substituting the final full Site SHA from
 the handoff. It fast-forwards clean main from the observed source (or resumes from
 the exact target), checks unchanged package files, then invokes the existing helper
-with its new narrow update switch. Maintenance start/end and the bounded restart
+with its existing narrow update switch. Maintenance start/end and the bounded restart
 are inside that helper; do not run setup, npm start, installs or provisioning mode.
 
 ```powershell
 & {
   $ErrorActionPreference = 'Stop'; Set-Location 'C:\Projects\lentmiien-site'
-  $target = '<final full Site SHA>'; $old = 'aa898ee59125c3bd99da93a91125b546481ce4e0'
+  $target = '<final full Site SHA>'; $old = 'c9f71aa7ad3ea2658ae949a535ed57194f4680c4'
   function g { $saved = $ErrorActionPreference; $ErrorActionPreference = 'Continue'; try { $r = @(& git @args 2>$null); $code = $LASTEXITCODE } finally { $ErrorActionPreference = $saved }; if ($code -ne 0) { throw 'Git check/update failed.' }; $r }
   if ($target -cnotmatch '^[0-9a-f]{40}$' -or (g branch --show-current) -cne 'main' -or (g rev-parse HEAD) -notin @($old, $target) -or @(g status --porcelain --untracked-files=all).Count) { throw 'Unexpected source or local work.' }
   foreach ($op in @('MERGE_HEAD','CHERRY_PICK_HEAD','REVERT_HEAD','rebase-merge','rebase-apply')) { if (Test-Path -LiteralPath (g rev-parse --git-path $op)) { throw 'Git operation in progress.' } }
@@ -54,24 +53,17 @@ is reported explicitly. Maintenance ends only after successful checks. On failur
 follow the safe stage message; there is no automatic rollback, repair or blind rerun.
 Windows source-contract tests do not constitute live PowerShell/NTFS qualification.
 
-In the actual admin browser after both updates:
+After the coordinated updates, the only remaining human browser retest is **one
+image with OCR**, plus a few normal UI actions (session refresh, upload, Clear).
+Ordinary short contention should settle without manual retry; a persistent failure
+still shows HTTP status/code and bounded retry exhaustion. Inspect OCR as actual
+model output, preserving failures and raw diagnostics when present.
 
-1. Open Experimental Models and create a private session. This exercises storage
-   under the running Site service identity. Check WeVis capabilities (allow the
-   60-second discovery cache to expire if needed); expect inspection v1 available.
-2. Upload **one** image and run one WeVis task. If it fails, open **Inspect rejected
-   model output**: retain Failed/HTTP 502, finite reason and false model validity;
-   inspect literal raw text or the explicit unavailable label, plus truncation if
-   present. No failed geometry overlay. A normal success retains the ordinary
-   strict result. Do not run extra requests merely to induce a failure.
-3. Use the existing eligible successful Ming generated audio, or make the planned
-   single VOICE_DESIGN sample if needed. Click **Use as reference** (no download /
-   reupload), listen, verify/correct the prefilled transcript and verify consent is
-   **unchecked**. Enter new speech, explicitly consent, then make the one intended
-   reference run. Confirm playable output. External WAV upload is still supported;
-   errors show HTTP status, stable code and reason.
-4. Check the inspector at desktop/narrow widths and Clear session. Confirm test
-   files and playback references disappear. No persistent voice registry action.
+Ming reference/generated-audio reuse, external upload and Clear already passed on
+live `c9f71aa`; do not repeat the complete functional matrix. The historical HTTP
+400 cause remains unproven; the compatibility fix worked according to the human
+check and remains intact. No new secret, fence, storage provisioning, ACL change,
+model inference by the helper, or dependency installation is required.
 
 ## Historical first provisioning — do not rerun on the existing root
 

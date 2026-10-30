@@ -648,9 +648,93 @@ claim to fix model quality or the original failure.
   skipped provisioning/receipt writes, exact passive WeVis discovery without Ming
   headers, existing Ming auth, configuration precedence and health sequencing.
   **No Windows PowerShell/NTFS production execution is claimed.** The human procedure
-  is in [the Windows release runbook](experimental-models-windows-release.md#code-only-update-from-aa898ee-current-handoff).
+  is in [the Windows release runbook](experimental-models-windows-release.md#code-only-update-from-c9f71aa-current-handoff).
 - Review covered finite diagnostics, private artifact lifecycle, escaped rendering,
   capability fallback, error-only logging and unchanged ordinary/Ming operations.
   `git diff --check` and unchanged package/lock files relative to `aa898ee` passed.
   No production operation, live Gateway call, persistent voice operation, secret
   reprovisioning, application startup or GPU inference was performed.
+
+
+### Storage contention correction after live c9f71aa (2026-10-30)
+
+The exact source emitter was `LabStore.exclusive`: its default admission rejected
+any simultaneous storage operation immediately with HTTP 429 `storage_busy`.
+A CPU reproduction loading unmodified `c9f71aa` and concurrently calling same-owner
+`get` and `list` returned one success and that exact error. This demonstrates a
+normal-use source defect, not which route emitted the reported production event;
+production metadata/route correlation remains separate evidence.
+
+- The single-process store now transfers ownership in FIFO order, with at most
+  **32 waiting operations** and a **30-second admission deadline** per waiter.
+  Overflow/timeout returns the existing 429/code plus `Retry-After: 1`, before that
+  queued critical section starts. It does not establish that an entire multi-stage
+  HTTP mutation has not started, so the browser never retries mutations.
+  Timeout removes the waiter; nested acquisition fails explicitly rather than
+  deadlocking. Failures release the lock. Only queue exhaustion logs a safe
+  status/code, finite reason, queue count and configured wait duration.
+- Every admitted operation still validates private root, ancestors, permissions
+  and symlinks; no ACL cache or Windows exception was introduced. Ownership,
+  browser binding, expiry, file slots and quota are checked inside the commit lock.
+  Image decoding happens between admission and commit; concurrent Clear/TTL can
+  remove the session and the decoded upload then fails without recreating data.
+  Existing upload reception bounds, result reservations, atomic manifests, leases
+  and deferred deletion remain. Network reception, Gateway inference and dispatch
+  authorization checks happen outside the storage lock. Authorization is checked
+  again after dispatch admission waits and before the sole forwarding attempt.
+- Session polling is single-flight and scheduled five seconds after settlement.
+  An owned action waits for an existing poll and pauses scheduled polls until its
+  final refresh; all action buttons, including fieldset upload buttons, are disabled.
+  Only GET `429 storage_busy` is automatically retried, at most four times, with
+  exponential delay/jitter, Retry-After seconds/date and a **45-second total read
+  deadline**. Waiting is quiet; persistent failure retains HTTP/code diagnostics
+  and stops automatic polling. POST/DELETE and uncertain transport outcomes are
+  never replayed. Navigation/auth expiry abort reads and backoff and clear private
+  drafts/media; bfcache return performs a fresh read. No blob URLs are created.
+- `count_mismatch` now explains that the model-declared count disagrees with
+  returned regions and raw output is retained. Contract v1, invalid/HTTP 502 state,
+  raw diagnostics and no failed geometry are unchanged. The 26-versus-31 finding
+  remains a model inconsistency. OCR comma parsing belongs to the separate Gateway
+  change. No models, tasks, quality settings or dependencies changed.
+- The human confirmed Ming references, generated-audio reuse, external uploads and
+  Clear on live `c9f71aa`. The old HTTP 400 cause is historically unproven; the
+  successful compatibility fix remains unchanged. The lean code-only handoff uses
+  the existing [UpdateOnly procedure](experimental-models-windows-release.md#code-only-update-from-c9f71aa-current-handoff),
+  reusing the existing protected root, ACL checks and configuration. No production
+  operation, live Gateway request, GPU inference, credential read or ACL mutation
+  was performed for this correction.
+
+
+Validation for this correction:
+
+- Pinned Node **26.13.0**, final focused feature/shared security/storage/media run:
+  **737 passed, four platform skips** (15 passing suites, one skipped). Added
+  coverage includes normal real-store read overlap; FIFO, count and timeout limits;
+  failed/nested acquisition; permission changes during wait; quota/file-slot races;
+  decode versus Clear/TTL; HTTP polls during upload/finish/Clear/TTL; owner/browser/
+  CSRF denials during contention; post-wait dispatch revocation and exactly-once
+  forwarding. Existing Windows permission, root, redaction and all 7+7 task tests
+  pass without weakened checks.
+- Final full source-only copy with Git metadata and no `.env`, ignored media or
+  runtime data: `NODE_OPTIONS=--max-old-space-size=4096 npm test -- --maxWorkers=2
+  --workerIdleMemoryLimit=256MB` — **6,667 passed, 261 skipped, five failed**;
+  447 passing suites, 17 skipped, five failing. Coverage thresholds passed.
+  All five failures are the known missing ignored WAV masters in `lentmancGame`,
+  `galaxyCenterJourneyGame`, `dinosaurHistoryGame`, `deepOceanJourneyGame` and
+  `kardashevGame`. No ignored audio was inspected, generated or committed.
+- Controlled browser timers prove single-flight polling, pause during mutations,
+  quiet recovery, Retry-After seconds/date, retry-count/read-deadline exhaustion,
+  no POST/DELETE retry (including uncertain generation transport failure), timer
+  cancellation, late-response suppression and bfcache restoration. Script injection,
+  inert raw diagnostics and redaction regressions pass; count mismatch retains
+  false model validity, HTTP 502 and raw evidence without new geometry or fields.
+- Real Chromium **153.0.8010.12**, entirely localhost/synthetic mocked APIs, at
+  **1440 × 900** and **390 × 900**: quiet 429 recovery, staged image upload,
+  disabled upload/run buttons, one mocked generation submission, Clear stopping
+  polls and all seven WeVis/seven Ming task options passed. Screenshots were
+  visually inspected; no horizontal overflow. External requests were blocked and
+  unrelated layout notification sockets stubbed. This is CPU browser validation,
+  not live model or native Windows/NTFS qualification.
+- Final review and `git diff --check` passed. Package/lock files, ACL/root helpers,
+  release-helper implementation, API v1, model parameters and existing WAV
+  admission/reuse behavior are unchanged from `c9f71aa`.

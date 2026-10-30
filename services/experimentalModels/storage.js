@@ -2,12 +2,13 @@ const fs = require('fs/promises');
 const { constants } = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const { AsyncLocalStorage } = require('async_hooks');
 const sharp = require('sharp');
 const { validateWav } = require('./contracts');
 const { referenceError } = require('./referenceDiagnostics');
 const { assertNoSymlinks, assertTrustedStorage, within } = require('../gptImageStorageService');
 const logger = require('../../utils/logger');
-const { ID, LIMITS, fail, sessionSchema } = require('./policy');
+const { ID, LIMITS, LabError, fail, sessionSchema } = require('./policy');
 
 // Capture server configuration once, shared by the store and static delivery guard.
 // Changing the root requires a restart; never discover or migrate a previous store.
@@ -38,19 +39,50 @@ function storageRoot() {
 const extension = asset => ({ 'image/png': 'png', 'application/json': 'json', 'audio/wav': 'wav' })[asset.mime];
 // One process owns the store. Leases prevent removal during requests and streams.
 class LabStore {
-  constructor({ root, now = Date.now, limits = LIMITS, appLogger = logger } = {}) {
+  constructor({ root, now = Date.now, limits = LIMITS, appLogger = logger, maxWaiters = 32, lockTimeoutMs = 30000 } = {}) {
     // Defer invalid config to the normal operation/cleanup error handlers, which
     // log safe diagnostics without stopping unrelated Site features on import.
     try { this.root = root === undefined ? storageRoot() : resolveStorageRoot(root); }
     catch (error) { this.configurationError = error; }
     this.now = now; this.limits = limits; this.logger = appLogger;
+    this.maxWaiters = maxWaiters; this.lockTimeoutMs = lockTimeoutMs; this.lockContext = new AsyncLocalStorage();
     this.sessions = new Map(); this.ready = false; this.busy = false; this.leases = new Map(); this.waiters = [];
   }
-  async exclusive(work, wait = false) {
-    while (wait && this.busy) await new Promise(resolve => this.waiters.push(resolve));
-    if (this.busy) fail('storage_busy', 429, 'Test storage is busy. Retry shortly.');
-    this.busy = true;
-    try { await this.initialize(); return await work(); } finally { this.busy = false; this.waiters.splice(0).forEach(resolve => resolve()); }
+  // A single process owns this store; never retry filesystem writes or infer stale
+  // locks. Only work that has not started waits here, with FIFO ownership transfer.
+  storageBusy(reason, waitedMs = 0) {
+    const error = new LabError('storage_busy', 429, 'Test storage is busy. Retry shortly.');
+    error.safeHeaders = { 'Retry-After': '1' };
+    this.logger.warning('Experimental Models storage wait exhausted; inspect storage latency or request load', {
+      category: 'experimental_models', metadata: { status: 429, code: error.code, reason, queued: this.waiters.length, waitedMs } });
+    return error;
+  }
+  acquire() {
+    if (!this.busy) { this.busy = true; return Promise.resolve(); }
+    if (this.waiters.length >= this.maxWaiters) return Promise.reject(this.storageBusy('queue_limit'));
+    return new Promise((resolve, reject) => {
+      const waiter = { resolve, timer: null };
+      waiter.timer = setTimeout(() => {
+        this.waiters.splice(this.waiters.indexOf(waiter), 1);
+        reject(this.storageBusy('wait_timeout', this.lockTimeoutMs));
+      }, this.lockTimeoutMs);
+      this.waiters.push(waiter);
+    });
+  }
+  async exclusive(work) {
+    // Reject programmer recursion explicitly rather than deadlocking (or silently
+    // bypassing initialization/security checks). Expired async contexts are harmless.
+    if (this.lockContext.getStore()?.active) throw new Error('Nested lab storage acquisition');
+    await this.acquire();
+    const context = { active: true };
+    try {
+      return await this.lockContext.run(context, async () => { await this.initialize(); return work(); });
+    } finally {
+      context.active = false;
+      const next = this.waiters.shift();
+      if (next) { clearTimeout(next.timer); next.resolve(); }
+      else this.busy = false;
+    }
   }
   async checkRoot() {
     if (this.configurationError) throw this.configurationError;
@@ -234,47 +266,20 @@ class LabStore {
     this.owned(owner, binding, id); // Expiry may elapse during the bounded read.
     return { asset: { ...asset, audio }, bytes };
   }
-  upload(owner, binding, id, file, reference = false) {
+  async upload(owner, binding, id, file, reference = false) {
+    await this.exclusive(async () => { this.owned(owner, binding, id); });
+    // Decode bounded in-memory input without blocking polls, commits or cleanup.
+    // No private file is read or written until ownership and quotas are rechecked.
+    const { bytes, metadata, audio } = await this.decodeUpload(file, reference);
     return this.exclusive(async () => {
       const session = this.owned(owner, binding, id);
-      if (reference) {
-        if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) throw referenceError('empty_file');
-        if (file.buffer.length > this.limits.referenceBytes) throw referenceError('size', { bytes: file.buffer.length });
-        if (typeof file.originalname !== 'string' || !file.originalname.length || file.originalname.length > 200 || /[\\/\x00-\x1f\x7f]/.test(file.originalname)) throw referenceError('filename');
-        if (!/\.wav$/i.test(file.originalname)) throw referenceError('extension');
-        if (![undefined, '', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave', 'application/octet-stream'].includes(file.mimetype)) throw referenceError('mime');
-      }
-      if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) fail('invalid_file', 400, 'Choose one supported file.');
-      if (file.buffer.length > this.limits.fileBytes) fail('file_limit', 413, 'Image exceeds 8 MiB.');
-      const formats = { 'image/png': ['png', /\.png$/i], 'image/jpeg': ['jpeg', /\.jpe?g$/i], 'image/webp': ['webp', /\.webp$/i] };
-      const expected = reference ? ['wav', /\.wav$/i] : formats[file.mimetype];
-      if (!expected || typeof file.originalname !== 'string' || file.originalname.length > 200 || /[\\/\x00-\x1f]/.test(file.originalname) || !expected[1].test(file.originalname)) {
-        fail('invalid_file', 400, 'File type, filename and content must match.');
-      }
       if (session.assets.length + session.jobs.filter(j => j.reservedBytes).length >= this.limits.sessionFiles) fail('file_count', 429, 'Session file limit reached.');
-      let bytes, metadata, audio;
-      if (reference) {
-        audio = validateWav(file.buffer, { reference: true });
-        bytes = file.buffer;
-      } else try {
-        const image = sharp(file.buffer, { limitInputPixels: this.limits.maxPixels, failOn: 'warning', animated: true }).timeout({ seconds: 10 });
-        metadata = await image.metadata();
-        if (metadata.format !== expected[0] || (metadata.pages || 1) !== 1 || !metadata.width || !metadata.height
-          || metadata.width < 32 || metadata.height < 32 || metadata.width > this.limits.maxEdge || metadata.height > this.limits.maxEdge
-          || Math.max(metadata.width / metadata.height, metadata.height / metadata.width) > 200) throw new Error('Invalid raster');
-        const normalized = await image.rotate().toColourspace('srgb').removeAlpha().png().toBuffer({ resolveWithObject: true });
-        bytes = normalized.data; metadata = normalized.info; // EXIF orientation before stripping metadata; coordinates match preview.
-      } catch (_) { fail('invalid_image', 400, 'Use a valid single-frame image, 32–16384 pixels per side, at most 16 million pixels and aspect ratio 200.'); }
-      if (bytes.length > this.limits.fileBytes) fail('file_limit', 413, 'Normalized image exceeds 8 MiB.');
       this.checkQuota(session, bytes.length + 512);
-      // TTL may have elapsed during decode. Clear and upload share this lock.
-      this.owned(owner, binding, id);
       const asset = { id: randomUUID(), mime: reference ? 'audio/wav' : 'image/png', bytes: bytes.length,
         ...(reference ? { audio } : { width: metadata.width, height: metadata.height }) };
       const filePath = path.join(this.directory(id), `${asset.id}.${extension(asset)}`);
       const handle = await fs.open(filePath, 'wx', 0o600);
-      // Reserve quota before I/O so write/flush/close failures cannot leave an
-      // uncounted file. The whole session is then quarantined for cleanup.
+      // Reserve before I/O; failed writes quarantine the session for cleanup.
       session.assets.push(asset);
       try {
         try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
@@ -285,6 +290,37 @@ class LabStore {
       }
       return { ...asset };
     });
+  }
+  async decodeUpload(file, reference) {
+    if (reference) {
+      if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) throw referenceError('empty_file');
+      if (file.buffer.length > this.limits.referenceBytes) throw referenceError('size', { bytes: file.buffer.length });
+      if (typeof file.originalname !== 'string' || !file.originalname.length || file.originalname.length > 200 || /[\\/\x00-\x1f\x7f]/.test(file.originalname)) throw referenceError('filename');
+      if (!/\.wav$/i.test(file.originalname)) throw referenceError('extension');
+      if (![undefined, '', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave', 'application/octet-stream'].includes(file.mimetype)) throw referenceError('mime');
+    }
+    if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) fail('invalid_file', 400, 'Choose one supported file.');
+    if (file.buffer.length > this.limits.fileBytes) fail('file_limit', 413, 'Image exceeds 8 MiB.');
+    const formats = { 'image/png': ['png', /\.png$/i], 'image/jpeg': ['jpeg', /\.jpe?g$/i], 'image/webp': ['webp', /\.webp$/i] };
+    const expected = reference ? ['wav', /\.wav$/i] : formats[file.mimetype];
+    if (!expected || typeof file.originalname !== 'string' || file.originalname.length > 200 || /[\\/\x00-\x1f]/.test(file.originalname) || !expected[1].test(file.originalname)) {
+      fail('invalid_file', 400, 'File type, filename and content must match.');
+    }
+    let bytes, metadata, audio;
+    if (reference) {
+      audio = validateWav(file.buffer, { reference: true });
+      bytes = file.buffer;
+    } else try {
+      const image = sharp(file.buffer, { limitInputPixels: this.limits.maxPixels, failOn: 'warning', animated: true }).timeout({ seconds: 10 });
+      metadata = await image.metadata();
+      if (metadata.format !== expected[0] || (metadata.pages || 1) !== 1 || !metadata.width || !metadata.height
+        || metadata.width < 32 || metadata.height < 32 || metadata.width > this.limits.maxEdge || metadata.height > this.limits.maxEdge
+        || Math.max(metadata.width / metadata.height, metadata.height / metadata.width) > 200) throw new Error('Invalid raster');
+      const normalized = await image.rotate().toColourspace('srgb').removeAlpha().png().toBuffer({ resolveWithObject: true });
+      bytes = normalized.data; metadata = normalized.info; // EXIF orientation before stripping metadata; coordinates match preview.
+    } catch (_) { fail('invalid_image', 400, 'Use a valid single-frame image, 32–16384 pixels per side, at most 16 million pixels and aspect ratio 200.'); }
+    if (bytes.length > this.limits.fileBytes) fail('file_limit', 413, 'Normalized image exceeds 8 MiB.');
+    return { bytes, metadata, audio };
   }
   usage(session) { return Buffer.byteLength(JSON.stringify(session)) + session.assets.reduce((sum, asset) => sum + asset.bytes, 0) + session.jobs.reduce((sum, job) => sum + job.reservedBytes + (job.reservedMetadataBytes || 0), 0); }
   checkQuota(session, bytes) {
