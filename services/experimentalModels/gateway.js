@@ -1,5 +1,8 @@
 const axios = require('axios');
 const FormData = require('form-data');
+const inspection = require('./wevisInspection');
+const logger = require('../../utils/logger');
+const { strictJson } = require('../../utils/taricProtocol');
 const { LabError, fail } = require('./policy');
 const { validateWevis, validateWav, REFERENCE_TASKS, parseInput } = require('./contracts');
 const { storageRoot } = require('./storage');
@@ -57,7 +60,7 @@ class LabGateway {
     const rootPattern = storageRoot().split(/[\\/]/).map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\\\/]');
     return redact(value, [this.env.MING_ADMIN_TOKEN]).replace(new RegExp(rootPattern, 'gi'), '[private storage]');
   }
-  async send(model, path, { data, headers = {}, maxBytes, timeout, method = 'POST' }) {
+  async send(model, path, { data, headers = {}, maxBytes, timeout, method = 'POST', inspectionInput }) {
     const allowed = model === 'ming-tts' ? ['GET /tts/ming/capabilities', 'POST /tts/ming/tasks', 'POST /tts/ming/tasks/ephemeral']
       : model === 'wevisone-vl' ? ['GET /limits', 'GET /perception/wevisone-vl/capabilities', 'POST /perception/wevisone-vl'] : [];
     if (!allowed.includes(`${method} ${path}`)) fail('unknown_operation', 404, 'Gateway operation is not supported by this experiment.');
@@ -70,7 +73,28 @@ class LabGateway {
         maxContentLength: maxBytes, maxBodyLength: path === '/tts/ming/tasks/ephemeral' ? 6320128 : 8404992, maxRedirects: 0, proxy: false, validateStatus: () => true });
       if (!Buffer.isBuffer(response.data)) response.data = Buffer.from(response.data);
       if (response.data.length > maxBytes) fail('response_limit', 502, 'Gateway response exceeded its size limit.');
-      if (response.status !== 200) throw gatewayFailure(response);
+      if (response.status !== 200) {
+        if (response.status === 502 && model === 'wevisone-vl' && inspectionInput) {
+          let detail;
+          try {
+            if (!/^application\/json(?:;\s*charset=utf-8)?$/i.test(response.headers['content-type'] || '')
+              || !/(?:^|,\s*)no-store(?:,|$)/i.test(response.headers['cache-control'] || '')) throw new Error('Invalid headers');
+            detail = inspection.decodeInspection(response.data, inspectionInput);
+          } catch (_) { throw gatewayFailure(response); }
+          const error = new LabError(detail.code, 502, inspection.message(detail));
+          // Validate before sanitizing. Original length describes the Gateway text,
+          // not the display after local redaction, which can alter its length.
+          const sanitized = { ...detail, diagnostics: { ...detail.diagnostics,
+            raw_text: detail.diagnostics.raw_text === null ? null : this.sanitize(detail.diagnostics.raw_text) } };
+          const bytes = Buffer.from(JSON.stringify({ detail: sanitized }));
+          if (bytes.length > inspection.CAPABILITY.max_inspection_body_bytes
+            || (sanitized.diagnostics.raw_text !== null && Buffer.byteLength(sanitized.diagnostics.raw_text) > inspection.CAPABILITY.max_raw_bytes)) throw gatewayFailure(response);
+          error.inspectionBytes = bytes;
+          error.safeHeaders = safeHeaders(response.headers); error.gatewayStatus = 502;
+          throw error;
+        }
+        throw gatewayFailure(response);
+      }
       if (method === 'POST' && !/(?:^|,\s*)no-store(?:,|$)/i.test(response.headers['cache-control'] || '')) fail('invalid_response', 502, 'Gateway terminal response is missing no-store protection.');
       return response;
     } catch (error) {
@@ -82,7 +106,7 @@ class LabGateway {
   async limits() {
     const response = await this.send('wevisone-vl', '/limits', { method: 'GET', maxBytes: 65536, timeout: 10000 });
     let value;
-    try { value = JSON.parse(response.data.toString('utf8')); } catch (_) { fail('invalid_response', 502, 'Invalid Gateway limits response.'); }
+    try { value = strictJson(new TextDecoder('utf-8', { fatal: true }).decode(response.data)); } catch (_) { fail('invalid_response', 502, 'Invalid Gateway limits response.'); }
     // Expose numeric limits only. No provider strings, paths or unrelated models.
     const numbers = (object, depth = 0) => Object.fromEntries(Object.entries(object && typeof object === 'object' && !Array.isArray(object) ? object : {})
       .slice(0, 80).filter(([key, item]) => /^[a-z][a-z0-9_]{0,60}$/.test(key) && (typeof item === 'number' && Number.isFinite(item) && item >= 0 || depth < 2 && item && typeof item === 'object' && !Array.isArray(item)))
@@ -95,7 +119,13 @@ class LabGateway {
     const existing = this.discovery.get(model);
     // Only two registry models; coalesce concurrent reads and cache failures too.
     if (existing && existing.until > Date.now() && existing.origin === config.origin && existing.token === config.headers['X-Ming-Token']) return existing.promise;
-    const promise = this.readCapabilities(model);
+    const promise = this.readCapabilities(model).catch(error => {
+      // One safe warning per cached discovery attempt; absent old endpoints are expected.
+      if (model === 'wevisone-vl' && error.gatewayStatus !== 404) logger.warning(
+        'Experimental Models WeVis discovery failed; failure inspection is disabled until capability discovery succeeds',
+        { category: 'experimental_models', metadata: { status: error instanceof LabError ? error.status : 502 } });
+      throw error;
+    });
     this.discovery.set(model, { until: Date.now() + 60000, origin: config.origin, token: config.headers['X-Ming-Token'], promise });
     return promise;
   }
@@ -113,7 +143,7 @@ class LabGateway {
       throw error;
     }
     let value;
-    try { value = JSON.parse(response.data.toString('utf8')); } catch (_) { fail('invalid_response', 502, 'Invalid Gateway capability response.'); }
+    try { value = strictJson(new TextDecoder('utf-8', { fatal: true }).decode(response.data)); } catch (_) { fail('invalid_response', 502, 'Invalid Gateway capability response.'); }
     if (!value || typeof value.available !== 'boolean') fail('invalid_response', 502, 'Gateway capability availability is missing.');
     // Local verified schemas provide controls. Discovery cannot enable an unknown
     // operation, expose private catalog data or promote installation to qualification.
@@ -122,20 +152,24 @@ class LabGateway {
       optional_installation: typeof value.optional_installation === 'boolean' ? value.optional_installation : null,
       ...(model === 'ming-tts' ? { referenceAdapter: value.ephemeral_reference?.version === 1 ? 'available' : 'unsupported',
         ephemeral_reference: { version: value.ephemeral_reference?.version === 1 ? 1 : null } }
-        : { failureInspection: { enabled: false, status: 'contract_pending', advertisedVersion: value.failure_inspection?.version === 1 ? 1 : null } }), limits: await this.limits() };
+        : { failureInspection: { enabled: inspection.compatible(value.failure_inspection), status: inspection.compatible(value.failure_inspection) ? 'available' : 'unsupported', advertisedVersion: value.failure_inspection?.version === 1 ? 1 : null } }), limits: await this.limits() };
   }
   async run(model, input, source) {
     input = parseInput(model, input);
     let response;
     if (model === 'wevisone-vl') {
+      // Discovery failure/old Gateway keeps the established strict normal path.
+      const capabilities = await this.capabilities(model).catch(() => null);
+      const inspect = capabilities?.failureInspection?.enabled === true;
       const form = new FormData();
+      if (inspect) form.append(inspection.CAPABILITY.field, 'true');
       form.append('file', source.bytes, { filename: 'image.png', contentType: 'image/png' });
       form.append('task', input.task); form.append('query', input.query); form.append('max_new_tokens', String(input.max_new_tokens));
       if (form.getLengthSync() > 8404992) fail('body_limit', 413, 'Multipart request exceeds Gateway limit.');
-      response = await this.send(model, PATHS[model], { data: form, headers: form.getHeaders(), maxBytes: 1048576 });
+      response = await this.send(model, PATHS[model], { data: form, headers: form.getHeaders(), maxBytes: 1048576, inspectionInput: inspect ? input : undefined });
       if (!/^application\/json(?:;|$)/i.test(response.headers['content-type'] || '')) fail('invalid_response', 502, 'Gateway did not return JSON.');
       let value;
-      try { value = JSON.parse(response.data.toString('utf8')); } catch (_) { fail('invalid_response', 502, 'Gateway returned malformed JSON.'); }
+      try { value = strictJson(new TextDecoder('utf-8', { fatal: true }).decode(response.data)); } catch (_) { fail('invalid_response', 502, 'Gateway returned malformed JSON.'); }
       validateWevis(value, input, source.asset);
       // Traverse strings after parsing so JSON-escaped secrets are redacted too.
       const sanitized = JSON.stringify(value, (_key, item) => typeof item === 'string' ? this.sanitize(item) : item);

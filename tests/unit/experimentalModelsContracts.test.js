@@ -94,15 +94,15 @@ describe('fixed Gateway transport, privacy and no GPU calls in tests', () => {
     const output = vision(task); if (task.startsWith('count')) output.count = 0;
     http.request.mockResolvedValue(ok(output));
     await gateway.run('wevisone-vl', parseInput('wevisone-vl', { fileId, task, query: task === 'ocr' ? '' : 'cup' }), source);
-    const config = http.request.mock.calls[0][0], wire = config.data.getBuffer().toString();
+    const config = http.request.mock.calls.find(([options]) => options.method === 'POST')[0], wire = config.data.getBuffer().toString();
     expect(config.url).toBe('http://gateway.invalid:8080/perception/wevisone-vl'); expect(config.headers).not.toHaveProperty('X-Ming-Token');
     expect([...wire.matchAll(/ name="([^"]+)"(?:;|\r)/g)].map(m => m[1])).toEqual(['file', 'task', 'query', 'max_new_tokens']);
   });
-  test.each([undefined, 1, 2, '1'])('failure inspection advertisement %s stays disabled until the exact contract is integrated', async version => {
+  test.each([undefined, 1, 2, '1'])('incomplete failure inspection advertisement %s cannot enable the exact contract', async version => {
     http.request.mockResolvedValueOnce(ok({ available: true, failure_inspection: { version, detail: '/private/path token=secret' } }))
       .mockResolvedValueOnce(ok({})).mockResolvedValueOnce(ok(vision()));
     const capabilities = await gateway.capabilities('wevisone-vl');
-    expect(capabilities.failureInspection).toEqual({ enabled: false, status: 'contract_pending', advertisedVersion: version === 1 ? 1 : null });
+    expect(capabilities.failureInspection).toEqual({ enabled: false, status: 'unsupported', advertisedVersion: version === 1 ? 1 : null });
     expect(JSON.stringify(capabilities)).not.toMatch(/private.path|token=secret/);
     await gateway.run('wevisone-vl', { fileId, task: 'ocr' }, source);
     const wire = http.request.mock.calls[2][0].data.getBuffer().toString();

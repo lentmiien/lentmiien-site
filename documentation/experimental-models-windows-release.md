@@ -1,9 +1,79 @@
-# Experimental Models: first Windows operator release
+# Experimental Models: Windows operator release
 
-This is the **one-time release for the inspected host**, not a general deployment
-framework. Source helper: [`scripts/deploy-experimental-models.ps1`](../scripts/deploy-experimental-models.ps1).
-It is deliberately not rerunnable after folder creation. Nothing in this document
+The historical first-provisioning procedure below is retained for audit only.
+For the already provisioned host, use **Code-only update** immediately below. Source helper: [`scripts/deploy-experimental-models.ps1`](../scripts/deploy-experimental-models.ps1).
+Default provisioning mode refuses existing folders; explicit `-UpdateOnly` validates and reuses them. Nothing in this document
 has been executed against production by the source agent.
+
+## Code-only update from aa898ee (current handoff)
+
+The actual Site source is `aa898ee59125c3bd99da93a91125b546481ce4e0`.
+`C:\ProgramData\Lentmiien\ExperimentalModels` is already provisioned and working;
+Site `.env` and the matching Gateway token were already verified. Do **not** repeat
+secret entry, root creation or ACL setup. No dependencies changed relative to this
+source. Human production operation only; this procedure was prepared, not executed.
+
+First complete the separate **paired Gateway + WeVis** human release using the
+prepared `c108b80` cpu2 images (validation documentation `3e758bc`). Preserve the
+working Ming ephemeral image/configuration, all 25 Gateway mounts and existing
+credentials. Candidate builds alone are not a live release. Do not use this Site
+helper to alter the backend or start GPU jobs. It requires exact WeVis inspection
+v1 discovery and existing Ming auth/ephemeral v1, using bounded passive GETs only.
+Site itself remains compatible with older capability-absent Gateways.
+
+Drain lab requests/downloads and avoid concurrent releases. Run this single block
+in elevated **Windows PowerShell 5.1**, substituting the final full Site SHA from
+the handoff. It fast-forwards clean main from the observed source (or resumes from
+the exact target), checks unchanged package files, then invokes the existing helper
+with its new narrow update switch. Maintenance start/end and the bounded restart
+are inside that helper; do not run setup, npm start, installs or provisioning mode.
+
+```powershell
+& {
+  $ErrorActionPreference = 'Stop'; Set-Location 'C:\Projects\lentmiien-site'
+  $target = '<final full Site SHA>'; $old = 'aa898ee59125c3bd99da93a91125b546481ce4e0'
+  function g { $saved = $ErrorActionPreference; $ErrorActionPreference = 'Continue'; try { $r = @(& git @args 2>$null); $code = $LASTEXITCODE } finally { $ErrorActionPreference = $saved }; if ($code -ne 0) { throw 'Git check/update failed.' }; $r }
+  if ($target -cnotmatch '^[0-9a-f]{40}$' -or (g branch --show-current) -cne 'main' -or (g rev-parse HEAD) -notin @($old, $target) -or @(g status --porcelain --untracked-files=all).Count) { throw 'Unexpected source or local work.' }
+  foreach ($op in @('MERGE_HEAD','CHERRY_PICK_HEAD','REVERT_HEAD','rebase-merge','rebase-apply')) { if (Test-Path -LiteralPath (g rev-parse --git-path $op)) { throw 'Git operation in progress.' } }
+  g fetch origin main; g merge-base --is-ancestor $target origin/main; g merge-base --is-ancestor $old $target; g merge-base --is-ancestor HEAD $target
+  g diff --exit-code $old $target -- package.json package-lock.json; g merge --ff-only $target
+  & .\scripts\deploy-experimental-models.ps1 -TargetCommit $target -UpdateOnly -DirectGateway
+  if ($LASTEXITCODE -ne 0) { throw 'Update incomplete; follow the helper stage message.' }
+}
+```
+
+Type `RELEASE` at the helper's existing restart checkpoint. UpdateOnly requires the
+**existing** exact trusted root and parent, read-only ACL/location checks and the
+unchanged WinSW/LocalSystem configuration. It never invokes directory creation,
+ACL writes, parent changes, config edits, migrations or receipt writes. Original
+provisioning receipts remain immutable. Checks repeat around the `LennartWeb`
+restart: source, service configuration and active configured private root, Ming
+auth/ephemeral capability, WeVis inspection capability, service Running and
+`/apphealth` database ready. Boot evidence is source/time filtered; missing evidence
+is reported explicitly. Maintenance ends only after successful checks. On failure,
+follow the safe stage message; there is no automatic rollback, repair or blind rerun.
+Windows source-contract tests do not constitute live PowerShell/NTFS qualification.
+
+In the actual admin browser after both updates:
+
+1. Open Experimental Models and create a private session. This exercises storage
+   under the running Site service identity. Check WeVis capabilities (allow the
+   60-second discovery cache to expire if needed); expect inspection v1 available.
+2. Upload **one** image and run one WeVis task. If it fails, open **Inspect rejected
+   model output**: retain Failed/HTTP 502, finite reason and false model validity;
+   inspect literal raw text or the explicit unavailable label, plus truncation if
+   present. No failed geometry overlay. A normal success retains the ordinary
+   strict result. Do not run extra requests merely to induce a failure.
+3. Use the existing eligible successful Ming generated audio, or make the planned
+   single VOICE_DESIGN sample if needed. Click **Use as reference** (no download /
+   reupload), listen, verify/correct the prefilled transcript and verify consent is
+   **unchecked**. Enter new speech, explicitly consent, then make the one intended
+   reference run. Confirm playable output. External WAV upload is still supported;
+   errors show HTTP status, stable code and reason.
+4. Check the inspector at desktop/narrow widths and Clear session. Confirm test
+   files and playback references disappear. No persistent voice registry action.
+
+## Historical first provisioning — do not rerun on the existing root
 
 ## Before the one command block
 

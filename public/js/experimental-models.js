@@ -140,7 +140,21 @@
     if (job.status) card.append(inspector('Sanitized Gateway response / Site failure status and safe headers', { status: job.status, headers: job.headers || {}, code: job.code }));
     if (job.error) card.append(element('p', job.error));
     if (job.model === 'wevisone-vl' && ['failed', 'interrupted'].includes(job.state)) {
-      card.append(element('p', 'Rejected model output: unavailable. No validated failure diagnostics were received; failure may have occurred before decoding. Output is not valid and no overlay is shown.'));
+      if (job.inspectionId) {
+        const panel = element('div');
+        card.append(element('p', 'Rejected model output: invalid. Validated diagnostics are available; no geometry preview is shown.'));
+        card.append(button('Inspect rejected model output', () => action(async () => {
+          const value = await request(`/sessions/${session.id}/files/${job.inspectionId}`);
+          const d = value.detail.diagnostics;
+          panel.replaceChildren(inspector('Sanitized Gateway response', value));
+          panel.append(element('p', d.raw_available
+            ? `Rejected model output: ${d.raw_truncated ? 'truncated prefix' : d.raw_text === '' ? 'empty decoded string' : 'available'}. Original length: ${d.raw_length} Unicode code points (before Site redaction).`
+            : 'Rejected model output: unavailable. No raw generation was captured.'));
+          if (d.raw_available) panel.append(inspector('Rejected model output (escaped text; server secrets and private storage redacted)', d.raw_text));
+        })), panel);
+      } else {
+        card.append(element('p', 'Rejected model output: unavailable. No validated failure diagnostics were received; failure may have occurred before decoding. Output is not valid and no overlay is shown.'));
+      }
     }
     if (job.resultId && job.state === 'succeeded') {
       const url = fileUrl(session.id, job.resultId);
@@ -285,8 +299,8 @@
       const capabilities = await request(`/experiments/${control.dataset.model}/capabilities`);
       output.textContent = JSON.stringify(capabilities, null, 2);
       if (control.dataset.model === $('lab-wevis').dataset.model) {
-        $('wevis-inspection-status').textContent = capabilities.failureInspection?.advertisedVersion === 1
-          ? 'Gateway advertises failure inspection v1. Site integration awaits the exact diagnostics contract; inspection is not requested yet.'
+        $('wevis-inspection-status').textContent = capabilities.failureInspection?.enabled === true
+          ? 'Compatible failure inspection v1 is available. The server automatically requests it for admin lab WeVis runs; failed output remains invalid.'
           : 'Failure inspection unavailable: Gateway does not advertise the supported version. Ordinary WeVis runs remain available.';
       }
       if (control.dataset.model === $('lab-ming').dataset.model) {

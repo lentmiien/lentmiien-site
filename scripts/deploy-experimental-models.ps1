@@ -1,8 +1,9 @@
-# First rollout only. Run from the reviewed target checkout in Windows PowerShell 5.1.
+# First rollout or explicit code-only update of an already provisioned root. Run from the reviewed target checkout in Windows PowerShell 5.1.
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$TargetCommit,
   [ValidateSet('LennartWeb')][string]$SiteServiceName = 'LennartWeb',
+  [switch]$UpdateOnly,
   [switch]$DirectGateway
 )
 Set-StrictMode -Version Latest
@@ -11,6 +12,7 @@ $Checkout = 'C:\Projects\lentmiien-site'
 $Parent = 'C:\ProgramData\Lentmiien'
 $Root = 'C:\ProgramData\Lentmiien\ExperimentalModels'
 $ProductionCommit = '3ef51e3e0b4cf1c1e6e00b5706ee6a4d67ec6d73'
+if ($UpdateOnly) { $ProductionCommit = 'aa898ee59125c3bd99da93a91125b546481ce4e0' }
 $FeatureCommit = '3ee0d7969a6dcc5fa37c5383880cfcd9e37a3c19'
 $Stage = 'prerequisites'
 $Provisioned = $false
@@ -123,7 +125,7 @@ function Invoke-NodeCheck([string[]]$Arguments, [string]$PrivateInput = '') {
   if ($exitCode -ne 0) {
     $codes = @('invalid_private_configuration', 'operator_configuration_mismatch', 'service_configuration_mismatch',
       'operator_loader_control', 'service_loader_control', 'wrong_storage_root', 'invalid_health_port',
-      'ming_auth_failed', 'ming_capability_missing', 'passive_gateway_failed', 'unsafe_storage_location',
+      'wevis_capability_missing', 'ming_auth_failed', 'ming_capability_missing', 'passive_gateway_failed', 'unsafe_storage_location',
       'storage_missing', 'site_health_timeout', 'lab_boot_failed', 'invalid_arguments', 'release_check_failed')
     if ($result.code -in $codes) { Write-Host ('CHECK: ' + $result.code) }
     if ($result.code -in @('operator_configuration_mismatch', 'service_configuration_mismatch', 'operator_loader_control', 'service_loader_control')) { throw $result.code }
@@ -133,6 +135,7 @@ function Invoke-NodeCheck([string[]]$Arguments, [string]$PrivateInput = '') {
 }
 function Write-Receipt {
   param([ValidateSet('provisioned', 'healthy')][string]$Phase)
+  if ($UpdateOnly) { return } # Original provisioning receipts are immutable; no new receipt on code-only update.
   Assert-Dedicated $Parent
   Assert-Dedicated $Root
   $state = (Get-Service -Name $SiteServiceName).Status.ToString()
@@ -152,23 +155,35 @@ try {
   Assert-Source
   Assert-ServiceConfiguration
   if ((New-Object System.IO.DriveInfo('C')).DriveFormat -ne 'NTFS') { throw 'ntfs_required' }
-  if ((Test-Path -LiteralPath $Parent) -or (Test-Path -LiteralPath $Root)) { throw 'existing_dedicated_folder_inspect_do_not_rerun' }
+  if ($UpdateOnly) {
+    # Validation only. Never create, repair, migrate or re-ACL an existing root.
+    Assert-Dedicated $Parent
+    Assert-Dedicated $Root
+    Invoke-NodeCheck @('storage') | Out-Null
+  } elseif ((Test-Path -LiteralPath $Parent) -or (Test-Path -LiteralPath $Root)) { throw 'existing_dedicated_folder_inspect_do_not_rerun' }
   Assert-Acl 'C:\ProgramData' -AncestorOnly
   $Stage = 'configuration_and_passive_gateway'
   $checkArgs = @('preflight')
   if ($DirectGateway) { $checkArgs += '--direct' }
   $checks = Invoke-NodeCheck $checkArgs
+  if ($UpdateOnly) { Invoke-NodeCheck @('inspection') | Out-Null }
   $Auth = $checks.authStatus -eq $true
   $Capability = $checks.capability -eq $true
   if (!$Auth -or !$Capability) { throw 'gateway_prerequisite_failed' }
   Write-Host 'Prerequisites passed. Gateway/Ming must already be deployed separately; no inference was run.'
-  $answer = Read-Host 'Type RELEASE to create ONLY C:\ProgramData\Lentmiien and ExperimentalModels with protected SYSTEM/Admins access, then restart ONLY LennartWeb at the checked target. Private .env edits complete; old lab requests drained; no other releases in progress'
+  if ($UpdateOnly) {
+    $answer = Read-Host 'Type RELEASE to restart ONLY LennartWeb at the checked target using existing trusted storage and unchanged configuration. Lab requests drained; no other releases in progress'
+  } else {
+    $answer = Read-Host 'Type RELEASE to create ONLY C:\ProgramData\Lentmiien and ExperimentalModels with protected SYSTEM/Admins access, then restart ONLY LennartWeb at the checked target. Private .env edits complete; old lab requests drained; no other releases in progress'
+  }
   if ($answer -cne 'RELEASE') { Write-Host 'STOP: no folders created and no service interrupted.'; exit 2 }
   Assert-Source
   Assert-ServiceConfiguration
   # Re-read private input after the approval pause; no private values are emitted.
   $checks = Invoke-NodeCheck $checkArgs
+  if ($UpdateOnly) { Invoke-NodeCheck @('inspection') | Out-Null }
   Assert-Acl 'C:\ProgramData' -AncestorOnly
+  if (!$UpdateOnly) {
   $Stage = 'create_protected_parent'
   # CreateDirectoryW applies the supplied descriptor at creation, creates only one
   # component and fails on ERROR_ALREADY_EXISTS. No create-then-Set-Acl window.
@@ -215,6 +230,11 @@ public static class ExperimentalModelsPrivateDirectory {
   $Stage = 'storage_location'
   Invoke-NodeCheck @('storage') | Out-Null
   Write-Receipt -Phase 'provisioned'
+  } else {
+    Assert-Dedicated $Parent
+    Assert-Dedicated $Root
+    Invoke-NodeCheck @('storage') | Out-Null
+  }
   Assert-Source
   Assert-ServiceConfiguration
   $Stage = 'maintenance_start'
@@ -241,12 +261,17 @@ public static class ExperimentalModelsPrivateDirectory {
   Assert-Dedicated $Parent
   Assert-Dedicated $Root
   if ((Get-Service -Name $SiteServiceName).Status -ne 'Running') { throw 'service_not_running' }
+  Assert-ServiceConfiguration
+  Invoke-NodeCheck @('storage') | Out-Null
+  Invoke-NodeCheck $checkArgs | Out-Null
+  if ($UpdateOnly) { Invoke-NodeCheck @('inspection') | Out-Null }
   Write-Receipt -Phase 'healthy'
   $Stage = 'maintenance_end'
   & $Node scripts/maintenance.js end *> $null
   if ($LASTEXITCODE -ne 0) { throw 'maintenance_end_failed' }
   $Maintenance = $false
   Write-Host "SUCCESS: source=$TargetCommit; storage protected; Ming auth=true; ephemeral capability=true; LennartWeb Running; /apphealth ready; maintenance ended."
+  if ($UpdateOnly) { Write-Host 'UPDATE ONLY: existing root/configuration/ACLs and original receipts preserved; WeVis inspection v1 compatible.' }
   Write-Host 'NEXT: one combined admin browser check in the runbook. Clone quality and UI functionality remain unverified.'
 } catch {
   # Never render exception text, native command output, XML, dotenv or HTTP bodies.

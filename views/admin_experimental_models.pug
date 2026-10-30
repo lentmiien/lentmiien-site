@@ -54,7 +54,7 @@ block content
           label(for='wevis-tokens') Maximum new tokens (1–4096)
           input#wevis-tokens(type='number', min='1', max='4096', step='1', value='1024', required)
           p Actual input plus output must fit 8192 tokens; Gateway can reject this budget.
-          p#wevis-inspection-status Failure inspection is unavailable while the exact Gateway diagnostics contract is pending. Failed output is never treated as valid geometry.
+          p#wevis-inspection-status This admin lab automatically requests bounded failure inspection when Gateway advertises the compatible version 1 contract. Older Gateways retain generic errors. Failed output is never treated as valid geometry.
           details
             summary Site request inspector (no transport headers)
             pre#wevis-request
@@ -119,5 +119,5 @@ block content
       h2 Runtime and privacy
       p Jobs survive browser navigation. Site shows local queueing or waiting for Gateway; there are no upstream job IDs, progress or active cancellation handles. A completed response does not prove the GPU container has stopped. Timeout or Site restart can leave completion unknown; generation is never automatically replayed.
       p Gateway holds ephemeral request memory; its worker uses a private anonymous memory descriptor, with no voice registry entry or disk spool. Normal completion closes it; failure or unknown termination can leave cleanup pending. Clearing Site data does not prove immediate GPU shutdown or forensic memory erasure.
-      p Ming requires MING_ADMIN_TOKEN in server configuration, sent only as X-Ming-Token on Ming routes. This page never accepts secrets. Error inspectors omit arbitrary Gateway detail text, host paths and private inputs; rejected WeVis output is unavailable until the versioned failure-inspection contract is integrated. No arbitrary upstream error text is displayed.
+      p Ming requires MING_ADMIN_TOKEN in server configuration, sent only as X-Ming-Token on Ming routes. This page never accepts secrets. Error inspectors omit arbitrary Gateway detail text, host paths and private inputs; rejected WeVis output is shown only from validated version 1 failure diagnostics. No arbitrary upstream error text is displayed.
   script(src='/js/experimental-models.js', defer)

@@ -2,7 +2,7 @@ const { fail } = require('./policy');
 const { parseInput, REFERENCE_TASKS, WEVIS_TASKS, TAGS, CONTROLS } = require('./contracts');
 const experiments = Object.freeze([
   { id: 'wevisone-vl', title: 'Tencent WeVisOne-VL-4B', status: 'implemented',
-    failureInspection: { enabled: false, status: 'contract_pending' },
+    failureInspection: { enabled: false, status: 'requires_capability_v1' },
     capabilitySource: 'Passive Gateway capability check; installation is not runtime qualification.',
     warning: 'Experimental quality: the reported basic OCR test read OPEN as FEH.',
     deferred: 'No masks, matting, video, batch, segmentation or arbitrary prompts.', tasks: WEVIS_TASKS, renderer: 'wevis', serializer: 'wevis-multipart' },

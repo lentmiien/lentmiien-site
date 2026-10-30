@@ -362,3 +362,34 @@ test('shared ACL checker retains strict roots and enables only explicit ancestor
   expect(acl).toContain('64 -bor 65536 -bor 262144 -bor 524288 -bor 268435456');
   expect(acl).not.toContain('ServiceIdentity');
 });
+
+test('UpdateOnly source requires trusted existing storage, skips all provisioning and preserves receipts', () => {
+  expect(ps).toContain('[switch]$UpdateOnly');
+  expect(ps).toContain("if ($UpdateOnly) { $ProductionCommit = 'aa898ee59125c3bd99da93a91125b546481ce4e0' }");
+  const creation = ps.slice(ps.indexOf('  if (!$UpdateOnly) {'), ps.indexOf("  $Stage = 'maintenance_start'"));
+  expect(creation).toContain('[ExperimentalModelsPrivateDirectory]::Create($Parent)');
+  const reuse = creation.slice(creation.lastIndexOf('} else {'));
+  expect(reuse).toContain('Assert-Dedicated $Parent'); expect(reuse).toContain('Assert-Dedicated $Root');
+  expect(reuse).toContain("Invoke-NodeCheck @('storage')");
+  expect(reuse).not.toMatch(/Create\(|Write-Receipt|Set-Acl|CreateDirectory/);
+  const receipt = ps.slice(ps.indexOf('function Write-Receipt'), ps.indexOf("try {\n  if ($PSVersionTable"));
+  expect(receipt.indexOf('if ($UpdateOnly) { return }')).toBeLessThan(receipt.indexOf('New-Object System.IO.FileStream'));
+  const afterBoot = ps.slice(ps.indexOf("$boot = Invoke-NodeCheck @('boot'"));
+  expect(afterBoot.indexOf('Assert-ServiceConfiguration')).toBeLessThan(afterBoot.indexOf('scripts/maintenance.js end'));
+  expect(afterBoot.indexOf('Invoke-NodeCheck $checkArgs')).toBeLessThan(afterBoot.indexOf('scripts/maintenance.js end'));
+});
+
+test('code-only update checks exact WeVis capability passively without transmitting Ming auth', async () => {
+  const { inspectWevisCapability } = require('../../scripts/experimental-models-release-check');
+  const { CAPABILITY } = require('../../services/experimentalModels/wevisInspection');
+  const request = jest.fn(async () => ({ status: 200, data: Buffer.from(JSON.stringify({ failure_inspection: CAPABILITY })) }));
+  expect(await inspectWevisCapability(configuration(valid), request)).toEqual({ failureInspectionCompatible: true });
+  expect(request.mock.calls[0][0]).toMatchObject({ method: 'GET', proxy: false, timeout: 10000, maxContentLength: 65536, maxRedirects: 0 });
+  expect(request.mock.calls[0][0]).not.toHaveProperty('headers');
+  for (const value of [{}, { ...CAPABILITY, max_raw_bytes: 999 }, { ...CAPABILITY, field: 'unknown' }]) {
+    request.mockResolvedValueOnce({ status: 200, data: Buffer.from(JSON.stringify({ failure_inspection: value })) });
+    await expect(inspectWevisCapability(configuration(valid), request)).rejects.toMatchObject({ code: 'wevis_capability_missing' });
+  }
+  request.mockRejectedValueOnce(new Error('private exception ' + secret));
+  await expect(inspectWevisCapability(configuration(valid), request)).rejects.toMatchObject({ message: 'wevis_capability_missing' });
+});

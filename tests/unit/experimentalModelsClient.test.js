@@ -290,3 +290,18 @@ test('failed WeVis shows sanitized status and explicit unavailable output, escap
   expect(card.querySelector('img, svg, script')).toBeNull();
   expect(card.querySelector('button')).toBeNull();
 });
+
+test.each(['raw', 'empty', 'unavailable', 'truncated'])('failed inspection %s is inert, explicit and never a geometry result', async kind => {
+  const raw = kind === 'empty' ? '' : '<script>window.pwned=true</script><img src=x onerror=alert(1)>😀';
+  const diagnostic = { detail: { code: kind === 'unavailable' ? 'runtime_failed' : 'model_output_invalid', model_output_valid: false,
+    diagnostics: { raw_text: kind === 'unavailable' ? null : raw, raw_available: kind !== 'unavailable', raw_length: Array.from(raw).length, raw_truncated: kind === 'truncated' } } };
+  const document = await page(jest.fn(async url => response(url.endsWith('/files/' + session.id) ? diagnostic : { sessions: [{ ...session,
+    jobs: [{ id: session.id, model: 'wevisone-vl', state: 'failed', status: 502, code: diagnostic.detail.code, inspectionId: session.id, model_output_valid: false }] }] })));
+  Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Inspect rejected model output').click(); await settle();
+  const card = document.querySelector('.lab-job');
+  expect(card.textContent).toContain('Sanitized Gateway response');
+  expect(card.textContent).toContain({ raw: 'Rejected model output: available', empty: 'empty decoded string', unavailable: 'No raw generation was captured', truncated: 'truncated prefix' }[kind]);
+  if (kind !== 'unavailable') expect(card.textContent).toContain(raw);
+  expect(card.querySelector('img, svg, script')).toBeNull(); expect(dom.window.pwned).toBeUndefined();
+  expect(card.textContent).toContain('Failed'); expect(card.textContent).not.toContain('Inspect result and overlay');
+});

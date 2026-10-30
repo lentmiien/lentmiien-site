@@ -203,6 +203,51 @@ describe('async HTTP lifecycle', () => {
     releases[0](result()); await finish(); expect((await call(b, poll)).status).toBe(404);
     expect(await fs.readdir(root)).toEqual([]);
   });
+  test.each(['inspection', 'legacy'])('real router and Gateway preserve failed %s response, private ownership and cleanup', async kind => {
+    const { LabGateway } = require('../../services/experimentalModels/gateway');
+    const { CAPABILITY } = require('../../services/experimentalModels/wevisInspection');
+    const raw = '<script>window.pwned=true</script>😀';
+    const failureBody = kind === 'inspection' ? Buffer.from(JSON.stringify({ detail: { code: 'model_output_invalid', model_output_valid: false,
+      diagnostics: { version: 1, stage: 'normalize', reason: 'unrecognized_output', raw_text: raw, raw_available: true, raw_length: Array.from(raw).length,
+        raw_truncated: false, task: 'ocr', max_new_tokens: 1024, generated_tokens: 2, finish_reason: 'stop', eos_observed: true } } }))
+      : Buffer.from(JSON.stringify({ detail: 'x'.repeat(49) }));
+    if (kind === 'legacy') expect(failureBody.length).toBe(62);
+    const http = { request: jest.fn(async options => ({ status: options.method === 'POST' ? 502 : 200,
+      headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+      // Axios arraybuffer is raw bytes, not an object or double-encoded JSON.
+      data: options.method === 'POST' ? failureBody : Buffer.from(JSON.stringify(options.url.endsWith('/capabilities')
+        ? { available: true, failure_inspection: CAPABILITY } : {})) })) };
+    jobs.gateway = new LabGateway({ http, env: { AI_GATEWAY_BASE_URL: 'http://synthetic.invalid' } });
+    const b = await browser(), foreign = await browser(), s = await (await call(b, '/sessions', 'POST')).json();
+    const png = await sharp({ create: { width: 128, height: 128, channels: 3, background: '#000' } }).png().toBuffer();
+    const form = new FormData(); form.append('file', new Blob([png], { type: 'image/png' }), 'synthetic.png');
+    const asset = await (await fetch(origin + `/api/sessions/${s.id}/files`, { method: 'POST', headers: b, body: form })).json();
+    const submitted = await call(b, `/sessions/${s.id}/experiments/wevisone-vl/runs`, 'POST', { task: 'ocr', fileId: asset.id });
+    expect(submitted.status).toBe(202);
+    const job = await submitted.json(); await finish();
+    const failed = await (await call(b, `/sessions/${s.id}/jobs/${job.id}`)).json();
+    expect(failed).toMatchObject({ state: 'failed', status: 502 }); expect(failed.resultId).toBeUndefined();
+    expect(http.request.mock.calls.filter(([o]) => o.method === 'POST')).toHaveLength(1);
+    if (kind === 'inspection') {
+      expect(failed).toMatchObject({ code: 'model_output_invalid', model_output_valid: false, reservedBytes: 0 });
+      const url = `/sessions/${s.id}/files/${failed.inspectionId}`;
+      expect((await call(foreign, url)).status).toBe(404);
+      expect((await call({ ...b, 'x-owner': other }, url)).status).toBe(404);
+      const response = await call(b, url); expect(response.headers.get('cache-control')).toContain('no-store');
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(failureBody);
+      await until(() => !store.leases.size);
+      const recovered = new LabStore({ root });
+      const existing = [...store.sessions.values()][0];
+      expect((await recovered.job(owner, existing.binding, s.id, job.id)).inspectionId).toBe(failed.inspectionId);
+      expect((await store.get(owner, existing.binding, s.id)).bytes).toBeGreaterThan(failureBody.length);
+    } else {
+      expect(failed).toMatchObject({ code: 'gateway_error', error: 'Gateway runtime, response schema or output size failed.' });
+      expect(failed.inspectionId).toBeUndefined(); expect(JSON.stringify(failed)).not.toContain('x'.repeat(49));
+    }
+    expect(JSON.stringify(logger.warning.mock.calls)).not.toContain(raw);
+    expect((await call(b, `/sessions/${s.id}`, 'DELETE')).status).toBe(200);
+    expect(await fs.readdir(root)).toEqual([]);
+  });
   test('audio result download applies account and browser scope, attachment and sandbox', async () => {
     const b = await browser(), foreign = await browser(), s = await (await call(b, '/sessions', 'POST')).json();
     const job = await (await call(b, `/sessions/${s.id}/experiments/ming-tts/runs`, 'POST', body)).json();

@@ -5,6 +5,8 @@ const path = require('path');
 const dotenv = require('dotenv');
 const axios = require('axios');
 const { resolveStorageRoot } = require('../services/experimentalModels/storage');
+const { compatible } = require('../services/experimentalModels/wevisInspection');
+const { strictJson } = require('../utils/taricProtocol');
 const { LabGateway } = require('../services/experimentalModels/gateway');
 const { within, assertNoSymlinks } = require('../services/gptImageStorageService');
 const ROOT = 'C:\\ProgramData\\Lentmiien\\ExperimentalModels';
@@ -12,7 +14,7 @@ const APP = path.resolve(__dirname, '..');
 const MAX_LOG_BYTES = 262144;
 const CODES = new Set(['invalid_private_configuration', 'operator_configuration_mismatch', 'service_configuration_mismatch',
   'operator_loader_control', 'service_loader_control', 'wrong_storage_root', 'invalid_health_port',
-  'ming_auth_failed', 'ming_capability_missing', 'passive_gateway_failed', 'unsafe_storage_location',
+  'wevis_capability_missing', 'ming_auth_failed', 'ming_capability_missing', 'passive_gateway_failed', 'unsafe_storage_location',
   'storage_missing', 'site_health_timeout', 'lab_boot_failed', 'invalid_arguments', 'release_check_failed']);
 function fail(code) { throw Object.assign(new Error(code), { code }); }
 
@@ -89,6 +91,18 @@ async function passiveGateway(config, { direct = false, request = axios.request 
   try { body = JSON.parse(Buffer.from(capabilities.data).toString('utf8')); } catch (_) { fail('ming_capability_missing'); }
   if (capabilities.status !== 200 || body?.ephemeral_reference?.version !== 1) fail('ming_capability_missing');
   return { authStatus: true, capability: true };
+}
+async function inspectWevisCapability(config, request = axios.request) {
+  // Passive discovery only; no model load, inference or worker state change.
+  try {
+    const response = await request({ method: 'GET', url: config.gateway.origin + '/perception/wevisone-vl/capabilities',
+      proxy: false, timeout: 10000, maxContentLength: 65536, maxBodyLength: 0, maxRedirects: 0,
+      responseType: 'arraybuffer', validateStatus: () => true });
+    const bytes = Buffer.from(response.data);
+    if (response.status !== 200 || bytes.length > 65536
+      || !compatible(strictJson(new TextDecoder('utf-8', { fatal: true }).decode(bytes)).failure_inspection)) fail('wevis_capability_missing');
+    return { failureInspectionCompatible: true };
+  } catch (_) { fail('wevis_capability_missing'); }
 }
 async function validateStorageLocation(config, io = fs) {
   // Read-only counterpart of LabStore.checkRoot's location checks. The wrapper
@@ -182,6 +196,7 @@ async function run(args) {
   if (command === 'preflight' && (rest.length === 0 || rest.length === 1 && rest[0] === '--direct')) {
     return passiveGateway(await loadConfiguration(), { direct: rest[0] === '--direct' });
   }
+  if (command === 'inspection' && rest.length === 0) return inspectWevisCapability(await loadConfiguration());
   if (command === 'storage' && rest.length === 0) return validateStorageLocation(await loadConfiguration());
   if (command === 'boot' && rest.length === 2 && /^\d{4}-\d\d-\d\dT/.test(rest[0]) && /^[0-9a-f]{40}$/.test(rest[1])) {
     const since = Date.parse(rest[0]);
@@ -196,4 +211,4 @@ if (require.main === module) {
     process.exitCode = 1;
   });
 }
-module.exports = { configuration, readServiceEnvironment, passiveGateway, validateStorageLocation, inspectBootLines, verifyBoot, run };
+module.exports = { inspectWevisCapability, configuration, readServiceEnvironment, passiveGateway, validateStorageLocation, inspectBootLines, verifyBoot, run };

@@ -531,32 +531,60 @@ labels it `VERIFY_TRANSCRIPT`, selects TTS or MULTILINGUAL and the submitted lan
 and resets consent to **unchecked**. This text is not a transcription; the user must
 listen and correct it. Selection never runs inference or grants consent.
 
-### WeVis failure inspection: preparation only
+### WeVis failure inspection v1: implemented
 
-Site currently reports a disabled `contract_pending` registry flag. Passive
-capabilities expose only whether `failure_inspection.version === 1` was advertised;
-advertisement alone cannot enable forwarding. Ordinary WeVis calls still send
-exactly their existing four multipart fields; the browser cannot inject
-`experimental_inspect_failure` or other arbitrary Gateway keys. Ming is independent.
+The logged-in admin lab retains `experimental.models.manage`, account + browser
+session ownership, shared CSRF for mutations and dispatch authorization. Diagnostics
+are private model output from the owned request, never a public tool response.
+The browser cannot supply the inspection flag, headers, paths or additional task
+fields. At dispatch, Site automatically sends the literal multipart
+`experimental_inspect_failure=true` only on `/perception/wevisone-vl` when all eight
+members of the Gateway v1 capability match. All seven tasks are supported. Discovery
+is cached for 60 seconds. Missing, incompatible or failed discovery preserves the
+ordinary request with generic failures. Ming and public/ordinary tool clients are
+unchanged; `/ocr` is never used for this opt-in.
 
-The failure UI labels the sanitized Gateway status and explicitly marks rejected
-model output unavailable. Failed jobs remain failed (or interrupted when completion
-is unknown), with no geometry overlay, fabricated success, or raw error artifact.
-Provider `detail`, `message`, stack/config strings and secret/path-bearing generic
-errors remain discarded. Rendering uses escaped text only.
+`services/experimentalModels/wevisInspection.js` mirrors the exact Gateway validator
+from `ai-services/ai-gateway/successor_common/wevis_inspection.py` at `c108b80`:
+HTTP 502, JSON, no-store, mandatory exact fields, false `model_output_valid`, all
+14 normalize reasons and all five runtime stage/reason pairs. Task and token budget
+must match the request. Observed generation metadata follows the Gateway's actual
+bounds and null/EOS consistency rules; length does not imply the budget was consumed.
+Raw output is capped at 16,384 UTF-8 bytes, with original Unicode code-point length,
+valid character boundaries and a full-cap prefix for truncation. Empty decoded text
+is distinct from unavailable null text. Unsafe JavaScript integers are rejected
+rather than silently rounding provenance. Inspection envelopes are capped at
+102,400 bytes; ordinary responses keep the 1 MiB ceiling. Duplicate keys, invalid
+UTF-8, unknown fields/codes, inconsistent metadata and malformed bodies are discarded
+in favor of a fixed generic error. Other HTTP error semantics remain unchanged.
 
-**Pending exact Gateway contract:** integrate the fixed admin-lab-only opt-in,
-versioned finite code/stage schema, 16 KiB bounded sanitized rejected output and
-explicit predecode-unavailable semantics after the coordinator supplies the final
-schema. That follow-up must store validated error artifacts as owned private files
-with existing TTL, quota reservations, leases and deletion rules, keep jobs failed
-with invalid-output semantics, test hostile strings/truncation and old capabilities,
-and preserve ordinary Gateway tools/defaults. This commit deliberately does not
-invent those wire fields or enable an unfinished adapter. No quality tuning,
-production edits, deployment, restart, live Gateway requests or GPU inference is
-part of this source change; release helpers at `aa898ee` remain untouched.
+Validation precedes server-token/private-root redaction. Redacted output must still
+fit both caps; original length and truncation describe the Gateway text before
+local redaction. No exception message, stack, input query, prompt, private path or
+unrecognized JSON is copied into diagnostics. Raw generated strings can contain
+user-authored markup; the browser uses `textContent` and displays “Sanitized Gateway
+response” and “Rejected model output”, including unavailable/empty/truncated labels.
+There is no geometry renderer on a failed job. HTTP 502 remains `failed`, with
+`model_output_valid: false`, a finite explanatory message and an `inspectionId`,
+never a successful result ID.
 
-### Validation and review
+Validated diagnostics are separate bounded JSON assets, using the existing result
+quota reservation, private file modes, owner/browser download checks, attachment +
+no-store policy, leases, 24-hour session TTL, sweep and Clear session deletion.
+Keeping them out of the manifest prevents eight diagnostic bodies from overflowing
+its 256 KiB ceiling. Persistence failure quarantines the session. Production logs
+contain only safe failure codes/statuses, never rejected text. The existing WAV
+upload compatibility and server-owned eligible generated-audio reference flow remain
+in place, including explicit unchecked consent. No persistent voice operation or
+extra inference is added.
+
+The reported legacy 62-byte generic error is still not evidence of a normalization
+or runtime cause. Tests exercise the real Site router and `LabGateway` with actual
+mock response **bytes**, including that length, without fabricating raw output.
+The feature exposes evidence from future authorized failed requests; it does not
+claim to fix model quality or the original failure.
+
+### Validation from the preceding upload/reuse change (90d9a1e)
 
 - Pinned Node **26.13.0**; all network tests used localhost mocks. Final focused
   run: `npm test -- tests/unit/experimentalModels tests/unit/sessionCsrf.test.js
@@ -588,3 +616,41 @@ part of this source change; release helpers at `aa898ee` remain untouched.
   [narrow upload diagnostics](assets/experimental-models/reference-error-narrow.png).
 - `git diff --check` passed. No live Site/Gateway requests, production changes,
   application startup, secrets inspection, database operations or GPU inference.
+
+### Final inspection integration validation (2026-10-30)
+
+- Exact contract checked against the accessible local Gateway documentation and
+  `successor_common/wevis_inspection.py` validator at `c108b80`; no backend edits.
+- Focused feature + shared authorization/CSRF/storage/media suites: **707 passed,
+  4 platform skips**, 14 passing suites and one skipped. This includes all stages,
+  reasons, seven tasks, null/empty raw, observed metadata, Unicode byte/code-point
+  caps, full-prefix truncation, duplicates/extra fields, malformed transport,
+  capability gating, redaction and finite messages. Real-router + Gateway byte
+  mocks preserve HTTP 502/failed state, owned artifact access, restart recovery,
+  quota accounting and deletion, including the synthetic 62-byte legacy case.
+- Final full source-only snapshot (no `.env`, ignored media or runtime data), pinned
+  Node **26.13.0**, `npm test -- --maxWorkers=2 --workerIdleMemoryLimit=256MB`:
+  **6,637 passed, 261 skipped, 5 failed**. Coverage thresholds passed. All failures
+  are the known absent ignored WAV masters in `lentmancGame`,
+  `galaxyCenterJourneyGame`, `dinosaurHistoryGame`, `deepOceanJourneyGame`, and
+  `kardashevGame`. An earlier snapshot lacked Git metadata and additionally failed
+  the embedding dataset gitignore assertion; initializing the isolated snapshot's
+  Git metadata resolved it in the final full rerun. No product change addressed it.
+- Firefox **157.0** with localhost mock endpoints and synthetic data: failed raw
+  inspector, literal script/image text, original code-point count, no failed overlay,
+  upload HTTP/code/reason, eligible and disabled ineligible generated audio actions,
+  transcript verification and unchecked consent passed. Desktop 1440-pixel window
+  and actual narrow **500 × 758 CSS-pixel** viewport (Firefox's minimum width) had
+  no horizontal overflow. Empty/unavailable/truncated UI labels also passed DOM
+  tests. Visually inspected [desktop](assets/experimental-models/failure-inspection-desktop.png)
+  and [narrow](assets/experimental-models/failure-inspection-narrow.png) screenshots.
+- UpdateOnly source and mocked companion tests cover existing-root validation,
+  skipped provisioning/receipt writes, exact passive WeVis discovery without Ming
+  headers, existing Ming auth, configuration precedence and health sequencing.
+  **No Windows PowerShell/NTFS production execution is claimed.** The human procedure
+  is in [the Windows release runbook](experimental-models-windows-release.md#code-only-update-from-aa898ee-current-handoff).
+- Review covered finite diagnostics, private artifact lifecycle, escaped rendering,
+  capability fallback, error-only logging and unchanged ordinary/Ming operations.
+  `git diff --check` and unchanged package/lock files relative to `aa898ee` passed.
+  No production operation, live Gateway call, persistent voice operation, secret
+  reprovisioning, application startup or GPU inference was performed.

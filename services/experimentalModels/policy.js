@@ -18,6 +18,7 @@ const assetSchema = z.object({ id: z.string().regex(ID), mime: z.enum(['image/pn
 const jobSchema = z.object({ id: z.string().regex(ID), model: z.enum(['wevisone-vl', 'ming-tts']),
   state: z.enum(['queued', 'waiting_gateway', 'succeeded', 'failed', 'cancelled', 'interrupted']),
   createdAt: z.number(), startedAt: z.number().optional(), endedAt: z.number().optional(), reservedBytes: z.number().int().nonnegative(), reservedMetadataBytes: z.number().int().min(0).max(2048).optional(),
+  inspectionId: z.string().regex(ID).optional(), model_output_valid: z.literal(false).optional(),
   request: z.string().max(20000), fileId: z.string().regex(ID).optional(), resultId: z.string().regex(ID).optional(),
   error: z.string().max(500).optional(), code: z.string().max(80).optional(), status: z.number().int().optional(),
   headers: z.record(z.string(), z.string().max(100)).optional(),

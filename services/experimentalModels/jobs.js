@@ -111,10 +111,22 @@ class LabJobs {
           const session = this.store.sessions.get(entry.sessionId);
           const current = session?.jobs.find(j => j.id === entry.jobId);
           if (!current || current.state === 'cancelled') return;
+          if (safe.inspectionBytes && current.model === 'wevisone-vl' && !session.deletePending && session.expiresAt > this.store.now()) {
+            const bytes = safe.inspectionBytes;
+            if (!Buffer.isBuffer(bytes) || bytes.length > 102400 || bytes.length > current.reservedBytes) fail('result_limit', 502, 'Inspection exceeds reserved storage.');
+            const asset = { id: randomUUID(), mime: 'application/json', bytes: bytes.length };
+            try {
+              const handle = await fs.open(path.join(this.store.directory(session.id), `${asset.id}.json`), 'wx', 0o600);
+              session.assets.push(asset);
+              try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+              current.inspectionId = asset.id;
+              current.model_output_valid = false;
+            } catch (error) { session.deletePending = true; throw error; }
+          }
           Object.assign(current, { state: (['completion_unknown', 'gateway_transport'].includes(safe.code) || [499, 504].includes(safe.gatewayStatus)) ? 'interrupted' : 'failed',
             endedAt: this.store.now(), reservedBytes: 0, reservedMetadataBytes: 0, error: safe.message, code: safe.code, status: safe.gatewayStatus || safe.status,
             headers: safe.safeHeaders || {} });
-          await this.store.save(session);
+          try { await this.store.save(session); } catch (error) { session.deletePending = true; throw error; }
         }, true);
       } finally {
         source = null; entry.input = null; entry.authorize = null;
