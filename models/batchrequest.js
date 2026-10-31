@@ -12,6 +12,9 @@ const BatchRequest = new mongoose.Schema({
   request_counts_total: { type: Number, required: true },
   request_counts_completed: { type: Number, required: true },
   request_counts_failed: { type: Number, required: true },
+  processing_token: String,
+  processing_expires_at: Date,
+  result_counts: { succeeded: Number, failed: Number },
 });
 
 module.exports = mongoose.model('batchrequest', BatchRequest);

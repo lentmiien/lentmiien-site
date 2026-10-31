@@ -500,6 +500,14 @@ class EmbeddingQueueService {
 
   async isGpuBusy() {
     let check = 'reservation';
+    const recovered = (busy) => {
+      if (this.reservationCheckFailed) {
+        this.logger.notice('Embedding queue GPU availability checks recovered', {
+          category: 'embedding_queue', metadata: { check, busy },
+        });
+      }
+      this.reservationCheckFailed = false;
+    };
     try {
       if (require('../middleware/databaseReadiness').isDatabaseReady()) {
         check = 'batch_session';
@@ -513,7 +521,7 @@ class EmbeddingQueueService {
         || reservation?.dispatchPaused === true
         || Number(reservation?.blockedQueueDepth || 0) > 0;
       if (busy) {
-        this.reservationCheckFailed = false;
+        recovered(true);
         const reservationKey = reservation?.id || reservation?.service || 'active';
         if (this.pausedReservation !== reservationKey) {
           this.pausedReservation = reservationKey;
@@ -531,7 +539,7 @@ class EmbeddingQueueService {
       check = 'comfyui_container';
       const comfyStopped = isComfyUiStopped(await this.getContainers());
       if (comfyStopped === null) throw new Error('ComfyUI container state is unknown.');
-      this.reservationCheckFailed = false;
+      recovered(!comfyStopped);
       if (!comfyStopped) {
         if (this.pausedReservation !== 'comfyui_loaded') {
           this.pausedReservation = 'comfyui_loaded';

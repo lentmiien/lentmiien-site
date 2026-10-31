@@ -209,7 +209,10 @@ Owner credentials stay exclusively in process memory, never Mongo/API/logs/brows
 The private cache allows **one unresolved session** and rejects new ownership rather than
 evicting it. Its single bounded metadata record lasts until verified cleanup or process
 exit, even beyond idle/hard expiry. One latest terminal handle is retained without a token so a failed Mongo handoff can
-reconcile its verified proof; repeated close is a local idempotent success. No automatic DELETE retry after terminal cleanup failure;
+reconcile its verified proof; repeated close is a local idempotent success. Transient
+DELETE HTTP 502/503/504 may receive at most two same-owner retries inside the
+existing 100-second budget, only after a fresh GET reports idle/running without
+reclaim proof. No automatic DELETE retry after terminal cleanup failure;
 explicit admin continuation retries the same owner and never repeats inference.
 
 Supported topology is **one Site TARIC service/worker instance**. A matching nonsecret

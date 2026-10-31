@@ -86,7 +86,7 @@ describe('OpenAI webhook batch notifications', () => {
     });
     mockSendPushoverNotification.mockResolvedValue({ status: 1 });
     mockCheckBatchStatus.mockResolvedValue();
-    mockProcessBatchResponses.mockResolvedValue({ conversations: [] });
+    mockProcessBatchResponses.mockResolvedValue({ conversations: [], outcomes: [{ requestId: 'batch_123', succeeded: 2, failed: 1 }] });
   });
 
   test('sends a medium-priority Pushover notification for a completed batch', async () => {
@@ -101,12 +101,19 @@ describe('OpenAI webhook batch notifications', () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(mockSendPushoverNotification).toHaveBeenCalledWith({
-      title: 'OpenAI batch completed',
-      message: 'Batch batch_123 completed.',
+      title: 'OpenAI batch processed',
+      message: 'Batch batch_123: 2 succeeded, 1 failed.',
       priority: 0,
     });
     expect(mockCheckBatchStatus).toHaveBeenCalledWith('batch_123');
     expect(mockProcessBatchResponses).toHaveBeenCalledTimes(1);
+    expect(mockSendPushoverNotification.mock.invocationCallOrder[0]).toBeGreaterThan(mockProcessBatchResponses.mock.invocationCallOrder[0]);
+  });
+
+  test('duplicate or deferred completion does not notify or deliver messages again', async () => {
+    mockProcessBatchResponses.mockResolvedValue({ conversations: [], outcomes: [] });
+    await controller.openai({ app: { get: jest.fn() }, body: '{}', headers: {} }, createResponse());
+    expect(mockSendPushoverNotification).not.toHaveBeenCalled();
   });
 
   test('continues processing the batch when Pushover delivery fails', async () => {
@@ -119,11 +126,8 @@ describe('OpenAI webhook batch notifications', () => {
     }, createResponse());
 
     expect(logger.error).toHaveBeenCalledWith(
-      'Failed to send Pushover notification for completed batch',
-      {
-        batchId: 'batch_123',
-        error: 'network unavailable',
-      },
+      'Failed to send Pushover notification for processed batch',
+      { category: 'batch', metadata: { batchId: 'batch_123' } },
     );
     expect(mockCheckBatchStatus).toHaveBeenCalledWith('batch_123');
     expect(mockProcessBatchResponses).toHaveBeenCalledTimes(1);

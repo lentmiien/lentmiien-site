@@ -15,6 +15,9 @@ const {
 } = require('../utils/chat5MessageSelection');
 const { AIModelCards, Conversation5Model } = require('../database');
 const logger = require('../utils/logger');
+const { randomUUID } = require('crypto');
+const { upstreamErrorMetadata } = require('../utils/upstreamErrorMetadata');
+const { canManageBatch } = require('../utils/batchAuthorizationPolicy');
 const {
   APP_SETTING_KEYS,
   appSettingsService: defaultAppSettingsService,
@@ -34,6 +37,9 @@ const redirect_models = {
 
 const SUMMARY_PROMPT = 'Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to read the entire conversation.';
 const DEFAULT_MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
+const FINALIZATION_LEASE_MS = 10 * 60 * 1000;
+const PROVIDER_ERROR_CODES = new Set(['batch_expired', 'batch_cancelled', 'rate_limit_exceeded',
+  'invalid_request_error', 'context_length_exceeded', 'content_policy_violation', 'server_error', 'insufficient_quota']);
 const TERMINAL_BATCH_STATUSES = new Set([
   'failed',
   'cancelled',
@@ -336,6 +342,7 @@ class BatchService {
     const resolvedLimit = Number.isInteger(parsedLimit) && parsedLimit > 0 ? parsedLimit : 25;
     const retainedPrompts = await this.BatchPromptDatabase.find({
       request_id: { $ne: 'new' },
+      state: { $nin: ['succeeded', 'failed', 'retrying'] },
     });
     const candidates = Array.isArray(retainedPrompts) ? retainedPrompts : [];
     const requestIds = [...new Set(candidates.map(prompt => prompt?.request_id).filter(Boolean))];
@@ -370,9 +377,11 @@ class BatchService {
     return { attempted, cleaned, deferred };
   }
 
-  async getAll() {
+  async getAll({ includeFailures = false } = {}) {
     const weekAgo = new Date(Date.now() - 1000 * 60 * 60 * 24 * 7);
-    const prompts = await this.BatchPromptDatabase.find();
+    const prompts = await this.BatchPromptDatabase.find({
+      state: { $nin: includeFailures ? ['succeeded'] : ['succeeded', 'failed', 'retrying'] },
+    });
     const requests = (await this.BatchRequestDatabase.find({ created_at: { $gt: weekAgo } })).reverse();
     return { prompts, requests };
   }
@@ -381,7 +390,7 @@ class BatchService {
     const conversationIds = [];
     const prompts = await this.BatchPromptDatabase.find({ task_type: 'response' });
     prompts.forEach((prompt) => {
-      if (prompt.request_id === 'new' && conversationIds.indexOf(prompt.conversation_id) === -1) {
+      if (prompt.request_id === 'new' && (!prompt.state || prompt.state === 'queued') && conversationIds.indexOf(prompt.conversation_id) === -1) {
         conversationIds.push(prompt.conversation_id);
       }
     });
@@ -483,6 +492,14 @@ class BatchService {
     const savedRequests = [];
 
     for (const prompt of newPrompts) {
+      if (prompt.state && prompt.state !== 'queued') continue;
+      if (prompt.retry_principal_id) {
+        const principal = await require('../models/useraccount').findById(prompt.retry_principal_id).select('_id name type_user');
+        if (!await canManageBatch(principal)) {
+          await this.retainPromptFailure(prompt, { reason: 'retry_authorization_revoked' });
+          continue;
+        }
+      }
       const normalizedModel = normalizeModelName(prompt.model);
       if (!normalizedModel) {
         logger.warn('Dropping batch prompt with unknown model', { model: prompt.model, custom_id: prompt.custom_id });
@@ -593,6 +610,7 @@ class BatchService {
   async checkBatchStatus(batchId) {
     const batch = await this.BatchRequestDatabase.findOne({ id: batchId });
     if (!batch) return null;
+    if (batch.status === 'DONE') return batch;
 
     const latestStatus = await retrieveBatchStatus(batchId);
     if (!latestStatus) return batch;
@@ -613,7 +631,13 @@ class BatchService {
       batch.request_counts_failed = latestStatus.request_counts.failed ?? batch.request_counts_failed;
     }
 
-    await batch.save();
+    // A delayed status fetch must never reopen a locally finalized batch.
+    const updated = await this.BatchRequestDatabase.findOneAndUpdate({ id: batchId, status: { $ne: 'DONE' } }, { $set: {
+      status: batch.status, output_file_id: batch.output_file_id, error_file_id: batch.error_file_id,
+      completed_at: batch.completed_at, request_counts_total: batch.request_counts_total,
+      request_counts_completed: batch.request_counts_completed, request_counts_failed: batch.request_counts_failed,
+    } }, { new: true });
+    if (!updated) return this.BatchRequestDatabase.findOne({ id: batchId });
     if (TERMINAL_BATCH_STATUSES.has(String(batch.status || '').toLowerCase())) {
       await this.cleanupTerminalRequestPrompts(batch.id, {
         reason: `request_${String(batch.status).toLowerCase()}`,
@@ -622,173 +646,199 @@ class BatchService {
     return batch;
   }
 
+  async retainPromptFailure(prompt, { reason, record } = {}) {
+    // Store the outcome before removing anything from the conversation. Never
+    // store provider messages or bodies in the diagnostic record.
+    if (prompt.state !== 'failed') {
+      const code = record?.error?.code || record?.response?.body?.error?.code;
+      const status = record?.response?.status_code;
+      const failure = { reason, providerCode: PROVIDER_ERROR_CODES.has(code) ? code : null,
+        status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
+        at: new Date(), requestId: prompt.request_id };
+      await this.setPromptOutcome(prompt, { state: 'failed', failure });
+      logger.warning('Batch prompt failed; retained for explicit retry', {
+        category: 'batch', metadata: { requestId: prompt.request_id, customId: prompt.custom_id,
+          taskType: prompt.task_type, reason, providerCode: failure.providerCode, status: failure.status },
+      });
+    }
+    return this.cleanupPromptPlaceholder(prompt, { reason: prompt.failure?.reason || reason });
+  }
+
+  async setPromptOutcome(prompt, fields) {
+    const result = await this.BatchPromptDatabase.updateOne({ custom_id: prompt.custom_id, request_id: prompt.request_id }, { $set: fields });
+    if (result.matchedCount !== 1) throw new Error('Batch prompt outcome could not be persisted.');
+    Object.assign(prompt, fields);
+  }
+
   async processBatchResponses() {
     const completedRequests = await this.BatchRequestDatabase.find({ status: 'completed' });
-    if (!completedRequests.length) {
-      return { requests: [], prompts: [], conversations: [] };
-    }
-
-    const processedRequestIds = [];
-    const processedPromptIds = [];
-    const conversationUpdates = [];
-
-    for (const request of completedRequests) {
-      if (!request.output_file_id || request.output_file_id === 'null') continue;
-
-      const outputData = await downloadBatchOutput(request.output_file_id);
-      if (!Array.isArray(outputData)) continue;
-      let placeholderCleanupFailed = false;
-      const outputCustomIds = new Set(
-        outputData.map(record => record?.custom_id).filter(Boolean),
-      );
-
-      for (const record of outputData) {
-        const prompt = await this.BatchPromptDatabase.findOne({ custom_id: record.custom_id });
-        if (!prompt) continue;
-
-        const responseBody = record?.response?.body;
-        if (!responseBody) {
-          logger.warn('Batch record missing response body', { custom_id: record.custom_id });
-          const discardResult = await this.discardTerminalPrompt(prompt, {
-            reason: 'missing_response_body',
-          });
-          if (discardResult.ok) {
-            processedPromptIds.push(prompt.custom_id);
-          } else {
-            placeholderCleanupFailed = true;
+    const result = { requests: [], prompts: [], failedPrompts: [], conversations: [], outcomes: [] };
+    for (const candidate of completedRequests) {
+      const token = randomUUID();
+      const request = await this.BatchRequestDatabase.findOneAndUpdate({ id: candidate.id, status: 'completed',
+        $or: [{ processing_expires_at: { $exists: false } }, { processing_expires_at: null }, { processing_expires_at: { $lte: new Date() } }],
+      }, { $set: { processing_token: token, processing_expires_at: new Date(Date.now() + FINALIZATION_LEASE_MS) } }, { new: true });
+      if (!request) continue;
+      const renew = async () => {
+        const claim = await this.BatchRequestDatabase.updateOne({ id: request.id, status: 'completed', processing_token: token },
+          { $set: { processing_expires_at: new Date(Date.now() + FINALIZATION_LEASE_MS) } });
+        if (claim.matchedCount !== 1) throw new Error('Batch finalization claim was lost.');
+      };
+      try {
+        const records = new Map();
+        const duplicates = new Set();
+        const files = [...new Set([request.output_file_id, request.error_file_id].filter(id => id && id !== 'null'))];
+        let filesReady = true;
+        // Both files must be readable before declaring a record missing.
+        for (const file of files) {
+          const rows = await downloadBatchOutput(file);
+          if (!Array.isArray(rows)) { filesReady = false; break; }
+          for (const row of rows) {
+            if (typeof row?.custom_id !== 'string') { filesReady = false; break; }
+            if (records.has(row.custom_id)) duplicates.add(row.custom_id);
+            records.set(row.custom_id, row);
           }
+        }
+        if (!filesReady) {
+          logger.warning('Batch finalization deferred because a result file could not be reconciled', {
+            category: 'batch', metadata: { requestId: request.id },
+          });
           continue;
         }
-
-        if (prompt.task_type === 'summary') {
-          const summary = extractSummaryText(responseBody);
-          if (summary) {
-            await this.conversationService.updateConversationDetails(prompt.conversation_id, { summary });
-          }
-          const discardResult = await this.discardTerminalPrompt(prompt, {
-            reason: 'summary_processed',
-          });
-          if (discardResult.ok) {
-            processedPromptIds.push(prompt.custom_id);
-          } else {
-            placeholderCleanupFailed = true;
-          }
-          continue;
-        }
-
-        const conversation = await Conversation5Model.findById(prompt.conversation_id);
-        if (!conversation) {
-          const discardResult = await this.discardTerminalPrompt(prompt, {
-            conversation: null,
-            reason: 'conversation_missing',
-          });
-          if (discardResult.ok) {
-            processedPromptIds.push(prompt.custom_id);
-          } else {
-            placeholderCleanupFailed = true;
-          }
-          continue;
-        }
-
-        if (prompt.message_id) {
-          const placeholderCleanup = await this.cleanupPromptPlaceholder(prompt, {
-            conversation,
-            reason: 'response_processed',
-          });
-          if (!placeholderCleanup.ok) {
-            placeholderCleanupFailed = true;
+        const prompts = await this.BatchPromptDatabase.find({ request_id: request.id });
+        let cleanupFailed = false;
+        for (const prompt of prompts) {
+          await renew();
+          if (prompt.state === 'succeeded') continue;
+          const record = records.get(prompt.custom_id);
+          const body = record?.response?.body;
+          const status = record?.response?.status_code;
+          let conversationUpdate = null;
+          const reason = duplicates.has(prompt.custom_id) ? 'duplicate_response_record'
+            : !record ? 'missing_response_record'
+              : record.error || body?.error || (status !== undefined && (!Number.isInteger(status) || status < 200 || status >= 300)) ? 'provider_error'
+                : !body ? 'missing_response_body'
+                  : body.status && body.status !== 'completed' ? 'incomplete_response' : null;
+          if (prompt.state === 'failed' || reason) {
+            const cleanup = await this.retainPromptFailure(prompt, { reason, record });
+            cleanupFailed ||= !cleanup.ok;
+            result.failedPrompts.push(prompt.custom_id);
             continue;
           }
-        }
-
-        const convertedOutputs = await convertResponseBody(responseBody);
-        const newMessages = await this.messageService.processConvertedOutputs(conversation, convertedOutputs);
-
-        const savedMessages = [];
-        for (const msg of newMessages) {
-          if (msg && !msg.error && msg._id) {
-            conversation.messages.push(msg._id.toString());
-            savedMessages.push(msg);
+          const conversation = await Conversation5Model.findById(prompt.conversation_id);
+          if (!conversation) {
+            const cleanup = await this.retainPromptFailure(prompt, { reason: 'conversation_missing' });
+            cleanupFailed ||= !cleanup.ok;
+            result.failedPrompts.push(prompt.custom_id);
+            continue;
           }
-        }
-
-        conversation.updatedAt = new Date();
-        await conversation.save();
-
-        await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
-        processedPromptIds.push(prompt.custom_id);
-
-        if (savedMessages.length > 0) {
-          conversationUpdates.push({
-            conversationId: conversation._id.toString(),
-            messages: savedMessages.map((msg) => (typeof msg.toObject === 'function' ? msg.toObject() : msg)),
-            placeholderId: prompt.message_id,
-            members: Array.isArray(conversation.members) ? [...conversation.members] : [],
-            title: conversation.title,
-          });
-        }
-
-        const summaryModel = await resolveConfiguredSummaryModel(this.appSettingsService, prompt.model);
-        if (summaryModel.model) {
-          await this.addPromptToBatch({
-            userId: prompt.user_id,
-            conversationId: prompt.conversation_id,
-            model: summaryModel.model,
-            title: prompt.title || conversation.title || '(no title)',
-            taskType: 'summary',
-          });
-        } else {
-          logger.warn('Unable to queue automatic batch summary because no batch model is enabled', {
-            category: 'batch',
-            metadata: {
-              conversationId: prompt.conversation_id,
-              settingKey: APP_SETTING_KEYS.CHAT5_BATCH_SUMMARY_MODEL,
-            },
-          });
-        }
-      }
-
-      const promptsMissingOutput = await this.BatchPromptDatabase.find({ request_id: request.id });
-      if (Array.isArray(promptsMissingOutput)) {
-        for (const prompt of promptsMissingOutput) {
-          if (outputCustomIds.has(prompt.custom_id)) continue;
-          logger.warn('Completed batch request omitted a queued prompt response', {
-            request_id: request.id,
-            custom_id: prompt.custom_id,
-          });
-          const discardResult = await this.discardTerminalPrompt(prompt, {
-            reason: 'missing_response_record',
-          });
-          if (discardResult.ok) {
-            processedPromptIds.push(prompt.custom_id);
+          if (prompt.task_type === 'summary') {
+            const summary = extractSummaryText(body);
+            if (!summary) {
+              const cleanup = await this.retainPromptFailure(prompt, { reason: 'empty_summary' });
+              cleanupFailed ||= !cleanup.ok;
+              result.failedPrompts.push(prompt.custom_id);
+              continue;
+            }
+            await this.conversationService.updateConversationDetails(prompt.conversation_id, { summary });
+            const cleanup = await this.cleanupPromptPlaceholder(prompt, { conversation, reason: 'summary_processed' });
+            if (!cleanup.ok) { cleanupFailed = true; continue; }
           } else {
-            placeholderCleanupFailed = true;
+            const converted = await convertResponseBody(body);
+            // convertResponseBody appends an error marker even on success
+            // ({ error: null }); it is not a message to persist or count.
+            const convertedMessages = Array.isArray(converted)
+              ? converted.filter(output => output && !Object.hasOwn(output, 'error')) : [];
+            if (!convertedMessages.length || converted.some(output => output?.error)) {
+              const cleanup = await this.retainPromptFailure(prompt, { reason: 'invalid_response_output' });
+              cleanupFailed ||= !cleanup.ok;
+              result.failedPrompts.push(prompt.custom_id);
+              continue;
+            }
+            // The shared message writer already supports deterministic output IDs.
+            // A restart after message persistence can safely finish the same import.
+            const responseId = `batch:${request.id}:${prompt.custom_id}`;
+            const outputs = convertedMessages.map((output, index) => ({ ...output,
+              content: { ...output.content, responseId, outputIndex: index } }));
+            const messages = await this.messageService.processConvertedOutputs(conversation, outputs, { responseId });
+            const saved = messages.filter(msg => msg && !msg.error && msg._id);
+            if (saved.length !== outputs.length) throw new Error('Batch message persistence was incomplete.');
+            const cleanup = await this.cleanupPromptPlaceholder(prompt, { conversation, reason: 'response_processed' });
+            if (!cleanup.ok) { cleanupFailed = true; continue; }
+            const existing = new Set(conversation.messages.map(String));
+            for (const message of saved) if (!existing.has(String(message._id))) {
+              conversation.messages.push(String(message._id)); existing.add(String(message._id));
+            }
+            conversation.updatedAt = new Date();
+            await conversation.save();
+            conversationUpdate = { conversationId: String(conversation._id),
+              messages: saved.map(msg => typeof msg.toObject === 'function' ? msg.toObject() : msg),
+              placeholderId: prompt.message_id, members: Array.isArray(conversation.members) ? [...conversation.members] : [], title: conversation.title };
+            const summaryModel = await resolveConfiguredSummaryModel(this.appSettingsService, prompt.model);
+            if (summaryModel.model) await this.addPromptToBatch({ userId: prompt.user_id, conversationId: prompt.conversation_id,
+              model: summaryModel.model, title: prompt.title || conversation.title || '(no title)', taskType: 'summary' });
           }
+          // Retain completed metadata until the request has durably finalized.
+          await this.setPromptOutcome(prompt, { state: 'succeeded' });
+          if (conversationUpdate) result.conversations.push(conversationUpdate);
+          result.prompts.push(prompt.custom_id);
         }
-      }
-
-      if (placeholderCleanupFailed) {
-        logger.warning('Deferred completed batch request finalization because placeholder cleanup failed', {
-          category: 'batch',
-          metadata: { requestId: request.id },
+        if (cleanupFailed) continue;
+        const counts = { succeeded: prompts.filter(p => p.state === 'succeeded').length,
+          failed: prompts.filter(p => p.state === 'failed').length };
+        const finalized = await this.BatchRequestDatabase.updateOne({ id: request.id, status: 'completed', processing_token: token },
+          { $set: { status: 'DONE', result_counts: counts }, $unset: { processing_token: '', processing_expires_at: '' } });
+        if (finalized.matchedCount !== 1) throw new Error('Batch finalization claim was lost.');
+        result.requests.push(request.id);
+        result.outcomes.push({ requestId: request.id, ...counts });
+        for (const file of new Set([request.input_file_id, ...files])) if (file && file !== 'null') await deleteBatchFile(file);
+      } catch (error) {
+        logger.error('Batch finalization failed; retained records require another processing attempt', {
+          category: 'batch', metadata: { requestId: request.id, ...upstreamErrorMetadata(error) },
         });
-        continue;
+      } finally {
+        await this.BatchRequestDatabase.updateOne({ id: request.id, processing_token: token },
+          { $unset: { processing_token: '', processing_expires_at: '' } });
       }
-
-      request.status = 'DONE';
-      await request.save();
-      await deleteBatchFile(request.input_file_id);
-      if (request.output_file_id && request.output_file_id !== 'null') {
-        await deleteBatchFile(request.output_file_id);
-      }
-      processedRequestIds.push(request.id);
     }
+    return result;
+  }
 
-    return {
-      requests: processedRequestIds,
-      prompts: processedPromptIds,
-      conversations: conversationUpdates,
-    };
+  async retryFailedPrompt(id, principal) {
+    if (!await canManageBatch(principal)) throw Object.assign(new Error('Access denied.'), { status: 403 });
+    if (typeof id !== 'string' || !/^prompt-[A-Za-z0-9-]{1,100}$/.test(id)) throw Object.assign(new Error('Invalid prompt ID.'), { status: 400 });
+    const prompt = await this.BatchPromptDatabase.findOne({ custom_id: id, state: 'failed' });
+    if (!prompt) throw Object.assign(new Error('Failed prompt not found.'), { status: 404 });
+    const request = await this.BatchRequestDatabase.findOne({ id: prompt.request_id, status: 'DONE' });
+    if (!request) throw Object.assign(new Error('Finish processing the batch before retrying.'), { status: 409 });
+    if ((prompt.retry_count || 0) >= 5) throw Object.assign(new Error('Retry limit reached. Queue a new request from the conversation.'), { status: 409 });
+    const conversation = await Conversation5Model.findById(prompt.conversation_id);
+    if (!conversation) throw Object.assign(new Error('Conversation is no longer available.'), { status: 409 });
+    const claimed = await this.BatchPromptDatabase.findOneAndUpdate({ custom_id: id, state: 'failed', request_id: prompt.request_id },
+      { $set: { state: 'retrying', retry_principal_id: principal._id } }, { new: true });
+    if (!claimed) throw Object.assign(new Error('Prompt is already being retried.'), { status: 409 });
+    try {
+      const cleanup = await this.cleanupPromptPlaceholder(prompt, { conversation, reason: 'explicit_retry' });
+      if (!cleanup.ok) throw new Error('Placeholder cleanup failed.');
+      let messageId = null;
+      if (prompt.task_type !== 'summary') {
+        const placeholder = await this.messageService.createMessageNew({ userId: 'bot', contentType: 'text',
+          content: { text: 'Pending batch response' }, category: conversation.category, tags: conversation.tags,
+          embeddingRequested: false, conversationId: prompt.conversation_id });
+        messageId = String(placeholder._id);
+        conversation.messages.push(messageId);
+        await conversation.save();
+      }
+      const update = await this.BatchPromptDatabase.updateOne({ custom_id: id, state: 'retrying', request_id: prompt.request_id },
+        { $set: { state: 'queued', request_id: 'new', message_id: messageId }, $inc: { retry_count: 1 } });
+      if (update.matchedCount !== 1) throw new Error('Retry queue update failed.');
+      logger.notice('Failed batch prompt explicitly requeued', { category: 'batch', metadata: { customId: id, principalId: String(principal._id) } });
+    } catch (error) {
+      // An interrupted retry is visible and never automatically dispatched.
+      logger.error('Batch retry preparation failed; inspect the retained prompt', { category: 'batch',
+        metadata: { customId: id, ...upstreamErrorMetadata(error) } });
+      throw Object.assign(new Error('Retry preparation failed. Inspect the retained prompt before queuing new work.'), { status: 503 });
+    }
   }
 
   async deletePromptById(id) {

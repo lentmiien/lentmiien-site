@@ -265,6 +265,21 @@ describe('embedding GPU admission', () => {
     expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('PRIVATE');
   });
 
+  test.each([false, true])('availability recovery is reported once, including when GPU remains busy=%s', async busy => {
+    const logger = createLogger();
+    const getReservation = jest.fn().mockRejectedValue(new Error('PRIVATE'));
+    const service = new EmbeddingQueueService({ jobModel: {}, embeddingService: createEmbeddingService(), loggerImpl: logger,
+      getReservation, getContainers: async () => ({ containers: [{ id: 'comfyui', state: 'exited' }] }) });
+    await service.isGpuBusy(); await service.isGpuBusy();
+    getReservation.mockResolvedValue({ active: busy });
+    expect(await service.isGpuBusy()).toBe(busy);
+    await service.isGpuBusy();
+    expect(logger.notice.mock.calls.filter(([message]) => message.includes('availability checks recovered'))).toEqual([
+      ['Embedding queue GPU availability checks recovered', { category: 'embedding_queue', metadata: { check: busy ? 'reservation' : 'comfyui_container', busy } }],
+    ]);
+    expect(logger.warning).toHaveBeenCalledTimes(1);
+  });
+
   test('bounded state reads use the configured Gateway hosts and admin header only for container inspection', async () => {
     const previous = process.env.LLM_ADMIN_TOKEN;
     process.env.LLM_ADMIN_TOKEN = 'PRIVATE-ADMIN';

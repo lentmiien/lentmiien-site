@@ -33,6 +33,7 @@ const conversationService = new ConversationService(Conversation4Model, messageS
 const templateService = new TemplateService(Chat3TemplateModel);
 const agentService = new AgentService(AgentModel, conversationService, messageService);
 const batchService = new BatchService(BatchPromptModel, BatchRequestModel, messageService, conversationService);
+exports.batch_retry_router = require('../routes/batchRetry').createBatchRetryRouter(batchService);
 
 // Globals
 let categories = [];
@@ -751,9 +752,10 @@ exports.batch_status = async (req, res) => {
   // Check if any batches are ready in OpenAI's API, in which case download results and save to batch database
   // Button: Start batch process
   // Button: Import completed prompts to chat database
-  const status = await batchService.getAll();
-
-  res.render('batch_status', status);
+  const canRetryBatch = req.isAuthenticated?.() && await require('../utils/batchAuthorizationPolicy').canManageBatch(req.user);
+  const status = await batchService.getAll({ includeFailures: Boolean(canRetryBatch) });
+  res.set('Cache-Control', 'private, no-store');
+  res.render('batch_status', { ...status, canRetryBatch });
 };
 
 exports.batch_start = async (req, res) => {

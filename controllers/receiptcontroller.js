@@ -530,7 +530,7 @@ exports.upload_receipt = async (req, res) => {
     const layout_text = (layoutTexts[i] || '').trim();
     const { new_filename, b64_img } = await conversationService.loadProcessNewImageToBase64(req.files[i].destination + req.files[i].filename);
     const response = await openai.chat.completions.create({
-      model: "gpt-4.1",
+      model: "gpt-6-luna",
       messages: [
         { role: "system", content: context },
         { role: "user", content: [

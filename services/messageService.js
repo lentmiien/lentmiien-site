@@ -1345,8 +1345,8 @@ class MessageService {
     return this._persistConvertedOutputs(conversation, indexedOutputs, { responseId: response_id });
   }
 
-  async processConvertedOutputs(conversation, outputs) {
-    return this._persistConvertedOutputs(conversation, outputs);
+  async processConvertedOutputs(conversation, outputs, options = {}) {
+    return this._persistConvertedOutputs(conversation, outputs, options);
   }
 
   async _persistConvertedOutputs(conversation, outputs, { responseId = null } = {}) {

@@ -98,16 +98,8 @@ async function ProcessCompleted() {
     referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
     body: '{}', // body data type must match "Content-Type" header
   });
-  const status = await response.json();
-  status.requests.forEach(d => {
-    document.getElementById(d).classList.remove("processing");
-    document.getElementById(d).classList.add("completed");
-  });
-  status.prompts.forEach(d => {
-    document.getElementById(d).classList.remove("processing");
-    document.getElementById(d).classList.add("completed");
-  });
-  hideLoadingPopup();
+  if (!response.ok) { hideLoadingPopup(); return; }
+  window.location.reload();
 }
 
 function showLoadingPopup() {

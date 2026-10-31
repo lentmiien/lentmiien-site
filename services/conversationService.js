@@ -1283,7 +1283,7 @@ class ConversationService {
       messages: conversation.messages,
       metadata: {
         contextPrompt: conversation.context_prompt,
-        model: conversation.default_model ? conversation.default_model : "gpt-4.1-2025-04-14",
+        model: conversation.default_model ? conversation.default_model : "gpt-6-luna",
         maxMessages: conversation.max_messages ? conversation.max_messages : 999,
         startMessageId: null,
         maxAudioMessages: 3,
@@ -1762,7 +1762,7 @@ class ConversationService {
         tags: conv.tags,
         messages: conv.messages,
         members: [conv.user_id],
-        metadata: { model: conv.default_model || 'gpt-4.1-2025-04-14' },
+        metadata: { model: conv.default_model || 'gpt-6-luna' },
         updatedAt: conv.updated_date,
         category: conv.category,
         old: true,

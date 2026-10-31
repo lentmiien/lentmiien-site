@@ -92,6 +92,12 @@ const createBatchPromptModel = () => {
   model.findOne = jest.fn();
   model.deleteOne = jest.fn();
   model.updateMany = jest.fn();
+  model.updateOne = jest.fn(async (filter, update) => {
+    const prompt = (await model.find({}) || []).find(p => p.custom_id === filter.custom_id && p.request_id === filter.request_id);
+    if (!prompt) return { matchedCount: 0 };
+    Object.assign(prompt, update.$set);
+    return { matchedCount: 1 };
+  });
   model.mockDocs = docs;
   return model;
 };
@@ -104,6 +110,20 @@ const createBatchRequestModel = () => {
   });
   model.find = jest.fn();
   model.findOne = jest.fn();
+  const lookup = async filter => (await model.findOne(filter)) || (await model.find({}) || []).find(r => r.id === filter.id);
+  model.findOneAndUpdate = jest.fn(async (filter, update) => {
+    const doc = await lookup(filter);
+    if (!doc || (filter.status === 'completed' && (doc.status !== 'completed' || doc.processing_token))) return null;
+    Object.assign(doc, update.$set);
+    return doc;
+  });
+  model.updateOne = jest.fn(async (filter, update) => {
+    const doc = await lookup(filter);
+    if (!doc || (filter.processing_token && doc.processing_token !== filter.processing_token)) return { matchedCount: 0 };
+    Object.assign(doc, update.$set);
+    for (const key of Object.keys(update.$unset || {})) delete doc[key];
+    return { matchedCount: 1 };
+  });
   return model;
 };
 
@@ -262,6 +282,14 @@ describe('BatchService (chat5)', () => {
     const ids = await service.getPromptConversationIds();
 
     expect(ids).toEqual(['conv-1', 'conv-3']);
+  });
+
+  test('retained failures are queried only for an authorized management view', async () => {
+    BatchPromptDatabase.find.mockResolvedValue([]); BatchRequestDatabase.find.mockResolvedValue([]);
+    await service.getAll();
+    expect(BatchPromptDatabase.find).toHaveBeenLastCalledWith({ state: { $nin: ['succeeded', 'failed', 'retrying'] } });
+    await service.getAll({ includeFailures: true });
+    expect(BatchPromptDatabase.find).toHaveBeenLastCalledWith({ state: { $nin: ['succeeded'] } });
   });
 
   test('triggerBatchRequest sends pro reasoning mode for GPT-5.6', async () => {
@@ -551,7 +579,7 @@ describe('BatchService (chat5)', () => {
     expect(input).toEqual([]);
   });
 
-  test('completed batch record without a response body cleans its placeholder and prompt', async () => {
+  test('completed batch record without a response body retains its failure before cleaning its placeholder', async () => {
     const request = {
       id: 'batch-missing-body',
       status: 'completed',
@@ -570,23 +598,22 @@ describe('BatchService (chat5)', () => {
     BatchRequestDatabase.find.mockResolvedValue([request]);
     downloadBatchOutput.mockResolvedValue([{ custom_id: prompt.custom_id }]);
     BatchPromptDatabase.findOne.mockResolvedValue(prompt);
-    BatchPromptDatabase.find.mockResolvedValue([]);
+    BatchPromptDatabase.find.mockResolvedValue([prompt]);
     Conversation5Model.findById.mockResolvedValue(conversation);
 
     const result = await service.processBatchResponses();
 
-    expect(result.prompts).toEqual([prompt.custom_id]);
+    expect(result.failedPrompts).toEqual([prompt.custom_id]);
+    expect(prompt.state).toBe('failed');
     expect(conversation.messages).toEqual(['user-message']);
     expect(service.messageService.deleteMessages).toHaveBeenCalledWith(['ph-missing-body'], {
       conversationId: 'conv-missing-body',
     });
-    expect(BatchPromptDatabase.deleteOne).toHaveBeenCalledWith({
-      custom_id: prompt.custom_id,
-    });
+    expect(BatchPromptDatabase.deleteOne).not.toHaveBeenCalled();
     expect(request.status).toBe('DONE');
   });
 
-  test('completed batch response with a missing conversation still deletes its placeholder document', async () => {
+  test('completed batch response with a missing conversation retains its failure and deletes its placeholder document', async () => {
     const request = {
       id: 'batch-missing-conversation',
       status: 'completed',
@@ -607,22 +634,21 @@ describe('BatchService (chat5)', () => {
       response: { body: { output: [] } },
     }]);
     BatchPromptDatabase.findOne.mockResolvedValue(prompt);
-    BatchPromptDatabase.find.mockResolvedValue([]);
+    BatchPromptDatabase.find.mockResolvedValue([prompt]);
     Conversation5Model.findById.mockResolvedValue(null);
 
     const result = await service.processBatchResponses();
 
-    expect(result.prompts).toEqual([prompt.custom_id]);
+    expect(result.failedPrompts).toEqual([prompt.custom_id]);
+    expect(prompt.state).toBe('failed');
     expect(service.messageService.deleteMessages).toHaveBeenCalledWith(
       ['ph-missing-conversation'],
       { conversationId: 'conv-missing-conversation' },
     );
-    expect(BatchPromptDatabase.deleteOne).toHaveBeenCalledWith({
-      custom_id: prompt.custom_id,
-    });
+    expect(BatchPromptDatabase.deleteOne).not.toHaveBeenCalled();
   });
 
-  test('completed batch request cleans prompts omitted from the provider output', async () => {
+  test('completed batch request retains prompts omitted from the provider output', async () => {
     const request = {
       id: 'batch-omitted-response',
       status: 'completed',
@@ -645,7 +671,8 @@ describe('BatchService (chat5)', () => {
 
     const result = await service.processBatchResponses();
 
-    expect(result.prompts).toEqual([prompt.custom_id]);
+    expect(result.failedPrompts).toEqual([prompt.custom_id]);
+    expect(prompt.state).toBe('failed');
     expect(conversation.messages).toEqual(['user-message']);
     expect(service.messageService.deleteMessages).toHaveBeenCalledWith(['ph-omitted-response'], {
       conversationId: 'conv-omitted-response',
@@ -672,7 +699,7 @@ describe('BatchService (chat5)', () => {
     BatchRequestDatabase.find.mockResolvedValue([request]);
     downloadBatchOutput.mockResolvedValue([{ custom_id: prompt.custom_id }]);
     BatchPromptDatabase.findOne.mockResolvedValue(prompt);
-    BatchPromptDatabase.find.mockResolvedValue([]);
+    BatchPromptDatabase.find.mockResolvedValue([prompt]);
     Conversation5Model.findById.mockResolvedValue(conversation);
     service.messageService.deleteMessages.mockRejectedValue(new Error('vector queue offline'));
 

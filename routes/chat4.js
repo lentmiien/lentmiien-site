@@ -68,7 +68,8 @@ router.post('/ask_agent', controller.ask_agent);
 
 // Bacth
 router.post('/batch_prompt/:id', upload.array('imgs'), controller.batch_prompt);
-router.get('/batch_status', controller.batch_status);
+router.get('/batch_status', require('../middleware/sessionCsrf').createSessionCsrf().issueToken, controller.batch_status);
+router.use('/batch_prompt_retry', controller.batch_retry_router);
 router.post('/batch_start', controller.batch_start);
 router.post('/batch_update/:id', controller.batch_update);
 router.post('/batch_import', controller.batch_import);

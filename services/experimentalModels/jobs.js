@@ -67,9 +67,11 @@ class LabJobs {
     while (this.pending.length) {
       const entry = this.pending.shift();
       let leased = false, source, job;
+      let stage = 'authorization';
       try {
         // Fresh account and browser-session checks, never cached request roles.
         if (!await authorizedWithin(entry.authorize)) fail('authorization_revoked', 403, 'Experiment authorization expired before dispatch.');
+        stage = 'source_storage';
         await this.store.exclusive(async () => {
           const session = this.store.owned(entry.owner, entry.binding, entry.sessionId);
           job = session.jobs.find(j => j.id === entry.jobId);
@@ -89,8 +91,11 @@ class LabJobs {
         if (!leased) continue;
         // Storage admission may have waited. Recheck revocation outside the lock
         // immediately before the only Gateway forwarding attempt.
+        stage = 'dispatch_authorization';
         if (!await authorizedWithin(entry.authorize)) fail('authorization_revoked', 403, 'Experiment authorization expired before dispatch.');
+        stage = 'gateway';
         const result = await this.gateway.run(job.model, entry.input, source);
+        stage = 'result_storage';
         await this.store.exclusive(async () => {
           const session = this.store.sessions.get(entry.sessionId);
           if (session.deletePending || session.expiresAt <= this.store.now()) return;
@@ -109,7 +114,10 @@ class LabJobs {
         });
       } catch (error) {
         const safe = error instanceof LabError ? error : new LabError('job_failed', 503, 'Experiment failed. Check application diagnostics.');
-        logger.warning('Experimental Models job failed; check Gateway availability or private storage', { category: 'experimental_models', metadata: { code: safe.code, status: safe.status } });
+        logger.warning('Experimental Models job failed; inspect the reported operation stage', { category: 'experimental_models', metadata: {
+          code: safe.code, status: safe.gatewayStatus || safe.status, stage,
+          model: ['ming-tts', 'wevisone-vl'].includes(job?.model) ? job.model : null, jobId: entry.jobId,
+        } });
         await this.store.exclusive(async () => {
           const session = this.store.sessions.get(entry.sessionId);
           const current = session?.jobs.find(j => j.id === entry.jobId);

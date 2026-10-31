@@ -825,6 +825,17 @@ test('Miien local token cap is runtime-only and does not change saved metadata',
 });
 
 describe('OpenAI completion persistence retries', () => {
+  test('batch imports pass their deterministic identity through the shared persistence boundary', async () => {
+    const service = new MessageService({}, {});
+    const responseId = 'batch:batch-1:prompt-1';
+    const existing = { _id: 'persisted-batch-message', contentType: 'text', content: { responseId, outputIndex: 0 } };
+    Chat5Model.findOne.mockResolvedValue(existing);
+    const before = Chat5Model.mock.calls.length;
+    expect(await service.processConvertedOutputs({}, [{ contentType: 'text', content: existing.content }], { responseId })).toEqual([existing]);
+    expect(Chat5Model.findOne).toHaveBeenCalledWith({ 'content.responseId': responseId, 'content.outputIndex': 0 });
+    expect(Chat5Model.mock.calls.length).toBe(before);
+  });
+
   test('reuses existing outputs with their original provider indexes, including skipped items', async () => {
     const service = new MessageService({}, {});
     const existing = { _id: 'already-saved-function', contentType: 'function_call', content: {

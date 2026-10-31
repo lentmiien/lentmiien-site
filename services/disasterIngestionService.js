@@ -25,6 +25,7 @@ const WARNING_RETRY_MS = 15 * 60000;
 const WARNING_BODY_PROJECTION = 'source sourceId sourceUrl status infoType eventId reportAt controlAt serial raw.Head raw.Control raw.Body.Warning';
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_TIME_ZONE = 'Asia/Tokyo';
+const FEED_FAILURE_SUMMARY_MS = 60 * 60 * 1000;
 const { locationConfig: getLocationConfig, locationKey } = require('../utils/disasterLocality');
 const { p2pLocalIntensity } = require('../utils/disasterLocalEvidence');
 const { createLocalSummaryService } = require('./disasterLocalSummaryService');
@@ -206,6 +207,32 @@ class DisasterIngestionService {
     this.localSummary = options.localSummary || createLocalSummaryService();
     this.running = false;
     this.weatherRunning = false;
+    this.feedFailures = new Map();
+  }
+
+  reportFeedHealth(feedUrl, metadata, failed, now) {
+    const previous = this.feedFailures.get(feedUrl);
+    if (!failed) {
+      if (previous) {
+        this.logger.notice('JMA disaster feed polling recovered', { category: 'disaster_ingestion', metadata: {
+          ...metadata, previousReason: previous.reason, failures: previous.count, durationMs: +now - previous.startedAt,
+        } });
+        this.feedFailures.delete(feedUrl);
+      }
+      return;
+    }
+    const signature = JSON.stringify([metadata.reason, metadata.errorCode, metadata.causeCode, metadata.status, metadata.phase]);
+    const incident = previous || { startedAt: +now, count: 0, lastLoggedAt: 0 };
+    incident.count++;
+    if (!previous || incident.signature !== signature || +now - incident.lastLoggedAt >= FEED_FAILURE_SUMMARY_MS) {
+      this.logger.warning('JMA disaster feed polling failed', { category: 'disaster_ingestion', metadata: {
+        ...metadata, failures: incident.count, durationMs: +now - incident.startedAt,
+      } });
+      incident.lastLoggedAt = +now;
+    }
+    incident.signature = signature;
+    incident.reason = metadata.reason || metadata.errorCode || metadata.phase;
+    this.feedFailures.set(feedUrl, incident);
   }
 
   async fetchText(url) {
@@ -378,15 +405,22 @@ class DisasterIngestionService {
     };
     // Fetch every feed before allocating the shared detail budget. Archive feed
     // order must never consume all requests ahead of current warning candidates.
-    for (const feedUrl of getConfiguredJmaFeeds()) {
+    const configuredFeeds = getConfiguredJmaFeeds();
+    for (const url of this.feedFailures.keys()) if (!configuredFeeds.includes(url)) this.feedFailures.delete(url);
+    for (const [feedIndex, feedUrl] of configuredFeeds.entries()) {
       const feedState = { url: feedUrl, title: null, lastCheckedAt: now, lastUpdatedAt: null,
         lastStatus: 'ok', lastError: null, newEntries: 0 };
       const kind = warningReadiness.warningFeedKind(feedUrl);
+      let validation = null;
+      const rejectFeed = (reason, details = {}) => {
+        validation = { reason, ...details };
+        throw Object.assign(new Error(`JMA feed validation failed: ${reason}`), { code: 'UPSTREAM_INVALID_RESPONSE' });
+      };
       try {
         const xml = await this.fetchText(feedUrl);
-        if (XMLValidator.validate(xml) !== true) throw new Error('Invalid JMA feed XML');
+        if (XMLValidator.validate(xml) !== true) rejectFeed('invalid_xml');
         const feed = parseAtomFeed(xml, feedUrl);
-        if (!feed.title || !feed.updatedAt) throw new Error('Missing JMA feed metadata');
+        if (!feed.title || !feed.updatedAt) rejectFeed('missing_metadata');
         feedState.title = feed.title;
         feedState.lastUpdatedAt = feed.updatedAt;
         for (const entry of feed.entries) merge(entry, feed, feedState);
@@ -394,19 +428,18 @@ class DisasterIngestionService {
           // Long feeds update hourly, short feeds every minute. This is feed
           // transport freshness, independent of six-hour bulletin validity.
           const maxAge = (kind === 'long' ? 105 : 45) * 60000;
-          if (+now - +feed.updatedAt > maxAge || +feed.updatedAt - +now > 300000) {
-            throw new Error('JMA warning feed timestamp is stale or in the future');
-          }
+          const observedAgeMs = +now - +feed.updatedAt;
+          if (observedAgeMs > maxAge) rejectFeed('stale_timestamp', { observedAgeMs, thresholdMs: maxAge });
+          if (observedAgeMs < -300000) rejectFeed('future_timestamp', { observedAgeMs, thresholdMs: 300000 });
         }
+        this.reportFeedHealth(feedUrl, { source: 'jma', feedIndex, feedKind: kind }, false, now);
       } catch (error) {
         feedState.lastStatus = 'error';
         feedState.lastError = compactError(error);
         counters.feedErrors += 1;
         if (kind !== 'irrelevant') counters.warningFeedErrors += 1;
-        this.logger.warning('JMA disaster feed polling failed', {
-          category: 'disaster_ingestion',
-          metadata: { source: 'jma', feedIndex: DEFAULT_JMA_FEEDS.indexOf(feedUrl), ...upstreamErrorMetadata(error) },
-        });
+        this.reportFeedHealth(feedUrl, { source: 'jma', feedIndex, feedKind: kind,
+          ...upstreamErrorMetadata(error), ...validation }, true, now);
       }
       feeds.push(feedState);
     }

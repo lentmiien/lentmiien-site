@@ -1,0 +1,13 @@
+.prompt-container .prompt-entry {
+  background: var(--surface-1);
+  color: var(--text);
+  border-color: var(--border);
+}
+.prompt-container .pending { border-left: 4px solid var(--info); }
+.prompt-container .processing { border-left: 4px solid var(--warning); }
+.prompt-container .batch-failed,
+.prompt-container .batch_status_failed { border-left: 4px solid var(--danger); }
+.prompt-container .batch-retrying { border-left: 4px solid var(--warning); }
+.prompt-container .batch_status_DONE,
+.prompt-container .completed { border-left: 4px solid var(--success); }
+.batch-failure-message { color: var(--warning); }

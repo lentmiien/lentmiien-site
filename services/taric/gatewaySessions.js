@@ -92,31 +92,44 @@ function createGatewaySessions(gateway, { now = Date.now, closeDeadlineMs = 1000
       const started = Date.now();
       const deadline = started + Math.min(100000, Math.max(1, closeDeadlineMs));
       let raw; let counter = 0; let lastTransport = null;
+      let deleteAttempts = 0; let retryDeleteAt = null;
       const diagnostics = require('../../utils/taricDiagnostics');
       const logger = require('../../utils/logger');
       const observe = value => {
         lastTransport = diagnostics.errorStatus(value);
       };
       const request = async method => {
+        if (signal?.aborted) fail('INTERRUPTED');
         counter++;
+        lastTransport = null;
+        let observed = null;
+        if (method === 'DELETE') { deleteAttempts++; retryDeleteAt = null; }
         try {
           raw = validate(await gateway(path(session), { method, successStatuses: method === 'DELETE' ? [200, 202] : [200],
             headers: headers(session), signal, correlationId, onDiagnostic: observe,
             deadlineMs: Math.max(1, Math.min(method === 'DELETE' ? 6000 : 5000, deadline - Date.now())) }), session.id);
+          observed = raw;
         } catch (error) {
           observe(error.transport);
           if (signal?.aborted) throw error;
           // A lost DELETE reply cannot override a later terminal reclaim proof.
+          // Only retry transient HTTP failures, with the same owner, after a
+          // fresh GET proves cleanup has not started. Terminal backend failures
+          // still require explicit recovery; generation is never replayed.
+          if (method === 'DELETE' && deleteAttempts < 3 && [502, 503, 504].includes(lastTransport?.status)) {
+            retryDeleteAt = Date.now() + 2000 * deleteAttempts;
+          }
         }
         onCleanup?.(raw);
         const remote = diagnostics.cleanupStatus(raw);
         if (method === 'DELETE' || counter === 2 || counter % 10 === 0 || raw?.reclaim_verified || raw?.state === 'uncertain') {
           const level = raw?.reclaim_verified === true && raw?.state !== 'uncertain' ? 'debug' : 'warning';
           logger[level]('TARIC owned cleanup observation', { category: 'taric', metadata: {
-            method, counter, epoch, correlationId: lastTransport?.correlationId,
+            method, counter, deleteAttempts, epoch, correlationId: lastTransport?.correlationId,
             originClock: 'site', elapsedMs: Date.now() - started, transport: lastTransport, ...remote,
           } });
         }
+        return observed;
       };
       await request('DELETE');
       while (!raw?.reclaim_verified && Date.now() < deadline) {
@@ -128,7 +141,11 @@ function createGatewaySessions(gateway, { now = Date.now, closeDeadlineMs = 1000
             Math.min(Math.max(1, delayMs) * (counter > 5 ? 2 : 1), deadline - Date.now()));
           signal?.addEventListener('abort', abort, { once: true });
         });
-        if (Date.now() < deadline) await request('GET');
+        if (Date.now() < deadline) {
+          const observed = await request('GET');
+          if (retryDeleteAt !== null && Date.now() >= retryDeleteAt && Date.now() < deadline
+            && !observed?.reclaim_verified && ['idle', 'running'].includes(observed?.state)) await request('DELETE');
+        }
       }
       if (raw?.reclaim_verified) return { idle: true };
       logger.warning('TARIC owned cleanup deadline exhausted; capability retained', { category: 'taric', metadata: {

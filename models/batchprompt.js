@@ -7,6 +7,16 @@ const BatchPrompt = new mongoose.Schema({
   request_id: { type: String, required: true, max: 100 },
   user_id: { type: String, required: true, max: 100 },
   message_id: { type: String, max: 100 },
+  state: { type: String, enum: ['queued', 'failed', 'succeeded', 'retrying'], default: 'queued' },
+  failure: {
+    reason: String,
+    providerCode: String,
+    status: Number,
+    at: Date,
+    requestId: String,
+  },
+  retry_count: { type: Number, default: 0 },
+  retry_principal_id: { type: mongoose.Schema.Types.ObjectId },
   model: {
     type: String,
     default: 'gpt-5.5'

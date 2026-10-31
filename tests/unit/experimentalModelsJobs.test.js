@@ -140,6 +140,9 @@ test.each(['completion_unknown', 'gateway_error', 'untrusted'])('failed %s store
   expect(state.resultId).toBeUndefined(); expect((await store.get(owner, binding, s.id)).assets).toEqual([]);
   expect(await fs.readdir(path.join(root, s.id))).toEqual(['session.json']);
   expect(JSON.stringify(logger.warning.mock.calls)).not.toMatch(/private.path|private prompt|token=secret/);
+  expect(logger.warning).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ metadata: expect.objectContaining({
+    stage: 'gateway', model: 'ming-tts', jobId: job.id,
+  }) }));
 });
 
 test('result close failure quarantines and purges the file instead of losing quota accounting', async () => {
@@ -156,6 +159,9 @@ test('result close failure quarantines and purges the file instead of losing quo
   });
   try { releases[0](result()); await finish(); } finally { open.mockRestore(); }
   expect(await fs.readdir(root)).toEqual([]);
+  expect(logger.warning).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ metadata: expect.objectContaining({
+    stage: 'result_storage', model: 'ming-tts',
+  }) }));
 });
 
 test('preserves EXIF-oriented dimensions without logical resizing; unsupported formats fail', async () => {

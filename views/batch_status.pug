@@ -1,24 +1,32 @@
 extends layout
 
 block content
+  link(rel='stylesheet', href='/css/batch-status.css')
   h2 Batch Status
   .row 
     .col 
       h4 Prompts
-      button.btn.btn-success(onclick="StartBatch()") Start batch work (pending)
+      button.btn.btn-primary(onclick="StartBatch()") Start batch work (pending)
       .prompt-container
         each d in prompts 
-          .prompt-entry(id=d.custom_id, class=`${d.request_id === "new" ? "pending" : "processing"}`, title=`${d.task_type === 'response' ? d.message_id : ''}`) 
+          .prompt-entry(id=d.custom_id, class=d.state === 'failed' ? 'batch-failed' : d.state === 'retrying' ? 'batch-retrying' : d.request_id === 'new' ? 'pending' : 'processing', title=`${d.task_type === 'response' ? d.message_id : ''}`)
             b= d.title
             div
               div= `User: ${d.user_id}, Model: ${d.model}`
               div= d.task_type === 'summary' ? 'summary' : 'response'
+              if canRetryBatch && d.state === 'failed'
+                p.batch-failure-message= `Failed: ${(d.failure && d.failure.reason) || 'unknown'}. ${(d.failure && d.failure.providerCode) || ''}`
+                form(method='post', action=`/chat4/batch_prompt_retry/${encodeURIComponent(d.custom_id)}`)
+                  input(type='hidden', name='_csrf', value=csrfToken)
+                  button.btn.btn-primary(type='submit') Retry using current chat
+              else if canRetryBatch && d.state === 'retrying'
+                p.batch-failure-message Retry preparation was interrupted. Inspect application diagnostics before queuing new work.
               if name === d.user_id
                 a.btn.btn-outline-primary(href=`/chat5/chat/${d.conversation_id}`) View chat
                 a.btn.btn-outline-danger(href=`/chat4/batch_prompt_delete/${d.custom_id}`) Delete
     .col
       h4 Requests (1 week)
-      button.btn.btn-success(onclick="ProcessCompleted()") Process completed
+      button.btn.btn-primary(onclick="ProcessCompleted()") Process completed
       #request_container.prompt-container
         - const end_statuses = ['failed', 'completed', 'expired', 'cancelled', 'DONE']
         each d in requests
@@ -31,6 +39,8 @@ block content
               - const t = d.completed_at.getTime() - d.created_at.getTime()
               div= `Time: ${Math.floor(t/(1000*60*60))} h, ${Math.floor(t/(1000*60))%60} m, ${Math.floor(t/(1000))%60} s`
               div= `${d.request_counts_total}/${d.request_counts_completed}/${d.request_counts_failed}`
+              if canRetryBatch && d.result_counts && d.result_counts.succeeded != null
+                div= `Imported: ${d.result_counts.succeeded}; failed: ${d.result_counts.failed}`
               if end_statuses.indexOf(d.status) === -1
                 button.btn.btn-primary(onclick=`BatchRefresh('${d.id}')`) Refresh  
   #loadingPopup.loading-popup

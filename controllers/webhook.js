@@ -161,22 +161,23 @@ exports.openai = async (req, res) => {
     if (event.type === 'batch.completed') {
       const batchId = event.data.id;
 
-      try {
-        await sendPushoverNotification({
-          title: 'OpenAI batch completed',
-          message: `Batch ${batchId} completed.`,
-          priority: PUSHOVER_PRIORITIES.MEDIUM,
-        });
-        logger.notice('Pushover notification sent for completed batch', { batchId });
-      } catch (notificationError) {
-        logger.error('Failed to send Pushover notification for completed batch', {
-          batchId,
-          error: notificationError.message,
-        });
-      }
-
       await batchService.checkBatchStatus(batchId);
       const result = await batchService.processBatchResponses();
+      // Only the finalization claimant reports completion, after both result
+      // files and all local outcomes have been reconciled.
+      for (const outcome of result?.outcomes || []) {
+        try {
+          await sendPushoverNotification({
+            title: 'OpenAI batch processed',
+            message: `Batch ${outcome.requestId}: ${outcome.succeeded} succeeded, ${outcome.failed} failed.`,
+            priority: PUSHOVER_PRIORITIES.MEDIUM,
+          });
+        } catch (_) {
+          logger.error('Failed to send Pushover notification for processed batch', {
+            category: 'batch', metadata: { batchId: outcome.requestId },
+          });
+        }
+      }
 
       const io = req.app.get('io');
       if (io && result && Array.isArray(result.conversations) && result.conversations.length > 0) {

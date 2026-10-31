@@ -89,7 +89,7 @@ ${all_details.join("\n\n")}
 ---
 `;
       const response = await openai.chat.completions.create({
-        model: "gpt-4.1",
+        model: "gpt-6-luna",
         messages: [
           { role: "system", content: context },
           { role: "user", content: [

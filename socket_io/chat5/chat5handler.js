@@ -224,7 +224,7 @@ module.exports = async function registerChat5Handlers({
         await batchService.addPromptToBatch({
           userId: userName,
           conversationId: socket.conversation_id,
-          model: 'gpt-4.1-nano',
+          model: 'gpt-6-luna',
           title: socket.conversationTitle,
           taskType: 'summary',
         });

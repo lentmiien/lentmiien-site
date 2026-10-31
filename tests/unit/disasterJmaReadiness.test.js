@@ -65,7 +65,7 @@ function harness() {
     create: jest.fn(async data => { const doc = record(data); alerts.set(data.dedupeKey, doc); return doc; }),
     findByIdAndUpdate: jest.fn(async (id, update) => { Object.assign(alerts.get(id), update.$set); return alerts.get(id); }),
   };
-  const logger = { warning: jest.fn() };
+  const logger = { warning: jest.fn(), notice: jest.fn() };
   const service = new DisasterIngestionService({ models: { DisasterAlert: model }, localSummary, logger });
   service.verifyAlert = jest.fn(async () => {});
   const fetches = [];
@@ -196,6 +196,42 @@ test.each(['extra.xml', 'extra_l.xml'])('stale or malformed %s is not a successf
   expect((await h.poll()).counters.warningReady).toBe(false);
   h.responses.set(base + name, '<html>upstream maintenance</html>');
   expect((await h.poll()).counters.warningReady).toBe(false);
+});
+
+test.each([
+  ['invalid_xml', '<feed><broken></feed>', null],
+  ['missing_metadata', '<feed/>', null],
+  ['stale_timestamp', atom([], new Date(+now - 2 * 3600000)), 45 * 60000],
+  ['future_timestamp', atom([], new Date(+now + 6 * 60000)), 300000],
+])('feed diagnostics identify %s without provider content', async (reason, xml, thresholdMs) => {
+  const h = harness(); h.responses.set(base + 'extra.xml', xml);
+  expect((await h.poll()).counters.warningReady).toBe(false);
+  expect(h.logger.warning).toHaveBeenCalledWith('JMA disaster feed polling failed', expect.objectContaining({
+    metadata: expect.objectContaining({ reason, phase: 'response_validation', feedIndex: 1,
+      ...(thresholdMs ? { thresholdMs, observedAgeMs: expect.any(Number) } : {}) }),
+  }));
+  expect(JSON.stringify(h.logger.warning.mock.calls)).not.toContain(xml);
+});
+
+test('feed failures log transitions and hourly summaries while every poll remains unready', async () => {
+  const h = harness();
+  h.responses.set(base + 'extra.xml', Object.assign(new Error('PRIVATE PROVIDER BODY'), { code: 'ECONNREFUSED' }));
+  await h.poll(); await h.poll();
+  expect(h.logger.warning).toHaveBeenCalledTimes(1);
+  jest.setSystemTime(+now + 3600000);
+  // Refresh the other feed timestamps so only the failed feed affects readiness.
+  for (const name of feedNames) h.responses.set(base + name, atom([], new Date()));
+  h.responses.set(base + 'extra.xml', Object.assign(new Error('PRIVATE PROVIDER BODY'), { code: 'ECONNREFUSED' }));
+  expect((await h.poll()).counters.warningReady).toBe(false);
+  expect(h.logger.warning).toHaveBeenCalledTimes(2);
+  for (const name of feedNames) h.responses.set(base + name, atom([], new Date()));
+  expect((await h.poll()).counters.warningReady).toBe(true);
+  await h.poll();
+  expect(h.logger.notice).toHaveBeenCalledTimes(1);
+  expect(h.logger.notice).toHaveBeenCalledWith('JMA disaster feed polling recovered', expect.objectContaining({
+    metadata: expect.objectContaining({ feedIndex: 1, failures: 3, durationMs: expect.any(Number) }),
+  }));
+  expect(JSON.stringify(h.logger)).not.toContain('PRIVATE PROVIDER BODY');
 });
 
 test('custom feeds missing the long warning feed cannot certify coverage at a 15-minute polling interval', async () => {

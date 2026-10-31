@@ -131,6 +131,61 @@ test('a lost DELETE reply is reconciled by terminal GET proof', async () => {
   expect(await adapter.close({ session: { id: 'session-1' } })).toEqual({ idle: true });
 });
 
+test.each(['recovered', 'persistent', 'reclaiming', 'uncertain', 'forbidden', 'status_failed'])(
+  'transient owned DELETE retry is bounded and proof-driven: %s', async scenario => {
+    jest.useFakeTimers();
+    try {
+      let deletes = 0;
+      const gateway = jest.fn(async (_path, options) => {
+        if (options.method === 'DELETE') {
+          deletes++;
+          if (scenario === 'recovered' && deletes === 2) return { ...status(), state: 'closed', reclaim_verified: true };
+          throw Object.assign(new Error('private'), { transport: { phase: 'http', status: scenario === 'forbidden' ? 403 : 503 } });
+        }
+        if (scenario === 'status_failed') throw new Error('status unavailable');
+        return { ...status(), state: ['reclaiming', 'uncertain'].includes(scenario) ? scenario : 'running', reclaim_verified: false };
+      });
+      const adapter = createGatewaySessions(withDiscovery(gateway));
+      const task = adapter.close({ session: { id: 'session-1', ownerToken: 'synthetic-owner' } });
+      await jest.advanceTimersByTimeAsync(100001);
+      expect(await task).toEqual(scenario === 'recovered' ? { idle: true }
+        : { idle: false, reason: scenario === 'uncertain' ? 'BACKEND_RECLAIM_FAILED' : 'CLEANUP_PENDING' });
+      expect(deletes).toBe(scenario === 'recovered' ? 2 : scenario === 'persistent' ? 3 : 1);
+      expect(gateway.mock.calls.every(([path, opts]) => path.endsWith('/session-1')
+        && opts.headers['X-Inference-Session-Token'] === 'synthetic-owner'
+        && ['GET', 'DELETE'].includes(opts.method))).toBe(true);
+    } finally { jest.useRealTimers(); }
+  },
+);
+
+test('a generation deadline followed by DELETE 503 recovers only through owned reclaim, without replay', async () => {
+  jest.useFakeTimers();
+  try {
+    let deletes = 0;
+    const gateway = jest.fn(async (path, options) => {
+      if (path.endsWith('/generate')) return new Promise(() => {});
+      if (options.method === 'POST') return { ...status(), owner_token: 'synthetic-owner' };
+      if (options.method === 'DELETE') {
+        if (++deletes === 1) throw Object.assign(new Error('transient'), { transport: { phase: 'http', status: 503 } });
+        return { ...status(), state: 'closed', reclaim_verified: true };
+      }
+      return { ...status(), state: 'running', idle_proven: false };
+    });
+    const warm = createWarmSessions(createGatewaySessions(withDiscovery(gateway)));
+    const handle = await warm.open({ correlationId: 'synthetic' });
+    const generation = warm.generate(handle, row, ['0000000001'], 256).catch(error => error);
+    await jest.advanceTimersByTimeAsync(60001);
+    expect(await generation).toMatchObject({ code: 'INFERENCE_UNCERTAIN' });
+    const cleanup = warm.close(handle);
+    expect(warm.retainedId()).toBe(handle.id);
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(await cleanup).toEqual({ idle: true });
+    expect(warm.retainedId()).toBeNull();
+    expect(gateway.mock.calls.filter(([path]) => path.endsWith('/generate'))).toHaveLength(1);
+    expect(deletes).toBe(2);
+  } finally { jest.useRealTimers(); }
+});
+
 test('default cleanup deadline is 100 seconds with six/five second requests and bounded backoff', async () => {
   jest.useFakeTimers();
   try {
