@@ -61,6 +61,11 @@ test('navigation alone owns the spacer and shares clearance with document scroll
   }
   const bar = nav.match(/\.account-topbar\s*\{([^}]+)\}/)[1];
   expect(bar).toMatch(/position:\s*fixed/);
+  expect(bar).toContain('width: 100vw');
+  expect(bar).toContain('max-width: 100%');
+  expect(bar).toContain('inset: 0 0 auto');
+  expect(bar).toContain('var(--surface-3) 12%, transparent');
+  expect(bar).not.toMatch(/(?:^|;)\s*opacity:/);
   expect(bar).toMatch(/min-height:/);
   expect(bar).not.toMatch(/(?:^|;)\s*height:/);
   expect(bar).not.toContain('--nav-clearance'); // Prevent measurement feedback.
@@ -164,4 +169,39 @@ test('shared layout preserves the modal and legacy page hooks', () => {
   expect(html).toContain('<dialog class="account-tools" id="navbar"');
   expect(html).toContain('aria-haspopup="dialog"');
   expect(html).toContain('<script src="/js/nav.js" defer>');
+});
+
+test.each([
+  'layout', 'games', 'local_ai_queue', 'admin_taric', 'admin_taric_codes',
+  'admin_taric_history', 'admin_taric_history_guide', 'admin_amiami_upload',
+  'commons', 'miien_base', 'diff', 'view', 'test_editor', 'login', 'two_factor_layout',
+])('%s renders exactly one shared navbar', name => {
+  const html = pug.renderFile(path.join(__dirname, `../../views/${name}.pug`), {
+    loggedIn: false, games: [], config: {}, job: null, jobs: [], doc: {}, text: '',
+    diff: { summary: { total: 0 } },
+  });
+  expect(html.match(/class="account-topbar"/g)).toHaveLength(1);
+  expect(html.match(/id="navbar"/g)).toHaveLength(1);
+  expect(html).toContain('/css/nav.css');
+  expect(html).toMatch(/id="actionBtn"[^>]*disabled><\/button>/);
+  if (['login', 'two_factor_layout'].includes(name)) {
+    expect(html).not.toContain('<script');
+    expect(html).toContain('commandfor="navbar" command="show-modal"');
+    expect(html).toContain('commandfor="navbar" command="close"');
+    expect(html).not.toContain('id="tools-search"');
+  } else {
+    expect(html).toContain('/js/nav.js');
+  }
+});
+
+test('all full Pug documents include navigation, while fragments remain independent', () => {
+  const views = path.join(__dirname, '../../views');
+  for (const file of fs.readdirSync(views, { recursive: true }).filter(file => file.endsWith('.pug'))) {
+    const source = fs.readFileSync(path.join(views, file), 'utf8');
+    if (/^doctype html/m.test(source)) {
+      expect({ file, sharedNavigation: source.includes('include includes/navigation') })
+        .toEqual({ file, sharedNavigation: true });
+    }
+  }
+  expect(read('public/css/nav.css')).toMatch(/\.account-topbar #actionBtn:disabled, \.account-topbar #actionBtn:empty\s*\{\s*display: none;/);
 });

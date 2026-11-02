@@ -243,15 +243,22 @@ exports.getSpec = async (req, res) => {
 exports.renderSwagger = async (req, res, next) => {
   try {
     const { spec, displayName } = await loadSpec(req.params.filename);
-    const middleware = swaggerUi.setup(spec, {
+    const navigation = await new Promise((resolve, reject) => {
+      res.render('includes/navigation', (error, html) => error ? reject(error) : resolve(html));
+    });
+    const html = swaggerUi.generateHTML(spec, {
       explorer: true,
       swaggerOptions: {
         validatorUrl: null
       },
-      customSiteTitle: `YAML Viewer | ${displayName}`
+      customSiteTitle: `YAML Viewer | ${displayName}`,
+      customCssUrl: ['/css/color-theme.css', '/css/nav.css'],
+      customJs: ['/js/nav.js', '/js/layout.js']
     });
 
-    return middleware(req, res, next);
+    return res.send(html
+      .replace('</head>', '<meta name="viewport" content="width=device-width, initial-scale=1"></head>')
+      .replace('<body>', () => `<body>${navigation}`));
   } catch (error) {
     const status = error.status || 500;
     if (status >= 500) {

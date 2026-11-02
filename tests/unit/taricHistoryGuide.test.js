@@ -51,7 +51,10 @@ test('static guide passes capability guards and never reaches :id, history, DB o
       expect(html).toContain('balanced-recent');
       expect(html).toContain('taric_dataset_converter.py');
       expect(html).toContain('/css/color-theme.css');
-      expect(html).not.toContain('<script');
+      expect(html.match(/<script\b[^>]*>/g)).toEqual([
+        '<script src="/js/nav.js" defer>',
+        '<script src="/js/layout.js" defer>',
+      ]);
       expect(html).not.toContain('<img');
       expect(response.headers.get('content-security-policy')).toContain("default-src 'self'");
     }

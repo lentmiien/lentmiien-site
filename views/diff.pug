@@ -20,11 +20,13 @@ html(lang="en")
       .value code { white-space: pre-wrap; word-break: break-word; }
       .badge-cat { text-transform: capitalize; }
       .toolbar { gap: .5rem; }
-      .sticky-header { position: sticky; top: 0; z-index: 1; background: var(--surface-2); }
+      .sticky-header { position: sticky; top: var(--nav-clearance); z-index: 1; background: var(--surface-2); }
       .copy-btn { opacity: .7; transition: opacity .15s ease-in-out; }
       .copy-btn:hover { opacity: 1; }
 
+    include includes/navigation_assets
   body
+    include includes/navigation
     .container.py-4
       .row 
         form(action="/diff", method="post") 

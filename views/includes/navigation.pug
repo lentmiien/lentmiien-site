@@ -1,0 +1,127 @@
+//- Shared by full page shells; fragments and standalone games do not include navigation.
+//- Security screens keep their script-free CSP and use native dialog commands.
+- const navNativeControls = typeof navigationNoScript !== 'undefined' && navigationNoScript;
+mixin navColumn(title)
+  .navbar-column
+    if title
+      h2= title
+    block
+
+mixin navLink(href, label, variant)
+  - const linkClass = variant === 'secondary' ? 'type-2-link' : 'type-1-link';
+  a(class=linkClass, href=href)&attributes(attributes)= label
+
+
+.nav-placeholder
+header.account-topbar
+  a#goTopPageBtn.nav-action-btn(href=loggedIn ? '/mypage' : '/', aria-label=loggedIn ? 'My Account' : 'Home')
+    span(aria-hidden='true') ⌂
+    //- span= loggedIn ? 'My Account' : 'Home'
+  button#actionBtn.nav-action-btn(type='button', disabled)
+  button#tools-toggle.navbar-icon(type='button', aria-controls='navbar', aria-label='Tools and navigation', aria-expanded=navNativeControls ? null : 'false', aria-haspopup='dialog', commandfor=navNativeControls ? 'navbar' : null, command=navNativeControls ? 'show-modal' : null)
+    span(aria-hidden='true') ☰
+    //- |  Tools
+dialog#navbar.account-tools(aria-labelledby='tools-title')
+  .tools-header
+    div
+      h2#tools-title Tools & navigation
+      p Your shortcuts and the full catalog available to your account.
+    button#tools-close(type='button', aria-label='Close tools', commandfor=navNativeControls ? 'navbar' : null, command=navNativeControls ? 'close' : null) Close
+  unless navNativeControls
+    label.tools-search-label(for='tools-search') Find a tool
+    input#tools-search(type='search', placeholder='Search tools, pages and groups…', autocomplete='off')
+    p#tools-search-status(role='status')
+  //- Prefix navigation locals: inherited page blocks share this scope (e.g. Quick Settings uses catalog).
+  - const navCatalog = typeof accountNavigation !== 'undefined' ? accountNavigation : [];
+  - const navGroups = typeof navigationGroups !== 'undefined' ? navigationGroups : [];
+  - const navHasPermission = permission => Array.isArray(permissions) && permissions.includes(permission);
+  if !navCatalog.length
+    +navColumn('Navigation')
+      +navLink('/', 'Home')
+      +navLink('/games', 'Games')
+      +navLink(loggedIn ? '/mypage' : '/login', loggedIn ? 'My account' : 'Sign in')
+  if loggedIn
+    section.tools-shortcuts(aria-labelledby='shortcuts-title')
+      .tools-section-heading
+        h3#shortcuts-title Shortcuts
+        a(href='/mypage#customize-shortcuts') Customize
+      .tools-icon-grid
+        each item in navCatalog.filter(n => !n.hidden && !n.public).slice(0, 8)
+          a.tool-link(href=item.href, data-tool-search=`${item.label} ${item.group}`)
+            img(src=item.src, alt='', width='32', height='32', loading='lazy')
+            span= item.label
+  .tools-groups
+    each group in navGroups
+      - const navItems = navCatalog.filter(n => n.group === group);
+      if navItems.length
+        details.tools-group(open)
+          summary= group
+          each subgroup in [...new Set(navItems.map(n => n.subgroup))]
+            details.tools-subgroup(open=navItems.length < 10)
+              summary= subgroup
+              .tools-icon-grid
+                each item in navItems.filter(n => n.subgroup === subgroup)
+                  a.tool-link(href=item.href, data-tool-id=item.id, data-tool-search=`${item.label} ${group} ${subgroup}`)
+                    img(src=item.src, alt='', width='32', height='32', loading='lazy')
+                    span
+                      span= item.label
+                      if item.meta
+                        small= item.meta
+  if loggedIn && chatmode
+    section.navbar-column
+      h3 Chat history
+      a(href='/chat3') New chat
+      ul
+        li#history_list
+          button(type='button', onclick='showHModalPopup()') Show all
+      h3 Select head
+      ul
+        li#head_list
+  if loggedIn === true && navHasPermission("quicknote")
+    +navColumn('Quick Add')
+      form#quickNoteForm
+        .input-group.mb-1
+          input#quickNoteInput.form-control(type='text' placeholder='Quick note...')
+          .input-group-append
+            button.btn.btn-primary(type='submit') Save
+      form#locationForm
+        .input-group.mb-1
+          input#locationInput.form-control(type='text' placeholder='Location name...')
+          .input-group-append
+            button.btn.btn-primary(type='submit') Add location
+  if loggedIn
+    +navColumn('Bookmarks')
+      +navLink('/bookmarks', 'Manage bookmarks')
+      form.navbar-bookmark-form(method='post', action='/bookmarks/add')
+        input(type='hidden', name='returnTo', value=currentPath)
+        .mb-1
+          input.form-control.form-control-sm(type='text', name='url', placeholder='Paste URL', required)
+        .mb-1
+          input.form-control.form-control-sm(type='text', name='title', placeholder='Title (optional)', maxlength='160')
+        .input-group.input-group-sm
+          input.form-control(type='number', name='importance', min='1', max='5', step='1', value='3')
+          button.btn.btn-primary(type='submit') Save
+      if bookmarks && bookmarks.length
+        each bookmark in bookmarks
+          - const bookmarkLabel = `[${bookmark.importance}] ${bookmark.title}`;
+          +navLink(bookmark.url, bookmarkLabel, 'secondary')(target='_blank', rel='noopener noreferrer')
+
+  +navColumn('Samples & Demos')
+    if htmlPaths && htmlPaths.length
+      each l in htmlPaths
+        .navbar-html-entry
+          +navLink(l.path, l.name, 'secondary')(target="_blank", rel="noopener noreferrer")
+          - const avgDisplay = typeof l.averageRating === 'number' ? l.averageRating.toFixed(2) : null;
+          - const ratingParts = Array.isArray(l.ratings) ? l.ratings.filter(r => Number.isFinite(r.score)).map(r => `${r.label}: ${r.score}`) : [];
+          if avgDisplay || ratingParts.length
+            small.navbar-html-rating
+              if avgDisplay
+                span.navbar-html-rating-avg Avg #{avgDisplay}
+                if l.version
+                  span.navbar-html-rating-version  | v#{l.version}
+              if ratingParts.length
+                if avgDisplay
+                  span.navbar-html-rating-sep  |
+                span.navbar-html-rating-breakdown= ratingParts.join(' | ')
+    else
+      small.navbar-html-empty No public demos yet.

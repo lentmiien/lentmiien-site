@@ -1,3 +1,4 @@
+- const navigationNoScript = true;
 doctype html
 html(lang='en')
   head
@@ -7,6 +8,8 @@ html(lang='en')
     link(rel='stylesheet', href='/css/color-theme.css')
     link(rel='stylesheet', href='/css/user_settings.css')
     link(rel='stylesheet', href='/css/two_factor.css')
+    include includes/navigation_assets
   body
+    include includes/navigation
     main.user-settings.two-factor-page
       block content

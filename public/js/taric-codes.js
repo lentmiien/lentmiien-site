@@ -14,10 +14,10 @@
   async function run(fn) {
     if (busy) return;
     busy = true;
-    for (const button of document.querySelectorAll('button')) button.disabled = true;
+    for (const button of document.querySelectorAll('main button')) button.disabled = true;
     $('status').textContent = 'Working…';
     try { await fn(); } catch (e) { $('status').textContent = e.message; }
-    finally { busy = false; for (const button of document.querySelectorAll('button')) button.disabled = false; $('import').disabled = !sha; }
+    finally { busy = false; for (const button of document.querySelectorAll('main button')) button.disabled = false; $('import').disabled = !sha; }
   }
   function edit(row) {
     current = row; $('editor').hidden = false; $('edit-title').textContent = `Edit ${row._id}`;

@@ -17,7 +17,12 @@ test('registry page previews/imports camel-case CSV, edits safely, and requires 
     return { ok: true, json: async () => result };
   });
   const settle = () => new Promise(setImmediate);
-  dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-codes.js'), 'utf8')); await settle();
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-codes.js'), 'utf8'));
+  expect(doc.querySelector('#tools-toggle').disabled).toBe(false);
+  expect(doc.querySelector('#actionBtn').disabled).toBe(true);
+  await settle();
+  expect(doc.querySelector('#tools-toggle').disabled).toBe(false);
+  expect(doc.querySelector('#actionBtn').disabled).toBe(true);
   expect(doc.querySelector('#codes').textContent).toContain(attack);
   expect(doc.querySelectorAll('img')).toHaveLength(0);
   doc.querySelector('#codes button').click();

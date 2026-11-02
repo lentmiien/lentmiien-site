@@ -14,7 +14,9 @@ html(lang='en')
     script(src='/commons/renderer.js?v=1.2.2', defer)
     script(src='/commons/panels.js?v=1.2.2', defer)
     script(src='/commons/client.js?v=1.2.2', defer)
+    include includes/navigation_assets
   body
+    include includes/navigation
     header.topbar
       a.brand(href='/mypage', aria-label='Back to My Account')
         img(src='/commons/icon.svg', alt='', width='38', height='38')

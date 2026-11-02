@@ -21,7 +21,7 @@ main { max-width: 1400px; margin: auto; padding: 2rem; }
 .eyebrow { color: var(--accent); font-size: .72rem; text-transform: uppercase; letter-spacing: .16em; font-weight: 700; }
 .subtle, .hint { color: var(--text-secondary); } .hint { font-size: .8rem; margin: .5rem 0 .8rem; }
 .miien-start { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; }
-.intro-art { position: sticky; top: 1rem; height: min(850px, 88vh); overflow: hidden; border-radius: 1.5rem; background: var(--surface-1); }
+.intro-art { position: sticky; top: calc(var(--nav-clearance) + 1rem); height: min(850px, 88vh); overflow: hidden; border-radius: 1.5rem; background: var(--surface-1); }
 .intro-art img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
 .art-caption { position: absolute; bottom: 0; padding: 3rem 2rem 1rem; width: 100%; background: linear-gradient(transparent, var(--bg) 70%); }
 .art-caption h1 { font-size: clamp(2rem, 3.5vw, 3.5rem); margin: .8rem 0; }
@@ -57,10 +57,10 @@ details { border-top: 1px solid var(--divider); padding: 1rem 0; } summary { cur
 
 /* Viewport call room. Portraits remain contained; landscape masters are pending. */
 .miien-call { overflow: hidden; }
-.miien-call .miien-nav { position: absolute; inset: 0 0 auto; z-index: 20; max-width: none; padding: max(.5rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) .5rem max(1rem, env(safe-area-inset-left)); background: color-mix(in srgb, var(--bg) 80%, transparent); }
+.miien-call .miien-nav { position: absolute; inset: var(--nav-clearance) 0 auto; z-index: 20; max-width: none; padding: max(.5rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) .5rem max(1rem, env(safe-area-inset-left)); background: color-mix(in srgb, var(--bg) 80%, transparent); }
 .miien-call .wordmark { font-size: 1.1rem; }
 .miien-call main { padding: 0; max-width: none; }
-.miien-call .room { position: absolute; top: var(--call-top, 0); inset-inline: 0; height: var(--call-height, 100dvh); display: block; }
+.miien-call .room { position: absolute; top: calc(var(--call-top, 0px) + var(--nav-clearance)); inset-inline: 0; height: calc(var(--call-height, 100dvh) - var(--nav-clearance)); display: block; }
 .miien-call .stage { height: 100%; min-height: 0; width: 100%; border: 0; border-radius: 0; background: radial-gradient(ellipse at 50% 35%, var(--surface-3), var(--bg) 75%); }
 .miien-call #character, .character-motion { position: absolute; inset: 3rem 0 0; width: 100%; height: calc(100% - 3rem); min-height: 0; max-height: none; object-fit: contain; object-position: center top; }
 .miien-call #character[hidden], .character-motion[hidden], [hidden] { display: none !important; }
