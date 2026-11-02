@@ -16,7 +16,7 @@ html { scroll-padding-top: var(--nav-clearance); }
   justify-content: space-between;
   gap: .6rem;
   padding: calc(.4rem + env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right, 0px)) .4rem max(1rem, env(safe-area-inset-left, 0px));
-  background: color-mix(in srgb, var(--surface-3) 12%, transparent);
+  background: linear-gradient(to bottom, var(--surface-3), color-mix(in srgb, var(--surface-3) 12%, transparent));
   border-bottom: 1px solid color-mix(in srgb, var(--border) 15%, transparent);
   z-index: 500;
 }
