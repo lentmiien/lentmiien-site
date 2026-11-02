@@ -55,11 +55,11 @@ html(lang=pageLang || 'en')
     header.account-topbar
       a#goTopPageBtn.nav-action-btn(href=loggedIn ? '/mypage' : '/', aria-label=loggedIn ? 'My Account' : 'Home')
         span(aria-hidden='true') ⌂
-        span= loggedIn ? 'My Account' : 'Home'
+        //- span= loggedIn ? 'My Account' : 'Home'
       button#actionBtn.nav-action-btn(type='button', disabled) ---
       button#tools-toggle.navbar-icon(type='button', aria-controls='navbar', aria-expanded='false', aria-haspopup='dialog')
         span(aria-hidden='true') ☰
-        |  Tools
+        //- |  Tools
     dialog#navbar.account-tools(aria-labelledby='tools-title')
       .tools-header
         div
