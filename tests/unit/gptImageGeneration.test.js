@@ -1,3 +1,10 @@
+jest.mock('../../models/ai_model_card', () => ({
+  find: jest.fn(() => ({
+    maxTimeMS: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  })),
+}));
+
 const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
@@ -79,6 +86,19 @@ test.each(models)('%s resolves legacy URLs locally and preserves metadata', asyn
 });
 test('rejects invalid uploaded bytes before provider calls and leaves no files', async () => {
   await expect(service.createImageGeneration({ rawOptions: { prompt: 'Test' }, uploadedFiles: [{ buffer: Buffer.from('<svg></svg>') }] })).rejects.toThrow();
+  expect(OpenAI.client.images.edit).not.toHaveBeenCalled();
+  expect(await fs.readdir(root)).toEqual([]);
+});
+
+test.each(['generate', 'edit'])('blocks deprecated image models before %s requests', async requestType => {
+  require('../../models/ai_model_card').find.mockReturnValueOnce({
+    maxTimeMS: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([{ deprecation_date: '2000-01-01' }]),
+  });
+  const options = { rawOptions: { prompt: 'private' } };
+  if (requestType === 'edit') options.uploadedFiles = [{ buffer: png }];
+  await expect(service.createImageGeneration(options)).rejects.toThrow();
+  expect(OpenAI.client.images.generate).not.toHaveBeenCalled();
   expect(OpenAI.client.images.edit).not.toHaveBeenCalled();
   expect(await fs.readdir(root)).toEqual([]);
 });

@@ -291,7 +291,7 @@ The agent later POSTs to your receiver (CALLBACK_URL):
   "requestId": "req-002",
   "branchName": "codex/req-001-some-change",
 
-  "codexArgs": ["--model", "gpt-4.1"],
+  "codexArgs": ["--model", "gpt-6-luna"],
   "instruction": "Update the API payload to include branchName. Add tests.",
 
   "commitMessage": "codex: include branchName (req-002)",
@@ -631,7 +631,7 @@ curl -X POST http://AGENT_IP:31337/api/branch/create ^
 curl -X POST http://AGENT_IP:31337/api/codex/run ^
   -H "content-type: application/json" ^
   -H "x-agent-token: change-me" ^
-  -d "{\"projectId\":\"myproj\",\"requestId\":\"req-002\",\"branchName\":\"codex/req-001-some-change\",\"codexArgs\":[\"--model\",\"gpt-4.1\"],\"instruction\":\"Do the thing.\",\"commitMessage\":\"codex: do the thing\"}"
+  -d "{\"projectId\":\"myproj\",\"requestId\":\"req-002\",\"branchName\":\"codex/req-001-some-change\",\"codexArgs\":[\"--model\",\"gpt-6-luna\"],\"instruction\":\"Do the thing.\",\"commitMessage\":\"codex: do the thing\"}"
 ```
 
 ## Recursive tree

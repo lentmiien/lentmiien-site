@@ -132,8 +132,7 @@ Validation on Node 26.13.0: full Jest coverage run (`npm test -- --maxWorkers=2 
 | `DATABASE_CONNECT_TIMEOUT_MS`, `DATABASE_RETRY_INITIAL_MS`, `DATABASE_RETRY_MAX_MS` | MongoDB startup attempt deadline and capped exponential retry delays (defaults: 10 seconds, 2 seconds, and 30 seconds). |
 | `DATABASE_OUTAGE_ALERT_AFTER_MS`, `DATABASE_OUTAGE_NOTIFICATION_RETRY_MS`, `DATABASE_OUTAGE_NOTIFICATION_MAX_ATTEMPTS` | Grace period and bounded delivery retry policy for the emergency Pushover alert (defaults: 30 seconds, five minutes, three attempts). |
 | `DATABASE_INCIDENT_FLUSH_RETRY_MS`, `DATABASE_INCIDENT_RETENTION_DAYS` | Retry cadence for importing the local outage spool and MongoDB TTL retention for recovered incident records (defaults: one minute and 90 days). |
-| `OPENAI_API_KEY` | Primary OpenAI key for chat, OCR, and product summaries. |
-| `OPENAI_API_KEY_PRIVATE` | Elevated OpenAI key for Sora/video and image pipelines. |
+| `OPENAI_API_KEY` | Shared OpenAI key for all model, media, file, and batch requests, including chat, OCR, product summaries, Sora/video, and images. |
 | `OPENAI_ADMIN_KEY` | Usage-scoped key used by `setup.js` to archive daily usage stats. |
 | `OPENAI_WEBHOOK_SECRET` | Shared secret to validate OpenAI webhook payloads (`/webhook/openai`). |
 | `OPENAI_WEBHOOK_TOLERANCE_SECONDS`, `OPENAI_WEBHOOK_FALLBACK_TOLERANCE_SECONDS` | Strict and fallback timestamp windows for webhook signature verification. |

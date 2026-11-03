@@ -1,3 +1,10 @@
+jest.mock('../../models/ai_model_card', () => ({
+  find: jest.fn(() => ({
+    maxTimeMS: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  })),
+}));
+
 const mockReceipt = {
   find: jest.fn(),
   findById: jest.fn(),

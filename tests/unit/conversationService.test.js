@@ -540,5 +540,5 @@ test('conversation list scopes both schemas to the caller and retains legacy mod
   expect(legacyModel.find).toHaveBeenCalledWith({ user_id: 'owner' });
   expect(result[0]).toBe(current);
   expect(result[1]).toMatchObject({ old: true, summary: 'Summary', tags: ['tag'], messages: ['m'], members: ['owner'], metadata: { model: 'legacy-model' } });
-  expect(result[2].metadata.model).toBe('gpt-4.1-2025-04-14');
+  expect(result[2].metadata.model).toBe('gpt-6-luna');
 });

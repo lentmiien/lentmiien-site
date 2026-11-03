@@ -1,3 +1,4 @@
+const { assertOpenAIModelActive } = require('../utils/openaiModelDeprecation');
 const OpenAI = require('openai');
 const { zodResponseFormat } = require('openai/helpers/zod');
 const { z } = require('zod');
@@ -88,6 +89,7 @@ ${all_details.join("\n\n")}
 
 ---
 `;
+      await assertOpenAIModelActive('gpt-6-luna', 'chat.completions.create');
       const response = await openai.chat.completions.create({
         model: "gpt-6-luna",
         messages: [

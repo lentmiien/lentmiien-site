@@ -1,3 +1,4 @@
+const { assertOpenAIModelActive } = require('../utils/openaiModelDeprecation');
 const fsp = require('fs/promises');
 const path = require('path');
 const { randomUUID } = require('crypto');
@@ -607,6 +608,7 @@ async function executeCompatibleEditRequest(baseRequest, inputImages) {
     async (request) => {
       const uploadables = await buildOpenAIEditImages(inputImages);
       await imageStorage.assertStorageReady();
+      await assertOpenAIModelActive(request.model, 'images.edit');
       return openai.images.edit({
         ...request,
         image: uploadables.length === 1 ? uploadables[0] : uploadables,
@@ -778,6 +780,7 @@ async function performImageGeneration({
       response = await executeCompatibleEditRequest(baseRequest, combinedInputs);
     } else {
       await imageStorage.assertStorageReady();
+      await assertOpenAIModelActive(baseRequest.model, 'images.generate');
       response = await openai.images.generate(baseRequest);
     }
 

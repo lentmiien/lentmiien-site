@@ -1,4 +1,11 @@
-process.env.OPENAI_API_KEY_PRIVATE = 'test-key';
+jest.mock('../../models/ai_model_card', () => ({
+  find: jest.fn(() => ({
+    maxTimeMS: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  })),
+}));
+
+process.env.OPENAI_API_KEY = 'test-key';
 
 jest.mock('sharp', () =>
   jest.fn(() => ({
@@ -54,6 +61,50 @@ const {
   supportsReasoningMode,
 } = require('../../utils/OpenAI_API');
 const structuredDebugLogger = require('../../utils/apiDebugLogger').createApiDebugLogger.mock.results[0].value;
+const sdkClient = require('openai').OpenAI.mock.results[0].value;
+
+describe('model-card checks at the OpenAI API boundary', () => {
+  const card = { api_model: 'test-retired-model', context_type: 'system', in_modalities: ['text'] };
+  const api = require('../../utils/OpenAI_API');
+
+  test.each([
+    ['chat', () => api.chat({ metadata: {} }, [], card), () => sdkClient.responses.create],
+    ['structured output', () => api.generateStructuredOutput({ model: card.api_model, prompt: 'private', schema: {} }), () => sdkClient.responses.create],
+    ['embedding', () => api.embedding('private', card), () => sdkClient.embeddings.create],
+    ['video', () => api.generateVideo('private', card.api_model, 4, '1280x720'), () => sdkClient.videos.create],
+    ['batch upload', () => api.uploadBatchFile(JSON.stringify({ body: { model: card.api_model } })), () => sdkClient.files.create],
+    ['batch submission', () => api.startBatchJob({ fileId: 'file-test', model: card.api_model }), () => sdkClient.batches.create],
+  ])('blocks deprecated %s before SDK submission', async (label, invoke, providerMethod) => {
+    require('../../models/ai_model_card').find.mockReturnValueOnce({
+      maxTimeMS: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([{ deprecation_date: '2000-01-01' }]),
+    });
+    if (label === 'video') {
+      await expect(invoke()).rejects.toMatchObject({ code: 'OPENAI_MODEL_DEPRECATED' });
+    } else {
+      await expect(invoke()).resolves.toBeNull();
+    }
+    expect(providerMethod()).not.toHaveBeenCalled();
+    expect(require('../../utils/logger').error).toHaveBeenCalledWith(
+      expect.stringContaining('model is deprecated'),
+      expect.objectContaining({ category: 'openai_model_deprecation' })
+    );
+  });
+
+  test('logs an upcoming deprecation and still submits the request', async () => {
+    const date = new Date();
+    date.setDate(date.getDate() + 10);
+    require('../../models/ai_model_card').find.mockReturnValueOnce({
+      maxTimeMS: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue([{ deprecation_date: date }]),
+    });
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'scheduled-response' });
+    await expect(api.chat({ metadata: {} }, [], card)).resolves.toBe('scheduled-response');
+    expect(mockResponsesCreate).toHaveBeenCalledTimes(1);
+    expect(require('../../utils/logger').warning).toHaveBeenCalledWith(
+      expect.stringContaining('within three months'), expect.objectContaining({ category: 'openai_model_deprecation' })
+    );
+  });
+});
 
 test('ChatGPT connection failures preserve a safe nested cause without raw error interpolation or replay', async () => {
   mockResponsesCreate.mockRejectedValueOnce(Object.assign(new Error('private provider content'), {
@@ -182,7 +233,7 @@ describe('OpenAI_API response conversion', () => {
     expect(supportsReasoningModel('gpt-5.6')).toBe(true);
     expect(supportsReasoningModel('gpt-5.6-pro-2026-07-01')).toBe(true);
     expect(supportsReasoningModel('gpt-5.1-mini-2025-11-13')).toBe(false);
-    expect(supportsReasoningModel('gpt-4.1-2025-04-14')).toBe(false);
+    expect(supportsReasoningModel('non-reasoning-test-model')).toBe(false);
   });
 
   test.each([
@@ -191,7 +242,7 @@ describe('OpenAI_API response conversion', () => {
     ['gpt-5.6-sol', false, false],
     ['gpt-5.6-sol', undefined, true],
     ['o3-2025-04-16', null, true],
-    ['gpt-4.1-2025-04-14', undefined, false],
+    ['non-reasoning-test-model', undefined, false],
     ['unknown-model', undefined, false],
     ['unknown-model', 'true', false],
   ])('chat uses thinking metadata for %s (%p)', async (apiModel, isThinking, expected) => {
@@ -318,7 +369,7 @@ describe('OpenAI_API response conversion', () => {
       },
     };
     const model = {
-      api_model: 'gpt-4.1',
+      api_model: 'gpt-6-luna',
       context_type: 'system',
       in_modalities: ['text'],
     };
@@ -448,7 +499,7 @@ describe('OpenAI_API response conversion', () => {
       expectedInput.push({ role: 'user', content: [{ type: 'input_text', text: 'Follow up' }] });
       const originalMessages = JSON.parse(JSON.stringify(messages));
       const conversation = { metadata: { maxMessages: 20, tools: [] } };
-      const model = { api_model: 'gpt-4.1', context_type: 'none', in_modalities: ['text'] };
+      const model = { api_model: 'gpt-6-luna', context_type: 'none', in_modalities: ['text'] };
 
       await chat(conversation, messages, model, options);
 
@@ -489,7 +540,7 @@ describe('OpenAI_API response conversion', () => {
     ];
 
     await chat({ metadata: { maxMessages: 20, tools: [] } }, messages, {
-      api_model: 'gpt-4.1', context_type: 'none', in_modalities: ['text'],
+      api_model: 'gpt-6-luna', context_type: 'none', in_modalities: ['text'],
     });
 
     expect(mockResponsesCreate.mock.calls[0][0].input).toEqual([
@@ -510,7 +561,7 @@ describe('OpenAI_API response conversion', () => {
       },
     };
     const model = {
-      api_model: 'gpt-4.1',
+      api_model: 'gpt-6-luna',
       context_type: 'none',
       in_modalities: ['text'],
     };

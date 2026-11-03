@@ -23,6 +23,8 @@ const {
   appSettingsService: defaultAppSettingsService,
 } = require('./appSettingsService');
 
+const { assertOpenAIModelActive } = require('../utils/openaiModelDeprecation');
+
 const redirect_models = {
   o1: 'o1-2024-12-17',
   'o1-preview': 'o1-preview-2024-09-12',
@@ -30,7 +32,7 @@ const redirect_models = {
   'o1-mini': 'o1-mini-2024-09-12',
   'o3-mini': 'o3-mini-2025-01-31',
   'gpt-4o-mini': 'gpt-4o-mini-2024-07-18',
-  'gpt-4.1': 'gpt-4.1-2025-04-14',
+  'gpt-4.1': 'gpt-6-luna',
   'gpt-4.1-mini': 'gpt-4.1-mini-2025-04-14',
   'gpt-4.1-nano': 'gpt-4.1-nano-2025-04-14',
 };
@@ -566,6 +568,15 @@ class BatchService {
     for (const [modelName, entries] of requestsByModel.entries()) {
       if (!entries.length) continue;
 
+      try {
+        await assertOpenAIModelActive(modelName, 'batches.create');
+      } catch (error) {
+        if (error.code === 'OPENAI_MODEL_DEPRECATED') {
+          for (const { prompt } of entries) await this.retainPromptFailure(prompt, { reason: 'model_deprecated' });
+        }
+        continue;
+      }
+
       const payload = entries.map((entry) => JSON.stringify(entry.request)).join('\n');
       if (!payload.trim()) continue;
 
@@ -575,7 +586,7 @@ class BatchService {
         continue;
       }
 
-      const batch = await startBatchJob({ fileId: file.id, endpoint: '/v1/responses' });
+      const batch = await startBatchJob({ fileId: file.id, model: modelName, endpoint: '/v1/responses' });
       if (!batch || !batch.id) {
         logger.error('Failed to start OpenAI batch job', { model: modelName });
         await deleteBatchFile(file.id);

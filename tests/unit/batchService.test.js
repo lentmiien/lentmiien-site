@@ -1,6 +1,13 @@
+jest.mock('../../models/ai_model_card', () => ({
+  find: jest.fn(() => ({
+    maxTimeMS: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  })),
+}));
+
 const mockModelCards = [
   {
-    api_model: 'gpt-4.1-2025-04-14',
+    api_model: 'gpt-6-luna',
     provider: 'OpenAI',
     model_type: 'chat',
     batch_use: true,
@@ -187,7 +194,7 @@ describe('BatchService (chat5)', () => {
     expect(BatchPromptDatabase.mockDocs[0]).toMatchObject({
       conversation_id: 'conv-123',
       message_id: 'msg-456',
-      model: 'gpt-4.1-2025-04-14',
+      model: 'gpt-6-luna',
       task_type: 'response',
       user_id: 'user-1',
     });
@@ -245,7 +252,7 @@ describe('BatchService (chat5)', () => {
 
     expect(appSettingsService.getValue).not.toHaveBeenCalled();
     expect(BatchPromptDatabase.mockDocs[0]).toMatchObject({
-      model: 'gpt-4.1-2025-04-14',
+      model: 'gpt-6-luna',
     });
   });
 
@@ -328,6 +335,24 @@ describe('BatchService (chat5)', () => {
       summary: 'detailed',
       mode: 'pro',
     });
+    expect(startBatchJob).toHaveBeenCalledWith({ fileId: 'file-1', model: 'gpt-5.6-sol', endpoint: '/v1/responses' });
+  });
+
+  test('checks fresh deprecation dates before uploading queued work and retains failed prompts', async () => {
+    const prompt = { custom_id: 'prompt-retired', model: 'gpt-6-luna', task_type: 'response', request_id: 'new' };
+    BatchPromptDatabase.find.mockResolvedValue([prompt]);
+    service._loadConversationSnapshot = jest.fn().mockResolvedValue({ conversation: { metadata: {} }, messages: [] });
+    service._buildInputFromSnapshot = jest.fn().mockResolvedValue([{ role: 'user', content: [] }]);
+    service.retainPromptFailure = jest.fn().mockResolvedValue();
+    require('../../models/ai_model_card').find.mockReturnValueOnce({
+      maxTimeMS: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([{ deprecation_date: '2000-01-01' }]),
+    });
+
+    await expect(service.triggerBatchRequest()).resolves.toEqual({ ids: [], requests: [] });
+    expect(uploadBatchFile).not.toHaveBeenCalled();
+    expect(startBatchJob).not.toHaveBeenCalled();
+    expect(service.retainPromptFailure).toHaveBeenCalledWith(prompt, { reason: 'model_deprecated' });
   });
 
   test('unknown-model prompts remove their response placeholder through shared deletion', async () => {
@@ -359,7 +384,7 @@ describe('BatchService (chat5)', () => {
       custom_id: 'prompt-missing-snapshot',
       conversation_id: 'conv-missing-snapshot',
       message_id: 'ph-missing-snapshot',
-      model: 'gpt-4.1-2025-04-14',
+      model: 'gpt-6-luna',
       task_type: 'response',
     };
     const conversation = createConversation('conv-missing-snapshot', 'ph-missing-snapshot');
@@ -383,7 +408,7 @@ describe('BatchService (chat5)', () => {
       custom_id: 'prompt-empty-input',
       conversation_id: 'conv-empty-input',
       message_id: 'ph-empty-input',
-      model: 'gpt-4.1-2025-04-14',
+      model: 'gpt-6-luna',
       task_type: 'response',
     };
     const conversation = createConversation('conv-empty-input', 'ph-empty-input');
@@ -742,9 +767,9 @@ describe('BatchService (chat5)', () => {
       getValue: jest.fn().mockResolvedValue('retired-summary-model'),
     };
 
-    await expect(resolveConfiguredSummaryModel(appSettingsService, 'gpt-4.1-2025-04-14'))
+    await expect(resolveConfiguredSummaryModel(appSettingsService, 'gpt-6-luna'))
       .resolves.toEqual(expect.objectContaining({
-        model: 'gpt-4.1-2025-04-14',
+        model: 'gpt-6-luna',
         configuredModel: 'retired-summary-model',
         usedFallback: true,
       }));

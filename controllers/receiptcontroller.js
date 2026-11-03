@@ -1,3 +1,4 @@
+const { assertOpenAIModelActive } = require('../utils/openaiModelDeprecation');
 const OpenAI = require('openai');
 const { zodResponseFormat } = require('openai/helpers/zod');
 const { z } = require('zod');
@@ -529,6 +530,7 @@ exports.upload_receipt = async (req, res) => {
   for (let i = 0; i < req.files.length; i++) {
     const layout_text = (layoutTexts[i] || '').trim();
     const { new_filename, b64_img } = await conversationService.loadProcessNewImageToBase64(req.files[i].destination + req.files[i].filename);
+    await assertOpenAIModelActive('gpt-6-luna', 'chat.completions.create');
     const response = await openai.chat.completions.create({
       model: "gpt-6-luna",
       messages: [

@@ -1,3 +1,4 @@
+const { assertOpenAIModelActive, assertOpenAIBatchModelsActive } = require('./openaiModelDeprecation');
 // Import dependencis
 const sharp = require('sharp');
 const fs = require("fs");
@@ -7,9 +8,9 @@ const { OpenAI } = require('openai');
 const { zodTextFormat } = require('openai/helpers/zod');
 const logger = require('./logger');
 
-// Set your OpenAI API key (I use 2 projects, so 2 API keys)
+// Use one API key for all OpenAI requests.
+// Legacy private_msg arguments remain for positional compatibility and no longer select a key.
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const openai_private = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_PRIVATE });
 const local_llm = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, baseURL: 'http://localhost:1234/v1' });
 
 const model_list = [];
@@ -226,12 +227,8 @@ const chatGPT = async (messages, model, private_msg=false) => {
     };
   }
   try {
-    let response;
-    if (private_msg) {
-      response = await openai_private.chat.completions.create(inputParameters);
-    } else {
-      response = await openai.chat.completions.create(inputParameters);
-    }
+    await assertOpenAIModelActive(model, 'chat.completions.create');
+    const response = await openai.chat.completions.create(inputParameters);
     return response;
   } catch (error) {
     logger.error(`Error while calling ChatGPT API: ${error}`);
@@ -241,22 +238,13 @@ const chatGPT = async (messages, model, private_msg=false) => {
 
 const chatGPTaudio = async (messages, model, private_msg=false) => {
   try {
-    let response;
-    if (private_msg) {
-      response = await openai_private.chat.completions.create({
-        model,
-        modalities: ["text", "audio"],
-        audio: { voice: "sage", format: "mp3" },
-        messages,
-      });
-    } else {
-      response = await openai.chat.completions.create({
-        model,
-        modalities: ["text", "audio"],
-        audio: { voice: "sage", format: "mp3" },
-        messages,
-      });
-    }
+    await assertOpenAIModelActive(model, 'chat.completions.create');
+    const response = await openai.chat.completions.create({
+      model,
+      modalities: ["text", "audio"],
+      audio: { voice: "sage", format: "mp3" },
+      messages,
+    });
     return response;
   } catch (error) {
     logger.error(`Error while calling ChatGPT API: ${error}`);
@@ -284,12 +272,8 @@ const chatGPT_beta = async (messages, model, private_msg=false, zod) => {
     });
   });
   try {
-    let response;
-    if (private_msg) {
-      response = await openai_private.responses.parse(inputParameters);
-    } else {
-      response = await openai.responses.parse(inputParameters);
-    }
+    await assertOpenAIModelActive(model, 'responses.parse');
+    const response = await openai.responses.parse(inputParameters);
     return response;
   } catch (error) {
     logger.error(`Error while calling ChatGPT API: ${error}`);
@@ -335,6 +319,7 @@ const responses = async (messages, model, effort) => {
         logger.notice(`Role "${m.role}" has not been implemented, continue without the following message:`, m);
       }
     }
+    await assertOpenAIModelActive(model, 'responses.create');
     let response = await openai.responses.create({
       model,
       input: input_messages,
@@ -419,11 +404,8 @@ const chatGPT_o1 = async (messages, model, reasoning_effort = null, private_msg=
     if (model === "o1-pro-2025-03-19" || model === "o3-pro-2025-06-10") {
       response = await responses(messages, model, reasoning_effort);
     } else {
-      if (private_msg) {
-        response = await openai_private.chat.completions.create(openai_load);
-      } else {
-        response = await openai.chat.completions.create(openai_load);
-      }
+      await assertOpenAIModelActive(model, 'chat.completions.create');
+      response = await openai.chat.completions.create(openai_load);
       // o1 and o3-mini don't generate markdown, so put in codeblock to handle as text (to prevent html generation from disrupting the page)
       if (model === "o1-2024-12-17" || model === "o1" || model === "o3-mini-2025-01-31") {
         response.choices[0].message.content = "```\n" + response.choices[0].message.content + "\n```";
@@ -438,22 +420,13 @@ const chatGPT_o1 = async (messages, model, reasoning_effort = null, private_msg=
 
 const chatGPT_Tool = async (messages, model, tools, tool_choice, private_msg=false) => {
   try {
-    let response;
-    if (private_msg) {
-      response = await openai_private.chat.completions.create({
-        messages,
-        model,
-        tools,
-        tool_choice,
-      });
-    } else {
-      response = await openai.chat.completions.create({
-        messages,
-        model,
-        tools,
-        tool_choice,
-      });
-    }
+    await assertOpenAIModelActive(model, 'chat.completions.create');
+    const response = await openai.chat.completions.create({
+      messages,
+      model,
+      tools,
+      tool_choice,
+    });
     return response;
   } catch (error) {
     logger.error(`Error while calling ChatGPT API: ${error}`);
@@ -463,18 +436,11 @@ const chatGPT_Tool = async (messages, model, tools, tool_choice, private_msg=fal
 
 const embedding = async (text, model, private_msg=false) => {
   try {
-    let response;
-    if (private_msg) {
-      response = await openai_private.embeddings.create({
-        input: text,
-        model,
-      });
-    } else {
-      response = await openai.embeddings.create({
-        input: text,
-        model,
-      });
-    }
+    await assertOpenAIModelActive(model, 'embeddings.create');
+    const response = await openai.embeddings.create({
+      input: text,
+      model,
+    });
     return response;
   } catch (error) {
     logger.error(`Error while calling Embedding API: ${error}`);
@@ -500,12 +466,8 @@ const tts = async (api_endpoint, text, voice, private_msg=false, instructions=nu
 
   const filename = `sound-${Date.now()}-.mp3`;
   const outputfile = path.resolve(`./public/mp3/${filename}`);
-  let mp3;
-  if (private_msg) {
-    mp3 = await openai_private.audio.speech.create(payload);
-  } else {
-    mp3 = await openai.audio.speech.create(payload);
-  }
+  await assertOpenAIModelActive(payload.model, 'audio.speech.create');
+  const mp3 = await openai.audio.speech.create(payload);
   const buffer = Buffer.from(await mp3.arrayBuffer());
   await fs.promises.writeFile(outputfile, buffer);
   await OpenAIAPICallLog_tts("Lennart", api_endpoint, text, voice, filename)
@@ -522,26 +484,15 @@ const ig = async (prompt, quality, size, img_id = Date.now(), private_msg=false)
   const number = img_id;
   const filename = `image-${number}-.png`;
   const outputfile = path.resolve(`./public/img/${filename}`);
-  let image;
-  if (private_msg) {
-    image = await openai_private.images.generate({
-      model: "dall-e-3",
-      prompt, // MAX 4000 character
-      n: 1,
-      quality, // "standard" or "hd"
-      response_format: "b64_json",
-      size, // "1024x1024" or "1792x1024" or "1024x1792"
-    });
-  } else {
-    image = await openai.images.generate({
-      model: "dall-e-3",
-      prompt, // MAX 4000 character
-      n: 1,
-      quality, // "standard" or "hd"
-      response_format: "b64_json",
-      size, // "1024x1024" or "1792x1024" or "1024x1792"
-    });
-  }
+  await assertOpenAIModelActive('dall-e-3', 'images.generate');
+  const image = await openai.images.generate({
+    model: "dall-e-3",
+    prompt, // MAX 4000 character
+    n: 1,
+    quality, // "standard" or "hd"
+    response_format: "b64_json",
+    size, // "1024x1024" or "1792x1024" or "1024x1792"
+  });
   const data = image.data[0].b64_json.replace(/^data:image\/\w+;base64,/, "");
   const buffer = Buffer.from(data, 'base64');
   await fs.promises.writeFile(outputfile, buffer);
@@ -608,6 +559,7 @@ const ig2 = async (prompt, model, quality, size) => {
   if (model === "gpt-image-1") payload["moderation"] = "low";
   if (model === "dall-e-3") payload["response_format"] = "b64_json";
 
+  await assertOpenAIModelActive(payload.model, 'images.generate');
   const image = await openai.images.generate(payload);
 
   const buffer = Buffer.from(image.data[0].b64_json, 'base64');
@@ -658,6 +610,7 @@ const imageEdit = async (inImages, prompt, model, quality, size) => {
   const filename = `image-${number}-.png`;
   const outputfile = path.resolve(`./public/img/${filename}`);
 
+  await assertOpenAIModelActive(model, 'images.edit');
   const rsp = await openai.images.edit({
     image: images,
     prompt,
@@ -705,22 +658,15 @@ const localGPT = async (messages, model) => {
 // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, organization: process.env.OPENAI_ORG_ID });
 const upload_file = async (file_data, private_msg=true) => {
   try {
+    await assertOpenAIBatchModelsActive(file_data, 'files.create.batch');
     const filePath = path.join(__dirname, 'batch_input.jsonl');
     fs.writeFileSync(filePath, file_data);
 
     // Upload batch input file
-    let fileUploader;
-    if (private_msg) {
-      fileUploader = await openai_private.files.create({
-        file: fs.createReadStream(filePath),
-        purpose: 'batch',
-      });
-    } else {
-      fileUploader = await openai.files.create({
-        file: fs.createReadStream(filePath),
-        purpose: 'batch',
-      });
-    }
+    const fileUploader = await openai.files.create({
+      file: fs.createReadStream(filePath),
+      purpose: 'batch',
+    });
 
     return fileUploader.id;
   } catch (error) {
@@ -732,12 +678,7 @@ const upload_file = async (file_data, private_msg=true) => {
 const download_file = async (file_id, private_msg=true) => {
   try {
     // Download file
-    let response;
-    if (private_msg) {
-      response = await openai_private.files.content(file_id);
-    } else {
-      response = await openai.files.content(file_id);
-    }
+    const response = await openai.files.content(file_id);
     const body = await response.text();
     const outputs = body.split('\n').filter(line => !!line.trim()).map(line => JSON.parse(line));
     
@@ -750,12 +691,7 @@ const download_file = async (file_id, private_msg=true) => {
 
 const delete_file = async (file_id, private_msg=true) => {
   try {
-    let response;
-    if (private_msg) {
-      response = await openai_private.files.delete(file_id);
-    } else {
-      response = await openai.files.delete(file_id);
-    }
+    const response = await openai.files.delete(file_id);
     
     return response;
   } catch (error) {
@@ -766,20 +702,13 @@ const delete_file = async (file_id, private_msg=true) => {
 
 const start_batch = async (file_id, private_msg=true, endpoint="/v1/chat/completions") => {
   try {
-    let batch;
-    if (private_msg) {
-      batch = await openai_private.batches.create({
-        input_file_id: file_id,
-        endpoint,
-        completion_window: "24h"
-      });
-    } else {
-      batch = await openai.batches.create({
-        input_file_id: file_id,
-        endpoint,
-        completion_window: "24h"
-      });
-    }
+    const inputFile = await openai.files.content(file_id);
+    await assertOpenAIBatchModelsActive(await inputFile.text(), 'batches.create');
+    const batch = await openai.batches.create({
+      input_file_id: file_id,
+      endpoint,
+      completion_window: "24h"
+    });
     
     return batch;
   } catch (error) {
@@ -790,12 +719,7 @@ const start_batch = async (file_id, private_msg=true, endpoint="/v1/chat/complet
 
 const batch_status = async (batch_id, private_msg=true) => {
   try {
-    let batch;
-    if (private_msg) {
-      batch = await openai_private.batches.retrieve(batch_id);
-    } else {
-      batch = await openai.batches.retrieve(batch_id);
-    }
+    const batch = await openai.batches.retrieve(batch_id);
     
     return batch;
   } catch (error) {
@@ -805,23 +729,17 @@ const batch_status = async (batch_id, private_msg=true) => {
 };
 
 const whisper = async (sound_path, private_msg=false) => {
-  let transcription;
-  if (private_msg) {
-    transcription = await openai_private.audio.transcriptions.create({
-      file: fs.createReadStream(sound_path),
-      model: "whisper-1",
-    });
-  } else {
-    transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(sound_path),
-      model: "whisper-1",
-    });
-  }
+  await assertOpenAIModelActive('whisper-1', 'audio.transcriptions.create');
+  const transcription = await openai.audio.transcriptions.create({
+    file: fs.createReadStream(sound_path),
+    model: "whisper-1",
+  });
 
   return transcription.text;
 }
 
 const mod = async (data) => {
+  await assertOpenAIModelActive('omni-moderation-latest', 'moderations.create');
   const moderation = await openai.moderations.create({
     model: "omni-moderation-latest",
     input: [

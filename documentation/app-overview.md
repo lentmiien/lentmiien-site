@@ -116,7 +116,8 @@ This document gives a high-level tour of the Lentmiien personal platform, highli
   - **CI-Ready Scripts:** `npm test -- --watch` for local loops; hookable into automation pipelines.
 
 ## Integrations & External Services
-- **OpenAI:** Chat completions, Sora video, usage stats (keys: `OPENAI_API_KEY`, `OPENAI_API_KEY_PRIVATE`, `OPENAI_ADMIN_KEY`, `OPENAI_WEBHOOK_SECRET`).
+- **OpenAI:** Chat completions, Sora video, usage stats (keys: `OPENAI_API_KEY`, `OPENAI_ADMIN_KEY`, `OPENAI_WEBHOOK_SECRET`).
+  Model submissions enforce [model-card deprecation checks](openai-model-deprecation.md), warning three months ahead and blocking deprecated models.
 - **Anthropic / Gemini / Groq:** Optional chat providers toggled in Chat5. LM Studio is deprecated and retained only for legacy configurations.
 - **Dropbox:** Media backup via `dropbox.js` and `dropboxClient.js`.
 - **Mailgun:** Outbound notifications in `MessageService`.

@@ -1,3 +1,4 @@
+const { assertOpenAIModelActive, assertOpenAIBatchModelsActive } = require('./openaiModelDeprecation');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
@@ -22,7 +23,7 @@ const headersToObject = (headers) => {
   return Object.keys(result).length > 0 ? result : null;
 };
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_PRIVATE });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const toolManagerService = new ToolManagerService();
 const VIDEO_OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'video');
 
@@ -809,6 +810,7 @@ const generateStructuredOutput = async ({ model, prompt, schema, schemaName, sys
   const requestUrl = 'openai.responses.create';
 
   try {
+    await assertOpenAIModelActive(requestBody.model, 'responses.create');
     const response = await openai.responses.create(requestBody, ...(privateRequest ? [{ timeout: 60000, maxRetries: 0 }] : []));
     if (!privateRequest) await recordApiDebugLog({
       requestUrl,
@@ -869,6 +871,7 @@ const chat = async (conversation, messages, model, options = {}) => {
   const requestUrl = 'openai.responses.create';
 
   try {
+    await assertOpenAIModelActive(inputParameters.model, 'responses.create');
     const response = await openai.responses.create(inputParameters, ...(options.privateRequest ? [{ timeout: 60000, maxRetries: 0 }] : []));
     if (!options.privateRequest) await recordApiDebugLog({
       requestUrl,
@@ -904,6 +907,7 @@ const embedding = async (text, model) => {
   };
 
   try {
+    await assertOpenAIModelActive(requestBody.model, 'embeddings.create');
     const response = await openai.embeddings.create(requestBody);
     await recordApiDebugLog({
       requestUrl,
@@ -1038,6 +1042,7 @@ const uploadBatchFile = async (contents) => {
   };
 
   try {
+    await assertOpenAIBatchModelsActive(contents, 'files.create.batch');
     const buffer = Buffer.from(contents, 'utf-8');
     const fileStream = await OpenAI.toFile(buffer, fileName, {
       type: 'application/jsonl',
@@ -1066,7 +1071,7 @@ const uploadBatchFile = async (contents) => {
   }
 };
 
-const startBatchJob = async ({ fileId, endpoint = '/v1/responses', completionWindow = '24h' }) => {
+const startBatchJob = async ({ fileId, model, endpoint = '/v1/responses', completionWindow = '24h' }) => {
   const requestUrl = 'openai.batches.create';
   const requestBody = {
     input_file_id: fileId,
@@ -1075,6 +1080,7 @@ const startBatchJob = async ({ fileId, endpoint = '/v1/responses', completionWin
   };
 
   try {
+    await assertOpenAIModelActive(model, 'batches.create');
     const batch = await openai.batches.create(requestBody);
     await recordApiDebugLog({
       requestUrl,
@@ -1226,6 +1232,7 @@ const generateVideo = async (prompt, model, seconds, size, inputImagePath) => {
       payload.input_reference = inputReference;
     }
 
+    await assertOpenAIModelActive(payload.model, 'videos.create');
     const video = await openai.videos.create(payload);
     await recordApiDebugLog({
       requestUrl,
