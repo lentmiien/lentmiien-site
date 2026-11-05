@@ -1,4 +1,4 @@
-// Verified against official OpenAI Images documentation on 2026-09-10.
+// Verified against official OpenAI image generation/prompting guides on 2026-11-05.
 // Keep the original service/tool defaults independent from the Studio default.
 const MODEL_NAME = 'gpt-image-2';
 const STUDIO_MODEL_NAME = 'gpt-image-2.5-sunburst';
@@ -18,6 +18,14 @@ const MODEL_CONTRACTS = Object.freeze({
     qualities: ['auto', 'low', 'medium', 'high', 'xhigh', 'max'],
     backgrounds: ['auto', 'opaque', 'transparent'],
   }),
+  ...Object.fromEntries(['sunburst', 'flare'].map(variant => [`gpt-image-2.6-${variant}`, Object.freeze({
+    label: `GPT Image 2.6 ${variant === 'sunburst' ? 'Sunburst' : 'Flare'}`,
+    qualities: ['auto', 'low', 'medium', 'high', 'xhigh', 'max'],
+    backgrounds: ['auto', 'opaque', 'transparent'],
+    outputFormats: ['png', 'jpeg', 'webp', 'svg', 'gif'],
+    complexities: ['low', 'medium', 'high'],
+    markup: true,
+  })])),
 });
 function modelMetadata(model) {
   const resolved = model || MODEL_NAME;

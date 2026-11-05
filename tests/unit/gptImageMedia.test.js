@@ -46,6 +46,41 @@ afterEach(async () => {
   jest.restoreAllMocks();
 });
 function request(url, options = {}) { return fetch(origin + url, options); }
+test('SVG library media requires membership and is delivered with sandboxed CSP and exact MIME', async () => {
+  const bytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="red"/></svg>');
+  const svg = await storage.writeImage(bytes, 'svg');
+  expect((await request(svg.url, { headers: { 'x-anonymous': 'yes' } })).status).toBe(401);
+  model.exists.mockResolvedValueOnce(null);
+  expect((await request(svg.url)).status).toBe(404);
+  const response = await request(svg.url);
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toBe('image/svg+xml');
+  expect(response.headers.get('content-security-policy')).toContain('sandbox');
+  expect(response.headers.get('cache-control')).toContain('private, no-store');
+  expect(await response.text()).toBe(bytes.toString());
+  await fs.writeFile(svg.absolutePath, '<svg><script>alert(1)</script></svg>');
+  expect((await request(svg.url)).status).toBe(404);
+});
+
+test('multipart markup and parameters reach the service separately from reference images', async () => {
+  const body = new FormData();
+  body.set('model', 'gpt-image-2.6-sunburst'); body.set('prompt', 'Edit'); body.set('complexity', 'low');
+  body.set('inputImages', new Blob(['reference'], { type: 'image/png' }), 'reference.png');
+  body.set('markup', new Blob(['overlay'], { type: 'image/png' }), 'overlay.png');
+  expect((await request('/gpt-image/api/generate', { method: 'POST', headers: { 'X-CSRF-Token': token }, body })).status).toBe(200);
+  expect(service.createImageGeneration).toHaveBeenCalledWith(expect.objectContaining({
+    rawOptions: expect.objectContaining({ model: 'gpt-image-2.6-sunburst', complexity: 'low' }),
+    uploadedFiles: [expect.objectContaining({ buffer: Buffer.from('reference') })],
+    markupFile: expect.objectContaining({ buffer: Buffer.from('overlay') }),
+  }));
+});
+
+test('duplicate markup uploads fail at the multipart boundary', async () => {
+  const body = new FormData();
+  for (let i = 0; i < 2; i += 1) body.append('markup', new Blob(['overlay'], { type: 'image/png' }), 'overlay.png');
+  expect((await request('/gpt-image/api/generate', { method: 'POST', headers: { 'X-CSRF-Token': token }, body })).status).toBe(400);
+  expect(service.createImageGeneration).not.toHaveBeenCalled();
+});
 test.each(['admin', 'family', 'user', 'custom'])('shared media allows %s and ignores cache validators', async role => {
   const response = await request(image.url, { headers: { 'x-role': role, 'If-None-Match': '*', Range: 'bytes=0-1' } });
   expect(response.status).toBe(200);

@@ -14,6 +14,9 @@ beforeEach(async () => {
   const html = pug.renderFile(path.join(__dirname, '../../views/gpt_image/index.pug'), { pageLang: 'en', loggedIn: true, csrfToken: 'A'.repeat(43), ...config });
   dom = new JSDOM(html, { url: 'https://site.invalid/gpt-image', runScripts: 'outside-only' });
   window = dom.window; document = window.document;
+  const style = document.createElement('style');
+  style.textContent = fs.readFileSync(path.join(__dirname, '../../public/css/gpt_image.css'), 'utf8');
+  document.head.appendChild(style);
   window.fetch = jest.fn().mockResolvedValue({ ok: false, text: async () => '{"ok":false,"error":"Synthetic stop"}' });
   window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/thumbnail_preview.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/gpt_image.js'), 'utf8'));
@@ -23,6 +26,56 @@ function change(id, value) {
   const input = document.getElementById(id); input.value = value; input.dispatchEvent(new window.Event('change')); return input;
 }
 function options(id) { return Array.from(document.getElementById(id).options, option => option.value); }
+test.each(['gpt-image-2.6-sunburst', 'gpt-image-2.6-flare'])('%s exposes and submits only relevant parameters', async model => {
+  change('gptImageModel', model);
+  expect(options('gptImageOutputFormat')).toEqual(['png', 'jpeg', 'webp', 'svg', 'gif']);
+  expect(options('gptImageQuality')).toContain('max');
+  expect(document.getElementById('gptImageComplexityField').hidden).toBe(false);
+  expect(document.getElementById('gptImageMarkupField').hidden).toBe(true);
+  change('gptImageComplexity', 'low');
+  change('gptImageOutputFormat', 'gif');
+  expect(document.getElementById('gptImageAnimationFields').hidden).toBe(false);
+  change('gptImageFrameCount', '12');
+  change('gptImageFrameDuration', '100');
+  document.getElementById('gptImageForm').dispatchEvent(new window.Event('submit', { cancelable: true }));
+  await Promise.resolve();
+  const body = window.fetch.mock.calls[0][1].body;
+  expect(Object.fromEntries(body.entries())).toMatchObject({ model, outputFormat: 'gif', complexity: 'low', frameCount: '12', frameDurationMs: '100' });
+  expect(body.has('outputCompression')).toBe(false);
+  expect(body.has('markup')).toBe(false);
+  change('gptImageOutputFormat', 'svg');
+  expect(options('gptImageCount')).toEqual(['1']);
+  expect(document.getElementById('gptImageFrameCount').disabled).toBe(true);
+  change('gptImageModel', 'gpt-image-2');
+  const oldBody = new window.FormData(document.getElementById('gptImageForm'));
+  for (const field of ['complexity', 'frameCount', 'frameDurationMs', 'markup']) expect(oldBody.has(field)).toBe(false);
+  expect(oldBody.get('outputFormat')).toBe('png');
+  expect(options('gptImageCount')).toHaveLength(10);
+});
+
+test('references constrain formats and enable the markup upload only on new models', () => {
+  change('gptImageModel', 'gpt-image-2.6-flare');
+  change('gptImageOutputFormat', 'gif');
+  document.querySelector('[data-select-input]').click();
+  expect(options('gptImageOutputFormat')).toEqual(['png', 'jpeg', 'webp']);
+  expect(document.getElementById('gptImageMarkup').disabled).toBe(false);
+  expect(document.getElementById('gptImageFrameCount').disabled).toBe(true);
+  change('gptImageModel', 'gpt-image-2.5-flare');
+  expect(document.getElementById('gptImageMarkup').disabled).toBe(true);
+  change('gptImageModel', 'gpt-image-2.6-flare');
+  document.getElementById('gptImageClearSelection').click();
+  expect(options('gptImageOutputFormat')).toContain('gif');
+  expect(document.getElementById('gptImageMarkup').disabled).toBe(true);
+});
+
+test('hidden model controls stay hidden even though fields use CSS grid', () => {
+  expect(window.getComputedStyle(document.getElementById('gptImageComplexityField')).display).toBe('none');
+  expect(window.getComputedStyle(document.getElementById('gptImageAnimationFields')).display).toBe('none');
+  change('gptImageModel', 'gpt-image-2.6-flare');
+  expect(window.getComputedStyle(document.getElementById('gptImageComplexityField')).display).toBe('grid');
+  change('gptImageOutputFormat', 'gif');
+  expect(window.getComputedStyle(document.getElementById('gptImageAnimationFields')).display).toBe('grid');
+});
 test('renders model labels, escaped prompts and no analytics; default is Sunburst', () => {
   expect(document.getElementById('gptImageModel').value).toBe(STUDIO_MODEL_NAME);
   expect(document.querySelector('.gpt-image-card__meta').textContent).toContain('GPT Image 2');

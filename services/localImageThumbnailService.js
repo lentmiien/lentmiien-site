@@ -4,6 +4,7 @@ const path = require('path');
 const { createHash, randomUUID } = require('crypto');
 const sharp = require('sharp');
 const logger = require('../utils/logger');
+const { validateGeneratedSvg } = require('../utils/gptImageSvg');
 
 const SETTINGS = Object.freeze({
   version: 'v1', size: 512, quality: 80, maxPixels: 40_000_000,
@@ -59,7 +60,7 @@ class LocalImageThumbnailService {
     const id = String(record?._id || '');
     if (!/^[a-f\d]{24}$/i.test(id) || typeof name !== 'string'
       || name.length > 255 || /[\/\\:%\x00-\x1f\x7f]/.test(name)
-      || !EXTENSIONS.test(name)) throw unavailable(404);
+      || !(EXTENSIONS.test(name) || (this.settings.allowGeneratedSvg && /\.svg$/.test(name)))) throw unavailable(404);
     const key = `${id}:${filename}`;
     if (this.inFlight.has(key)) return this.inFlight.get(key);
     const pending = this.slot(() => this.load(id, filename));
@@ -140,9 +141,10 @@ class LocalImageThumbnailService {
           offset += bytesRead;
         }
         if (sourceVersion(await handle.stat({ bigint: true })) !== version) throw unavailable(409);
+        if (/\.svg$/.test(filename) && this.settings.allowGeneratedSvg) validateGeneratedSvg(input);
         const image = sharp(input, { limitInputPixels: this.settings.maxPixels, pages: 1, page: 0, failOn: 'warning' });
         const metadata = await image.metadata();
-        if (!FORMATS.has(metadata.format)) throw unavailable(415);
+        if (!FORMATS.has(metadata.format) && !(metadata.format === 'svg' && this.settings.allowGeneratedSvg && /\.svg$/.test(filename))) throw unavailable(415);
         buffer = await image.autoOrient()
           .resize(this.settings.size, this.settings.size, { fit: 'inside', withoutEnlargement: true })
           .webp({ quality: this.settings.quality })

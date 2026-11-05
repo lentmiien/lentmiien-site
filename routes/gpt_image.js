@@ -31,9 +31,9 @@ const mutationLimit = rateLimit({ windowMs: 60 * 1000, limit: 30, keyGenerator: 
 const generationLimit = rateLimit({ windowMs: 60 * 1000, limit: 5, keyGenerator: req => String(req.user._id || req.user.name), standardHeaders: 'draft-8', legacyHeaders: false });
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_UPLOAD_FILE_SIZE_BYTES, files: MAX_UPLOAD_IMAGE_COUNT, fields: 35, fieldSize: 128 * 1024, parts: 43 },
+  limits: { fileSize: MAX_UPLOAD_FILE_SIZE_BYTES, files: MAX_UPLOAD_IMAGE_COUNT + 1, fields: 35, fieldSize: 128 * 1024, parts: 44 },
   fileFilter: (_req, file, cb) => {
-    const ok = ['image/png', 'image/jpeg', 'image/webp'].includes(file.mimetype);
+    const ok = (file.fieldname === 'markup' ? ['image/png'] : ['image/png', 'image/jpeg', 'image/webp']).includes(file.mimetype);
     cb(ok ? null : new Error('Only PNG, JPEG, and WebP images are supported.'), ok);
   },
 });
@@ -50,7 +50,7 @@ function boundUploads(req, res, next) {
 }
 router.get('/', controller.renderIndex);
 router.post('/api/generate', requireCapability(GPT_IMAGE_CAPABILITIES.generate), csrf.requireToken, generationLimit, boundUploads, (req, res) => {
-  upload.array('inputImages', MAX_UPLOAD_IMAGE_COUNT)(req, res, error => {
+  upload.fields([{ name: 'inputImages', maxCount: MAX_UPLOAD_IMAGE_COUNT }, { name: 'markup', maxCount: 1 }])(req, res, error => {
     if (error) return res.status(400).json({ ok: false, error: 'Invalid image upload or upload limits exceeded.' });
     return controller.generate(req, res);
   });

@@ -19,6 +19,18 @@
 
 ## Model contracts and evidence
 
+### GPT Image 2.6 Studio extension (2026-11-05)
+
+This extension retains the security contract above, including the logged-in shared-library scope, capabilities, CSRF, provider, retention and failure logging. It adds no routes or chat tools and preserves the existing default model. Outputs from `gpt-image-2.6-sunburst` and `gpt-image-2.6-flare` use the same collection and private storage.
+
+The [image generation guide](https://developers.openai.com/api/docs/guides/image-generation) and [2.6 prompting guide](https://developers.openai.com/api/docs/guides/image-prompting) document complexity (`low`, `medium`, `high`, default `high`), quality through `xhigh`/`max`, transparent backgrounds, markup overlays, and generation-only SVG/GIF output. SVG requires one output. GIF frame count is 2–64 and duration is 20–2000 ms, rounded to 10 ms. Compression remains JPEG/WebP-only. Input fidelity and reasoning summaries are not sent. The general API reference still lists older models; the 2.6-specific guides are the source for these additions.
+
+Additional security bounds: one markup upload, capped at 12 MiB, validated as a transparent PNG matching the first reference after orientation, at most 16,777,216 pixels. Markup is sent to OpenAI but not retained. Generated GIFs are limited to 64 frames and 40 million decoded pixels across the requested animations (an application limit, not a claim about the provider's unpublished aggregate budget). SVGs are limited to 2 MiB of validated static vector XML; scripts, external resources, embedded images, entities and active content are rejected. SVG delivery uses a sandboxed CSP; thumbnail rendering opts into validated SVG only for this private library. GIF thumbnails show the first frame. SVG/GIF outputs cannot be reused as edit references through this UI. Negative tests cover unsupported model/format combinations, malformed numbers, unsafe SVG, invalid markup, animated output limits, and authorized media delivery.
+
+No dependency, environment, capability or database migration is needed. Deploy server code and browser assets together. Rolling back code retains records/files but older code cannot serve the new formats. Verification uses synthetic provider responses and temporary local storage; account access and live provider behavior require an authenticated deployment check.
+
+Verification: focused generation, client, validation, storage and media tests passed. The full suite passed on the pinned Node 26.13.0 with `volta run --node 26.13.0 npm test -- --maxWorkers=2 --workerIdleMemoryLimit=512MB`: 459 suites / 6,869 tests passed, 17 suites / 261 tests skipped, all coverage thresholds met. A prior serial full run exhausted the default Node heap; recycling workers completed successfully. Desktop and mobile static browser previews were inspected, including conditional controls, and the official Flare SVG example passed static-vector validation. `git diff --check` passed. No live provider calls, production data access or deployment was performed.
+
 Checked **2026-09-10** against official OpenAI documentation:
 
 - [Images generation reference](https://developers.openai.com/api/reference/resources/images/methods/generate)

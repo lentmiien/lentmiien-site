@@ -135,6 +135,14 @@
   gap: 16px;
 }
 
+.gpt-image-form [hidden] {
+  display: none !important;
+}
+
+.gpt-image-field-grid > .gpt-image-field__hint {
+  grid-column: 1 / -1;
+}
+
 .gpt-image-field,
 .gpt-image-filter {
   display: grid;

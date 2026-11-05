@@ -3,6 +3,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const OpenAI = require('openai');
+const sharp = require('sharp');
 const logger = require('../utils/logger');
 const GptImageGeneration = require('../models/gpt_image_generation');
 
@@ -18,6 +19,7 @@ const MAX_UPLOAD_FILE_SIZE_BYTES = 12 * 1024 * 1024;
 const QUALITY_OPTIONS = ['auto', 'low', 'medium', 'high'];
 const BACKGROUND_OPTIONS = ['auto', 'opaque'];
 const OUTPUT_FORMAT_OPTIONS = ['png', 'jpeg', 'webp'];
+const MAX_ANIMATION_PIXELS = 40000000;
 const MODERATION_OPTIONS = ['auto', 'low'];
 const SIZE_MODE_OPTIONS = ['preset', 'custom', 'auto'];
 const SIZE_PRESETS = [
@@ -163,7 +165,7 @@ function buildPromptFilter(rawKeyword) {
   };
 }
 
-function parseCustomSize(widthInput, heightInput) {
+function parseCustomSize(widthInput, heightInput, { animated = false } = {}) {
   if (![widthInput, heightInput].every(value => typeof value === 'number' || typeof value === 'string')) {
     return { ok: false, message: 'Custom dimensions must be positive integers.' };
   }
@@ -193,10 +195,10 @@ function parseCustomSize(widthInput, heightInput) {
     };
   }
   const totalPixels = width * height;
-  if (totalPixels < 655360 || totalPixels > 8294400) {
+  if (totalPixels < (animated ? 256 : 655360) || totalPixels > 8294400) {
     return {
       ok: false,
-      message: 'Custom sizes must stay between 655,360 and 8,294,400 total pixels.',
+      message: `Custom sizes must stay between ${animated ? '256' : '655,360'} and 8,294,400 total pixels.`,
     };
   }
 
@@ -228,7 +230,7 @@ function resolveRequestedSize(raw = {}) {
   }
 
   if (sizeMode === 'custom') {
-    const custom = parseCustomSize(raw.customWidth, raw.customHeight);
+    const custom = parseCustomSize(raw.customWidth, raw.customHeight, { animated: raw.outputFormat === 'gif' });
     if (!custom.ok) {
       return {
         ok: false,
@@ -264,33 +266,43 @@ function normalizeGenerationForm(raw = {}) {
   const model = raw.model === undefined ? MODEL_NAME : raw.model;
   const contract = typeof model === 'string' && Object.hasOwn(MODEL_CONTRACTS, model) ? MODEL_CONTRACTS[model] : null;
   if (!contract) return { ok: false, message: 'Unsupported image model.' };
-  const allowed = ['model', 'prompt', 'n', 'quality', 'background', 'outputFormat', 'outputCompression', 'moderation', 'sizeMode', 'sizePreset', 'customWidth', 'customHeight', 'selectedImageIds', '_csrf'];
+  const allowed = ['model', 'prompt', 'n', 'quality', 'background', 'outputFormat', 'outputCompression', 'moderation', 'sizeMode', 'sizePreset', 'customWidth', 'customHeight', 'selectedImageIds', '_csrf', 'complexity', 'frameCount', 'frameDurationMs'];
   if (Object.keys(raw).some(key => !allowed.includes(key))) return { ok: false, message: 'Unsupported image option.' };
-  const enums = { quality: contract.qualities, background: contract.backgrounds, outputFormat: OUTPUT_FORMAT_OPTIONS, moderation: MODERATION_OPTIONS, sizeMode: SIZE_MODE_OPTIONS };
+  const outputFormats = contract.outputFormats || OUTPUT_FORMAT_OPTIONS;
+  const enums = { quality: contract.qualities, background: contract.backgrounds, outputFormat: outputFormats, moderation: MODERATION_OPTIONS, sizeMode: SIZE_MODE_OPTIONS, complexity: contract.complexities || [] };
   for (const [key, values] of Object.entries(enums)) {
     if (raw[key] !== undefined && !values.includes(raw[key])) return { ok: false, message: `Unsupported ${key} for ${model}.` };
   }
-  for (const [key, min, max] of [['n', 1, 10], ['outputCompression', 0, 100]]) {
+  for (const [key, min, max] of [['n', 1, 10], ['outputCompression', 0, 100], ['frameCount', 2, 64], ['frameDurationMs', 20, 2000]]) {
     if (raw[key] !== undefined && (typeof raw[key] !== 'number' && typeof raw[key] !== 'string' || raw[key] === '' || !Number.isInteger(Number(raw[key])) || Number(raw[key]) < min || Number(raw[key]) > max)) {
       return { ok: false, message: `${key} must be an integer from ${min} to ${max}.` };
     }
   }
   if ((raw.sizeMode || 'preset') === 'preset' && raw.sizePreset !== undefined && !SIZE_PRESETS.some(option => option.value === raw.sizePreset)) return { ok: false, message: 'Unsupported preset size.' };
-  if (raw.background === 'transparent' && raw.outputFormat === 'jpeg') return { ok: false, message: 'Transparent backgrounds require PNG or WebP.' };
-  if (model !== MODEL_NAME && (raw.outputFormat || 'png') === 'png' && raw.outputCompression !== undefined) return { ok: false, message: 'Compression is supported only for JPEG or WebP.' };
+  if (raw.background === 'transparent' && ['jpeg', 'gif'].includes(raw.outputFormat)) return { ok: false, message: 'Transparent backgrounds require PNG, WebP or SVG.' };
+  if (model !== MODEL_NAME && !['jpeg', 'webp'].includes(raw.outputFormat) && raw.outputCompression !== undefined) return { ok: false, message: 'Compression is supported only for JPEG or WebP.' };
+  if (raw.outputFormat !== 'gif' && (raw.frameCount !== undefined || raw.frameDurationMs !== undefined)) return { ok: false, message: 'Animation settings require GIF output.' };
+  if (raw.outputFormat === 'svg' && Number(raw.n ?? 1) !== 1) return { ok: false, message: 'SVG output requires exactly one image.' };
 
   const prompt = typeof raw.prompt === 'string' ? raw.prompt.trim() : '';
   const n = raw.n === undefined ? DEFAULT_FORM_VALUES.n : Number(raw.n);
   const quality = contract.qualities.includes(raw.quality) ? raw.quality : DEFAULT_FORM_VALUES.quality;
   const background = contract.backgrounds.includes(raw.background) ? raw.background : DEFAULT_FORM_VALUES.background;
-  const outputFormat = OUTPUT_FORMAT_OPTIONS.includes(raw.outputFormat) ? raw.outputFormat : DEFAULT_FORM_VALUES.outputFormat;
+  const outputFormat = outputFormats.includes(raw.outputFormat) ? raw.outputFormat : DEFAULT_FORM_VALUES.outputFormat;
+  const extraOptions = {};
+  if (contract.complexities) extraOptions.complexity = raw.complexity || 'high';
+  if (outputFormat === 'gif') {
+    extraOptions.frameCount = Number(raw.frameCount ?? 9);
+    extraOptions.frameDurationMs = Math.round(Number(raw.frameDurationMs ?? 200) / 10) * 10;
+  }
   const moderation = MODERATION_OPTIONS.includes(raw.moderation) ? raw.moderation : DEFAULT_FORM_VALUES.moderation;
   const size = resolveRequestedSize(raw);
-  const outputCompression = outputFormat === 'png'
+  const outputCompression = !['jpeg', 'webp'].includes(outputFormat)
     ? null
     : raw.outputCompression === undefined ? DEFAULT_FORM_VALUES.outputCompression : Number(raw.outputCompression);
 
   const formValues = {
+    ...extraOptions,
     model,
     prompt,
     n,
@@ -329,10 +341,16 @@ function normalizeGenerationForm(raw = {}) {
     };
   }
 
+  if (outputFormat === 'gif' && size.requestedSize !== 'auto') {
+    const [width, height] = size.requestedSize.split('x').map(Number);
+    if (width * height * extraOptions.frameCount * n > MAX_ANIMATION_PIXELS) return { ok: false, message: 'Animations are limited to 40 million total pixels per request. Reduce size, frames or outputs, or use Auto size.', formValues };
+  }
+
   return {
     ok: true,
     formValues,
     requestOptions: {
+      ...extraOptions,
       model,
       prompt,
       n,
@@ -347,6 +365,7 @@ function normalizeGenerationForm(raw = {}) {
 }
 
 function getOutputExtension(format) {
+  if (['svg', 'gif'].includes(format)) return `.${format}`;
   if (format === 'jpeg') {
     return '.jpg';
   }
@@ -357,6 +376,8 @@ function getOutputExtension(format) {
 }
 
 function getMimeTypeForFormat(format) {
+  if (format === 'svg') return 'image/svg+xml';
+  if (format === 'gif') return 'image/gif';
   if (format === 'jpeg') {
     return 'image/jpeg';
   }
@@ -601,7 +622,25 @@ async function buildOpenAIEditImages(inputImages = []) {
   return uploadables;
 }
 
-async function executeCompatibleEditRequest(baseRequest, inputImages) {
+async function buildMarkupUpload(file, firstImage) {
+  const buffer = file.buffer || await fsp.readFile(file.path);
+  if (buffer.length > MAX_UPLOAD_FILE_SIZE_BYTES) throw createServiceError('Markup upload is too large.', 400);
+  const firstBuffer = firstImage.buffer || await imageStorage.readLibraryImage(firstImage);
+  try {
+    const options = { limitInputPixels: 16777216, failOn: 'warning' };
+    const overlay = sharp(buffer, options);
+    const metadata = await overlay.metadata();
+    const first = await sharp(firstBuffer, options).metadata();
+    const dimensions = value => value.orientation >= 5 ? [value.height, value.width] : [value.width, value.height];
+    if (metadata.format !== 'png' || (metadata.pages || 1) !== 1 || !metadata.hasAlpha
+      || dimensions(metadata).join('x') !== dimensions(first).join('x') || (await overlay.stats()).isOpaque) throw new Error('Invalid overlay');
+    return OpenAI.toFile(buffer, 'markup.png', { type: 'image/png' });
+  } catch (_) {
+    throw createServiceError('Markup must be a transparent PNG matching the first reference after orientation, with at most 16,777,216 pixels.', 400);
+  }
+}
+
+async function executeCompatibleEditRequest(baseRequest, inputImages, markup) {
   const openai = getOpenAIClient();
   const { response, removedParameters } = await executeWithUnknownParameterRetry(
     baseRequest,
@@ -611,6 +650,7 @@ async function executeCompatibleEditRequest(baseRequest, inputImages) {
       await assertOpenAIModelActive(request.model, 'images.edit');
       return openai.images.edit({
         ...request,
+        ...(markup ? { markup } : {}),
         image: uploadables.length === 1 ? uploadables[0] : uploadables,
       });
     },
@@ -710,6 +750,10 @@ function formatGeneratedImageDoc(doc) {
     quality: doc.quality,
     background: doc.background,
     outputFormat: doc.outputFormat,
+    complexity: doc.complexity,
+    frameCount: doc.frameCount,
+    frameDurationMs: doc.frameDurationMs,
+    markupUsed: doc.markupUsed,
     createdBy: doc.createdBy,
   };
 }
@@ -717,6 +761,7 @@ function formatGeneratedImageDoc(doc) {
 async function performImageGeneration({
   rawOptions = {},
   uploadedFiles = [],
+  markupFile = null,
   selectedImageIds = [],
   user = null,
   createdBy = null,
@@ -736,6 +781,9 @@ async function performImageGeneration({
 
   const safeUploadedFiles = Array.isArray(uploadedFiles) ? uploadedFiles : [];
   if (safeUploadedFiles.length > MAX_UPLOAD_IMAGE_COUNT || safeUploadedFiles.length + normalizedSelectedIds.length > MAX_INPUT_IMAGE_COUNT) throw createServiceError('Too many reference images.', 400);
+  const hasReferences = safeUploadedFiles.length + normalizedSelectedIds.length > 0;
+  if (hasReferences && ['svg', 'gif'].includes(validation.requestOptions.outputFormat)) throw createServiceError('SVG and GIF output require text-to-image generation without references.', 400);
+  if (markupFile && (!MODEL_CONTRACTS[validation.requestOptions.model].markup || !hasReferences)) throw createServiceError('Markup requires a GPT Image 2.6 model and a reference image.', 400);
   const tempUploadPaths = safeUploadedFiles.map((file) => file.path).filter(Boolean);
   const newInputPaths = [];
   const outputPaths = [];
@@ -749,6 +797,7 @@ async function performImageGeneration({
     const uploadedInputs = persistedUploads.savedInputs;
     const combinedInputs = [...galleryInputs, ...uploadedInputs];
     newInputPaths.push(...persistedUploads.savedPaths);
+    const markup = markupFile ? await buildMarkupUpload(markupFile, combinedInputs[0]) : null;
 
     if (combinedInputs.length > MAX_INPUT_IMAGE_COUNT) {
       throw createServiceError(`A maximum of ${MAX_INPUT_IMAGE_COUNT} input images is supported per request.`, 400);
@@ -771,13 +820,16 @@ async function performImageGeneration({
     if (validation.requestOptions.outputCompression !== null) {
       baseRequest.output_compression = validation.requestOptions.outputCompression;
     }
+    for (const [field, apiField] of [['complexity', 'complexity'], ['frameCount', 'frame_count'], ['frameDurationMs', 'frame_duration_ms']]) {
+      if (validation.requestOptions[field] !== undefined) baseRequest[apiField] = validation.requestOptions[field];
+    }
 
     const openai = getOpenAIClient();
     let response;
     let requestType = 'generate';
     if (combinedInputs.length > 0) {
       requestType = 'edit';
-      response = await executeCompatibleEditRequest(baseRequest, combinedInputs);
+      response = await executeCompatibleEditRequest(baseRequest, combinedInputs, markup);
     } else {
       await imageStorage.assertStorageReady();
       await assertOpenAIModelActive(baseRequest.model, 'images.generate');
@@ -796,7 +848,7 @@ async function performImageGeneration({
     const data = Array.isArray(response && response.data) ? response.data : [];
 
     if (data.length > validation.requestOptions.n) throw new Error('Unexpected output count from image provider.');
-    if (!OUTPUT_FORMAT_OPTIONS.includes(outputFormat)) throw new Error('Unexpected output format from image provider.');
+    if (!(MODEL_CONTRACTS[baseRequest.model].outputFormats || OUTPUT_FORMAT_OPTIONS).includes(outputFormat)) throw new Error('Unexpected output format from image provider.');
     if (data.length === 0) {
       throw new Error('The OpenAI image response did not contain any images.');
     }
@@ -810,7 +862,7 @@ async function performImageGeneration({
 
       if (typeof item.b64_json !== 'string' || item.b64_json.length > Math.ceil(imageStorage.MAX_STORED_BYTES / 3) * 4) throw new Error('Image provider output exceeds storage limits.');
       const buffer = Buffer.from(item.b64_json, 'base64');
-      const stored = await imageStorage.writeImage(buffer, outputFormat);
+      const stored = await imageStorage.writeImage(buffer, outputFormat, { maxAnimationPixels: Math.floor(MAX_ANIMATION_PIXELS / validation.requestOptions.n) });
       const storedFileName = stored.fileName;
       outputPaths.push(stored.absolutePath);
 
@@ -833,6 +885,10 @@ async function performImageGeneration({
         quality: response && response.quality ? response.quality : validation.requestOptions.quality,
         background: response && response.background ? response.background : validation.requestOptions.background,
         outputFormat,
+        complexity: validation.requestOptions.complexity,
+        frameCount: validation.requestOptions.frameCount,
+        frameDurationMs: validation.requestOptions.frameDurationMs,
+        markupUsed: Boolean(markup),
         outputCompression: validation.requestOptions.outputCompression,
         moderation: validation.requestOptions.moderation,
         requestedCount: validation.requestOptions.n,
@@ -897,6 +953,7 @@ async function createImageGeneration(options = {}) {
   } finally {
     activeGenerations.delete(principalKey);
     await cleanupFiles((options.uploadedFiles || []).map(file => file.path).filter(Boolean));
+    if (options.markupFile?.path) await cleanupFiles([options.markupFile.path]);
   }
 }
 

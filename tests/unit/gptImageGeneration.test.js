@@ -24,6 +24,7 @@ const model = require('../../models/gpt_image_generation');
 const storage = require('../../services/gptImageStorageService');
 const service = require('../../services/gptImageService');
 const models = ['gpt-image-2', 'gpt-image-2.5-sunburst', 'gpt-image-2.5-flare'];
+const newModels = ['gpt-image-2.6-sunburst', 'gpt-image-2.6-flare'];
 let root, png, originalRoot, originalKey;
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'gpt-image-test-'));
@@ -43,6 +44,71 @@ afterEach(async () => {
   if (originalKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalKey;
   await fs.rm(root, { recursive: true, force: true });
   jest.restoreAllMocks();
+});
+test.each(newModels)('%s passes complexity/quality and markup to edits and saves to the existing library', async imageModel => {
+  const result = await service.createImageGeneration({
+    rawOptions: { model: imageModel, prompt: 'Edit circled region', complexity: 'low', quality: 'max' },
+    uploadedFiles: [{ buffer: png }], markupFile: { buffer: png },
+  });
+  expect(OpenAI.client.images.edit).toHaveBeenCalledWith(expect.objectContaining({
+    model: imageModel, complexity: 'low', quality: 'max', markup: expect.objectContaining({ buffer: png, name: 'markup.png' }),
+  }));
+  expect(result.images[0]).toMatchObject({ model: imageModel, complexity: 'low', markupUsed: true });
+  expect(await fs.readdir(root)).toHaveLength(2); // reference and output, no retained markup
+});
+
+test.each(newModels.flatMap(imageModel => ['svg', 'gif'].map(format => [imageModel, format])))('%s generates and stores original %s bytes', async (imageModel, format) => {
+  const output = format === 'svg'
+    ? Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><path fill="red" d="M0 0h16v16H0z"/></svg>')
+    : await sharp(Buffer.concat([Buffer.alloc(16 * 16 * 3, 0), Buffer.alloc(16 * 16 * 3, 255)]), { raw: { width: 16, height: 32, channels: 3, pageHeight: 16 } }).gif({ delay: [200, 200], loop: 0 }).toBuffer();
+  OpenAI.client.images.generate.mockResolvedValue({ output_format: format, data: [{ b64_json: output.toString('base64') }] });
+  const result = await service.createImageGeneration({ rawOptions: {
+    model: imageModel, prompt: 'Test', outputFormat: format, complexity: 'medium',
+    ...(format === 'gif' ? { frameCount: 2, frameDurationMs: 200 } : {}),
+  } });
+  const request = OpenAI.client.images.generate.mock.calls[0][0];
+  expect(request).toMatchObject({ model: imageModel, output_format: format, complexity: 'medium' });
+  expect(request).not.toHaveProperty('output_compression');
+  if (format === 'gif') expect(request).toMatchObject({ frame_count: 2, frame_duration_ms: 200 });
+  else expect(request).not.toHaveProperty('frame_count');
+  expect(result.images[0]).toMatchObject({ outputFormat: format, outputMimeType: format === 'svg' ? 'image/svg+xml' : 'image/gif' });
+  expect(await storage.readPrivateImage(result.images[0].outputFileName)).toEqual(output);
+  const { LocalImageThumbnailService } = require('../../services/localImageThumbnailService');
+  const thumbnails = new LocalImageThumbnailService({ sourceDir: root, cacheDir: path.join(root, 'thumbnails'), settings: { allowGeneratedSvg: true } });
+  const thumb = await thumbnails.get({ _id: 'a'.repeat(24), filename: result.images[0].outputFileName });
+  expect((await sharp(thumb.buffer).metadata()).format).toBe('webp');
+  await expect(service.createImageGeneration({ rawOptions: { model: imageModel, prompt: 'Bad reference', outputFormat: format }, uploadedFiles: [{ buffer: png }] })).rejects.toMatchObject({ status: 400 });
+});
+
+test('invalid markup is rejected before a provider call and temporary reference writes are removed', async () => {
+  const opaque = await sharp({ create: { width: 16, height: 16, channels: 3, background: 'red' } }).png().toBuffer();
+  const wrongSize = await sharp(png).resize(32, 32).png().toBuffer();
+  for (const buffer of [opaque, wrongSize, Buffer.from('<svg/>'), Buffer.alloc(12 * 1024 * 1024 + 1)]) {
+    await expect(service.createImageGeneration({ rawOptions: { model: newModels[0], prompt: 'Test' }, uploadedFiles: [{ buffer: png }], markupFile: { buffer } })).rejects.toMatchObject({ status: 400 });
+    expect(await fs.readdir(root)).toEqual([]);
+  }
+  for (const options of [{ rawOptions: { model: newModels[0], prompt: 'Test' } }, { rawOptions: { prompt: 'Test' }, uploadedFiles: [{ buffer: png }] }]) {
+    await expect(service.createImageGeneration({ ...options, markupFile: { buffer: png } })).rejects.toMatchObject({ status: 400 });
+  }
+  expect(OpenAI.client.images.edit).not.toHaveBeenCalled();
+  expect(OpenAI.client.images.generate).not.toHaveBeenCalled();
+});
+
+test('unsafe vector provider output fails without persistence and logs a safe operational error', async () => {
+  OpenAI.client.images.generate.mockResolvedValue({ data: [{ b64_json: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString('base64') }] });
+  await expect(service.createImageGeneration({ rawOptions: { model: newModels[0], prompt: 'private prompt', outputFormat: 'svg' } })).rejects.toThrow('Unable to generate an image right now.');
+  expect(model.insertMany).not.toHaveBeenCalled();
+  expect(await fs.readdir(root)).toEqual([]);
+  expect(require('../../utils/logger').error).toHaveBeenCalledWith('GPT Image generation or persistence failed', expect.objectContaining({ category: 'gpt_image' }));
+});
+
+test('animation storage preserves frames but rejects excessive decoded work and reference reuse', async () => {
+  const gif = await sharp(Buffer.concat([Buffer.alloc(16 * 16 * 3, 0), Buffer.alloc(16 * 16 * 3, 255)]), { raw: { width: 16, height: 32, channels: 3, pageHeight: 16 } }).gif({ delay: [200, 200] }).toBuffer();
+  await expect(storage.writeImage(gif, 'gif', { maxAnimationPixels: 256 })).rejects.toThrow();
+  await expect(storage.writeImage(gif)).rejects.toThrow(); // uploads/references remain raster-only
+  const tooManyFrames = await sharp(Buffer.concat(Array.from({ length: 65 }, (_, index) => Buffer.alloc(16 * 16 * 3, index % 2 ? 255 : 0))), { raw: { width: 16, height: 16 * 65, channels: 3, pageHeight: 16 } }).gif().toBuffer();
+  await expect(storage.writeImage(tooManyFrames, 'gif')).rejects.toThrow();
+  expect(await fs.readdir(root)).toEqual([]);
 });
 test.each(models)('%s generation persists accurate metadata and only private media', async imageModel => {
   const result = await service.createImageGeneration({ rawOptions: { model: imageModel, prompt: 'Private synthetic prompt' } });

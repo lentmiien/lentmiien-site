@@ -4,6 +4,7 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const sharp = require('sharp');
 const logger = require('../utils/logger');
+const { validateGeneratedSvg } = require('../utils/gptImageSvg');
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const { MEDIA_PREFIX, PRIVATE_NAME } = require('../public/js/libraryImageReference');
@@ -171,8 +172,26 @@ async function validateRaster(buffer, expectedFormat) {
     throw Object.assign(new Error('Only valid, single-frame PNG, JPEG and WebP images are supported.'), { status: 400 });
   }
 }
-async function writeImage(buffer, expectedFormat) {
-  const metadata = await validateRaster(buffer, expectedFormat);
+async function validateGeneratedOutput(buffer, expectedFormat, { maxAnimationPixels = 40000000 } = {}) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length || buffer.length > MAX_STORED_BYTES) throw new Error('Invalid generated image size.');
+  if (expectedFormat === 'svg') {
+    validateGeneratedSvg(buffer);
+    await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS, failOn: 'warning' }).timeout({ seconds: 15 }).stats();
+    return { format: 'svg', mimeType: 'image/svg+xml' };
+  }
+  if (expectedFormat === 'gif') {
+    const image = sharp(buffer, { animated: true, limitInputPixels: maxAnimationPixels, failOn: 'warning' });
+    const metadata = await image.metadata();
+    if (metadata.format !== 'gif' || !metadata.pages || metadata.pages > 64
+      || metadata.width * metadata.height > maxAnimationPixels) throw new Error('Generated animation exceeds limits.');
+    await image.timeout({ seconds: 15 }).stats();
+    return { format: 'gif', mimeType: 'image/gif' };
+  }
+  return validateRaster(buffer, expectedFormat);
+}
+async function writeImage(buffer, expectedFormat, options) {
+  // Uploads still use validateRaster; SVG/GIF are explicitly generated outputs.
+  const metadata = await validateGeneratedOutput(buffer, expectedFormat, options);
   const root = await ensureStorage();
   const extension = metadata.format === 'jpeg' ? 'jpg' : metadata.format;
   const fileName = `gpt-image-private-${randomUUID()}.${extension}`;

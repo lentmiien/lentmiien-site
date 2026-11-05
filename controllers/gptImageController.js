@@ -23,6 +23,7 @@ const { LocalImageThumbnailService } = require('../services/localImageThumbnailS
 const { sendThumbnail, thumbnailFailure, unavailable } = require('../utils/localThumbnailResponse');
 const privateThumbnails = new LocalImageThumbnailService({
   sourceDir: imageStorage.ensureStorage, cacheDir: path.join(__dirname, '../cache/gpt-image-thumbnails/private'),
+  settings: { allowGeneratedSvg: true },
 });
 const legacyThumbnails = new LocalImageThumbnailService({
   cacheDir: path.join(__dirname, '../cache/gpt-image-thumbnails/legacy'),
@@ -124,6 +125,10 @@ async function loadGallery({ page, keyword, username }) {
     outputMimeType: item.outputMimeType,
     requestType: item.requestType,
     quality: item.quality,
+    complexity: item.complexity,
+    frameCount: item.frameCount,
+    frameDurationMs: item.frameDurationMs,
+    markupUsed: item.markupUsed,
     requestedSize: item.requestedSize,
     resolvedSize: item.resolvedSize || item.requestedSize,
     background: item.background,
@@ -178,7 +183,8 @@ async function generate(req, res) {
   try {
     const result = await createImageGeneration({
       rawOptions: { ...(req.body || {}), model: req.body?.model ?? STUDIO_MODEL_NAME },
-      uploadedFiles: Array.isArray(req.files) ? req.files : [],
+      uploadedFiles: Array.isArray(req.files) ? req.files : req.files?.inputImages || [],
+      markupFile: req.files?.markup?.[0] || null,
       selectedImageIds: req.body ? req.body.selectedImageIds : [],
       user: req.user,
     });
@@ -272,8 +278,12 @@ async function serveMedia(req, res) {
     if (!record) return res.status(404).end();
     const buffer = await imageStorage.readPrivateImage(fileName);
     const extension = fileName.split('.').pop();
+    if (extension === 'svg') {
+      require('../utils/gptImageSvg').validateGeneratedSvg(buffer);
+      res.set('Content-Security-Policy', "default-src 'none'; style-src 'none'; sandbox");
+    }
     res.set({
-      'Content-Type': extension === 'jpg' ? 'image/jpeg' : `image/${extension}`,
+      'Content-Type': extension === 'svg' ? 'image/svg+xml' : extension === 'jpg' ? 'image/jpeg' : `image/${extension}`,
       'Content-Disposition': `inline; filename="${fileName}"`,
       'Accept-Ranges': 'none',
     });

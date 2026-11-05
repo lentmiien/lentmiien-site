@@ -95,3 +95,29 @@ test('original tool retains every advertised valid option and default, including
     expect(normalize({ outputFormat: format, outputCompression: 0 }).requestOptions).toMatchObject({ outputFormat: format, outputCompression: 0 });
   }
 });
+
+describe.each(['gpt-image-2.6-sunburst', 'gpt-image-2.6-flare'])('%s options', model => {
+  const normalize = raw => normalizeGenerationForm({ prompt: 'Test', model, ...raw });
+  test('defaults complexity and accepts SVG plus smaller GIF frames', () => {
+    expect(normalize({}).requestOptions.complexity).toBe('high');
+    expect(normalize({ outputFormat: 'svg', background: 'transparent' }).ok).toBe(true);
+    expect(normalize({ outputFormat: 'gif', sizeMode: 'custom', customWidth: 512, customHeight: 512, frameCount: '10', frameDurationMs: 205 }).requestOptions).toMatchObject({ frameCount: 10, frameDurationMs: 210, requestedSize: '512x512', outputCompression: null });
+    for (const complexity of ['low', 'medium', 'high']) expect(normalize({ complexity }).ok).toBe(true);
+  });
+  test.each([
+    { complexity: 'auto' }, { complexity: [] }, { frameCount: 9 }, { frameDurationMs: 200 },
+    { outputFormat: 'gif', frameCount: 65 }, { outputFormat: 'gif', frameCount: 1 },
+    { outputFormat: 'gif', frameCount: '2x' }, { outputFormat: 'gif', frameCount: [] },
+    { outputFormat: 'gif', frameDurationMs: 19 }, { outputFormat: 'gif', frameDurationMs: 2001 },
+    { outputFormat: 'gif', frameDurationMs: 100.5 }, { outputFormat: 'svg', n: 2 },
+    { outputFormat: 'svg', outputCompression: 50 }, { outputFormat: 'gif', outputCompression: 50 },
+    { outputFormat: 'gif', sizePreset: '3840x2160', frameCount: 64 },
+    { outputFormat: 'gif', background: 'transparent' },
+  ])('rejects invalid combination %j', raw => expect(normalize(raw).ok).toBe(false));
+});
+
+test.each(['gpt-image-2', 'gpt-image-2.5-sunburst', 'gpt-image-2.5-flare'])('%s rejects 2.6-only parameters', model => {
+  for (const option of [{ complexity: 'high' }, { outputFormat: 'gif' }, { outputFormat: 'svg' }, { frameCount: 9 }]) {
+    expect(normalizeGenerationForm({ prompt: 'Test', model, ...option }).ok).toBe(false);
+  }
+});

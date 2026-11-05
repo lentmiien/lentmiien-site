@@ -99,6 +99,7 @@
   }
 
   function renderSelectedInputs() {
+    updateModelOptions();
     if (!selectedInputsElement || !selectedCountElement) {
       return;
     }
@@ -162,9 +163,15 @@
     if (!outputFormatInput || !compressionField) {
       return;
     }
-    compressionField.hidden = outputFormatInput.value === 'png';
+    compressionField.hidden = !['jpeg', 'webp'].includes(outputFormatInput.value);
     document.getElementById('gptImageCompression').disabled = compressionField.hidden;
     updateBackgroundOptions();
+    const format = outputFormatInput.value;
+    const animationFields = document.getElementById('gptImageAnimationFields');
+    animationFields.hidden = format !== 'gif';
+    animationFields.querySelectorAll('input').forEach(input => { input.disabled = animationFields.hidden; });
+    populateOptions(document.getElementById('gptImageCount'), format === 'svg' ? ['1'] : Array.from({ length: 10 }, (_, index) => String(index + 1)));
+    document.getElementById('gptImageFormatHint').hidden = !['svg', 'gif'].includes(format);
   }
 
   function populateOptions(input, options) {
@@ -176,23 +183,32 @@
       option.textContent = value;
       return option;
     }));
-    input.value = options.includes(previous) ? previous : 'auto';
+    input.value = options.includes(previous) ? previous : options.includes('auto') ? 'auto' : options[0];
   }
 
   function updateBackgroundOptions() {
     const contract = pageConfig.models?.[modelInput?.value];
     if (!contract) return;
-    populateOptions(backgroundInput, contract.backgrounds.filter(value => value !== 'transparent' || outputFormatInput.value !== 'jpeg'));
+    populateOptions(backgroundInput, contract.backgrounds.filter(value => value !== 'transparent' || !['jpeg', 'gif'].includes(outputFormatInput.value)));
   }
 
   function updateModelOptions() {
     const contract = pageConfig.models?.[modelInput?.value];
     if (!contract) return;
     populateOptions(qualityInput, contract.qualities);
-    updateBackgroundOptions();
+    const hasReferences = readSelection().length > 0 || (uploadInput?.files?.length || 0) > 0;
+    populateOptions(outputFormatInput, (contract.outputFormats || ['png', 'jpeg', 'webp']).filter(value => !hasReferences || !['svg', 'gif'].includes(value)));
+    const complexityField = document.getElementById('gptImageComplexityField');
+    complexityField.hidden = !contract.complexities;
+    document.getElementById('gptImageComplexity').disabled = complexityField.hidden;
+    const markupField = document.getElementById('gptImageMarkupField');
+    markupField.hidden = !contract.markup || !hasReferences;
+    document.getElementById('gptImageMarkup').disabled = markupField.hidden;
+    updateCompressionField();
   }
 
   function updateUploadSummary() {
+    updateModelOptions();
     if (!uploadInput || !uploadSummary) {
       return;
     }
@@ -251,6 +267,8 @@
 
     const selected = readSelection();
     const formData = new FormData(form);
+    // Browsers include an empty File for an unfilled file control.
+    if (!document.getElementById('gptImageMarkup').files.length) formData.delete('markup');
     selected.forEach((entry) => {
       formData.append('selectedImageIds', entry.id);
     });

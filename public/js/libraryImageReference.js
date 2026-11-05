@@ -2,7 +2,7 @@
   'use strict';
 
   const MEDIA_PREFIX = '/gpt-image/media/';
-  const PRIVATE_NAME = /^gpt-image-private-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$/;
+  const PRIVATE_NAME = /^gpt-image-private-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp|svg|gif)$/;
 
   // Shared by server views and browser previews. Resolution grants no access:
   // private delivery still checks capabilities and registered library membership.
