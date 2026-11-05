@@ -6,6 +6,8 @@ Use this API to build a second app that lists available boxes, offers tag filter
 
 On the source site's `/binpacking-smallest` page, open **API access**, create a named key for the second app, and copy it immediately. Keys expire after the selected 1–365 days and can be revoked there. Existing packing keys work with both endpoints.
 
+The same keys also authorize the separate [Multi-box Packer](multi-box-packer.md) API at `/api/binpacking-multi`. That tool uses centimeters, asynchronous jobs and multi-box results; its request and response formats differ from this single-box search.
+
 Use the source site's HTTPS origin as `SITE_URL` (without a trailing slash). Send `Authorization: Bearer <key>` on every request. Cookies and the legacy global API key do not authenticate these endpoints. The issuer must retain packing read, search, and API-management permissions.
 
 For a web app, keep the key in the second app's backend configuration and proxy these calls through that backend. Do not embed it in a browser bundle or local storage. Authenticate and authorize your own app's users before allowing proxy calls. Cross-origin browser access is not enabled by these routes; no browser CSRF token is needed for backend bearer requests.

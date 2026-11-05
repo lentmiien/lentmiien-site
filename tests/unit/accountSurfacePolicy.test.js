@@ -82,6 +82,9 @@ test('owner with Budget grant uses its existing alias without requiring Accounti
 test.each(['admin', 'family', 'user'])('shared smallest-box link is visible in the navbar for %s', async role => {
   const entry = navigationFor(await policy(role)).find(item => item.id === 'smallest_box');
   expect(entry).toMatchObject({ href: '/binpacking-smallest', label: 'Smallest Box Finder', subgroup: 'Packing tools' });
+  expect(navigationFor(await policy(role)).find(item => item.id === 'multi_box')).toMatchObject({
+    href: '/binpacking-multi', label: 'Multi-box Packer', subgroup: 'Packing tools',
+  });
 });
 
 test.each(['admin', 'family', 'user'])('user settings is available to %s without personal-owner binding', async role => {

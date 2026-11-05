@@ -336,3 +336,6 @@ MING_ADMIN_TOKEN=
 # Total outbound request deadline (includes queue, preparation and inference).
 # Allowed range: 2000000..2400000 ms. No automatic retries or active cancellation.
 EXPERIMENTAL_MODELS_TIMEOUT_MS=2000000
+
+# Multi-box Packer: private parcel worker HTTP(S) origin (no path/credentials).
+MULTI_BOX_PACKING_URL=http://192.168.0.20:8094

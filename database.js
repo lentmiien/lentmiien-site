@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const PackingJob = require('./models/packing_job');
 const PackingSharedCatalog = require('./models/packing_shared_catalog');
 const ServiceCredential = require('./models/service_credential');
 const PackingContainerCatalog = require('./models/packing_container_catalog');
@@ -208,6 +209,7 @@ const RunpodPodBillingPeriod = require('./models/runpod_pod_billing_period');
 
 // Export models
 module.exports = {
+  PackingJob,
   PackingSharedCatalog,
   ServiceCredential,
   PackingContainerCatalog,

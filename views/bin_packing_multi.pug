@@ -1,0 +1,83 @@
+extends layout
+
+block append styles
+  link(rel='stylesheet', href='/css/bin-packing.css')
+  link(rel='stylesheet', href='/css/multi-box.css')
+
+block content
+  section.bin-pack.multi-pack
+    header.bin-pack__header
+      h1.bin-pack__title Multi-box Packer
+      p.bin-pack__subtitle Split your items across one or more boxes, with soft volume, cushioning, and diagonal rotation.
+      p
+        a(href='/binpacking-smallest') Smallest Box Finder & shared box editor
+        | ·
+        a(href='/binpacking-smallest#packingApiAccess') Manage packing API keys
+        | ·
+        a(href='/yaml/binpacking-multi.v1.yaml') External API specification
+    form#multiBoxForm.bin-pack__form(data-csrf=csrfToken)
+      .bin-pack__grid
+        article.bin-pack__panel
+          h2.bin-pack__panel-title Items
+          p.bin-pack__hint All dimensions are in centimeters, weights in kg. Up to 500 items including quantities. Values must use one consistent currency.
+          .bin-pack__field
+            label(for='multiItemsFile') Import CSV
+            input#multiItemsFile(type='file', accept='.csv,text/csv')
+          .bin-pack__field
+            label(for='multiItems') Items CSV (header required)
+            textarea#multiItems.bin-pack__textarea(rows='10', maxlength='262144', required, spellcheck='false', placeholder='id,width,height,depth,quantity,weight,value,rotation,shrink,soft,fragile')
+          .bin-pack__actions
+            button#multiSample.bin-pack__secondary(type='button') Load sample
+            button#multiClear.bin-pack__secondary(type='button') Clear
+          details
+            summary Item fields and packing behavior
+            p Only id,width,height,depth are required. quantity defaults to 1; weight, value and shrink to 0; rotation to orthogonal; soft and fragile to false. Dimensions: 0.01–100,000 cm; value: up to 2 billion per item.
+            ul
+              li Rotation: none preserves orientation; orthogonal allows 90° turns; free also tries diagonal orientations for long, thin items.
+              li Shrink: 0–95% reduction of each dimension. Weight and value stay unchanged.
+              li Soft: reserves volume, weight and value without a fixed 3D position. Accepts true/false, yes/no or 1/0.
+              li Fragile: adds 1 cm of cushion on each local side after shrinking, including for soft items.
+              li Quoted CSV fields are supported. Use cm even when copying an older list measured in mm.
+          p#multiItemSummary.bin-pack__hint(aria-live='polite') No items entered.
+        article.bin-pack__panel
+          h2.bin-pack__panel-title Packing preferences
+          .bin-pack__field
+            label(for='multiApproach') Packing objective
+            select#multiApproach.bin-pack__select(name='approach')
+              option(value='boxes') Fewer boxes
+              option(value='space') Less empty space
+          .bin-pack__input-grid
+            .bin-pack__field
+              label(for='multiMargin') Safety margin per side (cm)
+              input#multiMargin.bin-pack__input(name='margin', type='number', min='0', max='10000', step='any', value='1', required)
+            each entry in [['maxSide', 'Preferred longest side (cm)'], ['maxSum', 'Preferred W + H + D (cm)'], ['maxWeight', 'Preferred item kg per box'], ['maxValue', 'Preferred item value per box']]
+              .bin-pack__field
+                label(for='multi-' + entry[0])= entry[1]
+                input.bin-pack__input(id='multi-' + entry[0], name=entry[0], type='number', min=entry[0] === 'maxSide' || entry[0] === 'maxSum' ? '0.01' : '0', max='1000000000000', step='any', placeholder='Unlimited')
+          p.bin-pack__hint Preferred limits can be exceeded for an item that cannot fit individually within them. Catalog weight limits remain hard limits for item weight.
+          p.bin-pack__hint Shipment estimates add empty box weight and cushion at 8.22 g/liter of empty space. Review weight warnings: the algorithm does not reserve cushion weight.
+          details(open)
+            summary Shared available boxes (cm)
+            p#multiCatalogStatus.bin-pack__hint(role='status') Loading boxes…
+            .bin-pack__actions
+              button#multiSelectAll.bin-pack__secondary(type='button') Select all
+              button#multiSelectNone.bin-pack__secondary(type='button') Select none
+              button#multiReloadBoxes.bin-pack__secondary(type='button') Reload boxes
+            #multiBoxes.multi-pack__box-options
+          button#multiSubmit.bin-pack__submit(type='submit', disabled) Pack into boxes
+    article.bin-pack__panel.multi-pack__results
+      h2.bin-pack__panel-title Packing plan
+      p#multiStatus.bin-pack__status(role='status', aria-live='polite') No job submitted yet.
+      .bin-pack__actions
+        button#multiResume.bin-pack__secondary(type='button', hidden) Resume polling
+        button#multiExport.bin-pack__secondary(type='button', hidden) Download plan JSON
+      form#multiResumeForm.bin-pack__input-grid
+        .bin-pack__field
+          label(for='multiJobId') Retrieve an existing job
+          input#multiJobId.bin-pack__input(type='text', maxlength='36', placeholder='Job UUID', required)
+        button.bin-pack__secondary(type='submit') Load job
+      p.bin-pack__hint Jobs are private to your account. Completed results remain available from the worker for seven days. Polling checks every five seconds.
+      #multiResults
+
+block append script
+  script(type='module', src='/js/multi-box.js')

@@ -1,0 +1,546 @@
+openapi: 3.1.0
+info:
+  title: Multi-box Packer API
+  version: 1.0.0
+  description: Authenticated asynchronous multi-box packing using the shared
+    catalog. All dimensions in cm and weights in kg. Boxes with Max kg=0 are
+    excluded. Hard max_value is 1e12. Use packing service keys from Smallest Box
+    Finder. 500 expanded items, 256 KiB requests, 5 submissions/owner/minute.
+    Poll every 5 seconds. No automatic submission retries or public idempotency
+    support. Provider results expire seven days after completion; local
+    ownership mappings expire eight days after submission. Jobs are
+    owner-scoped.
+servers:
+  - url: /api/binpacking-multi
+security:
+  - packingKey: []
+paths:
+  /containers:
+    get:
+      operationId: listMultiBoxContainers
+      summary: List eligible shared boxes in cm, with tare kg and tags
+      responses:
+        "200":
+          description: Eligible catalog; max_weight excludes box tare and estimated cushion
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  containers:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/Box"
+                        - type: object
+                          properties:
+                            emptyWeight:
+                              type: number
+                            tags:
+                              type: array
+                              items:
+                                type: string
+                  revision:
+                    type: integer
+                  units:
+                    type: object
+                  excludedContainers:
+                    type: integer
+        "400": &a1
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401": &a2
+          description: Missing, revoked or expired packing credential
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403": &a3
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404": &a4
+          description: Missing, expired or foreign job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413": &a5
+          description: Request exceeds 256 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429": &a6
+          description: Rate or concurrency limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503": &a7
+          description: Worker or storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /jobs:
+    post:
+      operationId: submitMultiBoxJob
+      summary: Pack items into one or more shared boxes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PackingRequest"
+            example:
+              items:
+                - id: Poster tube
+                  width: 44
+                  height: 3
+                  depth: 3
+                  weight: 0.18
+                  rotation: free
+                - id: Sweater
+                  width: 28
+                  height: 6
+                  depth: 22
+                  soft: true
+                  shrink: 20
+              options:
+                approach: boxes
+                margin: 1
+      responses:
+        "202":
+          description: Accepted with an owner-scoped job ID
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              description: 5 seconds while pending
+            Location:
+              schema:
+                type: string
+              description: Application job URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "413": *a5
+        "429": *a6
+        "503": *a7
+  /jobs/{jobId}:
+    get:
+      operationId: getMultiBoxJob
+      summary: Read your job status or complete packing plan
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Queued, running, completed (possibly with unplaced items), or failed
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              description: 5 seconds while pending
+            Location:
+              schema:
+                type: string
+              description: Application job URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "413": *a5
+        "429": *a6
+        "503": *a7
+components:
+  securitySchemes:
+    packingKey:
+      type: http
+      scheme: bearer
+  schemas:
+    Item:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - width
+        - height
+        - depth
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 120
+        width:
+          type: number
+          minimum: 0.01
+          maximum: 100000
+          description: Centimeters
+        height:
+          type: number
+          minimum: 0.01
+          maximum: 100000
+          description: Centimeters
+        depth:
+          type: number
+          minimum: 0.01
+          maximum: 100000
+          description: Centimeters
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 1
+        weight:
+          type: number
+          minimum: 0
+          maximum: 1000000000000
+          default: 0
+        value:
+          type: number
+          minimum: 0
+          maximum: 2000000000
+          default: 0
+        rotation:
+          type: string
+          enum:
+            - none
+            - orthogonal
+            - free
+          default: orthogonal
+        shrink:
+          type: number
+          minimum: 0
+          maximum: 95
+          default: 0
+        soft:
+          type: boolean
+          default: false
+        fragile:
+          type: boolean
+          default: false
+    Box:
+      type: object
+      required:
+        - id
+        - width
+        - height
+        - depth
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 120
+        width:
+          type: number
+          minimum: 0.01
+          maximum: 100000
+          description: Centimeters
+        height:
+          type: number
+          minimum: 0.01
+          maximum: 100000
+          description: Centimeters
+        depth:
+          type: number
+          minimum: 0.01
+          maximum: 100000
+          description: Centimeters
+        max_weight:
+          type:
+            - number
+            - "null"
+          minimum: 0
+          maximum: 1000000000000
+          default: null
+        max_value:
+          type:
+            - number
+            - "null"
+          minimum: 0
+          maximum: 1000000000000
+          default: null
+    Options:
+      type: object
+      additionalProperties: false
+      properties:
+        approach:
+          type: string
+          enum:
+            - boxes
+            - space
+          default: boxes
+        margin:
+          type: number
+          minimum: 0
+          maximum: 10000
+          default: 0
+        maxSide:
+          type:
+            - number
+            - "null"
+          minimum: 0.01
+          maximum: 1000000000000
+          default: null
+        maxSum:
+          type:
+            - number
+            - "null"
+          minimum: 0.01
+          maximum: 1000000000000
+          default: null
+        maxWeight:
+          type:
+            - number
+            - "null"
+          minimum: 0
+          maximum: 1000000000000
+          default: null
+        maxValue:
+          type:
+            - number
+            - "null"
+          minimum: 0
+          maximum: 1000000000000
+          default: null
+    PackingRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/Item"
+          description: At most 500 expanded items including quantities; IDs unique
+        options:
+          $ref: "#/components/schemas/Options"
+        boxIds:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 120
+          description: Optional subset of eligible shared box IDs. Omit to use all
+            eligible boxes.
+    ErrorDetail:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+    PackingResult:
+      type: object
+      description: Engine plan with per-box shipment estimates. A completed job may
+        have unplaced items. Coordinates use X=width,Y=height,Z=depth, cm. Soft
+        items have no placement. Weight estimates include tare and cushion in
+        full interior volume minus post-shrink content volume.
+      required:
+        - version
+        - units
+        - coordinates
+        - options
+        - boxes
+        - unplaced
+        - stats
+      properties:
+        version:
+          type: integer
+        units:
+          type: object
+        coordinates:
+          type: string
+        options:
+          type: object
+        boxes:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - type
+              - dimensions
+              - items
+              - weightEstimate
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+                description: Shared catalog box ID
+              dimensions:
+                type: array
+                minItems: 3
+                maxItems: 3
+                items:
+                  type: number
+                description: Width, height, depth in cm
+              items:
+                type: array
+                items:
+                  type: object
+                description: Expanded item copies. Rigid items have center, dimensions, position
+                  and orientation.matrix (row-major local-to-world). Soft items
+                  omit placement fields.
+              weightEstimate:
+                $ref: "#/components/schemas/WeightEstimate"
+        unplaced:
+          type: array
+          items:
+            type: object
+        stats:
+          type: object
+          properties:
+            inputItems:
+              type: integer
+            packedItems:
+              type: integer
+            boxCount:
+              type: integer
+            fill:
+              type: number
+            fallbackBoxes:
+              type: integer
+            elapsedMs:
+              type: number
+        cushionDensityKgPerM3:
+          type: number
+          example: 8.22
+    Job:
+      type: object
+      required:
+        - jobId
+        - status
+        - statusUrl
+        - queuePosition
+        - createdAt
+        - startedAt
+        - finishedAt
+        - expiresAt
+        - attempts
+        - progress
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+        statusUrl:
+          type: string
+        queuePosition:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          description: 1-based among queued jobs, 0 when running, null when terminal
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        finishedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        expiresAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        attempts:
+          type: integer
+          minimum: 0
+        progress:
+          type:
+            - object
+            - "null"
+          properties:
+            phase:
+              type: string
+            done:
+              type: integer
+            total:
+              type: integer
+            boxes:
+              type: integer
+        result:
+          $ref: "#/components/schemas/PackingResult"
+        error:
+          $ref: "#/components/schemas/ErrorDetail"
+    WeightEstimate:
+      type: object
+      required:
+        - itemWeight
+        - emptyBoxWeight
+        - emptyVolumeCm3
+        - estimatedCushionWeight
+        - estimatedShipmentWeight
+        - maxLoadWeight
+        - exceedsMaxLoadWeight
+      properties:
+        itemWeight:
+          type: number
+          minimum: 0
+        emptyBoxWeight:
+          type: number
+          minimum: 0
+        emptyVolumeCm3:
+          type: number
+          minimum: 0
+        estimatedCushionWeight:
+          type: number
+          minimum: 0
+        estimatedShipmentWeight:
+          type: number
+          minimum: 0
+        maxLoadWeight:
+          type: number
+          minimum: 0
+        exceedsMaxLoadWeight:
+          type: boolean
+          description: Items plus cushion exceed the catalog content weight limit;
+            estimates do not change the plan.

@@ -10,6 +10,8 @@ block content
       p.bin-pack__subtitle Compare up to three boxes that hold every item, from smallest to largest internal volume. Items may rotate in 3D.
       p.bin-pack__hint The selected algorithm may miss a possible arrangement. If no solution is found, try another algorithm.
       a(href='/binpacking') Open the original multi-container tool
+      p
+        a(href='/binpacking-multi') Multi-box Packer — split items across boxes, with soft items and diagonal rotation
     .bin-pack__grid
       .bin-pack__column.bin-pack__column--form
         article.bin-pack__panel
@@ -111,9 +113,10 @@ block content
             button.bin-pack__submit(type='submit', data-save-boxes, disabled) Save shared boxes
         p.bin-pack__status(data-catalog-status, role='status') Loading shared boxes…
     if canManagePackingApi
-      details.bin-pack__catalog
+      details#packingApiAccess.bin-pack__catalog
         summary API access
         p Send items and optional tag filters to POST /api/binpacking-smallest using a bearer API key. Fetch boxes and tags from GET /api/binpacking-smallest/containers. Keys allow catalog reads and searches.
+        p These keys also authorize Multi-box Packer at /api/binpacking-multi/jobs.
         a(href='/yaml/binpacking-smallest.v1.yaml', target='_blank', rel='noopener') API specification
         form#packingApiKeyForm.bin-pack__input-grid
           .bin-pack__field

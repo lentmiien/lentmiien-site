@@ -10,9 +10,7 @@ const { CAPABILITIES, ROLE_BUNDLES } = require('../utils/smallestBoxPolicy');
 const { catalogUpdateSchema } = require('../utils/smallestBoxValidation');
 const { catalogService } = require('../services/smallestBoxCatalogService');
 const { packingOperations } = require('../services/smallestBoxOperations');
-const { createServiceCredentials } = require('../services/serviceCredentialService');
-const credentials = createServiceCredentials({ namespace: 'packing', capabilities: [CAPABILITIES.read, CAPABILITIES.run],
-  ownerCapabilities: [CAPABILITIES.read, CAPABILITIES.run, CAPABILITIES.api], roleCapabilityBundles: ROLE_BUNDLES });
+const credentials = require('../services/packingCredentials');
 
 function privateResponse(req, res, next) {
   res.set({ 'Cache-Control': PRIVATE_NO_STORE, 'Referrer-Policy': 'no-referrer' });
