@@ -221,6 +221,29 @@
     uploadSummary.textContent = summary;
   }
 
+  async function copyPrompt(prompt) {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(prompt);
+      return;
+    }
+
+    const previousFocus = document.activeElement;
+    const textarea = document.createElement('textarea');
+    textarea.value = prompt;
+    textarea.readOnly = true;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    try {
+      textarea.focus({ preventScroll: true });
+      textarea.select();
+      if (!document.execCommand('copy')) throw new Error('Copy failed.');
+    } finally {
+      textarea.remove();
+      previousFocus?.focus({ preventScroll: true });
+    }
+  }
+
   async function handleLike(button) {
     const imageId = button.getAttribute('data-image-id');
     if (!imageId) {
@@ -321,6 +344,26 @@
 
   document.querySelectorAll('[data-like-button]').forEach((button) => {
     button.addEventListener('click', () => handleLike(button));
+  });
+
+  document.querySelectorAll('[data-copy-prompt]').forEach((button) => {
+    let feedbackTimer;
+    button.addEventListener('click', async () => {
+      window.clearTimeout(feedbackTimer);
+      const hadFocus = document.activeElement === button;
+      button.disabled = true;
+      try {
+        await copyPrompt(button.dataset.copyPrompt);
+        button.textContent = 'Copied!';
+      } catch (_error) {
+        button.textContent = 'Copy failed';
+        setStatus('Unable to copy the prompt. Check your browser clipboard permissions and try again.', 'error');
+      } finally {
+        button.disabled = false;
+        if (hadFocus) button.focus({ preventScroll: true });
+        feedbackTimer = window.setTimeout(() => { button.textContent = 'Copy prompt'; }, 2500);
+      }
+    });
   });
 
   if (clearSelectionButton) {

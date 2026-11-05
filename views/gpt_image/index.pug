@@ -201,6 +201,7 @@ block content
                   p.gpt-image-card__byline= `By ${item.createdBy}`
                 .gpt-image-card__actions
                   a.btn.btn-sm.btn-outline-secondary(href=item.outputUrl, target='_blank', rel='noopener noreferrer') Open image
+                  button.btn.btn-sm.btn-outline-secondary(type='button', data-copy-prompt=item.prompt, aria-live='polite') Copy prompt
                   button.btn.btn-sm.btn-outline-danger(type='button', data-like-button='1', data-image-id=item.id, data-liked=item.likedByCurrentUser ? 'true' : 'false')
                     = item.likedByCurrentUser ? 'Unlike' : 'Like'
                   if !['svg', 'gif'].includes(item.outputFormat)
