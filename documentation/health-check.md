@@ -25,6 +25,16 @@ Choose the report year before mapping (defaults to the newest exam year). Overal
 
 The dashboard defaults to the latest exam, permits year and exam selection, and charts every numeric observation across all years. Missing measurements remain absent. Flags use each observation's own reference interval and reported rating. Unknown reference formats remain unclassified, never assumed normal. The copyable summary is deterministic: outside-range values, reported flags and exam notes, without generated medical advice.
 
+## Dashboard presentation
+
+The dashboard uses a year rail, three overview cards, an interactive body map, and compact multi-year trend cards. Select a trend card to open its full chart in a native dialog, inspect individual observations, or expand its exact-value history. Card charts retain every point at a fixed width; longer histories do not force every card to scroll. Recorded ranges are shaded separately for each observation, including one-sided bounds. Changes are numeric comparisons, not inferred clinical improvement.
+
+The body map uses only the selected exam. Its color is the strongest associated item or unambiguous section grade: A / in-range (Jade), B / H / L / outside-range (Citrine), C / D / E / F (Vermilion), T (Aqua), and unrated (neutral). These grade groupings follow the supplied report; the underlying grades, values, ranges and test names are visible when an area is selected. Unknown grades are flagged rather than assumed normal. Blood/metabolic/body measurements appear under Whole body; unrecognized categories stay in Other tests. Mixed pancreas/kidney/gout sections use item associations without copying a single section grade onto both organs.
+
+Test sections start collapsed and open when searching. Clinic notes use keyboard-accessible tabs. The copyable summary is available beside the notes, with its longer text hidden behind a preview disclosure. All imported strings remain text-only, including chart labels, dialog content, body-map results and notes.
+
+For a synthetic local design preview, run `node scripts/preview-health-check.js`, then open `http://127.0.0.1:4183/health-check` (or append `?years=13`). This development server binds only to loopback and never loads the application environment or database. Its upload page is for visual inspection only.
+
 ## Deployment and verification
 
 Use the existing `DASHBOARD_PERSONAL_OWNER_USER_ID`. Mongoose registers the new collection/index; the first approved import creates the history document. No new environment variables or dependencies. Exclude `/health-check` from edge caching. The source JSON must be uploaded by the owner after deployment; development does not write to the configured database.

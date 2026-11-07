@@ -38,7 +38,7 @@
         if (typeof item.value !== 'number') continue;
         const key = `${item.id}|${item.unit || ''}`;
         if (!groups.has(key)) groups.set(key, { key, id: item.id, name: item.name, original: item.original, category: item.category, unit: item.unit || '', points: [] });
-        groups.get(key).points.push({ date: exam.exam_date, value: item.value, reference: item.reference_range || '', status: status(item) });
+        groups.get(key).points.push({ date: exam.exam_date, value: item.value, rating: item.rating || '', reference: item.reference_range || '', status: status(item) });
       }
     }
     return [...groups.values()];

@@ -4,51 +4,121 @@ block styles
   link(rel='stylesheet' href='/css/health-check.css')
 
 block content
-  main.hc#health-check
-    header.hc-hero
-      div
-        p.hc-eyebrow PERSONAL HEALTH RECORD
-        h1 Health check history
-        p Measurements, trends and clinic notes across the years.
-      a.hc-button(href='/health-check/upload') Import a report
-    p#hc-message(role='status' aria-live='polite') Loading your history…
+  main.hc.hc-dashboard-page#health-check
+    header.hc-masthead
+      .hc-brand-lockup
+        .hc-brand-mark(aria-hidden='true')
+          svg(viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5')
+            path(d='M3 12h4l3-7 4 14 3-7h4')
+        div
+          p.hc-eyebrow YOUR PERSONAL HEALTH ARCHIVE
+          h1 Health checkup
+          p.hc-intro A little perspective on the bigger picture.
+      .hc-header-actions
+        span.hc-history-badge#hc-history-span
+        a.hc-button(href='/health-check/upload')
+          span(aria-hidden='true') +
+          |  Import a report
+    p#hc-message.hc-message(role='status' aria-live='polite') Loading your history…
     section#hc-dashboard(hidden)
-      .hc-toolbar
-        label(for='hc-year') Year
-        select#hc-year
-        label(for='hc-exam') Exam
-        select#hc-exam
-        label(for='hc-search') Find a measurement
-        input#hc-search(type='search' placeholder='Name, category or original label')
-      #hc-overview.hc-stats
-      section.hc-panel
-        h2 Results needing attention
-        p.hc-muted Flags reflect the report’s own reference ranges and ratings. Missing or unrecognized ranges are left unclassified.
-        #hc-flags
-      section.hc-panel
+      nav.hc-year-nav(aria-label='Exam selection')
+        .hc-year-caption
+          span.hc-eyebrow EXAM YEAR
+          span#hc-selected-caption Latest results
+        #hc-year-pills.hc-year-pills(aria-label='Choose a year')
+        .hc-exam-selectors
+          label.hc-sr-only(for='hc-year') Jump to year
+          select#hc-year(aria-label='Jump to year')
+          label.hc-sr-only(for='hc-exam') Exam date
+          select#hc-exam(aria-label='Exam date')
+      #hc-overview.hc-overview
+      section.hc-body-section(aria-labelledby='hc-body-heading')
         .hc-section-head
           div
-            h2 Trends across all years
-            p.hc-muted Every numeric observation is included. Different units are shown separately; gaps do not imply a measured value.
-          label
-            input#hc-trend-flags(type='checkbox')
-            |  Flagged in selected exam only
-        #hc-trends.hc-grid
-      section.hc-panel
-        h2 All measurements
-        #hc-measurements
-      section.hc-panel
-        h2 Clinic notes
-        #hc-notes
-      section.hc-panel
+            p.hc-eyebrow AT A GLANCE
+            h2#hc-body-heading Your body, by the report
+          p.hc-section-hint Select an area to explore its results.
+        .hc-body-layout
+          .hc-anatomy-panel
+            .hc-anatomy-caption
+              span FRONT VIEW
+              span#hc-body-date
+            #hc-body-map
+            p.hc-anatomy-foot Colors reflect this exam’s grades and reference ranges.
+          .hc-body-explorer
+            #hc-body-areas.hc-body-areas(aria-label='Body areas')
+            #hc-body-detail(aria-live='polite')
+        .hc-body-legend
+          span
+            i.hc-dot.hc-tone-success
+            | A / within range
+          span
+            i.hc-dot.hc-tone-warning
+            | B / H / L / outside range
+          span
+            i.hc-dot.hc-tone-danger
+            | C / D / E / F grades
+          span
+            i.hc-dot.hc-tone-info
+            | T grade
+          span
+            i.hc-dot.hc-tone-muted
+            | No rated result
+      section.hc-trends-section#hc-trends-section(aria-labelledby='hc-trends-heading')
         .hc-section-head
-          h2 Copyable summary
-          button#hc-copy.hc-button(type='button') Copy summary
-        p.hc-muted Outside-range values, other reported flags and notes for the selected exam.
-        label.hc-sr-only(for='hc-summary') Health-check summary
-        textarea#hc-summary(readonly rows='14')
-        p#hc-copy-status(role='status')
+          div
+            p.hc-eyebrow THE LONG VIEW
+            h2#hc-trends-heading Multi-year trends
+          p.hc-section-hint All your exams. Select a card for the full story.
+        .hc-trend-toolbar
+          .hc-search-box
+            svg(viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' aria-hidden='true')
+              circle(cx='10.5' cy='10.5' r='6.5')
+              path(d='m16 16 4.5 4.5')
+            label.hc-sr-only(for='hc-search') Find a measurement
+            input#hc-search(type='search' placeholder='Search measurements…')
+          .hc-trend-legend
+            span
+              i.hc-range-swatch
+              | Recorded reference range
+            span
+              i.hc-selected-swatch
+              | Selected exam
+          span#hc-trend-count.hc-muted(aria-live='polite')
+        #hc-trend-filters.hc-chips(aria-label='Filter trends')
+        #hc-trends.hc-trend-grid
+      section.hc-measurements-section(aria-labelledby='hc-measurements-heading')
+        .hc-section-head
+          div
+            p.hc-eyebrow EXPLORE THE DETAILS
+            h2#hc-measurements-heading Test sections
+          p.hc-section-hint#hc-measurement-count Open a section to explore its measurements.
+        #hc-measurements.hc-measurement-groups
+      .hc-bottom-grid
+        section.hc-notes-panel#hc-notes-section(aria-labelledby='hc-notes-heading')
+          .hc-section-head
+            div
+              p.hc-eyebrow FROM THE CLINIC
+              h2#hc-notes-heading Notes & observations
+          #hc-notes
+        section.hc-export-panel(aria-labelledby='hc-export-heading')
+          .hc-export-icon(aria-hidden='true') ↗
+          p.hc-eyebrow TAKE IT WITH YOU
+          h2#hc-export-heading The useful details, together.
+          p Your outside-range results, reported flags and clinic notes in one ready-to-copy summary.
+          button#hc-copy.hc-button(type='button') Copy this exam’s summary
+          p#hc-copy-status(role='status' aria-live='polite')
+          details#hc-summary-details.hc-summary-details
+            summary Preview the summary
+            label.hc-sr-only(for='hc-summary') Health-check summary
+            textarea#hc-summary(readonly rows='12')
+      footer.hc-page-foot
+        span#hc-footer-date
+        span Reference ranges and reported grades are specific to each exam.
+    dialog#hc-trend-dialog.hc-dialog(aria-labelledby='hc-dialog-title')
+      #hc-dialog-content
 
 block script
   script(src='/js/health-check-analytics.js' defer)
+  script(src='/js/health-check-body.js' defer)
   script(src='/js/health-check.js' defer)
