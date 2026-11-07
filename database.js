@@ -61,6 +61,7 @@ const CookingCalendarModel = require('./models/CookingCalendar');
 const CookingCalendarV2Model = require('./models/CookingCalendarV2');
 // Health log
 const HealthEntry = require('./models/healthentry');
+const HealthCheckHistory = require('./models/health_check_history');
 const MyLifeLogEntry = require('./models/my_life_log_entry');
 const MyLifeLogImportState = require('./models/my_life_log_import_state');
 const MyLifeLogReminder = require('./models/my_life_log_reminder');
@@ -255,6 +256,7 @@ module.exports = {
   CookingCalendarModel,
   CookingCalendarV2Model,
   HealthEntry,
+  HealthCheckHistory,
   MyLifeLogEntry,
   MyLifeLogImportState,
   MyLifeLogReminder,

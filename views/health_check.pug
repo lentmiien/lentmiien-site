@@ -1,0 +1,54 @@
+extends layout
+
+block styles
+  link(rel='stylesheet' href='/css/health-check.css')
+
+block content
+  main.hc#health-check
+    header.hc-hero
+      div
+        p.hc-eyebrow PERSONAL HEALTH RECORD
+        h1 Health check history
+        p Measurements, trends and clinic notes across the years.
+      a.hc-button(href='/health-check/upload') Import a report
+    p#hc-message(role='status' aria-live='polite') Loading your history…
+    section#hc-dashboard(hidden)
+      .hc-toolbar
+        label(for='hc-year') Year
+        select#hc-year
+        label(for='hc-exam') Exam
+        select#hc-exam
+        label(for='hc-search') Find a measurement
+        input#hc-search(type='search' placeholder='Name, category or original label')
+      #hc-overview.hc-stats
+      section.hc-panel
+        h2 Results needing attention
+        p.hc-muted Flags reflect the report’s own reference ranges and ratings. Missing or unrecognized ranges are left unclassified.
+        #hc-flags
+      section.hc-panel
+        .hc-section-head
+          div
+            h2 Trends across all years
+            p.hc-muted Every numeric observation is included. Different units are shown separately; gaps do not imply a measured value.
+          label
+            input#hc-trend-flags(type='checkbox')
+            |  Flagged in selected exam only
+        #hc-trends.hc-grid
+      section.hc-panel
+        h2 All measurements
+        #hc-measurements
+      section.hc-panel
+        h2 Clinic notes
+        #hc-notes
+      section.hc-panel
+        .hc-section-head
+          h2 Copyable summary
+          button#hc-copy.hc-button(type='button') Copy summary
+        p.hc-muted Outside-range values, other reported flags and notes for the selected exam.
+        label.hc-sr-only(for='hc-summary') Health-check summary
+        textarea#hc-summary(readonly rows='14')
+        p#hc-copy-status(role='status')
+
+block script
+  script(src='/js/health-check-analytics.js' defer)
+  script(src='/js/health-check.js' defer)

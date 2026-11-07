@@ -17,6 +17,7 @@ const { ROLE_BUNDLES: PACKING_ROLE_BUNDLES } = require('../utils/smallestBoxPoli
 const { ROLE_BUNDLES: USER_SETTINGS_ROLE_BUNDLES } = require('../utils/userSettingsPolicy');
 
 const { ROLE_BUNDLES: DISASTER_BUNDLES, READ: DISASTER_READ } = require('../utils/disasterPolicy');
+const { ROLE_BUNDLES: HEALTH_CHECK_BUNDLES } = require('../utils/healthCheckPolicy');
 const BASE = ['dashboard.account.read', 'dashboard.preferences.write'];
 const ADMIN = ['dashboard.operations.read', 'dashboard.personal.read', 'dashboard.personal.write', 'dashboard.embedding.search', 'finance.account.close'];
 const ROLE_BUNDLES = { admin: [...BASE, ...ADMIN], family: BASE, user: BASE };
@@ -24,7 +25,7 @@ const PERSONAL_PATH = /^\/(?:accounting|budget|receipt|payroll|health)(?:\/|$)|^
 const GROUPS = ['Chat & knowledge', 'Create & generate', 'Documents & utilities', 'Plan & household', 'Personal account', 'Content & learning', 'Operations', 'Administration'];
 function groupFor(item) {
   const p = item.href;
-  if (p === '/settings' || PERSONAL_PATH.test(p)) return GROUPS[4];
+  if (p === '/settings' || p.startsWith('/health-check') || PERSONAL_PATH.test(p)) return GROUPS[4];
   if (/^\/admin\/(runpod|ai-gateway|tapo|disasters|ask-lennart)/.test(p) || p === '/codex') return GROUPS[6];
   if (p.startsWith('/admin') || p === '/tmp-files' || p === '/codex-log-review') return GROUPS[7];
   if (/^\/chat/.test(p)) return GROUPS[0];
@@ -47,6 +48,8 @@ for (const item of extras) {
   if (existing) continue;
   NAVIGATION.push({ ...item, id: `nav_${item.href.replace(/[^a-z0-9]/gi, '_')}`, src: '/i/product.svg' });
 }
+NAVIGATION.push({ id: 'health_check', href: '/health-check', label: 'Health check history', src: '/i/health.svg', capability: 'health.check.read', ownerOnly: true });
+NAVIGATION.push({ id: 'health_check_upload', href: '/health-check/upload', label: 'Import health checks', src: '/i/health.svg', capability: 'health.check.import', ownerOnly: true });
 NAVIGATION.push({ id: 'personal_health', href: '/health', label: 'Health records', permissions: ['health'], src: '/i/health.svg' });
 for (const item of NAVIGATION) {
   item.group = groupFor(item);
@@ -98,13 +101,14 @@ async function resolvePolicy(user, roleModel, ownerId) {
   const assigned = await loadAssignedCapabilities(user, roleModel);
   return {
     user, isAdmin: user.type_user === 'admin', isOwner: ownerMatches(user, ownerId),
-    capabilities: [...new Set([...assigned, ...roleBundleCapabilities(user, DISASTER_BUNDLES), ...roleBundleCapabilities(user, ROLE_BUNDLES), ...roleBundleCapabilities(user, USER_SETTINGS_ROLE_BUNDLES),
+    capabilities: [...new Set([...assigned, ...roleBundleCapabilities(user, HEALTH_CHECK_BUNDLES), ...roleBundleCapabilities(user, DISASTER_BUNDLES), ...roleBundleCapabilities(user, ROLE_BUNDLES), ...roleBundleCapabilities(user, USER_SETTINGS_ROLE_BUNDLES),
       ...roleBundleCapabilities(user, PACKING_ROLE_BUNDLES), ...roleBundleCapabilities(user, LOCAL_AI_BUNDLES), ...roleBundleCapabilities(user, COMMONS_ROLE_BUNDLES), ...roleBundleCapabilities(user, TARIC_ROLE_BUNDLES), ...roleBundleCapabilities(user, MIIEN_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CHAT_TOOL_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, CODEX_ROLE_CAPABILITY_BUNDLES), ...roleBundleCapabilities(user, RUNPOD_ROLE_CAPABILITY_BUNDLES)])],
   };
 }
 function allows(policy, item) {
   if (item.public) return true;
   if (!policy.user || !policy.capabilities.includes('dashboard.account.read')) return false;
+  if (item.ownerOnly && !policy.isOwner) return false;
   if (item.adminOnly && !policy.isAdmin) return false;
   if (item.scope === 'Operations' && !policy.capabilities.includes('dashboard.operations.read')) return false;
   if (item.personal && (!policy.isOwner || !policy.capabilities.includes('dashboard.personal.read'))) return false;
@@ -120,6 +124,7 @@ function bookmarkAllowed(policy, url) {
   try {
     const rawPath = decodeURIComponent(new URL(url, 'https://local.invalid').pathname);
     const path = rawPath.toLowerCase().replace(/^\/mypage\/life_log(?=\/|$)/, '/admin/life_log');
+    if (/^\/health-check(?:\/|$)/.test(path)) return policy.isOwner && policy.capabilities.includes('health.check.read');
     if (!PERSONAL_PATH.test(path)) return true;
     const candidates = NAVIGATION.filter(n => n.personal && (path === n.href || path.startsWith(n.href + '/')));
     return candidates.some(n => allows(policy, n));

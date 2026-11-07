@@ -1,0 +1,507 @@
+[
+  {
+    "category": "Body measurements",
+    "name": "Height",
+    "original": "身長"
+  },
+  {
+    "category": "Body measurements",
+    "name": "Weight",
+    "original": "体重"
+  },
+  {
+    "category": "Body measurements",
+    "name": "Standard weight",
+    "original": "標準体重"
+  },
+  {
+    "category": "Body measurements",
+    "name": "Obesity index",
+    "original": "肥満度"
+  },
+  {
+    "category": "Body measurements",
+    "name": "Body mass index (BMI)",
+    "original": "BMI"
+  },
+  {
+    "category": "Body measurements",
+    "name": "Body fat percentage",
+    "original": "体脂肪率"
+  },
+  {
+    "category": "Body measurements",
+    "name": "Waist circumference",
+    "original": "腹囲"
+  },
+  {
+    "category": "Blood pressure",
+    "name": "Systolic blood pressure",
+    "original": "収縮期血圧"
+  },
+  {
+    "category": "Blood pressure",
+    "name": "Diastolic blood pressure",
+    "original": "拡張期血圧"
+  },
+  {
+    "category": "Blood pressure",
+    "name": "Pulse (heart rate)",
+    "original": "脈拍"
+  },
+  {
+    "category": "Eye",
+    "name": "Naked-eye visual acuity",
+    "original": "裸眼視力"
+  },
+  {
+    "category": "Hearing",
+    "name": "Hearing",
+    "original": "聴力 1000 Hz right"
+  },
+  {
+    "category": "Hearing",
+    "name": "Hearing",
+    "original": "聴力 1000 Hz left"
+  },
+  {
+    "category": "Hearing",
+    "name": "Hearing",
+    "original": "聴力 4000 Hz right"
+  },
+  {
+    "category": "Hearing",
+    "name": "Hearing",
+    "original": "聴力 4000 Hz left"
+  },
+  {
+    "category": "Hearing",
+    "name": "Hearing",
+    "original": "聴力 Conversational"
+  },
+  {
+    "category": "Urine",
+    "name": "Urine protein",
+    "original": "蛋白"
+  },
+  {
+    "category": "Urine",
+    "name": "Urine occult blood",
+    "original": "潜血"
+  },
+  {
+    "category": "Urine",
+    "name": "Urobilinogen",
+    "original": "ウロビリノーゲン"
+  },
+  {
+    "category": "Urine",
+    "name": "Urine specific gravity",
+    "original": "比重"
+  },
+  {
+    "category": "Urine",
+    "name": "Urine glucose",
+    "original": "血糖"
+  },
+  {
+    "category": "Urine sediment",
+    "name": "Red blood cells (RBC)",
+    "original": "赤血球"
+  },
+  {
+    "category": "Urine sediment",
+    "name": "White blood cells (WBC)",
+    "original": "白血球"
+  },
+  {
+    "category": "Urine sediment",
+    "name": "Flat (squamous) epithelial cells",
+    "original": "上皮"
+  },
+  {
+    "category": "Urine sediment",
+    "name": "Hyaline casts",
+    "original": "円柱"
+  },
+  {
+    "category": "Urine sediment",
+    "name": "Epithelial cells",
+    "original": "上皮"
+  },
+  {
+    "category": "Stool",
+    "name": "Stool occult blood (day 1)",
+    "original": "便潜血 1日目"
+  },
+  {
+    "category": "Stool",
+    "name": "Stool occult blood (day 2)",
+    "original": "便潜血 2日目"
+  },
+  {
+    "category": "Blood (hematology)",
+    "name": "White blood cells (WBC)",
+    "original": "白血球数"
+  },
+  {
+    "category": "Blood (hematology)",
+    "name": "Red blood cells (RBC)",
+    "original": "赤血球数"
+  },
+  {
+    "category": "Blood (hematology)",
+    "name": "Haemoglobin (Hb)",
+    "original": "血色素量"
+  },
+  {
+    "category": "Blood (hematology)",
+    "name": "Haematocrit (Hct)",
+    "original": "ヘマトクリット"
+  },
+  {
+    "category": "Blood (hematology)",
+    "name": "Platelets",
+    "original": "血小板数"
+  },
+  {
+    "category": "Blood (hematology)",
+    "name": "MCV",
+    "original": "MCV"
+  },
+  {
+    "category": "Blood (hematology)",
+    "name": "MCH",
+    "original": "MCH"
+  },
+  {
+    "category": "Blood (hematology)",
+    "name": "MCHC",
+    "original": "MCHC"
+  },
+  {
+    "category": "Liver function",
+    "name": "AST (GOT)",
+    "original": "AST (GOT)"
+  },
+  {
+    "category": "Liver function",
+    "name": "ALT (GPT)",
+    "original": "ALT (GPT)"
+  },
+  {
+    "category": "Liver function",
+    "name": "Gamma-GT (gamma-GTP)",
+    "original": "γ-GT (γ-GTP)"
+  },
+  {
+    "category": "Liver function",
+    "name": "ALP",
+    "original": "ALP"
+  },
+  {
+    "category": "Liver function",
+    "name": "LDH",
+    "original": "LDH"
+  },
+  {
+    "category": "Liver function",
+    "name": "LAP",
+    "original": "LAP"
+  },
+  {
+    "category": "Liver function",
+    "name": "CHPE",
+    "original": "CHPE"
+  },
+  {
+    "category": "Liver function",
+    "name": "CPK",
+    "original": "CPK"
+  },
+  {
+    "category": "Liver function",
+    "name": "Total bilirubin",
+    "original": "総ビリルビン"
+  },
+  {
+    "category": "Liver function",
+    "name": "Total protein",
+    "original": "総蛋白"
+  },
+  {
+    "category": "Liver function",
+    "name": "Albumin",
+    "original": "アルブミン"
+  },
+  {
+    "category": "Liver function",
+    "name": "A/G ratio",
+    "original": "A/G"
+  },
+  {
+    "category": "Lipids",
+    "name": "HDL cholesterol",
+    "original": "HDL-コレステロール"
+  },
+  {
+    "category": "Lipids",
+    "name": "LDL cholesterol",
+    "original": "LDL-コレステロール"
+  },
+  {
+    "category": "Lipids",
+    "name": "Triglycerides (fasting)",
+    "original": "中性脂肪(空腹時)"
+  },
+  {
+    "category": "Lipids",
+    "name": "Total cholesterol",
+    "original": "総コレステロール"
+  },
+  {
+    "category": "Lipids",
+    "name": "Non-HDL cholesterol",
+    "original": "ノンHDL-コレステロール"
+  },
+  {
+    "category": "Glucose",
+    "name": "Fasting blood glucose",
+    "original": "血糖値(空腹時)"
+  },
+  {
+    "category": "Pancreas / kidney / gout",
+    "name": "Serum amylase",
+    "original": "血清アミラーゼ"
+  },
+  {
+    "category": "Pancreas / kidney / gout",
+    "name": "Lipase",
+    "original": "リパーゼ"
+  },
+  {
+    "category": "Pancreas / kidney / gout",
+    "name": "Uric acid",
+    "original": "尿酸"
+  },
+  {
+    "category": "Pancreas / kidney / gout",
+    "name": "Creatinine",
+    "original": "クレアチニン"
+  },
+  {
+    "category": "Pancreas / kidney / gout",
+    "name": "BUN",
+    "original": "BUN"
+  },
+  {
+    "category": "Pancreas / kidney / gout",
+    "name": "eGFR",
+    "original": "eGFR"
+  },
+  {
+    "category": "Serology",
+    "name": "ASO titre",
+    "original": "ASO"
+  },
+  {
+    "category": "Serology",
+    "name": "CRP",
+    "original": "CRP"
+  },
+  {
+    "category": "Serology",
+    "name": "Rheumatoid factor (RF)",
+    "original": "RF"
+  },
+  {
+    "category": "Serology",
+    "name": "TPHA",
+    "original": "TPHA"
+  },
+  {
+    "category": "Serology",
+    "name": "Treponemal test (glass slide)",
+    "original": "ガラススライド法"
+  },
+  {
+    "category": "Serology",
+    "name": "HBs antigen",
+    "original": "HBs抗原"
+  },
+  {
+    "category": "Serology",
+    "name": "HBs antibody",
+    "original": "HBs抗体"
+  },
+  {
+    "category": "Serology",
+    "name": "HCV antibody",
+    "original": "HCV抗体"
+  },
+  {
+    "category": "Tumour markers",
+    "name": "CEA",
+    "original": "CEA"
+  },
+  {
+    "category": "Tumour markers",
+    "name": "AFP",
+    "original": "AFP"
+  },
+  {
+    "category": "Tumour markers",
+    "name": "CA 19-9",
+    "original": "CA-19-9"
+  },
+  {
+    "category": "Tumour markers",
+    "name": "CA 125",
+    "original": "CA-125"
+  },
+  {
+    "category": "Tumour markers",
+    "name": "PSA",
+    "original": "PSA"
+  },
+  {
+    "category": "Chest X-ray",
+    "name": "Chest X-ray",
+    "original": "胸部X線"
+  },
+  {
+    "category": "Chest X-ray",
+    "name": "Cardiothoracic ratio",
+    "original": "心肺比"
+  },
+  {
+    "category": "ECG",
+    "name": "ECG (electrocardiogram)",
+    "original": "心電図"
+  },
+  {
+    "category": "ECG",
+    "name": "Heart rate (ECG)",
+    "original": "心拍数"
+  },
+  {
+    "category": "Upper GI",
+    "name": "Upper-GI X-ray (barium study)",
+    "original": "上消化管X線"
+  },
+  {
+    "category": "Upper GI",
+    "name": "Gastroscopy (upper-GI endoscopy)",
+    "original": "胃内視鏡"
+  },
+  {
+    "category": "Abdominal ultrasound",
+    "name": "Abdominal ultrasound",
+    "original": "腹部エコー"
+  },
+  {
+    "category": "Other (not performed)",
+    "name": "Carotid ultrasound",
+    "original": "頸動脈エコー"
+  },
+  {
+    "category": "Other (not performed)",
+    "name": "Chest CT",
+    "original": "胸部CT"
+  },
+  {
+    "category": "Other (not performed)",
+    "name": "Bone density",
+    "original": "骨密度"
+  },
+  {
+    "category": "Other (not performed)",
+    "name": "Pepsinogen I",
+    "original": "ペプシノーゲンI"
+  },
+  {
+    "category": "Other (not performed)",
+    "name": "Pepsinogen II",
+    "original": "ペプシノーゲンII"
+  },
+  {
+    "category": "Other (not performed)",
+    "name": "Pepsinogen I/II ratio",
+    "original": "PGI/PGII比"
+  },
+  {
+    "category": "Other (not performed)",
+    "name": "Helicobacter pylori",
+    "original": "ヘリコバクター"
+  },
+  {
+    "category": "Other (not performed)",
+    "name": "Sputum cytology",
+    "original": "喀痰検査"
+  },
+  {
+    "category": "Eye",
+    "name": "Fundoscopy",
+    "original": "眼底"
+  },
+  {
+    "category": "Lung function",
+    "name": "Vital capacity (VC)",
+    "original": "生体力"
+  },
+  {
+    "category": "Lung function",
+    "name": "Vital capacity (%VC)",
+    "original": "%VC"
+  },
+  {
+    "category": "Lung function",
+    "name": "Forced vital capacity (FVC)",
+    "original": "用力生体力"
+  },
+  {
+    "category": "Lung function",
+    "name": "Forced expiratory volume in 1 second (FEV1)",
+    "original": "1秒用力呼气量"
+  },
+  {
+    "category": "Lung function",
+    "name": "1-second rate (FEV1/FVC)",
+    "original": "1秒率"
+  },
+  {
+    "category": "Lung function",
+    "name": "Lung age",
+    "original": "肺年齢"
+  },
+  {
+    "category": "Urine sediment",
+    "name": "Other sediment element",
+    "original": "その他 1"
+  },
+  {
+    "category": "Urine sediment",
+    "name": "Other sediment element",
+    "original": "その他 2"
+  },
+  {
+    "category": "Urine sediment",
+    "name": "Other sediment element",
+    "original": "その他 3"
+  },
+  {
+    "category": "Lipids",
+    "name": "Triglycerides (random)",
+    "original": "中性脂肪(随時)"
+  },
+  {
+    "category": "Glucose",
+    "name": "Random blood glucose",
+    "original": "血糖値(随時)"
+  },
+  {
+    "category": "Glucose",
+    "name": "HbA1c",
+    "original": "HbA1c"
+  }
+]

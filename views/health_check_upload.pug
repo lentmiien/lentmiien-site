@@ -1,0 +1,37 @@
+extends layout
+
+block styles
+  link(rel='stylesheet' href='/css/health-check.css')
+
+block content
+  main.hc#health-check-upload(data-csrf=csrfToken)
+    header.hc-hero
+      div
+        p.hc-eyebrow PERSONAL HEALTH RECORD
+        h1 Import health checks
+        p Upload → review mappings → choose changes → save.
+      a(href='/health-check') Back to history
+    p#hc-upload-message(role='status' aria-live='polite') No data is saved until you confirm the final review.
+    section.hc-panel
+      h2 1. Select a report
+      label(for='hc-file') Health-check JSON file (up to 2 MB)
+      input#hc-file(type='file' accept='.json,application/json')
+      label(for='hc-notes-year') Report year — notes belong to this year only
+      select#hc-notes-year(disabled)
+      p.hc-muted For the current report, choose 2026. Historical measurements are imported, but older notes remain empty until you upload those years’ reports. Missing measurements never remove existing results.
+      button#hc-map.hc-button(type='button' disabled) Review measurement mappings
+    section#hc-mapping-panel.hc-panel(hidden)
+      h2 2. Review measurement mappings
+      p.hc-muted Exact known names and source labels are mapped automatically. Review suggested matches carefully, including specimen, left/right side, frequency and units. Uncertain entries require an explicit selection. All uploaded values are shown for review.
+      #hc-mappings
+      button#hc-preview.hc-button(type='button') Compare with saved history
+    section#hc-conflict-panel.hc-panel(hidden)
+      h2 3. Choose changes
+      p#hc-import-counts
+      p.hc-muted New exams and measurements will be added. Identical fields are ignored. Select which value to save for every changed field, including notes that are currently empty.
+      #hc-conflicts
+      button#hc-save.hc-button(type='button') Save reviewed import
+      button#hc-cancel.hc-secondary(type='button') Cancel review
+
+block script
+  script(src='/js/health-check-upload.js' defer)

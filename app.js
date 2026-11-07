@@ -196,6 +196,7 @@ const isAmiAmiUploadPath = req => /^\/admin\/amiami-items\/upload(?:\/|$)/i.test
 const isTaricAdminPath = req => /^\/admin\/taric(?:\/|$)/i.test(req.path);
 const legacyFormParser = bodyParser.urlencoded({ extended: false, limit: DEFAULT_BODY_LIMIT });
 const legacyJsonParser = express.json({ limit: DEFAULT_BODY_LIMIT });
+const isHealthCheckPath = req => /^\/health-check(?:\/|$)/i.test(req.path);
 const isMusicPath = req => /^\/(?:music|admin\/music-test)(?:\/|$)/i.test(req.path);
 const isCommonsPrivatePath = req => /^\/commons\/api(?:\/|$)/i.test(req.path);
 const isExperimentalModelsPath = req => /^\/admin\/experimental-models(?:\/|$)/i.test(req.path);
@@ -204,8 +205,8 @@ const isLocalAiPath = req => /^\/local-ai(?:\/|$)/i.test(req.path);
 const isPackingToolPath = req => /^\/binpacking-(?:smallest|multi)(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
 const isUserSettingsPath = req => /^\/(?:settings|admin\/password-reminders|two-factor|login)(?:\/|$)/i.test(req.path);
-app.use((req, res, next) => (isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
-app.use((req, res, next) => (isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
+app.use((req, res, next) => (isHealthCheckPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
+app.use((req, res, next) => (isHealthCheckPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -541,6 +542,7 @@ app.use('/accounting', isAuthenticated, authorize("accounting"), accountingRoute
 app.use('/budget', isAuthenticated, authorize("budget"), accountingRouter);
 app.use('/accounting/legacy', isAuthenticated, authorize("accounting"), legacyBudgetRouter);
 app.use('/cooking', isAuthenticated, authorize("cooking"), cookingRouter);
+app.use('/health-check', require('./routes/healthCheck').createHealthCheckRouter({ roleModel: RoleModel }));
 app.use('/health', isAuthenticated, authorize("health"), healthRouter);
 app.use('/box', isAuthenticated, authorize("box"), boxRouter);
 app.use('/binpacking-smallest', require('./routes/binpackingSmallest').createSmallestBoxRouter());
