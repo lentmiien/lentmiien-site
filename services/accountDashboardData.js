@@ -88,7 +88,7 @@ function createDashboardData({ model = name => require(`../models/${name}`), now
         }
       }
       return { state: automaticUnavailable ? 'stale' : undefined, rows: [...tasks.map(t => ({ ...row(t.title, `${t.type === 'tobuy' ? 'Buy' : 'To do'} · ${t.dates.status}`, '/scheduleTask/upcoming', t.end),
-        group: t.dates.status, start: iso(t.start), end: iso(t.end),
+        type: t.type, group: t.dates.status, start: iso(t.start), end: iso(t.end),
         taskId: String(t._id), canComplete: policy.capabilities.includes('schedule.task.complete') || ['admin', 'family', 'user'].includes(policy.user.type_user) })), ...automatic],
       note: `${automaticUnavailable ? 'Accounting reminders unavailable. ' : ''}Up to 40 incomplete tasks available now or starting within 14 days. Dates: Asia/Tokyo. Automatic accounting reminders require review and confirmation; they cannot be completed by holding a task.` };
     },

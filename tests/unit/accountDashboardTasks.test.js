@@ -32,7 +32,7 @@ test('all bounded owner queries apply the inclusive start horizon before limits 
   expect(result.rows.map(r => r.taskId).sort()).toEqual(cases.filter(c => c[3] !== false).map(c => c[0]).sort());
   for (const row of result.rows) {
     const [id, dates, status] = cases.find(c => c[0] === row.taskId);
-    expect(row).toMatchObject({ taskId: id, group: status, start: dates.start?.toISOString() || null,
+    expect(row).toMatchObject({ taskId: id, type: tasks.find(t => t._id === id).type, group: status, start: dates.start?.toISOString() || null,
       end: dates.end?.toISOString() || null, canComplete: true, href: '/scheduleTask/upcoming' });
     expect(row.detail).toContain(status);
   }

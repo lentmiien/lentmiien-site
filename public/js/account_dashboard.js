@@ -110,6 +110,7 @@
     if (card.dataset.section === 'tasks') {
       const list = card.querySelector('.account-task-list'); list.replaceChildren();
       const groups = new Map();
+      const now = Date.now();
       const dateFormat = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Tokyo', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       data.rows.forEach(row => {
         if (!groups.has(row.group)) {
@@ -118,16 +119,36 @@
           groups.set(row.group, group); list.append(group);
         }
         const wrapper = element('div', undefined, 'account-task-row');
-        const link = localLink(row.title, row.href); link.className = 'schedule-task-pill'; link.draggable = false;
-        link.append(element('small', row.detail));
-        for (const [field, label, fallback] of [['start', 'Start', 'Available anytime'], ['end', 'Deadline', 'No deadline']]) {
-          const line = element('small', row[field] ? `${label}: ` : fallback);
-          if (row[field]) {
-            const time = element('time', dateFormat.format(new Date(row[field])));
-            time.dateTime = row[field]; line.append(time);
-          }
-          link.append(line);
+        const link = localLink(undefined, row.href); link.className = 'schedule-task-pill'; link.draggable = false;
+        link.append(element('span', row.title, 'account-task-title'));
+        const isTask = row.type === 'todo' || row.type === 'tobuy';
+        const start = row.start ? new Date(row.start).getTime() : NaN;
+        const end = row.end ? new Date(row.end).getTime() : NaN;
+        const upcoming = start > now;
+        const urgency = end <= now ? 'overdue' : end <= now + 86400000 ? 'soon' : '';
+        if (isTask) {
+          link.dataset.taskType = row.type;
+          link.dataset.taskState = upcoming ? 'upcoming' : 'ongoing';
+          link.dataset.deadline = urgency;
+          const description = `${row.type === 'tobuy' ? 'Buy' : 'To do'} · ${upcoming ? 'Upcoming' : 'Ongoing'}`;
+          link.title = description;
+          link.append(element('span', ` · ${description}`, 'visually-hidden'));
+        } else if (row.detail) {
+          // Automatic accounting reminders still need their review instructions.
+          link.append(element('small', row.detail, 'account-task-detail'));
         }
+        const dates = element('span', undefined, 'account-task-dates');
+        for (const [field, label, value] of [['start', 'Start', start], ['end', 'Deadline', end]]) {
+          if (!Number.isFinite(value) || (field === 'start' && !upcoming)) continue;
+          const line = element('span', `${label}: `, `account-task-${field}`);
+          const time = element('time', dateFormat.format(new Date(value)));
+          time.dateTime = row[field]; line.append(time);
+          if (field === 'end' && urgency) {
+            line.append(document.createTextNode(urgency === 'overdue' ? ' · Overdue' : ' · Due soon'));
+          }
+          dates.append(line);
+        }
+        if (dates.childElementCount) link.append(dates);
         if (row.canComplete) {
           link.dataset.taskId = row.taskId; link.setAttribute('aria-describedby', 'mypage-task-hint');
           link.setAttribute('aria-keyshortcuts', 'Space');

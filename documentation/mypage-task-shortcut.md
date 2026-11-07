@@ -2,6 +2,16 @@
 
 ## Behavior and release notes
 
+The dashboard uses compact task cards: Ember left borders identify to-do items
+and Aqua borders identify purchases. Future starts have a dashed stripe and
+show their start date; started or undated tasks omit that line. Only actual
+deadlines are shown. At render/refresh time, deadlines within the next 24 hours
+are highlighted in warning colors with “Due soon”; deadlines at or before the
+current instant use danger colors with “Overdue”, including earlier today.
+Dates remain in Asia/Tokyo. Type/status descriptions remain available to screen
+readers and on hover, with no repeated visible detail line. Automatic accounting
+reminders retain their review instructions. Cards keep a 44px minimum touch target.
+
 Hold one todo/tobuy for 900 ms to complete it. A progress track fills throughout
 the hold. Clicking an item opens `/scheduleTask/upcoming`. Keyboard users can
 focus the same link and press Space to complete on key release, or Enter to open

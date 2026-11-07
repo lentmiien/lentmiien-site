@@ -36,7 +36,7 @@ function cardData(id, count = 12) {
     rows: Array.from({ length: count }, (_, i) => ({
       title: `${id} ${i + 1}: ${longText}`, detail: longText, href: '/mypage',
       at: '2026-09-19T00:00:00Z', taskId: `synthetic-${i}`, canComplete: true,
-      group: i % 2 ? 'Upcoming' : 'Ongoing', start: null, end: null,
+      type: i % 2 ? 'tobuy' : 'todo', group: i % 2 ? 'Upcoming' : 'Ongoing', start: null, end: null,
     })),
   };
 }
