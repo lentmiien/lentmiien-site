@@ -208,7 +208,7 @@ describe('amiamiItemFallbackService', () => {
       detailStatus: 'error',
       detailFetchedAt: null,
       detailError: {
-        message: 'item not found',
+        message: 'Scraper operation failed. Check the run phase and application configuration.',
         at: new Date(1000),
       },
       details: null,
@@ -227,10 +227,27 @@ describe('amiamiItemFallbackService', () => {
         category: 'amiami-items-api',
         metadata: {
           gcode: 'FIGURE-404',
-          error: scrapeError,
+          diagnostic: expect.objectContaining({ code: 'AMIAMI_RUN_FAILURE', phase: 'detail', itemCode: 'FIGURE-404' }),
         },
       },
     );
+  });
+
+  test('fallback retains safe HTTP rejection diagnostics without bodies, causes or automatic retries', async () => {
+    const { AmiAmiRequestError } = require('../../utils/amiamiDiagnostics');
+    const error = new AmiAmiRequestError('http', { phase: 'detail', itemCode: 'FIGURE-400',
+      target: 'https://api.amiami.com/api/v1.0/item', attempts: 1, startedAt: Date.now() },
+    { status: 400, headers: { 'content-type': 'application/json', 'set-cookie': 'PRIVATE' }, cause: new Error('PRIVATE upstream payload') });
+    const fetchDetail = jest.fn().mockRejectedValue(error);
+    const serviceLogger = { warning: jest.fn() };
+    const f = createService({ fetchDetail, serviceLogger });
+    const result = await f.service.attemptMissingItemScrape('FIGURE-400');
+    expect(result.status).toBe('failed');
+    expect(serviceLogger.warning.mock.calls[0][1].metadata.diagnostic).toMatchObject({
+      code: 'AMIAMI_HTTP', status: 400, attempts: 1, retryable: false, headers: { 'content-type': 'application/json' },
+    });
+    expect(JSON.stringify([result, serviceLogger.warning.mock.calls])).not.toContain('PRIVATE');
+    expect(fetchDetail).toHaveBeenCalledTimes(1);
   });
 
   test('allows at most 20 scrape attempts in a rolling minute', async () => {

@@ -99,6 +99,47 @@ test('alternating degraded probes never combine into sustained degradation', asy
   expect(h.send).not.toHaveBeenCalled();
 });
 
+test('sustained incidents log thresholds, start and one observed recovery with duration', async () => {
+  const h = harness();
+  for (let minute = 0; minute <= 10; minute += 2) await h.tickAt(minute * 60000);
+  expect(h.log.warning).toHaveBeenCalledWith(expect.stringContaining('sustained degradation'), expect.objectContaining({
+    metadata: expect.objectContaining({ thresholds: { slowMs: 1500, timeoutMs: 5000, sustainedMs: 600000 },
+      probes: expect.arrayContaining([expect.objectContaining({ degradedSince: start.toISOString() })]) }),
+  }));
+  h.runProbe.mockImplementation(async target => result(false, target.name));
+  await h.tickAt(12 * 60000); await h.tickAt(14 * 60000);
+  expect(h.log.notice).toHaveBeenCalledTimes(1);
+  expect(h.log.notice.mock.calls[0][1].metadata.recovered).toEqual([
+    { name: 'internet', degradedSince: start.toISOString(), durationMs: 720000 },
+    { name: 'cloudflare', degradedSince: start.toISOString(), durationMs: 720000 },
+  ]);
+  expect(h.saved.at(-1).lastAttemptAt).toEqual(new Date(+start + 600000));
+});
+
+test.each(['gap', 'restart', 'changed-config'])('does not claim recovery across %s without continuous evidence', async kind => {
+  const h = harness();
+  for (let minute = 0; minute <= 10; minute += 2) await h.tickAt(minute * 60000);
+  h.runProbe.mockImplementation(async target => result(false, target.name));
+  if (kind === 'restart') {
+    h.setTime(30 * 60000);
+    await createConnectivityMonitor(h.options).tick();
+  } else if (kind === 'changed-config') {
+    h.setTime(12 * 60000);
+    await createConnectivityMonitor({ ...h.options, config: { ...config, signature: 'changed' } }).tick();
+  } else await h.tickAt(30 * 60000);
+  expect(h.log.notice).not.toHaveBeenCalled();
+});
+
+test('failed recovery logging does not discard the healthy sample or change alert cooldown', async () => {
+  const h = harness();
+  for (let minute = 0; minute <= 10; minute += 2) await h.tickAt(minute * 60000);
+  h.runProbe.mockImplementation(async target => result(false, target.name));
+  h.log.notice.mockRejectedValue(new Error('logger unavailable'));
+  const sample = await h.tickAt(12 * 60000);
+  expect(sample.probes.every(probe => probe.degradedSince === null)).toBe(true);
+  expect(h.saved.at(-1).sampledAt).toEqual(new Date(+start + 720000));
+});
+
 test('DB unavailability continues bounded observations but defers alerts and throttles warnings', async () => {
   const h = harness();
   h.store.ready.mockReturnValue(false);

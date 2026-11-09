@@ -201,9 +201,12 @@ module.exports = async function registerChat5_5Handlers({
     return [...new Set(cleaned)];
   }
 
-  function respondWithError(baseEvent, message, { ack, details, adjustments } = {}) {
+  function respondWithError(baseEvent, message, { ack, details, adjustments, code, promptSaved, conversationId } = {}) {
     const payload = { ok: false, message };
     if (details) payload.details = details;
+    if (code) payload.code = code;
+    if (promptSaved !== undefined) payload.promptSaved = promptSaved;
+    if (conversationId) payload.conversationId = conversationId;
     if (adjustments && adjustments.length > 0) payload.adjustments = adjustments;
     if (typeof ack === 'function') {
       ack(payload);
@@ -721,12 +724,13 @@ module.exports = async function registerChat5_5Handlers({
     }
   });
 
-  socket.on('chat5-append', async (raw) => {
+  socket.on('chat5-append', async (raw, ack) => {
     const eventName = 'chat5-append';
     const adjustments = [];
+    let acknowledged = false;
     try {
       if (!isPlainObject(raw)) {
-        respondWithError(eventName, 'Invalid payload for append.');
+        respondWithError(eventName, 'Invalid payload for append.', { ack });
         return;
       }
 
@@ -806,15 +810,36 @@ module.exports = async function registerChat5_5Handlers({
 
       notifyMembers(userName, conversationParams.members, 'chat5-notice', { id: conversationId, title: conversationParams.title }, { excludeCurrentSocket: true });
 
+      emitAdjustments(eventName, adjustments, { conversationId, createdNewConversation });
+      if (typeof ack === 'function') {
+        acknowledged = true;
+        ack({ ok: true, conversationId, promptSaved: Boolean(userMessage) });
+      }
       if (conversationParams.title === 'NEW') {
-        const title = await conversationService.generateTitle(conversationId);
-        io.to(convRoom).emit('chat5-generatetitle-done', { title });
+        try {
+          const title = await conversationService.generateTitle(conversationId);
+          io.to(convRoom).emit('chat5-generatetitle-done', { title });
+        } catch (error) {
+          logger.warning('Chat5 message saved but automatic title generation failed', {
+            category: 'chat5', metadata: require('../../utils/upstreamErrorMetadata').upstreamErrorMetadata(error),
+          });
+        }
       }
 
-      emitAdjustments(eventName, adjustments, { conversationId, createdNewConversation });
     } catch (error) {
-      logger.error('Failed to append chat5 message', error);
-      respondWithError(eventName, 'Failed to append message to conversation.', { details: error.message, adjustments });
+      const validation = error instanceof require('../../utils/chatInputError').ChatInputError;
+      const saved = Array.isArray(error.savedUserMessages) ? error.savedUserMessages : [];
+      if (saved.length && error.conversationId) {
+        socket.emit('chat5-messages', { id: error.conversationId, messages: saved.map(serializeChat5Message).filter(Boolean) });
+      }
+      if (!validation) logger.error('Failed to append chat5 message', {
+        category: 'chat5', metadata: { ...require('../../utils/upstreamErrorMetadata').upstreamErrorMetadata(error), promptSaved: saved.length > 0 },
+      });
+      const message = validation ? error.message : saved.length
+        ? 'Your message was saved, but the response failed. Retry the response without sending the prompt again.'
+        : 'Failed to append message to conversation.';
+      if (!acknowledged) respondWithError(eventName, message, { ack, adjustments, code: validation ? error.code : 'chat_append_failed',
+        promptSaved: saved.length > 0, conversationId: error.conversationId });
     }
   });
 

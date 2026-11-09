@@ -25,7 +25,7 @@ block content
                 a.btn.btn-outline-primary(href=`/chat5/chat/${d.conversation_id}`) View chat
                 a.btn.btn-outline-danger(href=`/chat4/batch_prompt_delete/${d.custom_id}`) Delete
     .col
-      h4 Requests (1 week)
+      h4 Requests (past week and unresolved completions)
       button.btn.btn-primary(onclick="ProcessCompleted()") Process completed
       #request_container.prompt-container
         - const end_statuses = ['failed', 'completed', 'expired', 'cancelled', 'DONE']
@@ -41,6 +41,13 @@ block content
               div= `${d.request_counts_total}/${d.request_counts_completed}/${d.request_counts_failed}`
               if canRetryBatch && d.result_counts && d.result_counts.succeeded != null
                 div= `Imported: ${d.result_counts.succeeded}; failed: ${d.result_counts.failed}`
+              if canRetryBatch && d.finalization_state === 'needs_review'
+                p.batch-failure-message Results could not be imported. Check provider file availability and project access before retrying. Prompts and files are retained.
+                form(method='post', action=`/chat4/batch_prompt_retry/requests/${encodeURIComponent(d.id)}`)
+                  input(type='hidden', name='_csrf', value=csrfToken)
+                  button.btn.btn-primary(type='submit') Retry import after review
+              else if canRetryBatch && d.finalization_state === 'retry_wait'
+                p.batch-failure-message= `Import deferred after ${d.finalization_attempts} attempts. Next attempt: ${d.finalization_next_attempt_at ? d.finalization_next_attempt_at.toLocaleString() : 'pending'}.`
               if end_statuses.indexOf(d.status) === -1
                 button.btn.btn-primary(onclick=`BatchRefresh('${d.id}')`) Refresh  
   #loadingPopup.loading-popup

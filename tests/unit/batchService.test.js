@@ -122,6 +122,7 @@ const createBatchRequestModel = () => {
     const doc = await lookup(filter);
     if (!doc || (filter.status === 'completed' && (doc.status !== 'completed' || doc.processing_token))) return null;
     Object.assign(doc, update.$set);
+    for (const [key, increment] of Object.entries(update.$inc || {})) doc[key] = (doc[key] || 0) + increment;
     return doc;
   });
   model.updateOne = jest.fn(async (filter, update) => {

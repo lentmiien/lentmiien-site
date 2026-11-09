@@ -42,6 +42,17 @@ describe('Ollama selected-history image policy', () => {
     else process.env.OLLAMA_WEBHOOK_SECRET = previousSecret;
   });
 
+  test('preflight shares selected-history image rules without submitting or creating a job', async () => {
+    const nonvision = { ...card, api_model: 'text-only' };
+    await discover({ id: 'text-only', allow_images: false });
+    const history = [userMessage(images, 'Old image', 'old'), userMessage([], 'New prompt', 'new')];
+    await expect(api.validateChatImages({ metadata: {} }, history, nonvision)).rejects.toMatchObject({
+      name: 'ChatInputError', code: 'images_not_allowed',
+    });
+    await expect(api.validateChatImages({ metadata: { startMessageId: 'new' } }, history, nonvision)).resolves.toBeUndefined();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
   describe.each(entries)('%s', (method) => {
     test.each([1, 2, 3])('preserves %i separate image messages, text, and original order', async (count) => {
       const messages = images.slice(0, count).map((image, i) => userMessage([image], `Image ${i}`, String(i)));

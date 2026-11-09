@@ -14,6 +14,10 @@ const BatchRequest = new mongoose.Schema({
   request_counts_failed: { type: Number, required: true },
   processing_token: String,
   processing_expires_at: Date,
+  finalization_state: { type: String, enum: ['retry_wait', 'needs_review', 'done'] },
+  finalization_attempts: { type: Number, default: 0 },
+  finalization_next_attempt_at: Date,
+  finalization_failure: { reason: String, status: Number, at: Date },
   result_counts: { succeeded: Number, failed: Number },
 });
 

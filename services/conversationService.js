@@ -1381,10 +1381,21 @@ class ConversationService {
       ? messageContent.filter(Boolean)
       : (messageContent ? [messageContent] : []);
     const messageTypeArray = Array.isArray(messageType) ? messageType : [messageType];
+    const imageBatch = Array.isArray(messageContent) && messageTypeArray.every(type => type === 'image');
+
+    if (generateAI) {
+      // Validate the same selected history plus the proposed prompt before any
+      // new user message is persisted. Submission still rechecks provider policy.
+      await this.messageService.validateAIMessageInput({ conversation: this.normalizeMembersForAI(conversation),
+        pendingMessages: messageContentArray.map((content, index) => ({
+          _id: `pending-input-${index}`, user_id: userId,
+          content: imageBatch ? { ...content, image: content.fileName } : content,
+          contentType: messageTypeArray[index] || messageTypeArray[0] || 'text',
+        })) });
+    }
 
     if (messageContentArray.length > 0) {
-      const allImages = messageTypeArray.every(type => type === 'image');
-      if (allImages && Array.isArray(messageContent)) {
+      if (imageBatch) {
         const createdImages = await this.messageService.createImageMessagesBatch({
           userId,
           category: conversation.category,
@@ -1414,9 +1425,16 @@ class ConversationService {
       userMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
     }
 
+    // Commit the prompt association before any external generation can fail.
+    if (generateAI) {
+      conversation.updatedAt = new Date();
+      await conversation.save();
+    }
+
     // Generate AI response
     let aiMessages = [];
-      if (generateAI) {
+    if (generateAI) {
+      try {
         const conversationForAI = this.normalizeMembersForAI(conversation);
         const {
           response_id,
@@ -1460,7 +1478,16 @@ class ConversationService {
           const pr = new PendingRequests(pending_req);
           await pr.save();
         }
+      } catch (error) {
+        // The caller can publish saved prompts and offer a generation-only
+        // retry; never invite resubmission of an already-persisted prompt.
+        Object.defineProperties(error, {
+          savedUserMessages: { value: userMessages, configurable: true },
+          conversationId: { value: String(conversation._id), configurable: true },
+        });
+        throw error;
       }
+    }
 
     // Save changes
     conversation.updatedAt = new Date();

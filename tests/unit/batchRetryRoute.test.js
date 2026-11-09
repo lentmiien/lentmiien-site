@@ -6,7 +6,7 @@ jest.mock('../../utils/logger', () => ({ warning: jest.fn(), error: jest.fn() })
 const { createBatchRetryRouter } = require('../../routes/batchRetry');
 const token = 'a'.repeat(43);
 let user, authenticated, server, base;
-const service = { retryFailedPrompt: jest.fn() };
+const service = { retryFailedPrompt: jest.fn(), retryBatchFinalization: jest.fn() };
 const roles = { findOne: jest.fn() };
 beforeAll(async () => {
   const app = express(); app.set('view engine', 'pug'); app.set('views', path.join(__dirname, '../../views'));
@@ -63,4 +63,32 @@ test('failure rendering escapes content and offers explicit retry with a CSRF to
   expect(html).toContain('Retry using current chat'); expect(html).toContain('name="_csrf"');
   expect(html).toContain('/css/color-theme.css'); expect(html).not.toContain('<script>private()');
   expect(html).not.toContain('<img src=x');
+});
+
+test('reviewed finalization retry enforces authority, CSRF, bounded input and non-GET method', async () => {
+  const id = 'requests/batch_review';
+  authenticated = false;
+  expect((await post({ id })).status).toBe(401);
+  authenticated = true; user.type_user = 'user';
+  expect((await post({ id })).status).toBe(403);
+  user.type_user = 'admin';
+  expect((await post({ id, csrf: 'wrong' })).status).toBe(403);
+  expect((await post({ id, body: { output_file_id: 'forged' } })).status).toBe(400);
+  expect((await fetch(`${base}/${id}`)).status).toBe(404);
+  expect(service.retryBatchFinalization).not.toHaveBeenCalled();
+  expect((await post({ id })).status).toBe(303);
+  expect(service.retryBatchFinalization).toHaveBeenCalledWith('batch_review', user);
+});
+
+test('review state renders an escaped protected retry form and a scheduled retry time', () => {
+  const request = { id: 'batch_review', status: 'completed', provider: 'OpenAI', created_at: new Date(0), completed_at: new Date(1000) };
+  const html = pug.renderFile(path.join(__dirname, '../../views/batch_status.pug'), { prompts: [], requests: [
+    { ...request, finalization_state: 'needs_review' },
+    { ...request, id: 'batch_waiting', finalization_state: 'retry_wait', finalization_attempts: 2, finalization_next_attempt_at: new Date(2000) },
+  ], canRetryBatch: true, csrfToken: token, name: 'synthetic' });
+  expect(html).toContain('Retry import after review');
+  expect(html).toContain('/chat4/batch_prompt_retry/requests/batch_review');
+  expect(html).toContain('Import deferred after 2 attempts');
+  expect(html).toContain('method="post"');
+  expect(html).toContain('name="_csrf"');
 });

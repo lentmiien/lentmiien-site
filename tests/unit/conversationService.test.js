@@ -268,6 +268,7 @@ describe('ConversationService', () => {
     ];
     const messageService = {
       createMessageNew: jest.fn().mockResolvedValue(userMessage),
+      validateAIMessageInput: jest.fn(),
       generateAIMessage: jest.fn().mockResolvedValue({
         response_id: null,
         msg: aiMessages[2],
@@ -291,6 +292,58 @@ describe('ConversationService', () => {
       'text',
     ]);
     expect(conversation.save).toHaveBeenCalled();
+  });
+
+  test('image validation includes the proposed prompt and fails before persisting it', async () => {
+    const { ChatInputError } = require('../../utils/chatInputError');
+    const conversation = { _id: 'conv', messages: ['old-image'], metadata: { model: 'text-model' }, members: ['owner'], save: jest.fn() };
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    const messages = { validateAIMessageInput: jest.fn().mockRejectedValue(new ChatInputError('images_not_allowed', 'Select a vision model.')),
+      createMessageNew: jest.fn(), generateAIMessage: jest.fn() };
+    const service = new ConversationService({}, messages, {});
+    await expect(service.postToConversationNew({ conversationId: 'conv', userId: 'owner',
+      messageContent: { text: 'New prompt' }, messageType: 'text', generateAI: true })).rejects.toMatchObject({ code: 'images_not_allowed' });
+    expect(messages.validateAIMessageInput).toHaveBeenCalledWith(expect.objectContaining({
+      conversation: expect.objectContaining({ messages: ['old-image'] }),
+      pendingMessages: [expect.objectContaining({ user_id: 'owner', content: { text: 'New prompt' }, contentType: 'text' })],
+    }));
+    expect(messages.createMessageNew).not.toHaveBeenCalled();
+    expect(messages.generateAIMessage).not.toHaveBeenCalled();
+    expect(conversation.save).not.toHaveBeenCalled();
+  });
+
+  test('generation failure leaves a reloadable prompt and a response-only retry does not duplicate it', async () => {
+    let stored = { _id: 'conv', messages: ['old-image'], metadata: { model: 'vision-model' }, members: ['owner'] };
+    Conversation5Model.findById.mockImplementation(async () => {
+      const doc = structuredClone(stored);
+      doc.save = jest.fn(async () => { const { save, ...data } = doc; stored = structuredClone(data); });
+      return doc;
+    });
+    const messages = { validateAIMessageInput: jest.fn(), createMessageNew: jest.fn().mockResolvedValue({ _id: 'prompt' }),
+      generateAIMessage: jest.fn().mockImplementationOnce(async () => {
+        expect(stored.messages).toEqual(['old-image', 'prompt']);
+        throw new Error('Provider unavailable');
+      }).mockResolvedValue({ messages: [{ _id: 'response' }] }) };
+    const service = new ConversationService({}, messages, {});
+    await expect(service.postToConversationNew({ conversationId: 'conv', userId: 'owner',
+      messageContent: { text: 'New prompt' }, messageType: 'text', generateAI: true })).rejects.toMatchObject({
+      savedUserMessages: [{ _id: 'prompt' }], conversationId: 'conv',
+    });
+    expect(stored.messages).toEqual(['old-image', 'prompt']);
+    await service.postToConversationNew({ conversationId: 'conv', userId: 'owner', generateAI: true });
+    expect(messages.createMessageNew).toHaveBeenCalledTimes(1);
+    expect(stored.messages).toEqual(['old-image', 'prompt', 'response']);
+  });
+
+  test('batched image uploads are represented as stored image messages during preflight', async () => {
+    Conversation5Model.findById.mockResolvedValue({ _id: 'conv', messages: [], metadata: {}, members: [] });
+    const messages = { validateAIMessageInput: jest.fn().mockRejectedValue(new Error('stop before saving')), createImageMessagesBatch: jest.fn() };
+    await expect(new ConversationService({}, messages, {}).postToConversationNew({ conversationId: 'conv', userId: 'owner',
+      messageType: 'image', messageContent: [{ fileName: 'synthetic.jpg' }], generateAI: true })).rejects.toThrow('stop before saving');
+    expect(messages.validateAIMessageInput.mock.calls[0][0].pendingMessages[0]).toMatchObject({
+      contentType: 'image', content: { image: 'synthetic.jpg' },
+    });
+    expect(messages.createImageMessagesBatch).not.toHaveBeenCalled();
   });
 
   test('postToConversationNew records an Ollama job against its pending placeholder', async () => {
@@ -317,6 +370,7 @@ describe('ConversationService', () => {
     };
     const messageService = {
       createMessageNew: jest.fn().mockResolvedValue(userMessage),
+      validateAIMessageInput: jest.fn(),
       generateAIMessage: jest.fn().mockResolvedValue({
         response_id: '02d58123-b2da-4412-8df5-1fbb47bb07cd',
         response_provider: 'Ollama',

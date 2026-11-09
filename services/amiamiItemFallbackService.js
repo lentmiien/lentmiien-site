@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { AmiAmiItem } = require('../database');
 const logger = require('../utils/logger');
+const { operationDiagnostic, safeItemCode } = require('../utils/amiamiDiagnostics');
 const {
   buildItemUrl,
   fetchItemDetail,
@@ -104,10 +105,11 @@ function createAmiAmiItemFallbackService({
       details = normalize(apiData, { includeRaw: false });
     } catch (error) {
       const failedAt = new Date(now());
-      const { item: failedItem, written } = await persist(buildFailedRecord(gcode, error, failedAt));
+      const diagnostic = operationDiagnostic(error, { phase: 'detail', itemCode: gcode });
+      const { item: failedItem, written } = await persist(buildFailedRecord(gcode, diagnostic, failedAt));
       serviceLogger.warning('AmiAmi API fallback scrape failed', {
         category: 'amiami-items-api',
-        metadata: { gcode, error },
+        metadata: { gcode: safeItemCode(gcode), diagnostic },
       });
       return {
         status: written || !failedItem || failedItem.detailStatus === 'error' ? 'failed' : 'existing',
@@ -170,7 +172,7 @@ function buildFetchedRecord(gcode, details, fetchedAt) {
   };
 }
 
-function buildFailedRecord(gcode, error, failedAt) {
+function buildFailedRecord(gcode, diagnostic, failedAt) {
   const listing = buildListing(gcode, null);
   const itemUrl = buildItemUrl(gcode);
 
@@ -187,7 +189,7 @@ function buildFailedRecord(gcode, error, failedAt) {
     detailStatus: 'error',
     detailFetchedAt: null,
     detailError: {
-      message: error && error.message ? error.message : String(error),
+      message: diagnostic.message,
       at: failedAt,
     },
     details: null,

@@ -19,6 +19,8 @@ function probeSummary(items = []) {
     outcome: label(item.outcome), errorCode: label(item.errorCode), failurePhase: label(item.failurePhase),
     statusCode: Number.isInteger(item.statusCode) && item.statusCode >= 100 && item.statusCode <= 599 ? item.statusCode : null,
     latencyMs: duration(item.latencyMs),
+    degradedSince: item.degradedSince && Number.isFinite(+new Date(item.degradedSince))
+      ? new Date(item.degradedSince).toISOString() : null,
     timings: Object.fromEntries(['dnsMs', 'tcpMs', 'tlsMs', 'ttfbMs', 'totalMs']
       .map(key => [key, duration(item.timings?.[key])])),
   }));
@@ -131,7 +133,28 @@ function createConnectivityMonitor({ config, store = repository, runProbe = prob
       if (maintenanceWindow) sample.notification = 'maintenance';
       if (sustained.length) warn('degraded', 'Connectivity monitor observed sustained degradation; inspect connectivity history', {
         runId: sample.runId, probes: probeSummary(sample.probes), diagnostics: probeSummary(diagnostics),
+        thresholds: { slowMs: config.slowMs, timeoutMs: config.timeoutMs, sustainedMs: config.sustainedMs },
       });
+      const gap = previous ? sampledAt - new Date(previous.sampledAt) : Infinity;
+      const recovered = previous?.signature === config.signature && gap > 0 && gap <= config.maxGapMs
+        ? (previous.probes || []).filter(item => item.degradedSince
+          && new Date(previous.sampledAt) - new Date(item.degradedSince) >= config.sustainedMs
+          && sample.probes.some(current => current.name === item.name && current.degraded === false)) : [];
+      if (recovered.length) {
+        await Promise.resolve(log.notice('Connectivity monitor observed recovery after sustained degradation', {
+          category: 'connectivity_monitor', metadata: {
+            runId: sample.runId, recoveredAt: sampledAt.toISOString(),
+            thresholds: { slowMs: config.slowMs, timeoutMs: config.timeoutMs, sustainedMs: config.sustainedMs },
+            recovered: probeSummary(recovered).map(item => ({ name: item.name, degradedSince: item.degradedSince,
+              durationMs: sampledAt - new Date(item.degradedSince) })),
+            probes: probeSummary(sample.probes), ...(maintenanceWindow ? { maintenance: maintenanceWindow } : {}),
+          },
+        })).catch(() => {});
+        // A new incident can be logged immediately; notification cooldown remains.
+        if (!sample.probes.some(item => item.degraded)) {
+          for (const key of warnings.keys()) if (key.startsWith('degraded:')) warnings.delete(key);
+        }
+      }
       const oldAttempt = sample.lastAttemptAt;
       if (due && restored) {
         sample.lastAttemptAt = sampledAt;

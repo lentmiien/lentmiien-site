@@ -1124,7 +1124,7 @@ const retrieveBatchStatus = async (batchId) => {
   }
 };
 
-const downloadBatchOutput = async (fileId) => {
+const downloadBatchOutput = async (fileId, { throwOnError = false } = {}) => {
   const requestUrl = `openai.files.content:${fileId}`;
   try {
     const response = await openai.files.content(fileId);
@@ -1148,6 +1148,8 @@ const downloadBatchOutput = async (fileId) => {
       functionName: 'downloadBatchOutput',
       responseBody: error,
     });
+    // Managed finalization persists and logs the retry outcome once.
+    if (throwOnError) throw error;
     logger.error('Failed to download OpenAI batch output file', { error, fileId });
     return null;
   }

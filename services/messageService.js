@@ -1078,6 +1078,15 @@ class MessageService {
     return result.deletedCount || 0;
   }
 
+  async validateAIMessageInput({ conversation, pendingMessages = [] }) {
+    const model = (await AIModelCards.find({ api_model: conversation.metadata.model }))[0];
+    if (!model || model.provider === 'OpenAI') return;
+    const ids = conversation.messages.map(String);
+    const messages = await Chat5Model.find({ _id: ids });
+    messages.sort((a, b) => ids.indexOf(String(a._id)) - ids.indexOf(String(b._id)));
+    await ollama.validateChatImages(conversation, [...messages, ...pendingMessages], model);
+  }
+
   async generateAIMessage({conversation, includeLastToolBatch = false, maxOutputTokens = null, privateRequest = false}) {
     // Generate a message through AI and save to database *Can possible generate multiple messages if using tools or reasoning
     const model = (await AIModelCards.find({api_model: conversation.metadata.model}))[0];

@@ -1,4 +1,5 @@
 const mockRetryTerminalPromptCleanup = jest.fn();
+const mockProcessBatchResponses = jest.fn().mockResolvedValue({ outcomes: [], conversations: [] });
 
 jest.mock('mongoose', () => ({
   connection: { readyState: 1 },
@@ -8,6 +9,7 @@ jest.mock('../../services/knowledgeService', () => jest.fn());
 jest.mock('../../services/conversationService', () => jest.fn());
 jest.mock('../../services/batchService', () => jest.fn().mockImplementation(() => ({
   retryTerminalPromptCleanup: mockRetryTerminalPromptCleanup,
+  processBatchResponses: mockProcessBatchResponses,
   triggerBatchRequest: jest.fn(),
 })));
 jest.mock('../../database', () => ({
@@ -52,5 +54,6 @@ describe('daily batch scheduler terminal cleanup', () => {
     await jest.advanceTimersByTimeAsync(60 * 1000);
 
     expect(mockRetryTerminalPromptCleanup).toHaveBeenCalledTimes(1);
+    expect(mockProcessBatchResponses).toHaveBeenCalledTimes(1);
   });
 });

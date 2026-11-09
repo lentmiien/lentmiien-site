@@ -232,7 +232,7 @@ test.each(['hello', '', '   '])('split send action includes only a non-empty pro
   window.document.getElementById('sendAndResponse').click();
   expect(window.socket.emit).toHaveBeenCalledWith('chat5-append', expect.objectContaining({
     prompt: prompt.trim() ? prompt : null, response: true,
-  }));
+  }), expect.any(Function));
 });
 
 test('send menu orders append, batch, bot and TTS, and keeps append roles', async () => {
@@ -242,10 +242,26 @@ test('send menu orders append, batch, bot and TTS, and keeps append roles', asyn
     .toEqual(['Append', 'Batch', 'Append as bot', 'Generate TTS audio']);
   window.socket.emit = jest.fn();
   document.getElementById('chat5Append').click();
-  expect(window.socket.emit).toHaveBeenLastCalledWith('chat5-append', expect.objectContaining({ prompt: 'synthetic prompt', response: false }));
+  expect(window.socket.emit).toHaveBeenLastCalledWith('chat5-append', expect.objectContaining({ prompt: 'synthetic prompt', response: false }), expect.any(Function));
   window.editor.prompt = 'bot draft';
   document.getElementById('chat5AppendBot').click();
-  expect(window.socket.emit).toHaveBeenLastCalledWith('chat5-append', expect.objectContaining({ prompt: 'bot draft', response: false, user_id: 'bot' }));
+  expect(window.socket.emit).toHaveBeenLastCalledWith('chat5-append', expect.objectContaining({ prompt: 'bot draft', response: false, user_id: 'bot' }), expect.any(Function));
+});
+
+test('append keeps rejected drafts and clears a saved prompt only if the user has not edited it', async () => {
+  const { window } = await chat(); window.alert = jest.fn(); window.socket.emit = jest.fn();
+  window.document.getElementById('sendAndResponse').click();
+  const reply = window.socket.emit.mock.calls[0][2];
+  expect(window.editor.getMarkdown()).toBe('synthetic prompt');
+  reply({ ok: false, code: 'images_not_allowed', message: 'Select a vision model.', promptSaved: false });
+  expect(window.editor.getMarkdown()).toBe('synthetic prompt');
+  expect(window.alert).toHaveBeenCalledWith('Select a vision model.');
+  window.editor.prompt = 'newer draft';
+  reply({ ok: true, promptSaved: true, conversationId: id });
+  expect(window.editor.getMarkdown()).toBe('newer draft');
+  window.editor.prompt = 'synthetic prompt';
+  reply({ ok: false, promptSaved: true, conversationId: id, message: 'Response failed; prompt saved.' });
+  expect(window.editor.getMarkdown()).toBe('');
 });
 
 test.each(['hello', '', '   '])('unified batch routes OpenAI with optional prompt %p even when local batching is disabled', async prompt => {

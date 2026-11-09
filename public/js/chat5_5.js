@@ -952,11 +952,16 @@ function Append(send, resp, userId) {
   if (typeof userId === 'string' && userId.trim().length > 0) {
     payload.user_id = userId.trim();
   }
-  socket.emit('chat5-append', payload);
-  if (send) {
-    editor.reset();
-    updatePromptCharCounter();
-  }
+  socket.emit('chat5-append', payload, (result) => {
+    hideLoadingPopup();
+    // Keep rejected drafts and any newer text typed while the request ran.
+    if (send && (result?.ok || result?.promptSaved) && editor.getMarkdown() === prompt
+      && [conversation_id, result.conversationId].includes(document.getElementById('id').textContent)) {
+      editor.reset();
+      updatePromptCharCounter();
+    }
+    if (!result?.ok) alert(result?.message || 'Unable to append message. Reload the conversation before retrying.');
+  });
 }
 
 function GenerateTTS() {

@@ -37,6 +37,7 @@ jest.mock('../../utils/OpenAI_API', () => ({
 jest.mock('../../utils/Ollama_API', () => ({
   chat: jest.fn(),
   submitChatJob: jest.fn(),
+  validateChatImages: jest.fn(),
   retrieveChatJob: jest.fn(),
   convertResponseBody: jest.fn(),
 }));
@@ -71,6 +72,18 @@ const { chatGPT, chatGPT_beta } = require('../../utils/ChatGPT');
 const ai = require('../../utils/OpenAI_API');
 const ollama = require('../../utils/Ollama_API');
 const { AIModelCards, Chat5Model, Conversation5Model } = require('../../database');
+
+test.each(['Local', 'Ollama'])('preflight validates ordered stored history plus pending messages for %s cards', async provider => {
+  const model = { api_model: 'text-model', provider };
+  AIModelCards.find.mockResolvedValue([model]);
+  Chat5Model.find.mockResolvedValue([{ _id: 'image', contentType: 'image' }, { _id: 'first', contentType: 'text' }]);
+  const conversation = { messages: ['first', 'image'], metadata: { model: model.api_model, maxMessages: 10 } };
+  const pending = { _id: 'pending', contentType: 'text', content: { text: 'New prompt' } };
+  await new MessageService({}, {}).validateAIMessageInput({ conversation, pendingMessages: [pending] });
+  expect(ollama.validateChatImages).toHaveBeenCalledWith(conversation,
+    [{ _id: 'first', contentType: 'text' }, { _id: 'image', contentType: 'image' }, pending], model);
+  expect(ollama.submitChatJob).not.toHaveBeenCalled();
+});
 
 const createMessageDoc = (id, overrides = {}) => ({
   _id: { toString: () => id },

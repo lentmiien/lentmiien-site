@@ -3,6 +3,7 @@ const { XMLValidator } = require('fast-xml-parser');
 const warningReadiness = require('../utils/disasterJmaReadiness');
 const logger = require('../utils/logger');
 const { upstreamErrorMetadata } = require('../utils/upstreamErrorMetadata');
+const { feedHttpDiagnostics } = require('../utils/jmaFeedDiagnostics');
 const {
   DisasterAlert,
   DisasterIngestionState,
@@ -235,7 +236,7 @@ class DisasterIngestionService {
     this.feedFailures.set(feedUrl, incident);
   }
 
-  async fetchText(url) {
+  async fetchText(url, { onResponse } = {}) {
     const timeout = parsePositiveInteger(process.env.DISASTER_HTTP_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
     const response = await this.http.get(url, {
       timeout,
@@ -245,6 +246,7 @@ class DisasterIngestionService {
         'User-Agent': 'lentmiien-site disaster dashboard (+https://home.lentmiien.com)',
       },
     });
+    if (onResponse) onResponse(feedHttpDiagnostics(response));
     return typeof response.data === 'string' ? response.data : String(response.data || '');
   }
 
@@ -412,34 +414,40 @@ class DisasterIngestionService {
         lastStatus: 'ok', lastError: null, newEntries: 0 };
       const kind = warningReadiness.warningFeedKind(feedUrl);
       let validation = null;
+      let transport = {};
+      let timestamps = {};
       const rejectFeed = (reason, details = {}) => {
         validation = { reason, ...details };
         throw Object.assign(new Error(`JMA feed validation failed: ${reason}`), { code: 'UPSTREAM_INVALID_RESPONSE' });
       };
       try {
-        const xml = await this.fetchText(feedUrl);
+        const xml = await this.fetchText(feedUrl, { onResponse: diagnostic => { transport = diagnostic; } });
         if (XMLValidator.validate(xml) !== true) rejectFeed('invalid_xml');
         const feed = parseAtomFeed(xml, feedUrl);
         if (!feed.title || !feed.updatedAt) rejectFeed('missing_metadata');
         feedState.title = feed.title;
         feedState.lastUpdatedAt = feed.updatedAt;
+        const entryDates = feed.entries.map(entry => +entry.updatedAt).filter(value => Number.isFinite(value) && value > 0);
+        timestamps = { feedUpdatedAt: feed.updatedAt.toISOString(),
+          latestEntryUpdatedAt: entryDates.length ? new Date(entryDates.reduce((a, b) => Math.max(a, b))).toISOString() : null };
         for (const entry of feed.entries) merge(entry, feed, feedState);
         if (kind !== 'irrelevant') {
-          // Long feeds update hourly, short feeds every minute. This is feed
-          // transport freshness, independent of six-hour bulletin validity.
+          // Content timestamp freshness is independent of retrieval time and
+          // six-hour bulletin validity. HTTP cache metadata is diagnostic only.
           const maxAge = (kind === 'long' ? 105 : 45) * 60000;
           const observedAgeMs = +now - +feed.updatedAt;
           if (observedAgeMs > maxAge) rejectFeed('stale_timestamp', { observedAgeMs, thresholdMs: maxAge });
           if (observedAgeMs < -300000) rejectFeed('future_timestamp', { observedAgeMs, thresholdMs: 300000 });
         }
-        this.reportFeedHealth(feedUrl, { source: 'jma', feedIndex, feedKind: kind }, false, now);
+        this.reportFeedHealth(feedUrl, { source: 'jma', feedIndex, feedKind: kind, ...timestamps, transport }, false, now);
       } catch (error) {
         feedState.lastStatus = 'error';
         feedState.lastError = compactError(error);
         counters.feedErrors += 1;
         if (kind !== 'irrelevant') counters.warningFeedErrors += 1;
         this.reportFeedHealth(feedUrl, { source: 'jma', feedIndex, feedKind: kind,
-          ...upstreamErrorMetadata(error), ...validation }, true, now);
+          ...upstreamErrorMetadata(error), ...validation, ...timestamps,
+          transport: error.response ? feedHttpDiagnostics(error.response) : transport }, true, now);
       }
       feeds.push(feedState);
     }

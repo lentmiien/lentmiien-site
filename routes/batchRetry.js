@@ -15,6 +15,19 @@ function createBatchRetryRouter(service, { roleModel = Role } = {}) {
     return next();
   });
   router.use(createRequireCapabilities({ capabilities: [MANAGE], roleCapabilityBundles: ROLE_BUNDLES, roleModel }));
+  router.post('/requests/:id', express.urlencoded({ extended: false, limit: '1kb' }), csrf.requireToken,
+    rateLimit({ windowMs: 60000, limit: 10, keyGenerator: req => String(req.user._id) }), async (req, res) => {
+      if (!/^batch_[A-Za-z0-9_-]{1,100}$/.test(req.params.id)
+        || Object.keys(req.body || {}).some(key => key !== '_csrf')) return res.status(400).json({ error: 'Invalid retry request.' });
+      try {
+        await service.retryBatchFinalization(req.params.id, req.user);
+        return res.redirect(303, '/chat4/batch_status');
+      } catch (error) {
+        const status = [400, 403, 404, 409].includes(error.status) ? error.status : 503;
+        if (status === 503) logger.error('Batch finalization retry request failed', { category: 'batch' });
+        return res.status(status).json({ error: status === 503 ? 'Retry unavailable. Inspect application diagnostics.' : error.message });
+      }
+    });
   router.post('/:id', express.urlencoded({ extended: false, limit: '1kb' }), csrf.requireToken,
     rateLimit({ windowMs: 60000, limit: 10, keyGenerator: req => String(req.user._id) }), async (req, res) => {
       if (!/^prompt-[A-Za-z0-9-]{1,100}$/.test(req.params.id)

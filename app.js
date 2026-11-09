@@ -799,7 +799,7 @@ function startDatabaseServices() {
   const starters = [
     ['TARIC worker', () => taricTool.worker.start()],
     ['AmiAmi HTML import worker', () => amiamiUpload.start()],
-    ['daily batch trigger', scheduleDailyBatchTrigger],
+    ['daily batch trigger', () => scheduleDailyBatchTrigger(app)],
     ['database usage monitor', scheduleDatabaseUsageMonitor],
     ['Agent5 scheduler', scheduleAgent5Runner],
     ['OpenAI response recovery', () => scheduleOpenAIResponseRecovery(app)],
@@ -827,6 +827,11 @@ function startDatabaseServices() {
 
   localAi.worker.start();
   seedMissingToolManagerEntries();
+  require('./services/gptImageModelCardAudit').auditGptImageModelCards().catch(() => {
+    logger.warning('Unable to audit GPT Image model cards at startup; check database availability', {
+      category: 'openai_model_deprecation',
+    });
+  });
   validateBatchDefaultModelSetting().catch((error) => {
     logger.warning('Unable to validate the batch default model setting at startup', {
       category: 'batch',

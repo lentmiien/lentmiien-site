@@ -234,6 +234,38 @@ test('feed failures log transitions and hourly summaries while every poll remain
   expect(JSON.stringify(h.logger)).not.toContain('PRIVATE PROVIDER BODY');
 });
 
+test('fresh HTTP retrieval cannot certify stale content; cache diagnostics omit arbitrary headers', async () => {
+  const h = harness();
+  h.responses.set(base + 'extra.xml', atom([], new Date(+now - 2 * 3600000)));
+  h.service.fetchText = DisasterIngestionService.prototype.fetchText;
+  h.service.http = { get: jest.fn(async url => ({ data: h.responses.get(url), status: 200, headers: {
+    date: now.toUTCString(), 'last-modified': new Date(+now - 2 * 3600000).toUTCString(),
+    age: '3600', 'cache-control': 'public, max-age=60, s-maxage=120', 'cf-cache-status': 'HIT',
+    'set-cookie': 'PRIVATE cookie', etag: 'PRIVATE opaque tag', location: 'https://PRIVATE.invalid',
+  } })) };
+  expect((await h.poll()).counters.warningReady).toBe(false);
+  const diagnostic = h.logger.warning.mock.calls[0][1].metadata;
+  expect(diagnostic).toMatchObject({ reason: 'stale_timestamp', feedUpdatedAt: new Date(+now - 2 * 3600000).toISOString(),
+    transport: { httpStatus: 200, retrievedAt: now.toISOString(), httpDate: now.toISOString(),
+      ageSeconds: 3600, maxAgeSeconds: 60, sharedMaxAgeSeconds: 120, cacheStatus: 'HIT' } });
+  expect(JSON.stringify(h.logger.warning.mock.calls)).not.toContain('PRIVATE');
+  h.responses.set(base + 'extra.xml', atom([]));
+  expect((await h.poll()).counters.warningReady).toBe(true);
+  expect(h.logger.notice).toHaveBeenCalledWith('JMA disaster feed polling recovered', expect.objectContaining({
+    metadata: expect.objectContaining({ feedUpdatedAt: now.toISOString(), transport: expect.objectContaining({ ageSeconds: 3600 }) }),
+  }));
+});
+
+test('feed HTTP diagnostics reject malformed, unbounded and opaque header values', () => {
+  const { feedHttpDiagnostics } = require('../../utils/jmaFeedDiagnostics');
+  const metadata = feedHttpDiagnostics({ status: 200, headers: {
+    date: 'PRIVATE', 'last-modified': 'x'.repeat(1024), age: '-1', 'cf-cache-status': 'PRIVATE',
+    'cache-control': 'max-age=60\r\nPRIVATE',
+  } }, now);
+  expect(metadata).toMatchObject({ httpDate: null, lastModified: null, ageSeconds: null, cacheStatus: null, maxAgeSeconds: null });
+  expect(JSON.stringify(metadata)).not.toContain('PRIVATE');
+});
+
 test('custom feeds missing the long warning feed cannot certify coverage at a 15-minute polling interval', async () => {
   process.env.DISASTER_JMA_FEEDS = base + 'extra.xml';
   const h = harness();

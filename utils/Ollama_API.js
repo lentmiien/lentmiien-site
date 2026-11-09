@@ -491,7 +491,7 @@ const rejectImageRequest = (reason, message, metadata = {}) => {
     category: 'ollama_image_policy',
     metadata: { reason, ...metadata },
   });
-  throw new Error(message);
+  throw new (require('./chatInputError').ChatInputError)(reason, message);
 };
 
 const normalizeInlineImage = (image) => {
@@ -1923,6 +1923,14 @@ const postChatJobPayload = async (payload, functionName, options = {}) => {
   }
 };
 
+const validateChatImages = async (conversation, messages, model, options = {}) => {
+  const targetModel = normalizeModelIdentifier(model.api_model);
+  await ensureModelAvailable(targetModel);
+  const selected = selectMessagesForOllama(sliceMessagesFromConfiguredStart(messages, conversation),
+    resolveMaxMessagesLimit(conversation), { includeLastToolBatch: options.includeLastToolBatch === true });
+  validateMessageImages(buildChatCompletionMessages(null, selected, true), model, targetModel, options);
+};
+
 const submitChatJob = async (conversation, messages, model, options = {}) => {
   if (!model || typeof model.api_model !== 'string' || model.api_model.length === 0) {
     throw new Error('Model information is required for Ollama chat requests');
@@ -2303,6 +2311,7 @@ module.exports = {
   buildWebhookUrl,
   verifyWebhookToken,
   submitChatJob,
+  validateChatImages,
   retrieveChatJob,
   chat,
   chatWithThinkingAndTools,

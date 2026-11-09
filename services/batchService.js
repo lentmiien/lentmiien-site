@@ -25,6 +25,18 @@ const {
 
 const { assertOpenAIModelActive } = require('../utils/openaiModelDeprecation');
 
+const FINALIZATION_MAX_ATTEMPTS = 6;
+const FINALIZATION_RETRY_BASE_MS = 15 * 60 * 1000;
+const FINALIZATION_RETRY_MAX_MS = 6 * 60 * 60 * 1000;
+const availableFinalizationLease = () => ({ $or: [
+  { processing_expires_at: null }, { processing_expires_at: { $lte: new Date() } },
+] });
+const eligibleFinalization = () => ({ status: 'completed', finalization_state: { $ne: 'needs_review' },
+  $and: [availableFinalizationLease(), { $or: [
+    { finalization_next_attempt_at: null }, { finalization_next_attempt_at: { $lte: new Date() } },
+  ] }],
+});
+
 const redirect_models = {
   o1: 'o1-2024-12-17',
   'o1-preview': 'o1-preview-2024-09-12',
@@ -384,7 +396,9 @@ class BatchService {
     const prompts = await this.BatchPromptDatabase.find({
       state: { $nin: includeFailures ? ['succeeded'] : ['succeeded', 'failed', 'retrying'] },
     });
-    const requests = (await this.BatchRequestDatabase.find({ created_at: { $gt: weekAgo } })).reverse();
+    const requests = (await this.BatchRequestDatabase.find(includeFailures
+      ? { $or: [{ created_at: { $gt: weekAgo } }, { status: 'completed' }] }
+      : { created_at: { $gt: weekAgo } })).reverse();
     return { prompts, requests };
   }
 
@@ -682,27 +696,34 @@ class BatchService {
   }
 
   async processBatchResponses() {
-    const completedRequests = await this.BatchRequestDatabase.find({ status: 'completed' });
+    const completedRequests = await this.BatchRequestDatabase.find(eligibleFinalization(), null,
+      { sort: { finalization_next_attempt_at: 1, created_at: 1 }, limit: 25 });
     const result = { requests: [], prompts: [], failedPrompts: [], conversations: [], outcomes: [] };
     for (const candidate of completedRequests) {
       const token = randomUUID();
-      const request = await this.BatchRequestDatabase.findOneAndUpdate({ id: candidate.id, status: 'completed',
-        $or: [{ processing_expires_at: { $exists: false } }, { processing_expires_at: null }, { processing_expires_at: { $lte: new Date() } }],
-      }, { $set: { processing_token: token, processing_expires_at: new Date(Date.now() + FINALIZATION_LEASE_MS) } }, { new: true });
+      const request = await this.BatchRequestDatabase.findOneAndUpdate({ id: candidate.id, ...eligibleFinalization() },
+        { $set: { processing_token: token, processing_expires_at: new Date(Date.now() + FINALIZATION_LEASE_MS) },
+          $inc: { finalization_attempts: 1 } }, { new: true });
       if (!request) continue;
       const renew = async () => {
         const claim = await this.BatchRequestDatabase.updateOne({ id: request.id, status: 'completed', processing_token: token },
           { $set: { processing_expires_at: new Date(Date.now() + FINALIZATION_LEASE_MS) } });
         if (claim.matchedCount !== 1) throw new Error('Batch finalization claim was lost.');
       };
+      let readingFiles = true;
       try {
+        // Claims count too: repeated crashes must eventually stop automatic work.
+        if (request.finalization_attempts > FINALIZATION_MAX_ATTEMPTS) {
+          throw Object.assign(new Error('Finalization attempt limit reached'), { finalizationReason: 'attempt_limit' });
+        }
         const records = new Map();
         const duplicates = new Set();
         const files = [...new Set([request.output_file_id, request.error_file_id].filter(id => id && id !== 'null'))];
         let filesReady = true;
         // Both files must be readable before declaring a record missing.
         for (const file of files) {
-          const rows = await downloadBatchOutput(file);
+          const rows = await downloadBatchOutput(file, { throwOnError: true });
+          await renew();
           if (!Array.isArray(rows)) { filesReady = false; break; }
           for (const row of rows) {
             if (typeof row?.custom_id !== 'string') { filesReady = false; break; }
@@ -711,11 +732,9 @@ class BatchService {
           }
         }
         if (!filesReady) {
-          logger.warning('Batch finalization deferred because a result file could not be reconciled', {
-            category: 'batch', metadata: { requestId: request.id },
-          });
-          continue;
+          throw Object.assign(new Error('Result file could not be reconciled'), { finalizationReason: 'unreadable_result_file' });
         }
+        readingFiles = false;
         const prompts = await this.BatchPromptDatabase.find({ request_id: request.id });
         let cleanupFailed = false;
         for (const prompt of prompts) {
@@ -794,18 +813,32 @@ class BatchService {
           if (conversationUpdate) result.conversations.push(conversationUpdate);
           result.prompts.push(prompt.custom_id);
         }
-        if (cleanupFailed) continue;
+        if (cleanupFailed) throw Object.assign(new Error('Placeholder cleanup incomplete'), { finalizationReason: 'cleanup_incomplete' });
         const counts = { succeeded: prompts.filter(p => p.state === 'succeeded').length,
           failed: prompts.filter(p => p.state === 'failed').length };
         const finalized = await this.BatchRequestDatabase.updateOne({ id: request.id, status: 'completed', processing_token: token },
-          { $set: { status: 'DONE', result_counts: counts }, $unset: { processing_token: '', processing_expires_at: '' } });
+          { $set: { status: 'DONE', result_counts: counts, finalization_state: 'done' },
+            $unset: { processing_token: '', processing_expires_at: '', finalization_next_attempt_at: '', finalization_failure: '' } });
         if (finalized.matchedCount !== 1) throw new Error('Batch finalization claim was lost.');
         result.requests.push(request.id);
         result.outcomes.push({ requestId: request.id, ...counts });
         for (const file of new Set([request.input_file_id, ...files])) if (file && file !== 'null') await deleteBatchFile(file);
       } catch (error) {
-        logger.error('Batch finalization failed; retained records require another processing attempt', {
-          category: 'batch', metadata: { requestId: request.id, ...upstreamErrorMetadata(error) },
+        const diagnostic = upstreamErrorMetadata(error);
+        const attempts = request.finalization_attempts;
+        const state = attempts >= FINALIZATION_MAX_ATTEMPTS ? 'needs_review' : 'retry_wait';
+        const nextAttemptAt = state === 'needs_review' ? null : new Date(Date.now()
+          + Math.min(FINALIZATION_RETRY_MAX_MS, FINALIZATION_RETRY_BASE_MS * (2 ** Math.max(0, attempts - 1))));
+        const reason = readingFiles && diagnostic.status === 404 ? 'result_file_not_found'
+          : ['attempt_limit', 'unreadable_result_file', 'cleanup_incomplete'].includes(error.finalizationReason)
+            ? error.finalizationReason : 'processing_failed';
+        const deferred = await this.BatchRequestDatabase.updateOne({ id: request.id, status: 'completed', processing_token: token },
+          { $set: { finalization_state: state, finalization_next_attempt_at: nextAttemptAt,
+            finalization_failure: { reason, status: diagnostic.status || null, at: new Date() } } });
+        if (deferred.matchedCount === 1) logger[state === 'needs_review' ? 'error' : 'warning'](state === 'needs_review'
+          ? 'Batch finalization needs operator review; prompts and files retained'
+          : 'Batch finalization deferred; retry scheduled', {
+          category: 'batch', metadata: { requestId: request.id, attempts, state, nextAttemptAt, reason, ...diagnostic },
         });
       } finally {
         await this.BatchRequestDatabase.updateOne({ id: request.id, processing_token: token },
@@ -813,6 +846,19 @@ class BatchService {
       }
     }
     return result;
+  }
+
+  async retryBatchFinalization(id, principal) {
+    if (!await canManageBatch(principal)) throw Object.assign(new Error('Access denied.'), { status: 403 });
+    if (typeof id !== 'string' || !/^batch_[A-Za-z0-9_-]{1,100}$/.test(id)) {
+      throw Object.assign(new Error('Invalid batch ID.'), { status: 400 });
+    }
+    const request = await this.BatchRequestDatabase.findOneAndUpdate({ id, status: 'completed',
+      finalization_state: 'needs_review', ...availableFinalizationLease() },
+    { $set: { finalization_state: 'retry_wait', finalization_attempts: 0, finalization_next_attempt_at: new Date() } }, { new: true });
+    if (!request) throw Object.assign(new Error('Batch is not awaiting review or is still being processed.'), { status: 409 });
+    logger.notice('Batch finalization retry scheduled after operator review', { category: 'batch', metadata: { requestId: id } });
+    return request;
   }
 
   async retryFailedPrompt(id, principal) {

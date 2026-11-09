@@ -67,7 +67,27 @@ async function runTerminalBatchCleanup() {
   }
 }
 
-function scheduleDailyBatchTrigger() {
+async function runCompletedBatchRecovery(app) {
+  try {
+    const result = await performanceMetrics.trackTask('completedBatchRecovery.run', () => batchService.processBatchResponses());
+    for (const outcome of result?.outcomes || []) {
+      logger.notice('Scheduled batch finalization completed', { category: 'batch', metadata: outcome });
+    }
+    const io = app?.get('io');
+    if (io) for (const update of result?.conversations || []) {
+      require('../utils/chat5Realtime').emitConversationMessages(io, {
+        conversation: { _id: update.conversationId, members: update.members, title: update.title },
+        messages: update.messages, placeholderId: update.placeholderId,
+      });
+    }
+  } catch (error) {
+    logger.error('Scheduled batch finalization recovery failed', {
+      category: 'batch', metadata: require('../utils/upstreamErrorMetadata').upstreamErrorMetadata(error),
+    });
+  }
+}
+
+function scheduleDailyBatchTrigger(app) {
   const lastRunKey = { value: null };
   let running = false;
 
@@ -78,6 +98,7 @@ function scheduleDailyBatchTrigger() {
     try {
       const runDailyTrigger = shouldRun(new Date(), lastRunKey);
       await runTerminalBatchCleanup();
+      await runCompletedBatchRecovery(app);
       if (runDailyTrigger) {
         await runBatchTrigger();
       }
@@ -91,3 +112,4 @@ function scheduleDailyBatchTrigger() {
 
 module.exports = scheduleDailyBatchTrigger;
 module.exports.runTerminalBatchCleanup = runTerminalBatchCleanup;
+module.exports.runCompletedBatchRecovery = runCompletedBatchRecovery;

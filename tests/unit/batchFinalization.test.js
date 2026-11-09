@@ -18,6 +18,7 @@ const admin = { _id: 'a'.repeat(24), name: 'synthetic', type_user: 'admin' };
 function matches(doc, filter) {
   return Object.entries(filter).every(([key, value]) => {
     if (key === '$or') return value.some(item => matches(doc, item));
+    if (key === '$and') return value.every(item => matches(doc, item));
     if (value && typeof value === 'object' && !(value instanceof Date)) {
       if ('$exists' in value) return (doc[key] !== undefined) === value.$exists;
       if ('$lte' in value) return doc[key] <= value.$lte;
@@ -66,6 +67,83 @@ function success(id, output = [{ contentType: 'text', content: { text: 'Syntheti
   return { custom_id: id, response: { status_code: 200, body: { status: 'completed', output } } };
 }
 beforeEach(() => { jest.clearAllMocks(); mockConversations.clear(); BatchService.invalidateBatchModelCache(); });
+afterEach(() => jest.useRealTimers());
+
+test('permanent 404s back off durably, stop for review and never remove prompts or files', async () => {
+  jest.useFakeTimers();
+  const f = fixture();
+  api.downloadBatchOutput.mockRejectedValue(Object.assign(new Error('PRIVATE upstream body'), { status: 404 }));
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    await f.service.processBatchResponses();
+    expect(f.request.finalization_attempts).toBe(attempt);
+    expect(f.request.finalization_failure).toMatchObject({ reason: 'result_file_not_found', status: 404 });
+    const calls = api.downloadBatchOutput.mock.calls.length;
+    await f.service.processBatchResponses();
+    expect(api.downloadBatchOutput).toHaveBeenCalledTimes(calls);
+    if (attempt < 6) jest.setSystemTime(f.request.finalization_next_attempt_at);
+  }
+  expect(f.request).toMatchObject({ status: 'completed', finalization_state: 'needs_review', finalization_next_attempt_at: null });
+  jest.setSystemTime(Date.now() + 30 * 86400000);
+  const restarted = new BatchService(f.promptModel, f.requestModel, f.messages, f.conversations);
+  await restarted.processBatchResponses();
+  expect(api.downloadBatchOutput).toHaveBeenCalledTimes(6);
+  expect(f.prompts[0].state).toBe('queued');
+  expect(f.messages.processConvertedOutputs).not.toHaveBeenCalled();
+  expect(f.messages.deleteMessages).not.toHaveBeenCalled();
+  expect(api.deleteBatchFile).not.toHaveBeenCalled();
+  expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('PRIVATE');
+});
+
+test('transient result failure recovers after restart at the persisted deadline with one import', async () => {
+  jest.useFakeTimers();
+  const f = fixture();
+  api.downloadBatchOutput.mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }));
+  await f.service.processBatchResponses();
+  const restarted = new BatchService(f.promptModel, f.requestModel, f.messages, f.conversations, { getValue: async () => null });
+  await restarted.processBatchResponses();
+  expect(api.downloadBatchOutput).toHaveBeenCalledTimes(1);
+  jest.setSystemTime(f.request.finalization_next_attempt_at);
+  const results = await Promise.all([restarted.processBatchResponses(), f.service.processBatchResponses()]);
+  expect(results.flatMap(result => result.outcomes)).toHaveLength(1);
+  expect(f.messages.processConvertedOutputs).toHaveBeenCalledTimes(1);
+  expect(f.request).toMatchObject({ status: 'DONE', finalization_state: 'done', finalization_attempts: 2 });
+  expect(f.request.finalization_failure).toBeUndefined();
+});
+
+test('repeated interrupted claims reach review without another download', async () => {
+  const f = fixture();
+  Object.assign(f.request, { finalization_attempts: 6, processing_token: 'dead-worker', processing_expires_at: new Date(0) });
+  await f.service.processBatchResponses();
+  expect(f.request.finalization_state).toBe('needs_review');
+  expect(api.downloadBatchOutput).not.toHaveBeenCalled();
+});
+
+test('losing a claim while downloading prevents importing any results', async () => {
+  const f = fixture();
+  api.downloadBatchOutput.mockImplementationOnce(async () => {
+    f.request.processing_token = 'another-worker';
+    return [success('prompt-0')];
+  });
+  await f.service.processBatchResponses();
+  expect(f.request.processing_token).toBe('another-worker');
+  expect(f.messages.processConvertedOutputs).not.toHaveBeenCalled();
+  expect(api.deleteBatchFile).not.toHaveBeenCalled();
+});
+
+test('operator retry only resets a reviewed completed request with no active lease', async () => {
+  const f = fixture(); f.request.id = 'batch_review'; f.request.finalization_state = 'needs_review';
+  await expect(f.service.retryBatchFinalization(f.request.id, null)).rejects.toMatchObject({ status: 403 });
+  f.request.processing_expires_at = new Date(Date.now() + 60000);
+  await expect(f.service.retryBatchFinalization(f.request.id, admin)).rejects.toMatchObject({ status: 409 });
+  f.request.processing_expires_at = new Date(0);
+  const outcomes = await Promise.allSettled([
+    f.service.retryBatchFinalization(f.request.id, admin), f.service.retryBatchFinalization(f.request.id, admin),
+  ]);
+  expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+  expect(f.request).toMatchObject({ status: 'completed', finalization_state: 'retry_wait', finalization_attempts: 0 });
+  expect(api.downloadBatchOutput).not.toHaveBeenCalled();
+  expect(f.prompts[0].state).toBe('queued');
+});
 
 test('reconciles mixed output/error files by ID, retains failures, and counts local outcomes', async () => {
   const f = fixture(['response', 'response', 'response', 'summary', 'summary']);
