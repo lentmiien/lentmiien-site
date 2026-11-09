@@ -2,6 +2,10 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/tests/**/*.test.js'],
   moduleDirectories: ['node_modules', '<rootDir>'],
+  // Bound parallel memory use and recycle growing workers between test files.
+  // Keep workers enabled: --runInBand bypasses this recycling mechanism.
+  maxWorkers: 2,
+  workerIdleMemoryLimit: '512MiB',
   collectCoverageFrom: [
     'setup.js',
     'services/templateService.js',

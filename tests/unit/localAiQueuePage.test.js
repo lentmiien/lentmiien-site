@@ -1,6 +1,7 @@
 const pug = require('pug');
 const { createRouter } = require('../../routes/localAi');
 let JSDOM;
+let dom;
 beforeAll(async () => { ({ JSDOM } = await import('jsdom')); });
 const now = Date.parse('2026-10-18T12:00:00Z');
 const day = 86400000;
@@ -21,9 +22,14 @@ function fixture(jobs) {
   return { service, query, run };
 }
 function render(locals) {
-  return new JSDOM(pug.renderFile('views/local_ai_queue.pug', { csrfToken: 'synthetic', ...locals })).window.document;
+  dom = new JSDOM(pug.renderFile('views/local_ai_queue.pug', { csrfToken: 'synthetic', ...locals }));
+  return dom.window.document;
 }
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  dom?.window.close();
+  dom = null;
+  jest.restoreAllMocks();
+});
 
 test('queue scopes the five-day database window to its owner and hides previews at 24 hours', async () => {
   jest.spyOn(Date, 'now').mockReturnValue(now);

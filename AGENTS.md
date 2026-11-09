@@ -11,13 +11,15 @@
 
 ## Build, Test, and Development Commands
 - Clean install: `npm ci`. Use `npm install` only when intentionally changing dependencies, and commit the resulting lockfile changes.
-- Test: `npm test` — runs the full Jest suite with coverage. Run a focused suite with `npm test -- tests/unit/<name>.test.js --coverage=false` to avoid enforcing unrelated files' coverage thresholds on a partial run.
+- Test: `npm test` — runs the full Jest suite with coverage, at most two workers, and worker recycling above 512 MiB between files. Run a focused suite with `npm test -- tests/unit/<name>.test.js --coverage=false` to avoid enforcing unrelated files' coverage thresholds on a partial run.
+- Large-suite memory: use the configured worker pool for full runs. If Node reports `JavaScript heap out of memory` / `Reached heap limit` (often summarized as "The full suite hit Node's memory limit"), retry with `npm test -- --maxWorkers=1`. This keeps worker recycling enabled; `--runInBand` and `--detectOpenHandles` bypass it and are for focused debugging, not full-suite memory workarounds. See `documentation/testing-guide.md` for heap diagnostics and the single-file fallback. Do not drop tests or disable full-suite coverage to hide the failure.
 - Validate each changed curated OpenAPI YAML with `npm run lint:openapi -- <filename>.yaml` (filenames are relative to `public/yaml/`). The default `npm run lint:openapi` checks only the validator's configured list, which does not include every tracked spec.
 - `npm start` is not a routine smoke test: its `prestart` pipeline mutates generated files and database data and may run Dropbox synchronization before launching `node app`.
 - `PORT=8080 node app` bypasses `prestart`, but still starts the database lifecycle and background services. Database-dependent schedulers and workers wait for database readiness; local log retention and connectivity monitoring start independently. Use it only when exercising the configured application environment.
 
 ## Coding Style & Naming Conventions
 - JavaScript using the Node version pinned by Volta in `package.json`. Predominantly CommonJS (`require`, `module.exports`). Keep new code consistent with neighboring files; avoid mixing ESM unless needed.
+- Check `node --version` against the Volta pin before validation; agent shells may resolve a different installed Node even when Volta is available.
 - Indentation: 2 spaces; include semicolons; single quotes preferred.
 - Files: follow existing patterns in each folder (e.g., `routes/*.js`, `models/*`). Use PascalCase for new model constructor identifiers and `lowerCamelCase` for functions; preserve existing filenames, registered Mongoose model names, and collection names unless a migration is explicitly requested.
 - Views: Pug templates under `views/`; keep route names aligned with template names where practical.
@@ -36,6 +38,8 @@
 ## Testing Guidelines
 - Jest is configured in `jest.config.js` for `tests/**/*.test.js` and enforces coverage thresholds for selected critical files.
 - Add focused tests alongside changed behavior, normally under `tests/unit/` with the `*.test.js` suffix. Run the focused suite first, then `npm test` when practical.
+- Close jsdom windows, servers, timers, and temporary resources in teardown, including when assertions fail; prefer targeted mocks over loading unrelated application services. Preserve regression/security assertions when optimizing tests.
+- Some Mongo/Gateway integration suites require explicit disposable fixtures and otherwise skip; browser scripts under `tests/browser/` are separate from Jest. Report skipped checks. When enabling `LOCAL_AI_TEST_MONGO_URI`, use `--maxWorkers=1` because those suites share and drop the same disposable database.
 - See `documentation/testing-guide.md` for test commands and manual verification guidance.
 
 ## Commit & Pull Request Guidelines
