@@ -21,7 +21,8 @@
 
   function showJob(job) {
     byId('job-panel').hidden = !job;
-    byId('upload-panel').hidden = Boolean(job?.active);
+    byId('upload-panel').hidden = false;
+    text('upload-submit', job?.active ? 'Add to queue' : 'Start import');
     if (!job) return;
     text('job-state', job.state === 'completed' && (job.failed || job.skippedErrors) ? 'Completed with errors' : ({ queued: 'Waiting', running: 'Fetching', completed: 'Completed', failed: 'Stopped' }[job.state] || job.state));
     text('job-message', job.message || (job.active ? 'Fetching missing items at a steady pace.' : 'You can upload another list.'));
@@ -70,12 +71,12 @@
       if (currentGeneration !== generation) return;
       showJob(data.job);
       status.classList.remove('error');
-      status.textContent = data.job?.active ? 'Import is running in the background.' : 'Ready for a list upload.';
+      status.textContent = data.job?.active ? 'Import is running in the background. You can add more items to the queue.' : 'Ready for a list upload.';
     } catch (error) {
       if (currentGeneration !== generation) return;
       status.classList.add('error');
       status.textContent = error.message;
-      // Keep the form closed until the server confirms the shared slot is free.
+      // Require a successful status check before offering authenticated uploads.
       byId('upload-panel').hidden = true;
     } finally {
       refreshing = false;
@@ -116,7 +117,7 @@
       byId('upload-form').reset();
       showFormat();
       showJob(data.job);
-      status.textContent = data.job.active ? 'Upload accepted. You can leave this page.' : data.job.message || 'No item fetches were queued.';
+      status.textContent = data.job.active ? 'List accepted. New items are queued; you can add another list or leave this page.' : data.job.message || 'No item fetches were queued.';
     } catch (error) {
       status.classList.add('error');
       status.textContent = error.message;

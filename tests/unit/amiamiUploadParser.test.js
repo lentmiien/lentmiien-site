@@ -1,6 +1,30 @@
-const { parseItemCodes } = require('../../services/amiamiUploadParser');
+const { parseItemCodes, parseItemList } = require('../../services/amiamiUploadParser');
 const { MAX_HTML_BYTES, MAX_CODES } = require('../../utils/amiamiUploadPolicy');
 const sample = '<li class="newly-added-items__item"><a href="/eng/detail?gcode=TOY-RBT-9417" alt="Figure"><div><img data-src="https://img.amiami.com/figure.jpg"></div><p>Figure</p></a></li>';
+
+test.each(['codes', 'html'])('normalizes exact trailing variants and preserves every distinct size fallback in %s', format => {
+  const submitted = ['FIGURE-123-R001', 'FIGURE-123', 'FIGURE-123-D999', 'FIGURE-123-S002',
+    'FIGURE-123-S002', 'FIGURE-123-S003', 'GOODS-4-D000', 'GOODS-4-R1234', 'GOODS-4-S12',
+    'GOODS-4-S12A', 'GOODS-4-X123', 'GOODS-4-S123-EXTRA', 'goods-4-s123', 'GOODS-4-R001-D002'];
+  const input = format === 'codes' ? submitted.join('\n')
+    : submitted.map(code => `<a href="/eng/detail?gcode=${code}">x</a>`).join('');
+  expect(parseItemList(input, format)).toEqual({
+    codes: ['FIGURE-123', 'GOODS-4', 'GOODS-4-R1234', 'GOODS-4-S12', 'GOODS-4-S12A',
+      'GOODS-4-X123', 'GOODS-4-S123-EXTRA', 'goods-4-s123', 'GOODS-4-R001'],
+    sizeFallbacks: [
+      { baseCode: 'FIGURE-123', originalCode: 'FIGURE-123-S002' },
+      { baseCode: 'FIGURE-123', originalCode: 'FIGURE-123-S003' },
+    ],
+  });
+});
+
+test('validates normalized codes and bounds submitted variants before deduplication', () => {
+  expect(() => parseItemCodes('GOODS-S001', 'codes')).toThrow('line 1');
+  expect(parseItemCodes(sample + '<a href="/eng/detail?gcode=GOODS-S001">x</a>')).toEqual(['TOY-RBT-9417']);
+  const variants = Array.from({ length: MAX_CODES }, (_, i) => `GOODS-1-S${String(i).padStart(3, '0')}`);
+  expect(parseItemList(variants.join('\n'), 'codes').sizeFallbacks).toHaveLength(MAX_CODES);
+  expect(() => parseItemCodes([...variants, 'GOODS-1-R001'].join('\n'), 'codes')).toThrow('1,000');
+});
 
 test.each(['\n', '\r\n', '\r'])('parses plain codes with line ending %j, trims whitespace/BOM, skips blanks and deduplicates', ending => {
   expect(parseItemCodes(['\ufeffTOY-RBT-9417', '', ' FIGURE-123\t', 'TOY-RBT-9417', 'goods-22', ''].join(ending), 'codes'))

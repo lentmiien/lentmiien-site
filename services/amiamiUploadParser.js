@@ -3,7 +3,26 @@ const { MAX_HTML_BYTES, MAX_CODES, AmiAmiUploadError } = require('../utils/amiam
 
 const ITEM_CODE = /^(?=.{1,80}$)(?=.*[A-Za-z])(?=.*\d)(?=.*-)[A-Za-z\d-]+$/;
 
+const normalizeItemCode = code => code.replace(/-[RSD]\d{3}$/, '');
+const validItemCode = code => ITEM_CODE.test(code) && ITEM_CODE.test(normalizeItemCode(code));
+
+function parseItemList(input, format = 'html') {
+  const submitted = parseSubmittedCodes(input, format);
+  const codes = new Set();
+  const sizeFallbacks = [];
+  for (const originalCode of submitted) {
+    const baseCode = normalizeItemCode(originalCode);
+    codes.add(baseCode);
+    if (/-S\d{3}$/.test(originalCode)) sizeFallbacks.push({ baseCode, originalCode });
+  }
+  return { codes: [...codes], sizeFallbacks };
+}
+
 function parseItemCodes(input, format = 'html') {
+  return parseItemList(input, format).codes;
+}
+
+function parseSubmittedCodes(input, format) {
   if (format === 'html') return parseHtmlItemCodes(input);
   if (format !== 'codes') {
     throw new AmiAmiUploadError('INVALID_FORMAT', 'Choose HTML or item codes as the input format.');
@@ -22,7 +41,7 @@ function parseItemCodes(input, format = 'html') {
   for (let i = 0; i < lines.length; i += 1) {
     const code = lines[i].trim();
     if (!code) continue;
-    if (!ITEM_CODE.test(code)) {
+    if (!validItemCode(code)) {
       throw new AmiAmiUploadError('INVALID_CODE', `Invalid item code on line ${i + 1}. Use one code per line (for example TOY-RBT-9417), with no header or links.`);
     }
     codes.add(code);
@@ -57,7 +76,7 @@ function parseHtmlItemCodes(html) {
             const values = url.searchParams.getAll('gcode');
             if (url.origin === 'https://www.amiami.com' && !url.username && !url.password
               && url.pathname === '/eng/detail' && values.length === 1
-              && ITEM_CODE.test(values[0])) {
+              && validItemCode(values[0])) {
               codes.add(values[0]);
             }
           } catch (_) { /* Ignore malformed links; never fetch an uploaded URL. */ }
@@ -76,4 +95,4 @@ function parseHtmlItemCodes(html) {
   return [...codes];
 }
 
-module.exports = { parseItemCodes };
+module.exports = { parseItemCodes, parseItemList };

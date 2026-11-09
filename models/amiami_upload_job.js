@@ -7,6 +7,17 @@ const AmiAmiUploadJobSchema = new mongoose.Schema({
   creator: { type: mongoose.Schema.Types.ObjectId, required: true },
   state: { type: String, enum: ['queued', 'running', 'completed', 'failed'], required: true },
   codes: { type: [String], validate: value => value.length <= MAX_CODES },
+  sizeFallbacks: {
+    type: [{ _id: false, baseCode: String, originalCode: String, creator: mongoose.Schema.Types.ObjectId, retryFailed: Boolean }],
+    default: [],
+    validate: value => value.length <= MAX_CODES,
+  },
+  codeOptions: {
+    type: [{ _id: false, code: String, creator: mongoose.Schema.Types.ObjectId, retryFailed: Boolean }],
+    default: [],
+    validate: value => value.length <= MAX_CODES,
+  },
+  queueVersion: { type: Number, default: 0 },
   totalCodes: Number,
   queuedCount: Number,
   cursor: { type: Number, default: 0 },

@@ -30,7 +30,7 @@ html(lang='en')
         p#job-summary
         dl.stats
           div
-            dt Distinct item codes
+            dt Item codes
             dd#job-total 0
           div
             dt Skipped records
@@ -44,14 +44,14 @@ html(lang='en')
         p#job-timing
         p#job-current
         p#job-skipped-errors
-        p#background-note You can close this page. The import continues in the background; reopen it to see progress. Only one import can run at a time.
+        p#background-note You can close this page. The import continues in the background; reopen it to see progress or add more items to the shared queue.
         details#failure-panel(hidden)
           summary Items that could not be fetched
           ul#job-failures
         p.job-reference#job-reference
       section#upload-panel(hidden aria-labelledby='upload-heading')
         h2#upload-heading Add an item list
-        p Existing records are skipped by default. Missing items are fetched one at a time, with a 60-second pause after each attempt.
+        p Add items at any time, including while an import is running. New items go to the end of the shared queue. Existing records and codes already queued are skipped. Items are fetched one at a time, with a 60-second pause after each attempt.
         form#upload-form
           label(for='input-format') Input format
           select#input-format
@@ -63,7 +63,8 @@ html(lang='en')
           label#input-label(for='html-input') HTML fragment or document
           textarea#html-input(rows='10' spellcheck='false' placeholder='<a href="/eng/detail?gcode=TOY-RBT-9417">…</a>')
           p.help#format-help HTML is parsed as text and discarded; it is never displayed or executed.
-          p.help Up to 2 MiB of UTF-8 text and 1,000 distinct item codes. Duplicates are skipped.
+          p.help Up to 2 MiB of UTF-8 text and 1,000 distinct item codes per upload. The queue holds up to 1,000 pending items, including possible size fallbacks. Duplicates are skipped.
+          p.help Codes ending in -Rxxx, -Sxxx or -Dxxx (three digits) use the base item code. If the base lookup fails, each original -Sxxx code gets one attempt in case it identifies a clothing size.
           label
             input#retry-failed(type='checkbox')
             |  Retry empty records from failed lookups in this list

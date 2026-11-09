@@ -34,7 +34,7 @@ test('retrying failed placeholders requires explicit selection and skipped error
   expect(doc.querySelector('#retry-failed').checked).toBe(false);
 });
 
-test('empty state exposes paste/file form and submits with CSRF header; accepted active job hides form', async () => {
+test('empty state submits with CSRF and keeps the form available to append to the active job', async () => {
   await open(null);
   expect(doc.querySelector('#upload-panel').hidden).toBe(false);
   doc.querySelector('#html-input').value = '<div><a href="/eng/detail?gcode=TOY-RBT-9417">figure</a></div>';
@@ -46,7 +46,8 @@ test('empty state exposes paste/file form and submits with CSRF header; accepted
   expect(options.headers['X-CSRF-Token']).toBe('synthetic-token');
   expect(options.body.get('html')).toContain('TOY-RBT-9417');
   expect(options.body.get('format')).toBe('html');
-  expect(doc.querySelector('#upload-panel').hidden).toBe(true);
+  expect(doc.querySelector('#upload-panel').hidden).toBe(false);
+  expect(doc.querySelector('#upload-submit').textContent).toBe('Add to queue');
   expect(doc.querySelector('#job-summary').textContent).toBe('2 of 3 item codes processed');
   expect(doc.querySelector('#html-input').value).toBe('');
 });
@@ -70,7 +71,7 @@ test.each(['paste', 'file'])('code-list mode updates instructions and submits a 
   expect(options.body.get('format')).toBe('codes');
   if (mode === 'paste') expect(options.body.get('html')).toBe(input);
   else expect(options.body.get('file').name).toBe('items.txt');
-  expect(doc.querySelector('#upload-panel').hidden).toBe(true);
+  expect(doc.querySelector('#upload-panel').hidden).toBe(false);
   expect(select.value).toBe('html');
   expect(doc.querySelector('#html-file').accept).toBe('.html,.htm,text/html');
 });
@@ -89,9 +90,9 @@ test('invalid code-list response retains the list and mode for correction', asyn
   expect(doc.querySelector('#upload-submit').disabled).toBe(false);
 });
 
-test('reopening shows current job; terminal status restores upload form and escapes error strings', async () => {
+test('reopening shows the current job and append form; terminal status escapes error strings', async () => {
   await open(progress);
-  expect(doc.querySelector('#upload-panel').hidden).toBe(true);
+  expect(doc.querySelector('#upload-panel').hidden).toBe(false);
   expect(doc.querySelector('#job-panel').hidden).toBe(false);
   const attack = '<img src=x onerror="window.compromised=true">';
   dom.window.fetch.mockResolvedValueOnce(reply({ ...progress, active: false, state: 'completed', failed: 1,
@@ -102,6 +103,25 @@ test('reopening shows current job; terminal status restores upload form and esca
   expect(doc.querySelectorAll('img')).toHaveLength(0);
   expect(dom.window.compromised).toBeUndefined();
   expect(doc.querySelector('#job-state').textContent).toBe('Completed with errors');
+  expect(doc.querySelector('#upload-submit').textContent).toBe('Start import');
+});
+
+test('submits another list while active and preserves partially entered input during polling', async () => {
+  await open(progress);
+  doc.querySelector('#input-format').value = 'codes';
+  doc.querySelector('#html-input').value = 'GOODS-4-S001';
+  doc.querySelector('#refresh-status').click(); await new Promise(setImmediate);
+  expect(doc.querySelector('#html-input').value).toBe('GOODS-4-S001');
+  expect(doc.querySelector('#input-format').value).toBe('codes');
+  dom.window.fetch.mockResolvedValueOnce(reply({ ...progress, totalCodes: 4 }));
+  doc.querySelector('#upload-form').dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+  await new Promise(setImmediate);
+  const options = dom.window.fetch.mock.calls.find(([, value]) => value.method === 'POST')[1];
+  expect(options.body.get('html')).toBe('GOODS-4-S001');
+  expect(options.headers['X-CSRF-Token']).toBe('synthetic-token');
+  expect(doc.querySelector('#job-summary').textContent).toBe('2 of 4 item codes processed');
+  expect(doc.querySelector('#upload-panel').hidden).toBe(false);
+  expect(doc.querySelector('#upload-submit').disabled).toBe(false);
 });
 
 test('status failure closes the form and retains a readable error', async () => {

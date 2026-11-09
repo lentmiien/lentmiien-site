@@ -161,11 +161,11 @@ test.each(['paste', 'file'])('rejects oversized %s content', async mode => {
   expect(service.submit).not.toHaveBeenCalled();
 });
 
-test('active-job conflict returns 409 without replacing the job', async () => {
-  service.submit.mockRejectedValueOnce(new AmiAmiUploadError('JOB_ACTIVE', 'An import is already running.', 409));
+test('persistent queue contention returns a retryable 409', async () => {
+  service.submit.mockRejectedValueOnce(new AmiAmiUploadError('QUEUE_BUSY', 'The queue is changing. Please submit this list again.', 409));
   const response = await post();
   expect(response.status).toBe(409);
-  expect(await response.json()).toEqual({ error: 'An import is already running.' });
+  expect(await response.json()).toEqual({ error: 'The queue is changing. Please submit this list again.' });
 });
 
 test('status is read-only and available to other capability holders under the declared shared scope', async () => {
