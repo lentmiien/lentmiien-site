@@ -1,0 +1,55 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/decisions.css')
+
+block content
+  main.decisions#decision-app(data-csrf=csrfToken data-storage-scope=storageScope)
+    header
+      p.eyebrow AI Gateway / Admin
+      h1 Decision API tester
+      p Evaluate shared evidence with yes/no, choice and score questions.
+      nav(aria-label='Related pages')
+        a(href='/admin/ai-gateway') Gateway dashboard
+        a(href='/admin/tools') Tool Manager
+    p.notice Forms and the latest result stay in this browser tab session. Images are kept in memory only; select them again after reloading. Clear session removes the form and result now.
+    form#decision-form(autocomplete='off')
+      fieldset#decision-fields
+        section.panel
+          h2 Shared evidence
+          label(for='decision-model') Model
+          .model-row
+            select#decision-model(required)
+              option(value='') Loading models…
+            button#refresh-models(type='button') Refresh models
+          p#catalog-status.help(role='status') Checking Gateway availability…
+          label(for='decision-input') Evidence text
+          textarea#decision-input(rows='5', maxlength='6000', placeholder='Describe the evidence all questions should evaluate.')
+          label(for='decision-image') Optional shared image
+          input#decision-image(type='file', accept='image/png,image/jpeg,image/webp')
+          p.help One single-frame PNG, JPEG or WebP: up to 5 MiB, 4 million pixels and 4,096 pixels per edge. No remote URLs.
+          button#remove-image(type='button') Remove image
+          p#image-status.help(role='status') No image selected.
+        section.panel
+          h2 Questions
+          p.help Up to 32 questions. Combined evidence, instructions, labels, descriptions and field names must fit 6,000 UTF-8 bytes.
+          #decision-questions
+          .actions
+            button#add-predicate(type='button') + Yes/no
+            button#add-choice(type='button') + Choice
+            button#add-score(type='button') + Score
+        .actions
+          button.primary#run-decision(type='submit', disabled) Run decisions
+          button#clear-session(type='button') Clear session
+      button#cancel-decision(type='button', hidden) Cancel request
+    p#decision-status(role='status', aria-live='polite')
+    section.panel#decision-results(hidden, aria-label='Decision results')
+      h2 Latest result
+      p.help Probabilities and confidence may differ in calibration between providers. A successful response does not establish that the decision is correct.
+      #answer-summary
+      details
+        summary Full response and usage
+        pre#decision-raw
+
+block script
+  script(src='/js/decisions.js', defer)

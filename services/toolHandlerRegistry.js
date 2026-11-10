@@ -54,6 +54,10 @@ function getPushoverReminderToolService() {
 }
 
 module.exports = {
+  ...Object.fromEntries(['models', 'predicate', 'choice', 'score', 'batch'].map(type => [
+    `decisions.${type}`,
+    { execute: (args, context) => require('./decisionsToolService').execute(type, args, context) },
+  ])),
   'codex.runAiGatewayLinux': {
     execute: (args, context) => getCodexChatToolService().runAiGatewayLinux(args, context),
   },

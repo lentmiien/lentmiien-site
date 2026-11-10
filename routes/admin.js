@@ -346,7 +346,9 @@ router.use('/tools', toolManagerCsrf.issueToken);
 router.get('/tools', toolManagerController.index);
 router.post('/tools/save', toolManagerCsrf.requireToken, toolManagerController.save);
 router.post('/tools/seed', toolManagerCsrf.requireToken, toolManagerController.seed);
-router.post('/tools/test', toolManagerCsrf.requireToken, toolManagerController.test);
+// Inline decision images can occupy almost 7 MiB as base64. Parse only after
+// the existing admin gate and header CSRF check, outside the legacy 5 MiB parser.
+router.post('/tools/test', toolManagerCsrf.requireToken, express.json({ limit: '8mb' }), toolManagerController.test);
 router.post('/tools/:id/toggle', toolManagerCsrf.requireToken, toolManagerController.toggle);
 router.post('/tools/:id/delete', toolManagerCsrf.requireToken, toolManagerController.delete);
 

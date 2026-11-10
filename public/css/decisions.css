@@ -1,0 +1,38 @@
+.decisions { max-width: 1100px; margin: 2rem auto; color: var(--text); }
+.decisions h1 { font-size: clamp(1.8rem, 4vw, 2.8rem); }
+.decisions h2 { font-size: 1.35rem; }
+.decisions h3 { font-size: 1.1rem; }
+.decisions .eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: .1em; font-size: .8rem; }
+.decisions nav, .decisions .actions, .decisions .model-row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
+.decisions nav { margin-bottom: 1.5rem; }
+.decisions a { color: var(--accent); }
+.decisions .panel { padding: 1.5rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--surface-1); margin-bottom: 1rem; }
+.decisions .notice { padding: 1rem; border-left: 3px solid var(--accent); background: var(--accent-tint); }
+.decisions .help { color: var(--text-secondary); font-size: .9rem; margin: .5rem 0 1rem; }
+.decisions label { display: block; font-weight: 600; margin: .75rem 0 .35rem; }
+.decisions input, .decisions textarea, .decisions select { padding: .65rem; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: .35rem; max-width: 100%; }
+.decisions textarea, .decisions input[type='text'] { width: 100%; }
+.decisions select { min-width: 8rem; }
+.decisions .model-row select { flex: 1; }
+.decisions button { padding: .55rem .85rem; border: 1px solid var(--brand); border-radius: .35rem; background: var(--surface-1); color: var(--brand); }
+.decisions button:hover { background: var(--brand-tint); }
+.decisions button.primary { background: var(--brand); color: var(--text-inverse); font-weight: 700; }
+.decisions button:disabled { opacity: .5; cursor: not-allowed; }
+.decisions :is(input, textarea, select, button, a, summary):focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.decisions .question { margin: 1rem 0; padding: 1rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: .5rem; }
+.decisions .question > .actions { margin-top: .75rem; }
+.decisions .option-row { display: grid; grid-template-columns: minmax(110px, .6fr) 1fr 1.4fr auto; gap: .5rem; align-items: end; margin-bottom: .5rem; }
+.decisions .score-row { grid-template-columns: 1fr 1.4fr auto; }
+.decisions .option-row label { font-size: .85rem; }
+.decisions .option-row input, .decisions .option-row select { width: 100%; min-width: 0; }
+.decisions pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; background: var(--surface-2); color: var(--text); }
+.decisions table { width: 100%; margin: .75rem 0; border-collapse: collapse; }
+.decisions td, .decisions th { padding: .5rem; text-align: left; border-bottom: 1px solid var(--divider); overflow-wrap: anywhere; }
+.decisions .error { color: var(--danger); }
+.decisions .answer { border-bottom: 1px solid var(--divider); padding: 1rem 0; overflow-wrap: anywhere; }
+.decisions [hidden] { display: none !important; }
+@media (max-width: 650px) {
+  .decisions .panel { padding: 1rem; }
+  .decisions .model-row select { flex-basis: 100%; }
+  .decisions .option-row, .decisions .score-row { grid-template-columns: 1fr; border-bottom: 1px solid var(--divider); padding-bottom: 1rem; }
+}

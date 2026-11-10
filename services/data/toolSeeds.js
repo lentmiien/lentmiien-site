@@ -71,6 +71,7 @@ function promptOnlyParameters(description) {
 }
 
 module.exports = [
+  ...require('./decisionToolSeeds'),
   {
     name: 'generate_image',
     displayName: 'GPT Image Generation',

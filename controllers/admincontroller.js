@@ -94,6 +94,7 @@ const routes = [
   "chat.audio.synthesize",
   "openai",
   "embedding",
+  "ai_gateway.decisions.run",
   "gptdocument",
   "accounting",
   "budget",

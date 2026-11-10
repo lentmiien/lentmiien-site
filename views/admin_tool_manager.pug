@@ -12,6 +12,7 @@ block content
       .tool-manager-header__main
         p.tool-manager-header__eyebrow Admin
         h1.tool-manager-header__title Tool Manager
+        a(href='/admin/decisions') Decision API tester
       .tool-manager-header__actions
         form(method='post', action='/admin/tools/seed')
           input(type='hidden', name='_csrf', value=csrfToken)
