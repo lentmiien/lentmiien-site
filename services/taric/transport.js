@@ -19,7 +19,7 @@ let runtimeReported = false;
 const { normalizeDetail } = require('../amiamiScraperService');
 
 function boundedJson(url, { method = 'GET', body, headers = {}, deadlineMs = 15000, maxBytes = 262144,
-  maxWireBytes = maxBytes, signal, correlationId, onDiagnostic, onEvent, diagnosticContext = {}, successStatuses = [200], tlsOptions = {},
+  maxWireBytes = maxBytes, jsonMaxDepth = 20, signal, correlationId, onDiagnostic, onEvent, diagnosticContext = {}, successStatuses = [200], tlsOptions = {},
   request = url.protocol === 'https:' ? https.request : http.request } = {}) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
@@ -112,7 +112,7 @@ function boundedJson(url, { method = 'GET', body, headers = {}, deadlineMs = 150
           let text;
           try { text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)); }
           catch (error) { return rejectSafe('decode', error); }
-          try { finish(null, strictJson(text, 'PROVIDER_FAILED')); }
+          try { finish(null, strictJson(text, 'PROVIDER_FAILED', { maxDepth: jsonMaxDepth })); }
           catch (error) { rejectSafe('json', error); }
         });
       });
