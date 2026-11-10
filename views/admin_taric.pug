@@ -82,8 +82,11 @@ html(lang='en')
         p Submit only after reviewing a terminal result or choosing a manual fallback. One final choice is immutable and remains unverified.
         button#test-feedback(type='button') Record final choice
         pre#test-feedback-result
-      section
+      section#benchmark-import
         h2 Benchmark import
+        p
+          a(href='/admin/taric/history?review=verified#benchmark-export') Export verified history as benchmark CSV
+          |  to build a first dataset with unique products and broad TARIC code coverage, ready to upload here.
         p CSV inputs: descriptive_name, full_item_name, specs, hs_code. Required target: taric_code. Optional description_summary is scored for lexical overlap only. Private rows stay in MongoDB; they are never added to the public catalog as official labels.
         input#csv(type='file' accept='.csv,text/csv')
         label(for='version') Version (0 is permanently training-derived)

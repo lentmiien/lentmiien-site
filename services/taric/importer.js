@@ -80,4 +80,4 @@ function draft(parsed, version, review, training) {
     policy: { version: 'exact-all-cases/1', minExact: review.minExact, maxInvalid: review.maxInvalid,
       denominator: parsed.cases.length, descriptionMetric: 'lexical-token-jaccard-diagnostic-only' } };
 }
-module.exports = { MAX_IMPORT_BYTES, REQUIRED, preview, overlaps, draft, validateReview };
+module.exports = { MAX_IMPORT_BYTES, REQUIRED, caseFromRow, preview, overlaps, draft, validateReview };

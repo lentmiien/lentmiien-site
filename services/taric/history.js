@@ -235,6 +235,36 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
     if (preview.snapshotHash !== value.expectedSnapshotHash) fail('STALE');
     return { csv: 'jan\n' + preview.jans.map(jan => jan + '\n').join(''), ...preview };
   }
+  async function benchmarkFor(actor, value) {
+    object(value, ['filters', 'options'], 'INVALID_REQUEST');
+    const exporter = require('./benchmarkExport');
+    const options = exporter.options(value.options);
+    const filters = domain.filters(value.filters === undefined ? {} : value.filters);
+    if (filters.review && filters.review !== 'verified') fail('INVALID_REQUEST');
+    // Enforce verification independently of UI state; pagination never limits exports.
+    filters.review = 'verified';
+    const population = await selection(actor, filters);
+    const training = await query(Benchmark.findOne({ version: 0 }).select('_id cases manifest.sha256'));
+    const result = await exporter.build(population.rows, options, training);
+    return { ...result, filters: population.filters,
+      snapshotHash: hash({ populationHash: population.populationHash, filters: population.filters, result }) };
+  }
+  async function benchmarkPreview(actor, value) {
+    const { csv, ...result } = await benchmarkFor(actor, value);
+    return result;
+  }
+  async function benchmarkDownload(actor, value) {
+    object(value, ['filters', 'options', 'expectedSnapshotHash'], 'INVALID_REQUEST');
+    string(value.expectedSnapshotHash, 64, 'INVALID_REQUEST', /^[a-f0-9]{64}$/);
+    const input = { filters: value.filters, options: value.options };
+    const result = await benchmarkFor(actor, input);
+    if (result.snapshotHash !== value.expectedSnapshotHash) fail('STALE');
+    if (!result.summary.selected) fail('INVALID_REQUEST');
+    // Repeat authorization and source checks before releasing the private artifact.
+    const recheck = await benchmarkFor(actor, input);
+    if (recheck.snapshotHash !== result.snapshotHash) fail('STALE');
+    return result;
+  }
   async function previewFor(owner, value) {
     object(value, ['filters', 'options'], 'INVALID_REQUEST');
     const filters = domain.filters(value.filters || {}); delete filters.cursor; delete filters.snapshot;
@@ -287,6 +317,6 @@ function createHistory({ models, adminPrincipal, now = () => new Date() }) {
     active++;
     try { return await fn(...args); } finally { active--; }
   };
-  return Object.fromEntries(Object.entries({ list, detail, review, approveBulk, preview, download, selection, janPreview, janDownload, currentSource }).map(([name, fn]) => [name, bounded(fn)]));
+  return Object.fromEntries(Object.entries({ list, detail, review, approveBulk, preview, download, selection, janPreview, janDownload, benchmarkPreview, benchmarkDownload, currentSource }).map(([name, fn]) => [name, bounded(fn)]));
 }
 module.exports = { createHistory, MAX_SCAN };

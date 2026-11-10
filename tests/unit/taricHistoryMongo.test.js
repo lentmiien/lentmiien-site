@@ -36,6 +36,59 @@ run('TARIC human history on standalone Mongo', () => {
       confirmTarget: true, correction: false, note: 'Synthetic human-reviewed source', approvedDescription: null, ...extra };
   }
   async function verify(requestId, extra = {}) { return history.review(actor, requestId, await body(requestId, extra)); }
+  test('benchmark export spans pages, includes retained sources, isolates owners and invalidates changed reviews', async () => {
+    for (let n = 1; n <= 65; n++) { await seed(n); await verify(id(n)); }
+    await seed(66); await seed(67, { owner: 'foreign-owner' });
+    await models.Request.deleteOne({ _id: id(1) });
+    const input = { filters: { review: 'verified' }, options: { limit: 60 } };
+    const preview = await history.benchmarkPreview(actor, input);
+    expect(preview.csv).toBeUndefined();
+    expect(preview.summary).toMatchObject({ available: 65, selected: 60 });
+    const file = await history.benchmarkDownload(actor, { ...input, expectedSnapshotHash: preview.snapshotHash });
+    expect((await require('../../services/taric/importer').preview(Buffer.from(file.csv))).manifest.accepted).toBe(60);
+    expect((await history.benchmarkPreview(actor, {})).selected.some(row => row.id === id(1))).toBe(true);
+    expect(await models.Export.countDocuments()).toBe(0);
+    expect(await models.Benchmark.countDocuments()).toBe(0);
+    await models.Benchmark.collection.insertOne({ _id: id(900), version: 0, cases: [], manifest: { sha256: 'c'.repeat(64) } });
+    await models.Control.create({ _id: 'management', until: new Date(0), holder: '' });
+    const imported = await service.importBenchmark(Buffer.from(file.csv), 1, {
+      targetsReviewed: true, independent: false, trainingExcluded: false, provenance: 'Synthetic verified-history export test',
+      reviewer: 'Synthetic operator', sourceLineage: ['verified-history'], minExact: 1, maxInvalid: 0,
+    }, actor);
+    expect(imported.manifest.accepted).toBe(60);
+    expect(await models.Benchmark.findById(imported.id).lean()).toMatchObject({ version: 1, state: 'draft', releaseEligible: false,
+      cases: expect.arrayContaining([expect.objectContaining({ target: '0000000002' })]) });
+    expect((await models.Settings.findById('tool')).currentBenchmark).toBeUndefined();
+    await expect(history.benchmarkPreview('b'.repeat(24), {})).rejects.toThrow('FORBIDDEN');
+    for (const bad of [{ actor }, { filters: { owner: 'foreign-owner' } }, { filters: { review: 'unreviewed' } },
+      { options: { limit: 501 } }, { filters: { search: { $ne: '' } } }]) {
+      await expect(history.benchmarkPreview(actor, bad)).rejects.toThrow('INVALID_REQUEST');
+    }
+    await verify(id(2), { status: 'excluded' });
+    await expect(history.benchmarkDownload(actor, { ...input, expectedSnapshotHash: preview.snapshotHash })).rejects.toThrow('STALE');
+  });
+  test('benchmark download rejects empty selection and a changed v0 overlap reference', async () => {
+    const empty = await history.benchmarkPreview(actor, {});
+    expect(empty.summary.selected).toBe(0);
+    await expect(history.benchmarkDownload(actor, { expectedSnapshotHash: empty.snapshotHash })).rejects.toThrow('INVALID_REQUEST');
+    await seed(); await verify(id(1));
+    const preview = await history.benchmarkPreview(actor, {});
+    const file = await history.benchmarkDownload(actor, { expectedSnapshotHash: preview.snapshotHash });
+    const parsed = await require('../../services/taric/importer').preview(Buffer.from(file.csv));
+    await models.Benchmark.collection.insertOne({ _id: id(900), version: 0, cases: parsed.cases, manifest: parsed.manifest });
+    const changed = await history.benchmarkPreview(actor, {});
+    expect(changed.summary.excludedByReason).toEqual({ known_training_overlap: 1 });
+    await expect(history.benchmarkDownload(actor, { expectedSnapshotHash: preview.snapshotHash })).rejects.toThrow('STALE');
+  });
+  test('benchmark download rechecks management authority before releasing the file', async () => {
+    await seed(); await verify(id(1));
+    const preview = await history.benchmarkPreview(actor, {});
+    const principal = await service.adminPrincipal(actor);
+    const adminPrincipal = jest.fn().mockResolvedValueOnce(principal).mockResolvedValue(null);
+    const revoked = createHistory({ models, adminPrincipal });
+    await expect(revoked.benchmarkDownload(actor, { expectedSnapshotHash: preview.snapshotHash })).rejects.toThrow('FORBIDDEN');
+    expect(adminPrincipal).toHaveBeenCalledTimes(2);
+  });
   const bulkFilters = { feedback: 'present', review: 'unreviewed', missing: 'no' };
   async function bulkBody(filters = bulkFilters) {
     return { filters, expectedSnapshotHash: (await history.list(actor, filters)).snapshot, confirm: true };
@@ -356,15 +409,32 @@ run('TARIC human history on standalone Mongo', () => {
     expect(await models.Export.countDocuments()).toBe(0);
   });
   test('HTTP session, capability and CSRF deny machine key; trusted actor, private headers, foreign IDs and storage failure', async () => {
-    const rid = await seed(); let role = 'user'; let authenticated = true;
+    const rid = await seed(); let role = 'user'; let authenticated = true; let grant = false;
     const csrf = 'x'.repeat(43); const app = express();
     app.set('views', require('path').join(__dirname, '../../views')); app.set('view engine', 'pug');
     app.use((req, _res, next) => { req.user = { _id: actor, name: 'synthetic', type_user: role }; req.session = { csrfToken: csrf }; req.isAuthenticated = () => authenticated; next(); });
-    app.use('/admin/taric', createTaricAdminRouter(service, { roleModel: { findOne: async () => null } }));
+    app.use('/admin/taric', createTaricAdminRouter(service, { roleModel: { findOne: async query => grant && query.type === 'user' ? { permissions: ['taric.tool.manage'] } : null } }));
     const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
     const url = `http://127.0.0.1:${server.address().port}/admin/taric/history`;
     const post = (path, value, headers = {}) => fetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf, ...headers }, body: JSON.stringify(value) });
     try {
+      for (const path of ['/benchmark/preview', '/benchmark/download']) {
+        role = 'user'; expect((await post(path, {})).status).toBe(403);
+        role = 'family'; expect((await post(path, {})).status).toBe(403);
+        role = 'admin'; authenticated = false; expect((await post(path, {})).status).toBe(401);
+        authenticated = true;
+        expect((await post(path, {}, { 'X-CSRF-Token': '' })).status).toBe(403);
+        expect((await post(path, {}, { 'X-CSRF-Token': 'invalid' })).status).toBe(403);
+        expect((await post(path, {}, { Origin: 'https://evil.test' })).status).toBe(403);
+        expect((await post(path, { actor })).status).toBe(400);
+        expect((await post(path, { padding: 'x'.repeat(4096) })).status).toBe(413);
+        expect((await fetch(url + path)).status).toBe(404);
+      }
+      role = 'user';
+      grant = true;
+      expect((await post('/benchmark/preview', {})).status).toBe(200);
+      grant = false;
+      expect((await post('/benchmark/preview', {})).status).toBe(403);
       const bulkInput = await bulkBody();
       expect((await post('/approve-bulk', bulkInput)).status).toBe(403);
       role = 'family'; expect((await post('/approve-bulk', bulkInput)).status).toBe(403);
@@ -392,6 +462,13 @@ run('TARIC human history on standalone Mongo', () => {
       expect((await post(`/${rid}/review`, await body(rid), { Origin: 'https://evil.test' })).status).toBe(403);
       expect((await post(`/${rid}/review`, await body(rid))).status).toBe(200);
       await seed(2, { owner: 'foreign-owner' }); expect((await fetch(url + '/' + id(2))).status).toBe(404);
+      const benchmark = await (await post('/benchmark/preview', {})).json();
+      const csv = await post('/benchmark/download', { expectedSnapshotHash: benchmark.snapshotHash });
+      expect(csv.status).toBe(200);
+      expect(csv.headers.get('cache-control')).toContain('no-store');
+      expect(csv.headers.get('content-type')).toContain('text/csv');
+      expect(csv.headers.get('content-disposition')).toMatch(/^attachment; filename="taric-benchmark-[a-f0-9]{16}\.csv"$/);
+      expect((await require('../../services/taric/importer').preview(Buffer.from(await csv.text()))).manifest.accepted).toBe(1);
       const preview = await (await post('/preview', {})).json();
       const download = await post('/download', { expectedSnapshotHash: preview.snapshotHash });
       expect(download.status).toBe(200); expect(download.headers.get('content-disposition')).toMatch(/^attachment; filename="taric-candidates-[a-f0-9]{32}\.jsonl"$/);

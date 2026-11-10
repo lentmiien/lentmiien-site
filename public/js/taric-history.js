@@ -4,10 +4,11 @@
   const base = '/admin/taric/history';
   let current = null; let preview = null; let next = null; let listSnapshot = null; let previewEpoch = 0; let listEpoch = 0;
   let bulkSelection = null; let bulkBusy = false;
+  let benchmarkPreview = null;
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
   const showStatus = text => { $('status').textContent = text; };
   let janPreview = null; let redoPreview = null; let batch = null; let pollTimer; let detailEpoch = 0;
-  const invalidate = () => { janPreview = null; redoPreview = null; $('jan-download').disabled = true; $('redo-start').disabled = true; $('redo-confirm').checked = false; $('jan-content').replaceChildren(); $('redo-content').replaceChildren(); previewEpoch++; preview = null; $('download').disabled = true; $('preview-content').replaceChildren(); };
+  const invalidate = () => { benchmarkPreview = null; $('benchmark-download').disabled = true; $('benchmark-content').replaceChildren(); janPreview = null; redoPreview = null; $('jan-download').disabled = true; $('redo-start').disabled = true; $('redo-confirm').checked = false; $('jan-content').replaceChildren(); $('redo-content').replaceChildren(); previewEpoch++; preview = null; $('download').disabled = true; $('preview-content').replaceChildren(); };
   async function api(path, body) {
     const response = await fetch(base + path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content }, body: JSON.stringify(body) });
     if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(response.status === 409 ? 'Snapshot changed. Reload the request or preview again before saving/downloading.' : `${response.status}: ${data.error || 'History unavailable; try again after database recovery.'}`); }
@@ -148,6 +149,33 @@
     });
   });
   for (const id of ['selection-mode', 'selection-limit', 'selection-cap', 'description-source']) $(id).addEventListener('input', invalidate);
+  $('benchmark-limit').addEventListener('input', invalidate);
+  $('benchmark-preview').addEventListener('click', () => run(async () => {
+    invalidate();
+    const filters = activeFilters();
+    if (filters.review && filters.review !== 'verified') throw new Error('Set Review status to All or Verified before exporting a benchmark.');
+    const input = { filters, options: { limit: Number($('benchmark-limit').value) } }; const epoch = previewEpoch;
+    const result = await (await api('/benchmark/preview', input)).json(); if (epoch !== previewEpoch) return;
+    benchmarkPreview = { input, result };
+    const container = $('benchmark-content');
+    pairs(container, { 'Filtered verified cases': result.summary.available, Selected: result.summary.selected,
+      'Distinct TARIC codes': result.summary.distinctCodes, Excluded: result.summary.excluded,
+      'Excluded by reason': JSON.stringify(result.summary.excludedByReason), 'Selected per code': JSON.stringify(result.summary.perCode),
+      'CSV bytes (maximum 2 MiB)': result.bytes, 'File SHA-256': result.sha256 });
+    details(container, 'Selected products and reviewed targets', result.selected.map(row => `${row.id}: ${row.jan || 'No JAN'} — ${row.name} — ${row.target}`).join('\n'));
+    details(container, 'Skipped entries', result.skipped.map(row => `${row.id}: ${row.reason}`).join('\n'));
+    if (!result.trainingReference) container.append(el('p', 'No v0 benchmark is available for known training-overlap checks. Review training provenance before import.'));
+    $('benchmark-download').disabled = result.summary.selected === 0;
+    showStatus('Benchmark preview ready. Download rechecks this snapshot and produces a CSV accepted by Benchmark import.');
+  }));
+  $('benchmark-download').addEventListener('click', () => run(async () => {
+    if (!benchmarkPreview) return; $('benchmark-download').disabled = true;
+    const response = await api('/benchmark/download', { ...benchmarkPreview.input, expectedSnapshotHash: benchmarkPreview.result.snapshotHash });
+    const url = URL.createObjectURL(await response.blob()); const link = el('a');
+    link.href = url; link.download = /filename="(taric-benchmark-[a-f0-9]+\.csv)"/.exec(response.headers.get('content-disposition'))?.[1] || 'taric-benchmark.csv';
+    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showStatus('Benchmark CSV downloaded. Upload it in Benchmark import with an unused v1+ version and accurate review declarations.');
+  }));
   $('preview').addEventListener('click', () => run(async () => {
     invalidate(); const epoch = previewEpoch; const input = { filters: activeFilters(), options: selection() };
     const result = await (await api('/preview', input)).json(); if (epoch !== previewEpoch) return; preview = { input, result };
