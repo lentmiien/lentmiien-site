@@ -35,7 +35,7 @@ module.exports = Object.entries(descriptions).map(([type, description]) => {
   const properties = type === 'models' ? {} : {
     model: { type: 'string', enum: MODELS },
     input: { type: 'string', maxLength: 6000, description: 'Shared evidence text. May be empty when supplying an image. All text and keys together must fit 6,000 UTF-8 bytes.' },
-    image_data_url: { type: 'string', maxLength: 6990548, description: 'Optional single inline base64 PNG/JPEG/WebP, at most 5 MiB, 4 million pixels, 4,096 per edge. Remote URLs and animated images are rejected.' },
+    image_data_url: { type: 'string', maxLength: 6990548, description: 'Optional single inline base64 PNG/JPEG/WebP, at most 5 MiB, 4 million pixels, 4,096 per edge. Omit or pass an empty string for no image. Remote URLs and animated images are rejected.' },
     ...(type === 'batch' ? { questions: { type: 'array', minItems: 1, maxItems: 32, items: { anyOf: ['predicate', 'choice', 'score'].map(questionSchema) } } }
       : { ...questionProperties, ...(type === 'choice' ? { choices } : type === 'score' ? { levels } : {}) }),
   };

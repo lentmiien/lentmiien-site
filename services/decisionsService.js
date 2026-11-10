@@ -77,7 +77,9 @@ async function buildPayload(raw) {
   object(raw, ['model', 'input', 'questions', 'image_data_url'], 'request');
   if (Buffer.byteLength(JSON.stringify(raw)) > MAX_BODY) fail('Request exceeds 8 MiB.', 413);
   if (typeof raw.model !== 'string' || (!MODELS.includes(raw.model) && !Object.hasOwn(ALIASES, raw.model))) fail('Unknown decision model.');
-  if (typeof raw.input !== 'string' || raw.input.length > 6000 || (!raw.input.trim() && !raw.image_data_url)) fail('Provide evidence text or an image.');
+  // Tool callers may send an empty string for an unused optional image field.
+  const imageDataUrl = raw.image_data_url === '' ? undefined : raw.image_data_url;
+  if (typeof raw.input !== 'string' || raw.input.length > 6000 || (!raw.input.trim() && !imageDataUrl)) fail('Provide evidence text or an image.');
   if (!Array.isArray(raw.questions) || raw.questions.length < 1 || raw.questions.length > 32) fail('Use 1–32 questions.');
   const names = new Set();
   for (const question of raw.questions) {
@@ -86,15 +88,15 @@ async function buildPayload(raw) {
     if (question.name !== undefined) names.add(question.name);
   }
   const payload = { model: ALIASES[raw.model] || raw.model, input: raw.input, questions: raw.questions };
-  if (raw.image_data_url !== undefined) {
+  if (imageDataUrl !== undefined) {
     payload.input = [{ role: 'user', content: [
       ...(raw.input ? [{ type: 'input_text', text: raw.input }] : []),
-      { type: 'input_image', image_url: raw.image_data_url },
+      { type: 'input_image', image_url: imageDataUrl },
     ] }];
   }
   if (textBytes(payload) > 6000) fail('Combined text and keys exceed 6,000 UTF-8 bytes.', 413);
   if (Buffer.byteLength(JSON.stringify(payload)) > MAX_BODY) fail('Request exceeds 8 MiB.', 413);
-  if (raw.image_data_url !== undefined) await validateImage(raw.image_data_url);
+  if (imageDataUrl !== undefined) await validateImage(imageDataUrl);
   return payload;
 }
 

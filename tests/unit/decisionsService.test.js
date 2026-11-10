@@ -13,6 +13,13 @@ test('builds all three types and preserves typed values and optional names', asy
   expect(await buildPayload(raw)).toEqual(raw);
   expect((await buildPayload({ ...raw, model: 'openai' })).model).toBe('gpt-6-luna');
 });
+test('treats an empty image field as omitted and still requires evidence', async () => {
+  const raw = { ...request(), image_data_url: '' };
+  expect(await buildPayload(raw)).toEqual(await buildPayload(request()));
+  expect(raw.image_data_url).toBe('');
+  await expect(buildPayload({ ...raw, input: '' })).rejects.toMatchObject({ status: 422, message: 'Provide evidence text or an image.' });
+  await expect(buildPayload({ ...raw, input: '   ' })).rejects.toHaveProperty('status', 422);
+});
 test.each([
   raw => { raw.model = 'unknown'; },
   raw => { raw.model = 'toString'; },
@@ -30,6 +37,7 @@ test.each([
   raw => { raw.questions[2].levels = Array.from({ length: 11 }, () => ({ label: 'many' })); },
   raw => { raw.image_data_url = 'http://127.0.0.1/private'; },
   raw => { raw.image_data_url = 'data:image/png;base64,aGVsbG8='; },
+  raw => { raw.image_data_url = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/7WQAAAAASUVORK5CYII='; },
   raw => { raw.image_data_url = 'data:image/gif;base64,aGVsbG8='; },
 ])('rejects invalid/unsupported input before inference %#', async mutate => {
   const raw = request(); mutate(raw);

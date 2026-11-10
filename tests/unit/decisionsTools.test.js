@@ -3,7 +3,7 @@ jest.mock('../../services/decisionsService', () => ({ ...jest.requireActual('../
 const seeds = require('../../services/data/decisionToolSeeds');
 const handlers = require('../../services/toolHandlerRegistry');
 const { resolveAuthorizedToolPrincipal } = require('../../services/toolExecutionPrincipalService');
-const { service } = require('../../services/decisionsService');
+const { service, DecisionsService } = require('../../services/decisionsService');
 
 test('all five enabled seeds have registered handlers and typed schemas', () => {
   expect(seeds.map(seed => seed.name)).toEqual(['decision_models', 'decision_predicate', 'decision_choice', 'decision_score', 'decision_batch']);
@@ -23,4 +23,22 @@ test.each(['predicate', 'choice', 'score'])('adapts %s question and uses resolve
   const { model, input, image_data_url, ...question } = args;
   expect(service.evaluate).toHaveBeenCalledWith({ model, input, image_data_url, questions: [{ ...question, type }] }, 'resolved-user');
   expect(resolveAuthorizedToolPrincipal).toHaveBeenCalledWith(expect.anything(), 'ai_gateway.decisions.run', expect.objectContaining({ roleCapabilityBundles: { admin: ['ai_gateway.decisions.run'], family: [], user: [] } }));
+});
+test.each(['predicate', 'choice', 'score', 'batch'])('%s sends text-only evidence when the optional image is empty', async type => {
+  resolveAuthorizedToolPrincipal.mockResolvedValueOnce({ _id: 'resolved-user' });
+  const questionType = type === 'batch' ? 'predicate' : type;
+  const question = { type: questionType, instructions: 'Assess the evidence.',
+    ...(type === 'choice' ? { choices: [{ value: true }, { value: false }] }
+      : type === 'score' ? { levels: [{ label: 'low' }, { label: 'high' }] } : {}) };
+  const { type: ignoredType, ...fields } = question;
+  const args = { model: 'd3-mini-q8', input: 'Synthetic evidence', image_data_url: '',
+    ...(type === 'batch' ? { questions: [question] } : fields) };
+  const result = { model: args.model, answers: [{ type: questionType }] };
+  const client = { request: jest.fn().mockResolvedValue({ data: result }) };
+  const realService = new DecisionsService({ client });
+  service.evaluate.mockImplementationOnce((...parameters) => realService.evaluate(...parameters));
+  await expect(handlers[`decisions.${type}`].execute(args, { user: { _id: 'caller' } })).resolves.toEqual(result);
+  expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
+    data: { model: args.model, input: args.input, questions: [question] },
+  }));
 });

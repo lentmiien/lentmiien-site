@@ -19,7 +19,10 @@ Tool Manager seeds five enabled tools on normal database-ready startup:
 `decision_models`, `decision_predicate`, `decision_choice`, `decision_score`,
 and `decision_batch`. Existing tool customizations are preserved by missing-only
 seeding. The inference tools accept shared `input` text, `model`, and optional
-inline `image_data_url`; the single-question tools accept question fields directly.
+inline `image_data_url`; omit it or pass `"image_data_url": ""` for no image.
+Nonempty values must contain a valid image, and requests still require evidence
+text when no image is provided. This behavior applies to existing tools without
+reseeding their definitions. The single-question tools accept question fields directly.
 The batch tool accepts `questions`. This is a deliberate text-and-image subset
 of the Gateway's richer message input contract. Tool results follow the caller's
 normal chat retention, independently of the browser tester.
