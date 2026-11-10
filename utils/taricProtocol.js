@@ -39,8 +39,8 @@ function payload(row, adapter, maxTokens = 256) {
 }
 // Recursive descent only to enforce unique keys/prototype safety; JSON.parse handles
 // string/number grammar. All callers cap bytes before this parser allocates objects.
-function strictJson(text, code = 'INVALID_RESULT') {
-  if (typeof text !== 'string') fail(code);
+function strictJson(text, code = 'INVALID_RESULT', { maxDepth = 20 } = {}) {
+  if (typeof text !== 'string' || !Number.isSafeInteger(maxDepth) || maxDepth < 0 || maxDepth > 64) fail(code);
   let i = 0;
   const whitespace = () => { while (/[\x20\t\r\n]/.test(text[i] || '!')) i++; };
   function str() {
@@ -52,7 +52,7 @@ function strictJson(text, code = 'INVALID_RESULT') {
     fail(code);
   }
   function value(depth) {
-    if (depth > 20) fail(code);
+    if (depth > maxDepth) fail(code);
     whitespace();
     const c = text[i];
     if (c === '"') return str();

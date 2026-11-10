@@ -4,8 +4,42 @@ const { createTransport, boundedJson } = require('../../services/taric/transport
 const { createWarmSessions } = require('../../services/taric/warmSession');
 const { createGatewayCapabilities, REQUIRED, validate } = require('../../services/taric/gatewayCapabilities');
 const { gatewayFixture, openapi } = require('../helpers/taricGateway');
+const { strictJson } = require('../../utils/taricProtocol');
 let fixture;
 afterEach(async () => { if (fixture) await fixture.close(); fixture = null; });
+
+function nestedSchema(depth) {
+  let value = 'leaf';
+  for (let i = 0; i < depth; i++) value = { items: value };
+  return value;
+}
+
+test('deep unrelated OpenAPI schemas pass discovery without relaxing ordinary response parsing', async () => {
+  fixture = await gatewayFixture();
+  fixture.document.components = { schemas: { UnrelatedInput: nestedSchema(25) } };
+  const text = JSON.stringify(fixture.document);
+  expect(() => strictJson(text)).toThrow('INVALID_RESULT');
+  await expect(createTransport({ env: fixture.env }).sessionAdapter.preflight()).resolves.toMatchObject({ protocol: 'owned-v1' });
+  await expect(boundedJson(new URL('/openapi.json', fixture.env.TARIC_GATEWAY_ORIGIN), {
+    headers: { Authorization: 'Bearer synthetic-proxy', 'X-Admin-Token': 'synthetic-admin' },
+  })).rejects.toMatchObject({ transport: { phase: 'json' } });
+  expect(fixture.requests.every(req => req.path === '/openapi.json' && req.method === 'GET')).toBe(true);
+  expect(fixture.sessions).toHaveLength(0);
+  expect(fixture.generateCount).toBe(0);
+});
+
+test('discovery nesting remains bounded', async () => {
+  fixture = await gatewayFixture();
+  fixture.document.components = { schemas: { UnrelatedInput: nestedSchema(65) } };
+  await expect(createTransport({ env: fixture.env }).sessionAdapter.preflight()).rejects.toMatchObject({
+    code: 'READINESS_UNVERIFIED', transport: { phase: 'json' }, inferenceDispatched: false,
+  });
+  expect(fixture.sessions).toHaveLength(0);
+});
+
+test.each(['{"duplicate":1,"duplicate":2}', '{"__proto__":{}}', '{"constructor":{}}', '{"prototype":{}}'])('larger discovery depth retains strict key safety: %s', text => {
+  expect(() => strictJson(text, 'PROVIDER_FAILED', { maxDepth: 64 })).toThrow('PROVIDER_FAILED');
+});
 test('published Gateway with proxy-only generation passes without documentation-only paths or schemas', async () => {
   fixture = await gatewayFixture();
   expect(Object.keys(fixture.document.paths).sort()).toEqual([

@@ -33,8 +33,10 @@ function createGatewayCapabilities(gateway, { now = Date.now, ttlMs = 15000, fin
     let received = false;
     try {
       // Never probe unknown owned routes: old Gateway catchalls can start GPU.
+      // OpenAPI includes deeply nested schemas for unrelated Gateway APIs. Keep
+      // model/session responses at the transport's stricter default depth.
       const document = await gateway('/openapi.json', { signal, deadlineMs: 4000,
-        maxBytes: 2 * 1024 * 1024, maxWireBytes: 2 * 1024 * 1024 });
+        maxBytes: 2 * 1024 * 1024, maxWireBytes: 2 * 1024 * 1024, jsonMaxDepth: 64 });
       received = true;
       validate(document);
       const proof = Object.freeze({ digest: hash(document), observedAt: new Date(now()).toISOString(), protocol: 'owned-v1' });

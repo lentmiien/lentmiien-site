@@ -514,8 +514,10 @@ endpoint or generation endpoint.
 Site now probes only GET `/openapi.json`, through the fixed allowlisted Gateway origin and
 existing private proxy Bearer / `X-Admin-Token` headers. It does not follow redirects. The
 request has a four-second deadline and separate 2 MiB wire and decoded limits, including
-compressed responses. Exact create/status/heartbeat/delete paths/methods and their success
-responses are required, with POST generation's published FastAPI proxy route
+compressed responses. Discovery JSON allows up to 64 nesting levels because unrelated
+OpenAPI schemas can exceed the 20-level limit retained for model and session responses.
+Duplicate keys and unsafe property names remain rejected. Exact create/status/heartbeat/delete
+paths/methods and their success responses are required, with POST generation's published FastAPI proxy route
 `/qwen3-lora/{path}`. The actual schema has no literal `/qwen3-lora/generate` entry;
 the validator accepts either publication and does not require documentation-only paths,
 owner-token fields or typed response schemas.
