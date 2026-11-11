@@ -77,6 +77,16 @@ test('latest authoritative replacement supersedes even a perfect prior run', () 
   const { s, b, r } = releaseFixture();
   expect(() => selectWinner(s, b, [r, { ...r, _id: 'r2', createdAt: new Date(2), state: 'pending' }], 'code')).toThrow('RELEASE_CLOSED');
 });
+test('diagnostic runs cannot qualify release or supersede the latest release run', () => {
+  const { s, b, r } = releaseFixture();
+  const diagnostic = { ...r, _id: 'diagnostic', mode: 'diagnostic', sequence: 100 };
+  // Even a forged matching release fingerprint and a perfect pass are insufficient.
+  expect(() => selectWinner(s, b, [diagnostic], 'code')).toThrow('RELEASE_CLOSED');
+  expect(selectWinner(s, b, [r, diagnostic], 'code')._id).toBe(r._id);
+  const failed = { ...r, _id: 'latest-release', mode: 'release', sequence: 2, passed: false };
+  expect(() => selectWinner(s, b, [r, failed, diagnostic], 'code')).toThrow('RELEASE_CLOSED');
+  expect(() => selectWinner(s, b, [{ ...r, mode: 'unknown' }], 'code')).toThrow('RELEASE_CLOSED');
+});
 test('highest passing exact score wins; deterministic immutable identity tie', () => {
   const { s, b, r } = releaseFixture(); b.policy.minExact = .5;
   s.runtime.adapters.push({ ...s.runtime.adapters[0], name: 'adapter-b', identity: 'immutable-b' });

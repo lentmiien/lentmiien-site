@@ -54,7 +54,7 @@ function help(code, status) {
     OWNERSHIP_LOST: 'This Site process has no matching private owner capability. Use the owning instance, or the standard Gateway recovery/rebuild. After its old fence is safely cleared, acquire new exclusive recovery admission. Do not reset the Mongo hold.',
     EVIDENCE_NOT_FOUND: 'No local JAN match. Supply the AmiAmi item code or classify manually; JAN alone does not trigger an online lookup.',
     JAN_AMBIGUOUS: 'This JAN matches multiple local item codes. Supply the specific AmiAmi item code or classify manually.',
-    CATALOG_REJECTED: 'Outside the training-derived test allowlist (v0 has 53 target codes). This does not establish whether the code is legally valid TARIC. Review manually.',
+    CATALOG_REJECTED: 'Outside the code allowlist for this operation. Diagnostic benchmarks use their own target codes; item tests use the v0 targets. A diagnostic rejection does not establish whether the code is legally valid TARIC. Review manually.',
     HTTP_ACCESS_DENIED: 'AmiAmi returned HTTP 403 after TLS. Classify manually; no failed source data was saved. The configured transport has no challenge bypass or automatic fallback.',
     TLS_CHAIN_UNTRUSTED: 'AmiAmi TLS chain verification failed using Node default plus OS trusted certificates. Update the machine trusted CA store through the normal administrator process; do not disable certificate or hostname verification. Classify manually until repaired.',
     FETCH_DISABLED: 'The configured bounded AmiAmi transport is unavailable. At deployment, install the existing curl-cffi bundle (libcurl 8.15.0-IMPERSONATE) with npm run install:curl-cffi, or explicitly choose native mode, which may still return HTTP403. Classify manually until verified.',
@@ -62,7 +62,8 @@ function help(code, status) {
     WARM_SESSION_NOT_READY: 'Owned Gateway inference sessions are not configured. Benchmark execution remains unavailable until the reviewed contract is wired.',
     GATEWAY_UPGRADE_REQUIRED: 'The running Gateway does not publish the required owned-session API. Rebuild and recreate its running image with the existing two Compose files and project, then Refresh status. No inference was dispatched by this precheck.',
     READINESS_UNVERIFIED: 'Gateway capability discovery could not be verified. Check the configured origin, proxy/admin credentials and Gateway availability, then Refresh status. No inference was dispatched by this precheck.',
-    CONFIG_NOT_READY: 'Check bootstrap, Enable tool, and the imported v0 test catalog. An approved catalog and runtime attestations are required only for normal release.',
+    CONFIG_NOT_READY: 'Check bootstrap and Enable tool. Manual-confirmation item tests also need the imported v0 test catalog. Diagnostic benchmark runs use their own target-code allowlist and do not need release attestations.',
+    BENCHMARK_NOT_RELEASE_READY: 'Use Diagnostic mode to evaluate an imported draft, including training overlap. Release mode requires the current published independent v1+ benchmark, an approved catalog and verified runtime identity. Diagnostic scores cannot qualify a release.',
     STALE: 'The recovery epoch or record changed, or another worker holds the lease. Read remote status again before retrying.',
     INVALID_REQUEST: 'Check the supplied fields and numeric epoch; refresh the page if its controls are stale.',
     PROVIDER_FAILED: [401, 403].includes(status?.status) ? 'Gateway authentication rejected this action. Check the private proxy credential and X-Admin-Token configuration; keep the existing hold and refresh status.'

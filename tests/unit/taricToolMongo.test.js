@@ -63,6 +63,86 @@ run('TARIC durable pipeline with real Mongo indexes', () => {
       results: [{}, {}], score: 1, passed: true, cancelRequested: false });
     return b;
   }
+  test('an imported 500-case contaminated v1 draft runs diagnostically with its own codes across sessions', async () => {
+    await benchmark();
+    const review = { targetsReviewed: false, independent: false, trainingExcluded: false,
+      provenance: 'Training-derived diagnostic benchmark', reviewer: 'operator', sourceLineage: ['v0'], minExact: 1, maxInvalid: 0 };
+    const csv = 'descriptive_name,full_item_name,specs,hs_code,taric_code\n'
+      + Array.from({ length: 500 }, (_, i) => `Synthetic,Synthetic ${i},,950300,0000000002\n`).join('');
+    const imported = await service.importBenchmark(Buffer.from(csv), 1, review, 'synthetic-admin');
+    const before = await models.Benchmark.findById(imported.id).lean();
+    expect(before).toMatchObject({ state: 'draft', contaminated: true, releaseEligible: false, review });
+    // No v0 allowlist, approved catalog or runtime identity is needed for diagnostics.
+    await models.Settings.updateOne({ _id: 'tool' }, { $set: { testCatalog: null } });
+    transport.generate.mockImplementation(async (input, adapter, codes, tokens, identity, options) => {
+      expect(codes).toEqual(['0000000002']);
+      return require('../../utils/taricProtocol').output({ content: JSON.stringify({
+        taric_code: input.full_item_name === 'Synthetic 499' ? '0000000009' : '0000000002', description: 'Synthetic',
+      }) }, codes, options.onDiagnostics);
+    });
+    const queued = await service.queueRun(imported.id, TEST_ADAPTER, 'synthetic-admin', 'diagnostic');
+    expect(queued.mode).toBe('diagnostic');
+    await worker.tick(); await worker.tick();
+    const completed = await models.Run.findById(queued.id).lean();
+    expect(completed).toMatchObject({ mode: 'diagnostic', state: 'complete', actualCount: 500, requestedCount: 500,
+      attemptedCount: 500, exact: 499, invalid: 1, errorCount: 1, catalogRejected: 1, score: 499 / 500, passed: false,
+      sessionCount: 2, sessionEndReasons: { operation_limit: 1, finished: 1 },
+      configuration: { runtime: null, catalog: { source: 'benchmark-targets/non-authoritative', approved: false, codes: ['0000000002'] } } });
+    expect(await models.Attempt.countDocuments({ run: queued.id })).toBe(500);
+    expect(await models.Benchmark.findById(imported.id).lean()).toEqual(before);
+    expect((await service.settings()).currentBenchmark).toBeNull();
+    expect(transport.verifyIdentity).not.toHaveBeenCalled();
+    expect(warmSessions.close).toHaveBeenCalledTimes(2);
+    await expect(service.publish(imported.id, 'synthetic-admin')).rejects.toThrow('OVERLAP');
+    await expect(service.admission(false)).rejects.toThrow('RELEASE_CLOSED');
+  }, 30000);
+  test('diagnostics on a release benchmark neither replace nor qualify release scores', async () => {
+    await normalReady();
+    const s = await service.settings();
+    const queued = await service.queueRun(s.currentBenchmark, TEST_ADAPTER, 'synthetic-admin', 'diagnostic');
+    expect((await service.admission(false)).admission.run).toBe('b'.repeat(32));
+    await worker.tick();
+    expect(await models.Run.findById(queued.id).lean()).toMatchObject({ mode: 'diagnostic', passed: true, state: 'complete' });
+    expect((await service.admission(false)).admission.run).toBe('b'.repeat(32));
+    expect((await service.readiness()).normal.candidates.map(r => r._id)).toEqual(['b'.repeat(32)]);
+    await models.Run.deleteOne({ _id: 'b'.repeat(32) });
+    await expect(service.admission(false)).rejects.toThrow('RELEASE_CLOSED');
+  });
+  test('explicit mode cannot bypass release, enabled, adapter, or recovery requirements', async () => {
+    const b = await benchmark(1);
+    await models.Benchmark.updateOne({ _id: b._id }, { $set: { state: 'draft', contaminated: true, releaseEligible: false } });
+    for (const mode of [null, true, {}, 'test', 'DIAGNOSTIC']) {
+      await expect(service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin', mode)).rejects.toThrow('INVALID_REQUEST');
+    }
+    for (const mode of [undefined, 'release']) {
+      await expect(service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin', mode)).rejects.toThrow('BENCHMARK_NOT_RELEASE_READY');
+    }
+    await expect(service.queueRun(b._id, 'unregistered', 'synthetic-admin', 'diagnostic')).rejects.toThrow('INVALID_REQUEST');
+    await models.Settings.updateOne({ _id: 'tool' }, { $set: { enabled: false } });
+    await expect(service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin', 'diagnostic')).rejects.toThrow('CONFIG_NOT_READY');
+    await models.Settings.updateOne({ _id: 'tool' }, { $set: { enabled: true } });
+    await models.Control.updateOne({ _id: 'inference' }, { $set: { blocked: true } });
+    await expect(service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin', 'diagnostic')).rejects.toThrow('RECOVERY_REQUIRED');
+    expect(await models.Run.countDocuments({})).toBe(0);
+    expect(warmSessions.open).not.toHaveBeenCalled();
+  });
+  test('diagnostic configuration changes invalidate a queued run before generation', async () => {
+    const b = await benchmark(1);
+    const queued = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin', 'diagnostic');
+    await models.Settings.updateOne({ _id: 'tool' }, { $inc: { revision: 1 } });
+    await worker.tick();
+    expect(await models.Run.findById(queued.id).lean()).toMatchObject({ state: 'failed', error: 'STALE', actualCount: 0, passed: false });
+    expect(warmSessions.open).not.toHaveBeenCalled();
+  });
+  test('legacy runs without a mode retain their original fingerprint and execution rules', async () => {
+    const b = await benchmark();
+    const queued = await service.queueRun(b._id, TEST_ADAPTER, 'synthetic-admin');
+    const config = configuration(await service.settings(), TEST_ADAPTER, service.version());
+    await models.Run.updateOne({ _id: queued.id }, { $unset: { mode: 1 }, $set: { configuration: config, fingerprint: hash(config) } });
+    await worker.tick();
+    expect(await models.Run.findById(queued.id).lean()).toMatchObject({ state: 'complete', actualCount: 2, passed: true });
+    expect(transport.verifyIdentity).not.toHaveBeenCalled();
+  });
   test('saved test adapters persist, reach request and v0 sessions, and never enable normal release', async () => {
     const next = 'taric-v1.1-20261007';
     const testAdapters = { names: [TEST_ADAPTER, next], default: next };

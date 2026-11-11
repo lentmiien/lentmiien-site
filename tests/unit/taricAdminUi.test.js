@@ -1,6 +1,43 @@
 const fs = require('fs');
 const path = require('path');
 const pug = require('pug');
+test('existing contaminated v1 drafts default to diagnostic mode and keep release controls closed', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric.pug'), { csrfToken: 'synthetic' }), { url: 'http://localhost/admin/taric', runScripts: 'outside-only' });
+  const doc = dom.window.document; const benchmarkId = 'a'.repeat(32); const runId = 'b'.repeat(32);
+  const adapter = 'taric-diagnostic';
+  dom.window.fetch = jest.fn(async url => ({ ok: true, json: async () => url.endsWith('/state')
+    ? { settings: { enabled: true, testAdapters: { names: [adapter], default: adapter }, catalog: null, runtime: { adapters: [] } },
+      gateway: { ready: true }, inference: { blocked: false }, benchmark: { ready: true },
+      test: { ready: false, reasons: ['CONFIG_NOT_READY'] }, normal: { identityCapability: 'UNAVAILABLE' } }
+    : url.endsWith('/inspect/benchmarks') ? [{ _id: benchmarkId, version: 1, state: 'draft', contaminated: true,
+      releaseEligible: false, manifest: { accepted: 500 }, review: { targetsReviewed: false, independent: false, trainingExcluded: false } }]
+      : url.endsWith(`/inspect/runs/${runId}`) ? { _id: runId, mode: 'diagnostic', state: 'complete', passed: true,
+        requestedCount: 500, actualCount: 500, exact: 500, invalid: 0, score: 1, results: [] }
+        : { id: runId, mode: 'diagnostic' } }));
+  const settle = () => new Promise(setImmediate);
+  try {
+    dom.window.eval(fs.readFileSync(path.join(__dirname, '../../public/js/taric-admin.js'), 'utf8')); await settle();
+    const mode = doc.querySelector('#benchmark-mode');
+    expect(mode.value).toBe('diagnostic');
+    expect(doc.querySelector('#run').disabled).toBe(false);
+    expect(doc.querySelector('#publish').disabled).toBe(true);
+    expect(doc.querySelector('#execution-help').textContent).toContain('Diagnostic benchmarks are available');
+    expect(doc.querySelector('#test').disabled).toBe(true);
+    mode.value = 'release'; mode.dispatchEvent(new dom.window.Event('change'));
+    expect(doc.querySelector('#run').disabled).toBe(true);
+    expect(doc.querySelector('#benchmark-mode-help').textContent).toContain('Use Diagnostic mode');
+    mode.value = 'diagnostic'; mode.dispatchEvent(new dom.window.Event('change'));
+    doc.querySelector('#run').click(); await settle();
+    const queued = dom.window.fetch.mock.calls.find(([url]) => url.endsWith('/runs'));
+    expect(queued[0]).toBe(`/admin/taric/benchmarks/${benchmarkId}/runs`);
+    expect(JSON.parse(queued[1].body)).toEqual({ adapter, mode: 'diagnostic' });
+    expect(queued[1].headers['X-CSRF-Token']).toBe('synthetic');
+    doc.querySelector('#run-progress').click(); await settle();
+    expect(doc.querySelector('#run-progress-output').textContent).toContain('never release qualification');
+    expect(dom.window.fetch.mock.calls.some(([url]) => /\/(publish|imports|adapters)$/.test(url))).toBe(false);
+  } finally { dom.window.close(); }
+});
 test('test adapter editor saves a new default and the benchmark selector uses saved names independently', async () => {
   const { JSDOM } = await import('jsdom');
   const dom = new JSDOM(pug.renderFile(path.join(__dirname, '../../views/admin_taric.pug'), { csrfToken: 'synthetic' }), { url: 'http://localhost/admin/taric', runScripts: 'outside-only' });
@@ -26,7 +63,7 @@ test('test adapter editor saves a new default and the benchmark selector uses sa
   doc.querySelector('#adapter').value = next;
   doc.querySelector('#run').click(); await settle();
   const queued = dom.window.fetch.mock.calls.find(([url]) => url.endsWith('/runs'));
-  expect(JSON.parse(queued[1].body)).toEqual({ adapter: next });
+  expect(JSON.parse(queued[1].body)).toEqual({ adapter: next, mode: 'diagnostic' });
   doc.querySelector('#refresh').click(); await settle();
   expect(doc.querySelector('#adapter').value).toBe(next);
   doc.querySelector('#adapter').value = old;

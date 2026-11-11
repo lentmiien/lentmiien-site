@@ -17,7 +17,7 @@ html(lang='en')
         a(href='/admin') Administration
         a(href='/admin/taric/history') Request history and human review
       h1 TARIC assisted classification
-      p A suggestion always needs human confirmation. Training-derived v0 scores diagnose the machinery; they cannot authorize release.
+      p A suggestion always needs human confirmation. Diagnostic benchmark scores, including v0 and imported drafts, cannot authorize release.
       p#status(role='status' aria-live='polite') Loading readiness…
       section
         h2 Readiness and release reasons
@@ -93,15 +93,16 @@ html(lang='en')
         input#version(type='number' min='0' max='10000' value='0')
         label(for='review') Review and frozen scoring policy JSON
         textarea#review(rows='12' spellcheck='false') {"targetsReviewed":false,"independent":false,"trainingExcluded":false,"provenance":"Training-derived diagnostic benchmark","reviewer":"operator","sourceLineage":["v0"],"minExact":1,"maxInvalid":0}
-        p Defaults require 100% exact codes and 0 invalid outputs. These are conservative operational thresholds, not evidence of statistical quality. Review and choose explicitly before import; policy is immutable afterward.
+        p Defaults describe the original v0 training data. For a new dataset, describe its actual source and review status; verified labels alone do not establish training independence. Diagnostic mode permits overlap and unreviewed declarations. The default thresholds require 100% exact codes and 0 invalid outputs; scores remain available below these thresholds. Review and choose explicitly before import; policy is immutable afterward.
         button#preview(type='button') Preview hash and validation
         button#import(type='button' disabled) Import immutable draft
         pre#import-report
       section
         h2 Benchmark execution and publication
-        p Drafts are inert for release. Import reviewed independent v1+ only after checking provenance and product-family overlap. Publishing explicitly replaces the current version and holds older normal results. Benchmark runs make live provider calls; run them only during an authorized GPU window.
+        p Run any imported benchmark in Diagnostic mode, including v1+ drafts, without reimporting or publishing. Training overlap is allowed; scores measure this dataset and do not establish performance on unseen products. Benchmark runs make live provider calls; run them only during an authorized GPU window.
+        p Diagnostic output validation uses the selected benchmark's target codes as a non-authoritative allowlist. Codes outside that list count as invalid for this evaluation; this is not a legal TARIC validity judgment. A passing diagnostic score never authorizes release or replaces the release benchmark.
         p Successful cases share one owned session. Its 120-second idle lease is renewed; its 15-minute hard cap cannot be extended. Rotation reserves 260 seconds for the next generation, reconciliation and cleanup, or occurs at 256 operations. Interactive requests take priority after the current case and cleanup; rotated runs go behind waiting benchmarks. The whole run has a six-hour deadline and can be cancelled here.
-        p Saved test adapters are available for v0 without metadata calls. Select an adapter below for this benchmark run. Importing v1 creates a draft; publishing it changes the release benchmark, not the default test adapter. v1+ runs require an approved catalog and verified runtime identity, which is currently unavailable.
+        p Saved test adapters are available for diagnostic runs without metadata calls. Release evaluation requires the current published independent v1+ benchmark, an approved catalog and verified runtime identity, which is currently unavailable. Publishing explicitly replaces the release benchmark and holds older normal results; it is not needed for diagnostics.
         p Adapter discovery is unavailable until Gateway provides a guaranteed GPU-free route; its current fallback can acquire the GPU. Add test adapter names in Configuration above.
         button#adapters(type='button') Check adapter metadata availability
         label(for='adapter') Adapter to benchmark
@@ -110,7 +111,12 @@ html(lang='en')
         select#benchmark-id(disabled)
         p#benchmark-help Loading benchmark versions…
         button#benchmarks-more(type='button' disabled) Load more versions
-        button#run(type='button' disabled) Queue adapter benchmark
+        label(for='benchmark-mode') Evaluation mode
+        select#benchmark-mode
+          option(value='diagnostic' selected) Diagnostic — any imported benchmark
+          option(value='release') Release qualification
+        p#benchmark-mode-help
+        button#run(type='button' disabled) Queue diagnostic benchmark
         button#publish(type='button' disabled) Publish this benchmark
         label(for='run-id') Run ID to cancel / revoke
         input#run-id(type='text' maxlength='32')

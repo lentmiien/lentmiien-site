@@ -153,15 +153,27 @@
   }
   function updateBenchmarkActions() {
     const empty = !$('benchmark-id').value;
+    const selected = $('benchmark-id').selectedOptions[0];
+    const diagnostic = $('benchmark-mode').value === 'diagnostic';
+    const releaseReady = selected?.dataset.releaseReady === 'true'
+      && readiness?.settings?.catalog?.approved === true
+      && readiness?.settings?.runtime?.adapters?.some(a => a.name === $('adapter').value && a.verified === true)
+      && readiness?.normal?.identityCapability !== 'UNAVAILABLE';
     const available = readiness?.gateway?.ready === true && readiness?.inference?.blocked !== true;
-    $('run').disabled = empty || !$('adapter').value || !available || readiness?.benchmark?.ready !== true;
+    $('run').disabled = empty || !$('adapter').value || !available || readiness?.benchmark?.ready !== true || (!diagnostic && !releaseReady);
+    $('run').textContent = diagnostic ? 'Queue diagnostic benchmark' : 'Queue release benchmark';
+    $('benchmark-mode-help').textContent = diagnostic
+      ? 'Uses this benchmark’s target-code allowlist. Drafts and training overlap are allowed. Scores cannot qualify a release; no publication or runtime attestation is needed.'
+      : releaseReady ? 'Evaluates the current published release benchmark. A new release run supersedes earlier release scores for this adapter.'
+        : 'Release evaluation is unavailable: select the current published independent benchmark with an approved catalog and verified runtime identity. Use Diagnostic mode to evaluate this dataset now.';
     $('test').disabled = !available || readiness?.test?.ready !== true;
     $('resume-run').disabled = !available || readiness?.benchmark?.ready !== true;
-    $('publish').disabled = empty;
-    const reasons = [...new Set([...(readiness?.benchmark?.reasons || []), ...(readiness?.test?.reasons || []), ...(readiness?.gateway?.reason ? [readiness.gateway.reason] : [])])];
-    $('execution-help').textContent = reasons.length ? `Execution unavailable: ${reasons.join(', ')}. ${readiness?.gateway?.message || ''} ${!readiness?.settings?.enabled ? 'Enable the tool in Configuration after completing bootstrap.' : ''} ${!readiness?.settings?.testCatalog?.codes?.length ? 'Import the reviewed training-derived v0 test catalog.' : ''} ${readiness?.inference?.blocked ? 'Read remote status, cancel all pending local work, then recover the hold using exclusive admission.' : ''}`
-      : readiness?.test?.ready ? 'Manual-confirmation tests are available. v0 benchmarks remain diagnostic and cannot pass normal release.' : 'Refresh status to verify execution prerequisites.';
-    if (available && readiness?.benchmark?.ready === true && !$('adapter').value) $('execution-help').textContent += ' Save and choose a test adapter before queuing a v0 benchmark.';
+    $('publish').disabled = empty || selected?.dataset.publishable !== 'true';
+    const reasons = [...new Set([...(readiness?.benchmark?.reasons || []), ...(readiness?.gateway?.reason ? [readiness.gateway.reason] : [])])];
+    $('execution-help').textContent = reasons.length ? `Execution unavailable: ${reasons.join(', ')}. ${readiness?.gateway?.message || ''} ${!readiness?.settings?.enabled ? 'Enable the tool in Configuration after completing bootstrap.' : ''} ${readiness?.inference?.blocked ? 'Read remote status, cancel all pending local work, then recover the hold using exclusive admission.' : ''}`
+      : readiness?.benchmark?.ready ? 'Diagnostic benchmarks are available and cannot qualify normal release.' : 'Refresh status to verify execution prerequisites.';
+    if (readiness?.test?.ready === false) $('execution-help').textContent += ` Item tests unavailable: ${(readiness.test.reasons || []).join(', ')}.${!readiness?.settings?.testCatalog?.codes?.length ? ' Import v0 for item tests; diagnostic benchmarks use their own target codes.' : ''}`;
+    if (available && readiness?.benchmark?.ready === true && !$('adapter').value) $('execution-help').textContent += ' Save and choose a test adapter before queuing a diagnostic benchmark.';
     const held = recovery?.control?.blocked === true;
     $('cancel-pending').disabled = mutationBusy || recovery?.ownership?.active || !held || recoveryEpoch === null;
     $('resume').textContent = recovery && !held ? 'Recovery not needed' : recovery?.ownership?.available ? 'Continue owned cleanup' : 'Acquire recovery admission';
@@ -174,18 +186,24 @@
         : recovery.ownership?.available ? `Private owner capability is available on this instance. ${recovery.control?.reason || 'CLEANUP_PENDING'}: confirm to continue the same owned cleanup without inference.`
         : !held ? 'No inference hold to recover.' : readiness?.gateway?.ready !== true ? 'Rebuild the running Gateway image, then Refresh status and Read remote status. Pending local work can still be cancelled.'
         : recovery.pending?.length || recovery.queuedRequests || recovery.localBatches?.length ? 'Cancel all pending local work before exclusive recovery. Existing results remain inspectable.'
-          : 'Passive idle_unverified is expected and is not cleanup proof. Exclusive recovery is available. Confirm the action below; recovery requests no inference. After success, submit a fresh test or queue a fresh v0 benchmark.';
+          : 'Passive idle_unverified is expected and is not cleanup proof. Exclusive recovery is available. Confirm the action below; recovery requests no inference. After success, submit a fresh test or queue a fresh diagnostic benchmark.';
+  }
+  function benchmarkOption(row) {
+    const option = document.createElement('option'); option.value = row._id;
+    const independent = row.version > 0 && row.contaminated === false && row.review?.targetsReviewed === true
+      && row.review?.independent === true && row.review?.trainingExcluded === true;
+    option.dataset.publishable = String((independent || row.version === 0) && ['draft', 'published'].includes(row.state));
+    option.dataset.releaseReady = String(independent && row.state === 'published' && row.releaseEligible === true
+      && readiness?.settings?.currentBenchmark === row._id);
+    option.textContent = `v${row.version} — ${row.manifest?.title || row.review?.provenance || 'Benchmark'} — ${row.manifest?.accepted ?? row.policy?.denominator ?? '?'} cases — ${row.contaminated ? 'training-derived / contaminated' : independent ? 'independent' : 'independence unconfirmed'} — ${row.state}`;
+    return option;
   }
   async function loadBenchmarks(more = false, preferred = null) {
     const selected = preferred || $('benchmark-id').value;
     try {
       const rows = await api(`/inspect/benchmarks${more && benchmarkCursor ? `?before=${benchmarkCursor}` : ''}`);
       if (!Array.isArray(rows)) throw new Error('Invalid benchmark list');
-      const options = rows.map(row => {
-        const option = document.createElement('option'); option.value = row._id;
-        option.textContent = `v${row.version} — ${row.manifest?.title || row.review?.provenance || 'Benchmark'} — ${row.manifest?.accepted ?? row.policy?.denominator ?? '?'} cases — ${row.contaminated ? 'training-derived / contaminated' : 'independent'} — ${row.state}`;
-        return option;
-      });
+      const options = rows.map(benchmarkOption);
       if (more) {
         const existing = new Set([...$('benchmark-id').options].map(o => o.value));
         $('benchmark-id').append(...options.filter(o => !existing.has(o.value)));
@@ -194,11 +212,7 @@
         // verify it still exists through the authorized detail endpoint.
         if (selected && !rows.some(row => row._id === selected)) {
           const record = await api(`/inspect/benchmarks/${encodeURIComponent(selected)}`);
-          if (record) {
-            const option = document.createElement('option'); option.value = record._id;
-            option.textContent = `v${record.version} — ${record.review?.provenance || 'Benchmark'} — ${record.manifest?.accepted ?? record.policy?.denominator ?? '?'} cases — ${record.contaminated ? 'training-derived / contaminated' : 'independent'} — ${record.state}`;
-            options.push(option);
-          }
+          if (record) options.push(benchmarkOption(record));
         }
         $('benchmark-id').replaceChildren(...options);
       }
@@ -213,13 +227,16 @@
     } finally { updateBenchmarkActions(); }
   }
   $('benchmark-id').addEventListener('change', updateBenchmarkActions);
+  $('benchmark-mode').addEventListener('change', updateBenchmarkActions);
   $('adapter').addEventListener('change', updateBenchmarkActions);
   on('benchmarks-more', () => loadBenchmarks(true));
   on('run-progress', async () => {
     const run = await api(`/inspect/runs/${encodeURIComponent($('run-id').value)}`);
     if (!run) throw new Error('Run not found.');
     const errors = run.errorCount ?? run.invalid;
-    show('run-progress-output', { state: run.state === 'complete' ? `Completed with ${errors} errors` : run.state, attempted: run.attemptedCount ?? run.actualCount,
+    show('run-progress-output', { mode: run.mode || 'legacy (mode inferred from benchmark version)',
+      qualification: run.mode === 'diagnostic' ? 'Diagnostic only; passed refers to frozen scoring thresholds, never release qualification.' : 'Release eligibility requires all release checks.',
+      state: run.state === 'complete' ? `Completed with ${errors} errors` : run.state, attempted: run.attemptedCount ?? run.actualCount,
       recorded: run.actualCount, successfulGenerations: run.successfulGenerations ?? null, validOutputs: run.actualCount - run.invalid,
       requested: run.requestedCount, errors, cancelled: run.state === 'cancelled' ? run.requestedCount - (run.attemptedCount ?? run.actualCount) : 0,
       sessionCount: run.sessionCount, sessionEndReasons: run.sessionEndReasons, deadline: run.deadline, sessionHardExpiresAt: run.sessionHardExpiresAt,
@@ -229,7 +246,7 @@
     show('details', { results: run.results, attempts: run.attempts });
   });
   on('adapters', async () => { const rows = await api('/adapters'); show('records', rows); });
-  on('run', async () => { const run = await api(`/benchmarks/${encodeURIComponent($('benchmark-id').value)}/runs`, { adapter: $('adapter').value }); $('run-id').value = run.id; show('records', run); });
+  on('run', async () => { const run = await api(`/benchmarks/${encodeURIComponent($('benchmark-id').value)}/runs`, { adapter: $('adapter').value, mode: $('benchmark-mode').value }); $('run-id').value = run.id; show('records', run); });
   on('publish', async () => { await api(`/benchmarks/${encodeURIComponent($('benchmark-id').value)}/publish`, {}); await refresh(); });
   on('cancel', async () => { await api(`/runs/${encodeURIComponent($('run-id').value)}/cancel`, {}); });
   async function inspect(next = false) {

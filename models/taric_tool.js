@@ -19,6 +19,7 @@ const Benchmark = model('taric_benchmarks', { _id: String, version: Number, stat
   [{ createdAt: -1, _id: -1 }, { name: 'benchmark_chronology' }],
 ]);
 const Run = model('taric_runs', { _id: String, benchmark: String, adapter: String, identity: String, sequence: Number,
+  mode: { type: String, enum: ['diagnostic', 'release'] },
   fingerprint: String, configuration: mixed, policy: mixed, state: String, active: Boolean, slot: Number,
   requestedCount: Number, actualCount: Number, exact: Number, invalid: Number, results: [mixed],
   score: Number, passed: Boolean, cancelRequested: Boolean, deadline: Date, actor: String, fence: String,

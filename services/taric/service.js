@@ -3,7 +3,7 @@ const logger = require('../../utils/logger');
 const { TaricError, fail, object, string, idempotencyKey, validateFeedback } = require('../../utils/taricContracts');
 const { input, hash, sha, TEMPLATE, CLEANED_SHA } = require('../../utils/taricProtocol');
 const { preview, draft, overlaps } = require('./importer');
-const { codeFingerprint, configuration, selectWinner, testAdapterConfig, testAdmission } = require('./gate');
+const { codeFingerprint, benchmarkRunMode, benchmarkConfiguration, selectWinner, testAdapterConfig, testAdmission } = require('./gate');
 const SCOPES = ['taric.requests.create', 'taric.requests.read', 'taric.feedback.write'];
 const id = () => crypto.randomBytes(16).toString('hex');
 const validId = value => string(value, 32, 'NOT_FOUND', /^[a-f0-9]{32}$/);
@@ -76,10 +76,11 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
     const adapters = (s?.runtime?.adapters || []).map(a => a.name);
     // Group in Mongo before transfer: at most 20 configured adapters, no private
     // outputs or repeated catalogs loaded just to evaluate release eligibility.
-    return Run.aggregate([{ $match: { benchmark: benchmarkId, adapter: { $in: adapters } } },
+    return Run.aggregate([{ $match: { benchmark: benchmarkId, adapter: { $in: adapters },
+      $or: [{ mode: 'release' }, { mode: { $exists: false } }] } },
       { $sort: { adapter: 1, sequence: -1 } }, { $group: { _id: '$adapter', run: { $first: '$$ROOT' } } },
       { $replaceRoot: { newRoot: '$run' } }, { $project: { _id: 1, benchmark: 1, adapter: 1, identity: 1,
-        sequence: 1, fingerprint: 1, 'configuration.runtime': 1, policy: 1, state: 1, active: 1, requestedCount: 1,
+        mode: 1, sequence: 1, fingerprint: 1, 'configuration.runtime': 1, policy: 1, state: 1, active: 1, requestedCount: 1,
         actualCount: 1, exact: 1, invalid: 1, score: 1, passed: 1, cancelRequested: 1, createdAt: 1,
         resultCount: { $size: { $ifNull: ['$results', []] } } } }]).option({ maxTimeMS: 2000 }).exec();
   }
@@ -257,30 +258,35 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
       logger.notice('TARIC benchmark published; release gate recalculated', { category: 'taric', metadata: { version: b.version } });
     });
   }
-  async function queueRun(benchmarkId, adapter, actor) {
+  async function queueRun(benchmarkId, adapter, actor, requestedMode) {
     validId(benchmarkId); string(adapter, 100, 'INVALID_REQUEST', /^[A-Za-z0-9][A-Za-z0-9_.-]*$/);
+    if (requestedMode !== undefined && !['diagnostic', 'release'].includes(requestedMode)) fail('INVALID_REQUEST');
     const control = await query(Control.findById('inference'));
     if (!control || control.blocked) fail('RECOVERY_REQUIRED');
     await warmSessions.preflight?.();
     const s = await settings(); if (!s?.enabled) fail('CONFIG_NOT_READY');
     const b = await query(Benchmark.findById(benchmarkId)); if (!b) fail('NOT_FOUND');
+    const mode = benchmarkRunMode({ mode: requestedMode }, b);
     if (!warmSessions.ready()) fail('WARM_SESSION_NOT_READY');
-    if (b.version === 0 && !testAdapterConfig(s).names.includes(adapter)) fail('INVALID_REQUEST');
-    if (b.version > 0 && b.state !== 'published') fail('CONFIG_NOT_READY');
-    if (b.version > 0) await transport.verifyIdentity(adapter, configuration(s, adapter, version()).runtime);
-    const config = configuration(s, adapter, version());
-    if (b.version > 0 && (!config.runtime?.verified || !s.catalog?.approved)) fail('CONFIG_NOT_READY');
+    if (mode === 'diagnostic' && !testAdapterConfig(s).names.includes(adapter)) fail('INVALID_REQUEST');
+    if (mode === 'release' && (b.version === 0 || b.state !== 'published' || !b.releaseEligible
+      || b.contaminated || b._id !== s.currentBenchmark)) fail('BENCHMARK_NOT_RELEASE_READY');
+    const config = benchmarkConfiguration(s, adapter, version(), b, mode);
+    if (mode === 'release') {
+      if (!config.runtime?.verified || !s.catalog?.approved) fail('BENCHMARK_NOT_RELEASE_READY');
+      await transport.verifyIdentity(adapter, config.runtime);
+    }
     const sequenced = await query(Settings.findOneAndUpdate({ _id: 'tool' }, { $inc: { nextRunSequence: 1 } }, { returnDocument: 'after' }));
     const sequence = sequenced?.nextRunSequence;
     if (!Number.isSafeInteger(sequence) || sequence < 1) fail('CONFIG_NOT_READY');
     for (let slot = 0; slot < 8; slot++) {
       try {
-        const row = await Run.create({ _id: id(), sequence, benchmark: b._id, adapter, identity: config.runtime?.identity || hash({ adapter, unverified: true }),
+        const row = await Run.create({ _id: id(), sequence, benchmark: b._id, adapter, mode, identity: config.runtime?.identity || hash({ adapter, unverified: true }),
           fingerprint: hash(config), configuration: config, policy: b.policy, state: 'pending', active: true, slot,
           warmSessionRequired: true, dispatchContract: 'owned-v1', attemptedCount: 0, errorCount: 0, catalogRejected: 0, codeExact: 0, successfulGenerations: 0, sessionCount: 0, sessionEndReasons: {},
           requestedCount: b.cases.length, actualCount: 0, exact: 0, invalid: 0, results: [], score: 0, passed: false,
           cancelRequested: false, deadline: new Date(now() + 6 * 3600000), actor });
-        return { id: row._id };
+        return { id: row._id, mode };
       } catch (e) { if (e.code !== 11000) throw e; }
     }
     fail('QUEUE_FULL');
@@ -477,7 +483,10 @@ function createService({ models, transport, evidence, codeVersion, authorizeAdmi
       const r = await query(Run.findOne({ _id: runId, state: { $in: ['paused', 'recovery_required'] }, active: false, cancelRequested: false }));
       if (!r || r.currentAttempt) fail('STALE');
       const s = await settings();
-      if (r.dispatchContract !== 'owned-v1' || !warmSessions.ready() || r.fingerprint !== hash(configuration(s, r.adapter, version()))) fail('STALE');
+      const b = await query(Benchmark.findById(r.benchmark));
+      if (!s?.enabled || !b || r.dispatchContract !== 'owned-v1' || !warmSessions.ready()
+        || r.fingerprint !== hash(benchmarkConfiguration(s, r.adapter, version(), b, r.mode))) fail('STALE');
+      benchmarkRunMode(r, b);
       await warmSessions.preflight?.();
       // Dispatch acquires fresh exclusive owned admission; GET snapshots cannot prove idle.
       const stillHeld = await query(Control.findOne({ _id: 'inference', holder, blocked: { $ne: true }, until: { $gt: new Date(now()) } }));

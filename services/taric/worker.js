@@ -2,7 +2,7 @@ const logger = require('../../utils/logger');
 const { TaricError, fail } = require('../../utils/taricContracts');
 const { hash, lexical } = require('../../utils/taricProtocol');
 const { errorStatus } = require('../../utils/taricDiagnostics');
-const { configuration, runtimeReady } = require('./gate');
+const { benchmarkRunMode, benchmarkConfiguration, runtimeReady, testAdapterConfig } = require('./gate');
 const { query, id, SCOPES } = require('./service');
 function createWorker(service, { authorizeAdmin = async () => false, ready = () => true,
   leaseMs = 180000, recoveryMs = 10000 } = {}) {
@@ -95,11 +95,17 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
     if (!await authorizeAdmin(r.actor)) fail('FORBIDDEN');
     const settings = await service.settings();
     const benchmark = await query(Benchmark.findById(r.benchmark));
-    if (!settings?.enabled || !benchmark || hash(configuration(settings, r.adapter, service.version())) !== r.fingerprint
+    if (!settings?.enabled || !benchmark) fail('STALE');
+    const mode = benchmarkRunMode(r, benchmark);
+    // Missing mode keeps the old configuration fingerprint for pre-upgrade runs.
+    const config = benchmarkConfiguration(settings, r.adapter, service.version(), benchmark, r.mode);
+    if (hash(config) !== r.fingerprint
       || hash(benchmark.policy) !== hash(r.policy) || benchmark.cases.length !== r.requestedCount) fail('STALE');
-    if (benchmark.version > 0 && (!runtimeReady(r.configuration.runtime, service.now())
+    if (mode === 'diagnostic' && !testAdapterConfig(settings).names.includes(r.adapter)) fail('INVALID_REQUEST');
+    if (mode === 'release' && (benchmark.version === 0 || benchmark.state !== 'published' || benchmark.contaminated
+      || !runtimeReady(r.configuration.runtime, service.now()) || !settings.catalog?.approved
       || benchmark._id !== settings.currentBenchmark || !benchmark.releaseEligible)) fail('RELEASE_CLOSED');
-    return { settings, benchmark };
+    return { settings, benchmark, mode, config };
   }
   async function pause(r, holder, error) {
     // Lost owners leave claims for the successor to reconcile; they cannot mark a
@@ -150,7 +156,7 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
       let context = await runContext(r);
       // Normal identity is currently unavailable. Fail before owning a session;
       // never issue unowned /model or adapter discovery inside warm admission.
-      if (context.benchmark.version > 0) await service.transport.verifyIdentity(r.adapter, r.configuration.runtime);
+      if (context.mode === 'release') await service.transport.verifyIdentity(r.adapter, r.configuration.runtime);
       if (r.actualCount < r.requestedCount) {
         if (r.warmSessionRequired !== true) {
           await pause(r, holder, 'RECOVERY_REQUIRED'); return;
@@ -191,7 +197,8 @@ function createWorker(service, { authorizeAdmin = async () => false, ready = () 
         let result = null; let error = null; let diagnostics = null; let transportStatus = null;
         try {
           const options = { signal: controller.signal, correlationId: claim.correlationId, onDiagnostics: value => { diagnostics = value; }, onTransport: value => { transportStatus = errorStatus(value); } };
-          const codes = (benchmark.version === 0 ? settings.testCatalog : settings.catalog).codes;
+          const codes = (r.mode === 'diagnostic' ? context.config.catalog
+            : benchmark.version === 0 ? settings.testCatalog : settings.catalog).codes;
           await fence(holder);
           result = await service.warmSessions.generate(session, c.input, codes, settings.maxTokens, options);
         } catch (e) { error = report(e, 'benchmark.case', { runId: r._id, correlationId: claim.correlationId }); transportStatus = errorStatus(e.transport) || transportStatus; }

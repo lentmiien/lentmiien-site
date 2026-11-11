@@ -14,6 +14,19 @@ function configuration(settings, adapter, codeVersion) {
   return { revision: settings.revision, adapter, runtime, codeVersion, template: TEMPLATE,
     catalog: settings.catalog, maxTokens: settings.maxTokens };
 }
+function benchmarkRunMode(run, benchmark) {
+  // Old runs predate explicit modes; preserve their original execution rules.
+  const mode = run.mode === undefined ? (benchmark.version === 0 ? 'diagnostic' : 'release') : run.mode;
+  if (!['diagnostic', 'release'].includes(mode)) fail('INVALID_REQUEST');
+  return mode;
+}
+function benchmarkConfiguration(settings, adapter, codeVersion, benchmark, mode) {
+  if (mode !== 'diagnostic') return configuration(settings, adapter, codeVersion);
+  return { revision: settings.revision, adapter, runtime: null, codeVersion, mode,
+    template: TEMPLATE, maxTokens: settings.maxTokens,
+    catalog: { source: 'benchmark-targets/non-authoritative', approved: false,
+      benchmark: benchmark._id, codes: [...new Set(benchmark.cases.map(c => c.target))].sort() } };
+}
 function runtimeReady(runtime, now = Date.now()) {
   return Boolean(runtime?.verified === true && runtime.trustSource && runtime.deploymentRevision
     && runtime.baseRevision && runtime.tokenizerRevision && /^[a-f0-9]{64}$/.test(runtime.adapterSha256)
@@ -26,7 +39,7 @@ function selectWinner(settings, benchmark, runs, codeVersion, now = Date.now()) 
     || settings.catalog?.approved !== true || !settings.catalog.codes?.length) fail('RELEASE_CLOSED');
   const latest = new Map();
   for (const run of [...runs].sort((a, b) => (b.sequence || 0) - (a.sequence || 0) || new Date(b.createdAt) - new Date(a.createdAt) || b._id.localeCompare(a._id))) {
-    if (run.benchmark === benchmark._id && !latest.has(run.adapter)) latest.set(run.adapter, run);
+    if ((run.mode === undefined || run.mode === 'release') && run.benchmark === benchmark._id && !latest.has(run.adapter)) latest.set(run.adapter, run);
   }
   const qualified = [...latest.values()].filter(run => {
     const config = configuration(settings, run.adapter, codeVersion);
@@ -57,4 +70,4 @@ function testAdmission(settings, codeVersion) {
     catalog: settings.testCatalog, maxTokens: settings.maxTokens, revision: settings.revision }),
     revision: settings.revision, benchmark: null, run: null, identity: null };
 }
-module.exports = { CODE_FILES, codeFingerprint, configuration, runtimeReady, selectWinner, testAdapterConfig, testAdmission };
+module.exports = { CODE_FILES, codeFingerprint, configuration, benchmarkRunMode, benchmarkConfiguration, runtimeReady, selectWinner, testAdapterConfig, testAdmission };

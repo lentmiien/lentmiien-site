@@ -96,8 +96,8 @@ function createTaricAdminRouter(service, { roleModel = Role } = {}) {
   });
   router.post('/benchmarks/:id/publish', async (req, res) => { await service.publish(req.params.id, String(req.user._id)); res.json({ ok: true }); });
   router.post('/benchmarks/:id/runs', jsonBody('4kb'), async (req, res) => {
-    object(req.body, ['adapter'], 'INVALID_REQUEST');
-    res.status(202).json(await service.queueRun(req.params.id, req.body.adapter, String(req.user._id)));
+    object(req.body, ['adapter', 'mode'], 'INVALID_REQUEST');
+    res.status(202).json(await service.queueRun(req.params.id, req.body.adapter, String(req.user._id), req.body.mode));
   });
   router.post('/runs/:id/cancel', async (req, res) => { await service.cancelRun(req.params.id); res.json({ ok: true }); });
   router.get('/inspect/:kind', async (req, res) => res.json(await service.inspect(req.params.kind, req.query.before)));

@@ -129,6 +129,65 @@ when existing workflow reaches manual selection:
 
 Duplicate headers, JSON keys, extra fields, numeric codes, malformed IDs, query keys, compression or oversized bodies are rejected. Rate limits include polling/replays. Interactive queue has 20 slots. If a call was interrupted with uncertain provider outcome, a *deliberate* new attempt needs a new key; the old job will not automatically repeat provider work. Requests, feedback and their idempotency records expire after 90 days, so do not treat keys as permanent beyond retention.
 
+## Diagnostic benchmarks (any imported version)
+
+At `/admin/taric#benchmark-import`, select the existing benchmark and a saved adapter,
+leave **Evaluation mode** at **Diagnostic**, then choose **Queue diagnostic benchmark**
+during an authorized GPU window. An existing v1 draft imported with the v0 default
+review JSON works without reimporting, changing its declarations, or publishing it.
+Use **Load progress and case outputs** to inspect its score, errors and individual cases.
+
+Diagnostic mode accepts drafts and training overlap. It requires an enabled tool,
+an unblocked inference controller, owned-session Gateway readiness and a saved test
+adapter. It does not require an approved catalog, runtime attestation, or even the
+v0 item-test allowlist. The run uses a frozen non-authoritative allowlist consisting
+of the selected benchmark's distinct target codes. Codes outside that list count as
+invalid for this evaluation; this makes no claim about legal TARIC validity. The
+allowlist validates returned output and is not added to the model prompt.
+
+Scores and case results remain available when the frozen thresholds are not met.
+`passed` means the run met those scoring thresholds and completion checks; for a
+diagnostic run it **never** means release qualification. Diagnostic runs cannot
+open normal mode, replace the current release benchmark, or supersede any adapter's
+latest release run. Benchmark cases, provenance, review, contamination and policy
+remain immutable. No export reservation, training snapshot registration or additional
+overlap guarantee is introduced by this change.
+
+`POST /admin/taric/benchmarks/:id/runs` accepts `{ "adapter": "saved-adapter-name",
+"mode": "diagnostic" }`. `mode: "release"` retains all release checks. For existing
+clients omitting mode, v0 defaults to diagnostic and v1+ defaults to release; the UI
+always sends its explicit selection. New run records persist mode. Historical runs
+without mode retain the version-based interpretation. Release candidate selection
+excludes diagnostic records before selecting each adapter's latest release run.
+
+No database migration or new environment variable is required. Deploy the server,
+worker and browser changes together and restart workers; the changed code fingerprint
+invalidates earlier queued work/scores as usual. Queue a fresh diagnostic run after
+deployment. For rollback, cancel/drain new diagnostic runs before reverting all
+components, because older workers do not understand explicit run modes.
+
+### Diagnostic execution security contract
+
+- **Zone/principals:** logged-in browser sessions only; `taric.tool.manage` is required.
+  The admin bundle grants it; family/user bundles do not. No machine-principal route.
+- **Data/scope:** private, explicitly admin-managed shared benchmarks and runs; managers
+  may queue, inspect, cancel and resume them. Identity comes from the validated session.
+  The worker rechecks the initiating manager's capability before execution and each case.
+- **Mutations/abuse:** existing POST route and shared `sessionCsrf`; 4 KiB JSON body,
+  allowlisted fields/modes and bounded identifiers; existing 120/min admin rate limit,
+  eight active run slots, 500 imported cases, six-hour run deadline, token/output limits,
+  single inference lease and owned-session cleanup/cancellation remain enforced.
+- **Output/storage:** Pug escaping and DOM textContent; private/no-store responses,
+  no analytics or new public files. Cases and outputs remain in existing Mongo records;
+  existing retention/deletion behavior is unchanged (no new TTL for benchmarks/runs).
+- **Outbound/logs:** only the existing configured, allowlisted Gateway receives model
+  inputs; no new hosts or metadata calls. Existing shared logger records rejected admin
+  actions and worker failures with safe action/stage/IDs, without private case content.
+- **Negative checks:** missing session/capability/CSRF, wrong Origin/method, unexpected
+  authority fields, malformed modes, unregistered adapters, disabled/held inference,
+  stale configuration, revoked worker authority and release contamination are tested.
+  Diagnostic scores are excluded from release even with a matching release fingerprint.
+
 ## Independent benchmarks and approved catalog
 
 ### Benchmark CSV format
