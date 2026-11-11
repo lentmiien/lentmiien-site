@@ -1,0 +1,27 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/amiami-items.css')
+
+block content
+  main.amiami-items.amiami-item-detail
+    header.amiami-items__header
+      div
+        h1= itemName
+        p.amiami-items__muted Saved AmiAmi item · #{gcode}
+      a(href='/admin/amiami-items') Back to AmiAmi Items
+    p All saved database fields are shown below. Dates use UTC; nested values use JSON. Saved HTML and URLs are displayed as text.
+    each section in sections
+      section.amiami-item-detail__section
+        h2= section.title
+        dl.amiami-item-detail__fields
+          each field in section.fields
+            div.amiami-item-detail__field
+              dt= field.name
+              dd
+                if field.name === 'raw'
+                  details
+                    summary Show saved raw API data
+                    pre= field.value
+                else
+                  pre= field.value

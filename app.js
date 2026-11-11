@@ -586,6 +586,7 @@ app.use('/admin/database-viewer', (_req, res, next) => {
 });
 app.use('/admin/taric', require('./routes/taricAdmin').createTaricAdminRouter(taricTool.service));
 app.use('/admin/amiami-items/upload', require('./routes/amiamiUpload').createAmiAmiUploadRouter(amiamiUpload));
+app.use('/admin/amiami-items', require('./routes/amiamiItems').createAmiAmiItemsRouter());
 app.use('/admin/experimental-models', require('./routes/experimentalModels').createRouter());
 app.use('/admin/decisions', require('./routes/decisions').createRouter());
 app.use('/admin/embeddinggemma2', require('./routes/embeddinggemma2').createRouter());

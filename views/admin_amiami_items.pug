@@ -85,6 +85,7 @@ block content
                   .amiami-items__name= item.itemName
                   .amiami-items__subline
                     a(href=item.url, target='_blank', rel='noopener noreferrer')= item.gcode
+                    a(href='/admin/amiami-items/' + item.id) View saved details
                     if item.brand
                       span= item.brand
                   if item.janCode

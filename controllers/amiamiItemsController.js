@@ -1,4 +1,5 @@
 const { AmiAmiItem } = require('../database');
+const logger = require('../utils/logger');
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
@@ -201,5 +202,54 @@ exports.index = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+function savedFields(value) {
+  return Object.entries(value).map(([name, fieldValue]) => ({
+    name,
+    value: typeof fieldValue === 'string' && fieldValue !== ''
+      ? fieldValue
+      : JSON.stringify(fieldValue, null, 2),
+  }));
+}
+
+exports.detail = async (req, res) => {
+  const { id } = req.params;
+  if (typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id)) {
+    return res.status(404).send('AmiAmi item not found.');
+  }
+
+  try {
+    // The route's read capability grants access to the entire admin-managed catalog.
+    const item = await AmiAmiItem.findById(id).maxTimeMS(5000).lean().exec();
+    if (!item) {
+      return res.status(404).send('AmiAmi item not found.');
+    }
+
+    // Normalize BSON identifiers and dates without projecting away stored fields.
+    const record = JSON.parse(JSON.stringify(item));
+    const { listing, details, ...metadata } = record;
+    const sections = [{ title: 'Record metadata', fields: savedFields(metadata) }];
+    for (const [name, title, value] of [
+      ['listing', 'Listing data', listing],
+      ['details', 'Fetched details', details],
+    ]) {
+      if (Object.hasOwn(record, name)) {
+        sections.push({ title, fields: savedFields(value && typeof value === 'object' && !Array.isArray(value)
+          ? value : { [name]: value }) });
+      }
+    }
+
+    return res.render('admin_amiami_item_detail', {
+      pageTitle: 'Saved AmiAmi item',
+      gtag: false,
+      itemName: details?.itemName || listing?.itemName || record.gcode,
+      gcode: record.gcode,
+      sections,
+    });
+  } catch (error) {
+    logger.error('Unable to load saved AmiAmi item details', { category: 'amiami-items' });
+    return res.status(503).send('Saved AmiAmi item details are temporarily unavailable. Please try again.');
   }
 };
