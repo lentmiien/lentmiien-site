@@ -171,3 +171,48 @@ test.each([
   expect(doc.querySelector('[data-action="show-new-updates"]').hidden).toBe(true);
   expect(feed.textContent).toContain('New synthetic update');
 });
+
+test('capped turns keep receiving messages past the retained count with separate worker and execution health', async () => {
+  let now = Date.parse('2026-11-14T10:00:00Z');
+  let seq = 9000;
+  const progress = {
+    storage: { limit: 2000, cappedAt: '2026-11-14T09:50:00Z', omittedCount: 500, coalescedCount: 595 },
+    workerHeartbeatAt: '2026-11-14T10:00:00Z', workerHeartbeatIntervalMs: 15000,
+    lastExecutionActivityAt: '2026-11-14T09:59:00Z',
+  };
+  const h = setup('turn', url => url.includes('/events') ? {
+    ok: true, text: async () => JSON.stringify({
+      events: [{ id: 'rolling-slot', seq, category: 'message', kind: 'agent_message', summary: `Update ${seq}` }],
+      counts: { raw: 2003 }, lastSeq: seq, progress,
+    }),
+  } : null);
+  h.win.Date.now = () => now;
+  await flush();
+  expect(h.doc.querySelector('[data-storage-status]').textContent).toContain('Storage capped at 2,000');
+  expect(h.doc.querySelector('[data-storage-status]').textContent).toContain('595 routine telemetry updates coalesced');
+  expect(h.doc.querySelector('[data-worker-heartbeat]').textContent).toBe('just now');
+  expect(h.doc.querySelector('[data-execution-activity]').textContent).toBe('1m ago');
+  expect(h.doc.querySelector('[data-raw-count]').textContent).toBe('2003');
+  seq = 12000;
+  now += 60000;
+  await h.pollActivity();
+  expect(h.win.fetch.mock.calls.at(-1)[0]).toContain('afterSeq=9000');
+  expect(h.doc.querySelector('[data-events-for]').textContent).toContain('Update 12000');
+  expect(h.doc.querySelector('[data-events-for]').textContent).not.toContain('Update 9000');
+  expect(h.doc.querySelector('[data-worker-heartbeat]').textContent).toContain('Delayed');
+  expect(h.doc.querySelector('[data-activity-heading]').textContent).toBe('Worker heartbeat delayed');
+  progress.workerHeartbeatAt = new Date(now).toISOString();
+  await h.pollActivity();
+  expect(h.doc.querySelector('[data-worker-heartbeat]').textContent).toBe('just now');
+  expect(h.doc.querySelector('[data-execution-activity]').textContent).toBe('2m ago');
+  expect(h.doc.querySelector('[data-raw-count]').textContent).toBe('2003');
+});
+
+test('old workers report unavailable health and distinguish legacy capped storage', async () => {
+  const h = setup('turn');
+  h.events.push({ id: 'cap', seq: 2001, rawEventType: 'events.truncated', category: 'issue', summary: 'Storage capped' });
+  await flush();
+  expect(h.doc.querySelector('[data-storage-status]').textContent).toContain('older worker');
+  expect(h.doc.querySelector('[data-worker-heartbeat]').textContent).toBe('Not reported');
+  expect(h.doc.querySelector('[data-execution-activity]').textContent).toBe('Not reported');
+});

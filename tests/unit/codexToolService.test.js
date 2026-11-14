@@ -640,6 +640,24 @@ describe('codexToolService.listTurnEventPage', () => {
     expect(page.events.map((event) => event.seq)).toEqual([90, 89]);
   });
 
+  test('returns only scoped progress metadata even when there are no new retained events', async () => {
+    jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery({
+      ...turn,
+      workerHeartbeatAt: new Date('2026-11-14T10:00:00Z'),
+      workerHeartbeatIntervalMs: 15000,
+      lastExecutionActivityAt: new Date('2026-11-14T09:59:00Z'),
+      eventStorage: { limit: 2000, cappedAt: new Date('2026-11-14T09:50:00Z'), omittedCount: 300, coalescedCount: 595, privateData: 'secret' },
+    }));
+    mockWorkspace();
+    CodexEvent.find.mockReturnValue(createEventQuery([]));
+    const page = await codexToolService.listTurnEventPage('turn-1', { user: owner, afterSeq: 10000 });
+    expect(page.events).toEqual([]);
+    expect(page.progress.workerHeartbeatAt).toEqual(new Date('2026-11-14T10:00:00Z'));
+    expect(page.progress.storage).toMatchObject({ limit: 2000, omittedCount: 300, coalescedCount: 595 });
+    expect(JSON.stringify(page.progress)).not.toContain('secret');
+    expect(CodexEvent.find).toHaveBeenCalledWith({ turnId: 'turn-1', seq: { $gt: 10000 } });
+  });
+
   test('supports the explicit administrator object-scope override', async () => {
     jest.spyOn(CodexTurn, 'findOne').mockReturnValue(createLeanQuery({
       ...turn,

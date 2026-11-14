@@ -197,6 +197,8 @@ CODEX_WORKER_ENABLED=true
 CODEX_WEB_WORKER_ENABLED=true
 CODEX_GLOBAL_CONCURRENCY=1
 CODEX_COMPLETION_EXIT_GRACE_MS=2000
+# Retained activity records. Priority updates replace older details at the cap.
+# Two coalesced telemetry records and one storage notice are reserved separately.
 CODEX_MAX_EVENTS_PER_TURN=2000
 CODEX_MAX_ADDITIONAL_MESSAGES_PER_TURN=20
 CODEX_MESSAGE_POLL_MS=1000

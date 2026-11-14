@@ -58,6 +58,18 @@ const CodexTurnSchema = new Schema({
   errorMessage: { type: String, default: '', trim: true, maxlength: 2000 },
   usage: { type: Schema.Types.Mixed, default: {} },
   eventCount: { type: Number, default: 0, min: 0 },
+  eventStorage: {
+    type: new Schema({
+      limit: { type: Number, min: 1 },
+      cappedAt: { type: Date, default: null },
+      omittedCount: { type: Number, default: 0, min: 0 },
+      coalescedCount: { type: Number, default: 0, min: 0 },
+    }, { _id: false }),
+    default: null,
+  },
+  workerHeartbeatAt: { type: Date, default: null },
+  workerHeartbeatIntervalMs: { type: Number, default: null, min: 1 },
+  lastExecutionActivityAt: { type: Date, default: null },
   additionalMessageCount: { type: Number, default: 0, min: 0 },
   artifactRefs: { type: [Schema.Types.Mixed], default: [] },
   createdBy: { type: UserRefSchema, default: () => ({}) },

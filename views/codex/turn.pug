@@ -49,6 +49,16 @@ block content
                   strong(data-activity-heading) Codex is working
                   span(data-activity-summary) Waiting for the first process detail…
                 span.codex-visually-hidden(data-activity-announcement, aria-live='polite', aria-atomic='true')
+          .codex-execution-health(data-execution-health)
+            p.codex-execution-health__storage(data-storage-status, role='status') Loading activity storage status…
+            dl
+              div
+                dt Worker heartbeat
+                dd(data-worker-heartbeat) Not yet reported
+              div
+                dt Last execution activity
+                dd(data-execution-activity) Not yet reported
+            p.codex-execution-health__help A heartbeat confirms the worker is responding. Execution activity tracks process updates, even when details are no longer stored.
           .codex-remaining-usage(data-remaining-usage, hidden)
             .codex-remaining-usage__label
               span Account usage

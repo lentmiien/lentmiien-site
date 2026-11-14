@@ -2869,6 +2869,7 @@ async function listTurnEventPage(turnId, options = {}) {
     events: events.map(serializeEvent),
     hasMore,
     total: Number(turn.eventCount) || events.length,
+    progress: serializeTurnProgress(turn),
     nextBeforeSeq: events.length ? Math.min(...events.map((event) => Number(event.seq) || 0)) : null,
     turnStartedAt: turn.startedAt || turn.queuedAt || turn.createdAt || null,
     workspaceRoot: workspace?.rootPath || '',
@@ -3334,6 +3335,7 @@ function serializeTurn(turn, extras = {}) {
     tokenUsage,
     costEstimate,
     eventCount: turn.eventCount || 0,
+    progress: serializeTurnProgress(turn),
     ...(extras.exposeOperationalMetadata === false ? {} : { artifactRefs: turn.artifactRefs || [] }),
     ...(extras.exposeOwner === false ? {} : { createdBy: turn.createdBy || {} }),
     queuedAt: turn.queuedAt || null,
@@ -3344,6 +3346,20 @@ function serializeTurn(turn, extras = {}) {
     createdAt: turn.createdAt || null,
     updatedAt: turn.updatedAt || null,
     queuePosition: extras.queuePosition || null,
+  };
+}
+
+function serializeTurnProgress(turn) {
+  return {
+    storage: turn.eventStorage ? {
+      limit: turn.eventStorage.limit,
+      cappedAt: turn.eventStorage.cappedAt || null,
+      omittedCount: turn.eventStorage.omittedCount || 0,
+      coalescedCount: turn.eventStorage.coalescedCount || 0,
+    } : null,
+    workerHeartbeatAt: turn.workerHeartbeatAt || null,
+    workerHeartbeatIntervalMs: turn.workerHeartbeatIntervalMs || null,
+    lastExecutionActivityAt: turn.lastExecutionActivityAt || null,
   };
 }
 

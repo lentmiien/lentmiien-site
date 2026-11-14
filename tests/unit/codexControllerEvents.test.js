@@ -167,6 +167,17 @@ describe('Codex turn event APIs', () => {
     expect(JSON.stringify(payload)).not.toMatch(/private-plan|credits|rateLimits/);
   });
 
+  test('publishes heartbeat and storage metadata on an empty incremental activity read', async () => {
+    const progress = {
+      storage: { limit: 2000, cappedAt: '2026-11-14T09:00:00Z', omittedCount: 400, coalescedCount: 595 },
+      workerHeartbeatAt: '2026-11-14T10:00:00Z', lastExecutionActivityAt: '2026-11-14T09:59:00Z',
+    };
+    codexToolService.listTurnEventPage.mockResolvedValue({ events: [], total: 2003, progress });
+    const res = responseDouble();
+    await codexController.getTurnEvents({ params: { turnId: 'turn-1' }, query: { afterSeq: '10000' }, user: { _id: 'user-1' } }, res);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ progress, events: [], counts: expect.objectContaining({ raw: 2003 }) }));
+  });
+
   test('does not log the account name when an owner-scoped activity read fails', async () => {
     const error = new Error('Turn not found.');
     error.statusCode = 404;

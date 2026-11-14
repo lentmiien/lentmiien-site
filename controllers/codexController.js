@@ -299,6 +299,7 @@ exports.getTurnEvents = async (req, res) => {
       ok: true,
       events,
       remainingUsage: latestCodexRemainingUsage(page.events),
+      progress: page.progress,
       counts: {
         activity: events.length,
         issues: events.filter((event) => event.isIssue).length,

@@ -520,6 +520,7 @@
         turnId,
         status: turn ? turn.status : '',
         reportedCount: Number(turn && turn.eventCount) || 0,
+        progress: turn?.progress || null,
         events: [],
         lastSeq: 0,
         latestEvent: null,
@@ -547,6 +548,7 @@
     if (turn) {
       state.status = turn.status || '';
       state.reportedCount = Math.max(state.reportedCount, Number(turn.eventCount) || 0);
+      if (turn.progress) state.progress = turn.progress;
     }
     return state;
   }
@@ -624,7 +626,46 @@
   }
 
   function liveActivityCount(state) {
-    return Math.max(state.reportedCount, state.lastSeq, state.events.length);
+    return Math.max(state.reportedCount, state.events.length);
+  }
+
+  function renderExecutionHealth(turnId) {
+    if (root.dataset.codexPage !== 'turn' || root.dataset.turnId !== turnId) return;
+    const state = getLiveActivityState(turnId);
+    const progress = state.progress;
+    const storage = root.querySelector('[data-storage-status]');
+    const heartbeat = root.querySelector('[data-worker-heartbeat]');
+    const activity = root.querySelector('[data-execution-activity]');
+    if (!storage || !heartbeat || !activity) return;
+    const legacyCapped = state.events.some((event) => (event.rawEventType || event.eventType) === 'events.truncated');
+    const capped = Boolean(progress?.storage?.cappedAt || legacyCapped);
+    storage.dataset.capped = String(capped);
+    storage.textContent = progress?.storage
+      ? (capped
+        ? `Storage capped at ${formatNumber(progress.storage.limit)} activity records. Messages, errors, and completion updates continue; older details may be replaced. ${formatNumber(progress.storage.omittedCount)} details omitted or replaced.`
+        : `Activity storage: ${formatNumber(state.reportedCount)} retained records; limit ${formatNumber(progress.storage.limit)} plus telemetry and storage notice.`)
+      : (legacyCapped
+        ? 'Storage capped by an older worker. Further activity may be unavailable until completion.'
+        : 'Activity storage status not reported by this worker.');
+    if (progress?.storage?.coalescedCount) {
+      storage.textContent += ` ${formatNumber(progress.storage.coalescedCount)} routine telemetry updates coalesced.`;
+    }
+    const heartbeatAt = progress?.workerHeartbeatAt;
+    const heartbeatTime = heartbeatAt ? new Date(heartbeatAt).getTime() : NaN;
+    const stale = state.status === 'running' && Number.isFinite(heartbeatTime) &&
+      Date.now() - heartbeatTime > Math.max(45000, (Number(progress?.workerHeartbeatIntervalMs) || 15000) * 3);
+    heartbeat.dataset.stale = String(stale);
+    heartbeat.textContent = Number.isFinite(heartbeatTime)
+      ? `${stale ? 'Delayed · ' : ''}${formatActivityAge(heartbeatAt)}${state.status === 'running' ? '' : ' · turn ended'}`
+      : 'Not reported';
+    heartbeat.title = Number.isFinite(heartbeatTime) ? formatDate(heartbeatAt) : '';
+    activity.textContent = progress?.lastExecutionActivityAt
+      ? formatActivityAge(progress.lastExecutionActivityAt)
+      : 'Not reported';
+    activity.title = progress?.lastExecutionActivityAt ? formatDate(progress.lastExecutionActivityAt) : '';
+    if (state.failureCount || state.unavailable || pagePolling.blocked) {
+      heartbeat.textContent += ' · visibility unavailable; last known heartbeat';
+    }
   }
 
   function liveActivityDisplay(state) {
@@ -633,8 +674,13 @@
     const latest = state.latestEvent;
     const latestTimestamp = latest && (latest.timestamp || latest.completedAt || latest.startedAt);
     let heading = 'Codex is working';
+    const heartbeatTime = new Date(state.progress?.workerHeartbeatAt || 0).getTime();
     if (state.failureCount >= 2) {
       heading = 'Reconnecting to activity feed';
+    } else if (heartbeatTime && Date.now() - heartbeatTime > Math.max(45000, (Number(state.progress?.workerHeartbeatIntervalMs) || 15000) * 3)) {
+      heading = 'Worker heartbeat delayed';
+    } else if (state.progress?.storage?.cappedAt) {
+      heading = 'Storage capped · monitoring priority updates';
     } else if (state.highlightUntil > Date.now()) {
       heading = 'New process detail';
     } else if (latest) {
@@ -746,6 +792,7 @@
 
   function updateLiveActivityIndicators(turnId, options = {}) {
     const state = getLiveActivityState(turnId);
+    renderExecutionHealth(turnId);
     const display = liveActivityDisplay(state);
     const selector = `[data-turn-activity="${CSS.escape(turnId)}"]`;
     root.querySelectorAll(selector).forEach((indicator) => {
@@ -817,6 +864,7 @@
         { cache: 'no-store' }
       );
       updateRemainingUsage(turnId, payload.remainingUsage);
+      if (payload.progress) state.progress = payload.progress;
       const knownSeqs = new Set(state.events.flatMap((event) => [
         Number(event.seq) || 0,
         Number(event.startedSeq) || 0,
@@ -826,7 +874,12 @@
         .sort((left, right) => Number(left.seq) - Number(right.seq));
       const newSeqs = new Set(initialLoad ? [] : incoming.map((event) => Number(event.seq) || 0));
       if (incoming.length) {
-        state.events = mergeActivityEvents(state.events, incoming);
+        const incomingIds = new Set(incoming.map(event => event.id).filter(Boolean));
+        state.events = mergeActivityEvents(state.events.filter(event => !incomingIds.has(event.id)), incoming);
+        // Replaced storage slots have newer sequence numbers. Bound long-lived
+        // browser history too; sequence is a cursor, never a retained count.
+        const historyLimit = Math.min(100003, Math.max(23, Number(state.progress?.storage?.limit || 2000) + 3));
+        state.events = state.events.slice(-historyLimit);
         state.latestEvent = state.events.reduce((latest, event) => (
           !latest || Number(event.seq) > Number(latest.seq) ? event : latest
         ), null);
@@ -835,7 +888,6 @@
           Number(payload.lastSeq) || 0,
           ...incoming.map((event) => Number(event.seq) || 0)
         );
-        state.reportedCount = Math.max(state.reportedCount, state.lastSeq);
         state.highlightUntil = Date.now() + LIVE_ACTIVITY_HIGHLIGHT_MS;
         if (!initialLoad && root.dataset.codexPage === 'turn' && turnFeedIsInspectingHistory(turnId)) {
           state.pendingNewCount += incoming.length;
@@ -847,7 +899,7 @@
         state.lastSeq = Math.max(state.lastSeq, Number(payload.lastSeq) || 0, Number(state.latestEvent.seq) || 0);
       }
       state.lastSeq = Math.max(state.lastSeq, Number(payload.lastSeq) || 0);
-      if (payload.counts?.raw) state.reportedCount = Math.max(state.reportedCount, Number(payload.counts.raw) || 0);
+      if (Number.isFinite(payload.counts?.raw)) state.reportedCount = payload.counts.raw;
       state.loaded = true;
       state.failureCount = 0;
       state.nextAttemptAt = 0;
@@ -1962,6 +2014,7 @@
       });
     }
     updateProcessDetailButtons(turn.id);
+    renderExecutionHealth(turn.id);
   }
 
   async function refreshTurn() {

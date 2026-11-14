@@ -8,6 +8,7 @@ const CodexTurnMessage = require('../models/codex_turn_message');
 const CodexSession = require('../models/codex_session');
 const codexToolService = require('./codexToolService');
 const CodexLocalRunner = require('./codexLocalRunner');
+const { CodexTurnEventStore } = require('./codexTurnEventStore');
 const CodexOllamaReservation = require('./codexOllamaReservation');
 const { CodexActivity } = require('./localAi/codexActivity');
 const logger = require('../utils/logger');
@@ -21,7 +22,8 @@ function clipText(value, maxLength) {
   if (text.length <= maxLength) {
     return text;
   }
-  return `${text.slice(0, maxLength - 18)}\n[output truncated]`;
+  const marker = '\n[output truncated]';
+  return `${text.slice(0, Math.max(0, maxLength - marker.length))}${marker}`;
 }
 
 function clipVerboseText(value, maxLength) {
@@ -723,39 +725,50 @@ class CodexQueueWorker {
 
   async runClaimedTurn(turn, workspace, target, lock) {
     const config = this.getConfig();
-    let nextEventSeq = 1;
     let storedEventCount = 0;
-    let eventCapReached = false;
     let heartbeatInterval = null;
     let additionalMessageInterval = null;
     let eventWriteChain = Promise.resolve();
     const usesOllama = codexToolService.getTurnModelProvider(turn) === 'ollama';
 
     const session = await CodexSession.findById(turn.sessionId).lean().exec();
-    const storeEvent = async (event) => {
-      const isAdditionalUserMessage = event?.payload?.item?.type === 'user_message';
-      if (storedEventCount >= config.maxEventsPerTurn && !isAdditionalUserMessage) {
-        if (!eventCapReached) {
-          eventCapReached = true;
-          await this.recordEvent(turn, nextEventSeq, {
-            stream: 'system',
-            eventType: 'events.truncated',
-            text: `Event storage limit reached at ${config.maxEventsPerTurn} events.`,
-            severity: 'warning',
-          });
-          nextEventSeq += 1;
-          storedEventCount += 1;
-        }
-        return { stored: false, count: storedEventCount };
-      }
-      await this.recordEvent(turn, nextEventSeq, event);
-      nextEventSeq += 1;
-      storedEventCount += 1;
-      return { stored: true, count: storedEventCount };
+    const eventStore = new CodexTurnEventStore({
+      limit: config.maxEventsPerTurn,
+      write: (seq, event, replaceSeq) => this.recordEvent(turn, seq, event, replaceSeq),
+    });
+    let progressWriteChain = Promise.resolve();
+    let eventWriteErrorReported = false;
+    const persistProgress = () => {
+      const operation = progressWriteChain.then(() => CodexTurn.updateOne({ _id: turn._id }, {
+        $set: eventStore.snapshot(),
+      }).exec());
+      progressWriteChain = operation.catch(() => {});
+      return operation;
     };
     const onEvent = (event) => {
-      const operation = eventWriteChain.then(() => storeEvent(event));
-      eventWriteChain = operation.catch(() => {});
+      const operation = eventWriteChain.then(async () => {
+        const wasCapped = Boolean(eventStore.cappedAt);
+        const result = await eventStore.store(event);
+        eventWriteErrorReported = false;
+        storedEventCount = result.count;
+        if (!wasCapped && eventStore.cappedAt) {
+          logger.warning('Codex turn activity storage capped; priority updates continue', {
+            category: 'codex_tool',
+            metadata: { turnId: String(turn._id), limit: config.maxEventsPerTurn },
+          });
+          await persistProgress();
+        }
+        return result;
+      });
+      eventWriteChain = operation.catch((error) => {
+        if (!eventWriteErrorReported) {
+          eventWriteErrorReported = true;
+          logger.error('Codex turn activity could not be persisted', {
+            category: 'codex_tool',
+            metadata: { turnId: String(turn._id), errorName: error?.name || 'Error' },
+          });
+        }
+      });
       return operation;
     };
     const active = this.activeTurns.get(String(turn._id)) || {};
@@ -855,21 +868,42 @@ class CodexQueueWorker {
       }
     };
 
-    heartbeatInterval = setInterval(() => {
+    let heartbeatPending = null;
+    let heartbeatErrorReported = false;
+    const heartbeat = () => {
+      if (heartbeatPending) return heartbeatPending;
       const now = new Date();
-      CodexWorkspaceLock.updateOne({
-        _id: lock._id,
-        turnId: String(turn._id),
-        workerId: this.workerId,
-      }, {
-        $set: {
-          heartbeatAt: now,
-          expiresAt: addMilliseconds(now, config.lockTtlMs),
-        },
-      }).exec().catch((error) => {
+      heartbeatPending = (async () => {
+        const lockUpdate = await CodexWorkspaceLock.updateOne({
+          _id: lock._id,
+          turnId: String(turn._id),
+          workerId: this.workerId,
+        }, {
+          $set: { heartbeatAt: now, expiresAt: addMilliseconds(now, config.lockTtlMs) },
+        }).exec();
+        if (!lockUpdate.matchedCount) throw new Error('Codex worker no longer holds its workspace lock.');
+        await CodexTurn.updateOne({ _id: turn._id }, {
+          $set: {
+            workerHeartbeatAt: now,
+            workerHeartbeatIntervalMs: config.heartbeatMs,
+          },
+        }).exec();
+        await persistProgress();
+        heartbeatErrorReported = false;
+      })().catch((error) => {
         this.lastError = error.message;
-      });
-    }, config.heartbeatMs);
+        if (!heartbeatErrorReported) {
+          heartbeatErrorReported = true;
+          logger.warning('Codex worker heartbeat could not be persisted', {
+            category: 'codex_tool',
+            metadata: { turnId: String(turn._id), errorName: error?.name || 'Error' },
+          });
+        }
+      }).finally(() => { heartbeatPending = null; });
+      return heartbeatPending;
+    };
+    await heartbeat();
+    heartbeatInterval = setInterval(heartbeat, config.heartbeatMs);
     if (heartbeatInterval.unref) {
       heartbeatInterval.unref();
     }
@@ -962,7 +996,7 @@ class CodexQueueWorker {
         severity: result.status === 'succeeded' ? 'info' : 'error',
       });
       updatedTurn.eventCount = storedEventCount;
-      await CodexTurn.updateOne({ _id: turn._id }, { $set: { eventCount: storedEventCount } }).exec();
+      await persistProgress();
 
       if (codexThreadId) {
         await CodexSession.updateOne({
@@ -1006,13 +1040,21 @@ class CodexQueueWorker {
         severity: 'error',
       });
       updatedTurn.eventCount = storedEventCount;
-      await CodexTurn.updateOne({ _id: turn._id }, { $set: { eventCount: storedEventCount } }).exec();
+      await persistProgress();
       await codexToolService.updateSessionAfterTurn(updatedTurn);
     } finally {
       await stopAdditionalMessageDelivery();
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
       }
+      if (heartbeatPending) await heartbeatPending;
+      await eventWriteChain;
+      await persistProgress().catch((error) => {
+        logger.error('Codex turn progress could not be finalized', {
+          category: 'codex_tool',
+          metadata: { turnId: String(turn._id), errorName: error?.name || 'Error' },
+        });
+      });
       await this.failOutstandingAdditionalMessages(
         turn._id,
         'The Codex turn ended before this message could be delivered.'
@@ -1040,10 +1082,10 @@ class CodexQueueWorker {
     }
   }
 
-  async recordEvent(turn, seq, event) {
+  async recordEvent(turn, seq, event, replaceSeq) {
     const config = this.getConfig();
     const turnId = String(turn._id);
-    await CodexEvent.create({
+    const document = {
       turnId,
       sessionId: String(turn.sessionId),
       workspaceId: String(turn.workspaceId),
@@ -1054,7 +1096,17 @@ class CodexQueueWorker {
       text: clipText(event.text || '', config.maxEventTextChars),
       severity: event.severity || 'info',
       hiddenByDefault: event.hiddenByDefault !== false,
-    }).catch((error) => {
+      createdAt: new Date(),
+    };
+    if (replaceSeq) {
+      const result = await CodexEvent.updateOne({ turnId, seq: replaceSeq }, { $set: document }, {
+        timestamps: false,
+        overwriteImmutable: true,
+      }).exec();
+      if (!result.matchedCount) throw new Error('Codex event retention slot is missing.');
+      return;
+    }
+    await CodexEvent.create(document).catch((error) => {
       if (error && error.code === 11000) {
         return null;
       }

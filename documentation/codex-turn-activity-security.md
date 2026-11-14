@@ -53,8 +53,44 @@ Cache policy: every page and API response under `/codex` uses `Cache-Control: pr
 
 Security-relevant logs (without personal data): authorization and event-load failures use the shared logger with the capability, route, status, opaque turn id where useful, and error class. Event content, prompts, usernames, commands, and tool payloads are not logged.
 
-Retention/deletion behavior: this rebuild does not change the existing bounded Codex event retention. Raw payloads are loaded only on request and are not copied into browser storage. Display order is the only locally persisted preference.
+Retention/deletion behavior: activity history is bounded by `CODEX_MAX_EVENTS_PER_TURN`, plus at most two latest telemetry records and one storage-cap notice. On overflow, agent/user messages, warnings, errors (including nonzero command exits), and terminal lifecycle updates replace the oldest routine record, or the oldest priority record when only priority records remain. Routine overflow is omitted. Replaced payloads are overwritten atomically; monotonic sequences allow incremental readers to follow replacements. Browser activity history is bounded to the same maximum. Raw payloads are loaded only on request and are not copied into browser storage. Display order is the only locally persisted preference.
 
 Required negative security tests: missing capability; foreign owner; missing turn; admin override; raw payload secret/path redaction; malicious Markdown/URL; oversized structured payload; invalid CSRF for mutations; and raw pagination limits.
 
 Legacy dependency or migration plan: existing stored events remain readable through camelCase, snake_case, and nested-payload normalization. Previously whole-payload-truncated records receive a generic readable activity row. New events use field-aware clipping and retain selected action-start records. The old raw-first turn renderer is replaced in place; the existing session-card summary continues to consume the curated endpoint.
+
+
+## Long-running turn visibility
+
+This change uses the existing logged-in, owner-scoped turn and activity reads with
+the declared admin override. No routes, capabilities, mutations, or outbound
+services are added. The progress response allowlists storage limits/counters and
+worker/execution timestamps only; it does not expose locks, worker identities,
+hosts, paths, or raw telemetry. Existing payload bounds, presentation redaction,
+Markdown sanitization, and private/no-store policies remain in force.
+
+The worker persists a heartbeat separately from execution activity. The latter
+advances when a non-telemetry process event is received, including events omitted
+at the storage cap; it is not advanced by steering messages or worker heartbeats.
+It does not claim to measure CPU activity or unreported model work. Metadata is
+flushed at the heartbeat interval, on first overflow, and on completion. Missing
+legacy metadata is displayed as unavailable, never as evidence of healthy work.
+A delayed heartbeat means visibility needs attention, not proof execution stopped.
+
+Token-usage and account-rate-limit telemetry each occupy one replaceable slot.
+Explicit warning/error telemetry still enters priority retention. The final response
+and usage totals continue to be stored independently on the turn. Stored event
+count and sequence cursor are distinct once telemetry or activity slots roll over.
+The storage banner explains that older details can be replaced, so history is not
+presented as a complete audit trail. A continuously open page may retain already
+seen details until its bounded client history rolls over; reloads use retained data.
+
+Deployment: restart the web process and each standalone Codex worker through the
+normal deployment procedure. The additional schema fields are optional and require
+no database migration or environment change. Existing running workers keep their
+old behavior until restarted; previously dropped activity cannot be recovered.
+Rollback accepts the additive fields and stored event shape; new turns then use
+the old retention behavior. Tests cover telemetry coalescing, continued priority
+updates with fixed storage, sparse cursors, heartbeat/activity independence,
+missing legacy metadata, bounded payload replacements, scoped empty reads, and
+existing missing-capability/foreign-owner denial.
