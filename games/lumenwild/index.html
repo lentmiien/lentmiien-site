@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="description" content="Carry a little light into a living labyrinth. Explore two intertwined worlds, outwit creatures, and bring a forgotten garden back to life.">
+  <title>Lumenwild · The Folded Garden</title>
+  <link rel="icon" type="image/webp" href="assets/prop-1.webp">
+  <link rel="preload" as="image" href="assets/cover.webp">
+  <link rel="stylesheet" href="/css/color-theme.css">
+  <link rel="stylesheet" href="css/game.css">
+  <script defer src="js/core.js"></script>
+  <script defer src="js/render.js"></script>
+  <script defer src="js/game.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#mainAction">Skip to play</a>
+  <header class="topbar">
+    <a href="/games" class="wordmark" aria-label="Lumenwild — back to all games">
+      <span class="brand-sigil" aria-hidden="true">✧</span>
+      <span>LUMENWILD<small>THE FOLDED GARDEN</small></span>
+    </a>
+    <div class="top-actions">
+      <span id="saveStatus" class="save-status">A world worth getting lost in</span>
+      <button id="soundButton" class="quiet-button" type="button" aria-pressed="false" aria-label="Enable sound">♫ <span>Sound off</span></button>
+      <button id="helpButton" class="quiet-button" type="button" aria-label="How to play">? <span>Field guide</span></button>
+      <button id="pauseButton" class="quiet-button" type="button" hidden>Ⅱ <span>Pause</span></button>
+    </div>
+  </header>
+
+  <main id="campScreen" class="camp-screen">
+    <div class="camp-art" aria-hidden="true"></div>
+    <div class="camp-grain" aria-hidden="true"></div>
+    <section class="camp-story" aria-labelledby="title">
+      <div class="eyebrow"><span class="little-line"></span> A LANTERN. A LABYRINTH. A WAY HOME.</div>
+      <h1 id="title">Lumenwild<span>The Folded Garden</span></h1>
+      <p>Somewhere between the world and its reflection,<br class="desktop-break"> a forgotten garden is waiting for your light.</p>
+      <div class="story-tags"><span>Three lost gardens</span><i>✦</i><span>Two intertwined worlds</span></div>
+      <div class="chapter-marks" aria-label="Explore three regions">
+        <span><b>01</b> Verdant Hollows</span><span><b>02</b> Moonwell Archive</span><span><b>03</b> Glassbloom</span>
+      </div>
+    </section>
+
+    <section class="camp-panel" aria-labelledby="campTitle">
+      <div class="camp-panel-heading"><img src="assets/prop-10.webp" width="64" height="64" alt=""><div><p class="eyebrow">THE KEEPER’S CAMP</p><h2 id="campTitle">Welcome, wanderer.</h2></div></div>
+      <p class="camp-intro">Gather heartseeds. Unfold hidden paths.<br>Bring a little more life back with every journey.</p>
+      <button id="continueButton" class="primary-button" type="button" hidden><span>Continue your journey<small id="continueDetail"></small></span><span aria-hidden="true">↗</span></button>
+      <button id="mainAction" class="primary-button" type="button" disabled><span>Enter the garden<small>A new expedition, a new maze</small></span><span aria-hidden="true">↗</span></button>
+      <button id="dailyButton" class="daily-button" type="button" disabled><span aria-hidden="true">☼</span><span>Today’s wandering<small id="dailyDate">A shared seed · a fresh challenge</small></span><span aria-hidden="true">→</span></button>
+      <label class="gentle-option"><input id="gentleMode" type="checkbox"><span>Gentle journey<small>Extra hearts and supplies. All the wonder.</small></span></label>
+      <div id="loadStatus" class="load-status" role="status">Lighting the lantern…</div>
+      <div class="camp-stats"><div><strong id="campLight">0</strong><span>Starlight</span></div><div><strong id="campWins">0</strong><span>Gardens awakened</span></div><div><strong id="campMemories">0 / 9</strong><span>Memories</span></div></div>
+      <div class="camp-section-heading"><h3>Make yourself at home</h3><span>Permanent upgrades</span></div>
+      <div id="upgrades" class="upgrade-list"></div>
+      <div class="camp-footer"><button id="journalButton" class="text-button" type="button">Open your journal <span aria-hidden="true">↗</span></button><button id="settingsButton" class="text-button muted" type="button">Settings</button></div>
+    </section>
+    <div class="camp-caption">TAKE YOUR TIME. THE GARDEN WILL WAIT.</div>
+  </main>
+
+  <main id="playScreen" class="play-screen" hidden>
+    <section class="expedition-bar" aria-label="Expedition status">
+      <div class="life-group"><img src="assets/fox-0.webp" alt="Pip the lantern fox" width="44" height="50"><div><div class="stat-heading"><span>YOUR LANTERN</span><strong id="healthText">7 / 7</strong></div><div id="hearts" class="hearts" aria-label="Health"></div></div></div>
+      <div class="expedition-stat"><img src="assets/prop-1.webp" alt="" width="38" height="38"><div><small>HEARTSEEDS</small><strong id="seedCount">0 <span>/ 3</span></strong></div></div>
+      <div class="expedition-stat"><img src="assets/prop-0.webp" alt="" width="34" height="34"><div><small>STARLIGHT</small><strong id="lightCount">0</strong></div></div>
+      <button id="phaseButton" class="phase-button" type="button"><span id="phaseIcon" aria-hidden="true">☼</span><span><small>THE GARDEN IS IN</small><strong id="phaseName">Bloom</strong></span><kbd>Q</kbd></button>
+    </section>
+
+    <section id="stage" class="stage" aria-label="Garden exploration">
+      <canvas id="world" tabindex="0" role="application" aria-label="Lumenwild garden. Move with WASD or arrow keys. Space attacks, Q shifts the world, E interacts. Enemies only act when you do.">This game requires a browser with Canvas support.</canvas>
+      <div class="region-label"><span id="chapterLabel">GARDEN 01 / 03</span><h2 id="regionName">Verdant Hollows</h2><p id="regionSubtitle">Where the lanterns first took root</p></div>
+      <button id="mapButton" class="minimap-button" type="button" aria-label="Open the garden atlas, M"><canvas id="minimap" width="176" height="132" aria-hidden="true"></canvas><span>THE ATLAS <kbd>M</kbd></span></button>
+      <div id="toast" class="game-toast" role="status" aria-live="polite" hidden></div>
+      <div class="objective"><span class="objective-dot" aria-hidden="true"></span><span id="objectiveText">Find three heartseeds. Bring them to the waygate.</span></div>
+      <button id="interactPrompt" class="interact-prompt" type="button" hidden><kbd>E</kbd><span>Interact</span></button>
+      <div class="dpad" aria-label="Movement controls"><button data-dir="0" type="button" class="dpad-up" aria-label="Move north">↑</button><button data-dir="3" type="button" class="dpad-left" aria-label="Move west">←</button><span aria-hidden="true">✧</span><button data-dir="1" type="button" class="dpad-right" aria-label="Move east">→</button><button data-dir="2" type="button" class="dpad-down" aria-label="Move south">↓</button></div>
+      <div class="world-note"><i></i> The world moves when you do.</div>
+    </section>
+
+    <footer class="action-deck" aria-label="Abilities and supplies">
+      <div class="ability-group">
+        <button class="ability primary-ability" data-action="attack" type="button"><img src="assets/prop-6.webp" alt=""><span>Sweep<small>Unlimited</small></span><kbd>SPACE</kbd></button>
+        <button class="ability" data-action="shift" type="button"><img src="assets/prop-8.webp" alt=""><span>Fold<small id="shiftCooldown">Shift world</small></span><kbd>Q</kbd></button>
+        <button class="ability" data-action="dash" type="button"><img src="assets/prop-15.webp" alt=""><span>Mothstep<small id="dashCooldown">Dash ahead</small></span><kbd>SHIFT</kbd></button>
+        <button class="ability" data-action="interact" type="button"><img src="assets/prop-5.webp" alt=""><span>Discover<small>Interact</small></span><kbd>E</kbd></button>
+      </div>
+      <div class="deck-divider"></div>
+      <div class="ability-group supplies">
+        <button class="ability" data-action="medicine" type="button"><img src="assets/prop-2.webp" alt=""><span>Tonic<small id="medicineCount">× 2 · heal</small></span><kbd>1</kbd></button>
+        <button class="ability" data-action="bomb" type="button"><img src="assets/prop-3.webp" alt=""><span>Seedbomb<small id="bombCount">× 2 · burst</small></span><kbd>2</kbd></button>
+        <button class="ability" data-action="thread" type="button"><img src="assets/prop-4.webp" alt=""><span>Thread<small id="threadCount">× 3 · find a path</small></span><kbd>3</kbd></button>
+        <button class="ability journal-ability" id="playJournal" type="button"><img src="assets/prop-11.webp" alt=""><span>Journal<small>Your discoveries</small></span><kbd>J</kbd></button>
+      </div>
+    </footer>
+    <div class="bottom-hint"><span><kbd>WASD</kbd> / <kbd>↑ ↓ ← →</kbd> move · hold to wander</span><span id="blessingSummary">A small lantern can change everything.</span><span><kbd>.</kbd> wait · <kbd>ESC</kbd> pause</span></div>
+  </main>
+
+  <dialog id="dialog" class="dialog" aria-labelledby="dialogTitle">
+    <div class="dialog-top"><p id="dialogEyebrow" class="eyebrow"></p><button id="closeDialog" class="close-button" type="button" aria-label="Close dialog">×</button></div>
+    <h2 id="dialogTitle"></h2>
+    <div id="dialogBody"></div>
+    <div id="dialogActions" class="dialog-actions"></div>
+  </dialog>
+  <div id="storageNotice" class="storage-notice" role="status" hidden></div>
+  <noscript><div class="noscript">Enable JavaScript to light your lantern and explore Lumenwild.</div></noscript>
+</body>
+</html>
