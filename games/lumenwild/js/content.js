@@ -15,6 +15,12 @@
     { name: 'Frostglass Grotto', subtitle: 'Nothing asleep is quite forgotten', color: '#a2dafa', w: 37, h: 31, enemies: 8, tile: 32, layout: 'caverns', feature: 'prisms', landmark: 'Thawing prism', landmarkIcon: 46, clue: 'Align three prisms with the proper realm to open the frozen paths.', kinds: [6, 1, 6], relics: ['The winter rose', 'A compass for snow', 'The silent feather'] },
     { name: 'Cinderroot Caldera', subtitle: 'Life begins again beneath the ash', color: '#ffa477', w: 39, h: 31, enemies: 9, tile: 36, layout: 'caldera', feature: 'vents', landmark: 'Cooling heart', landmarkIcon: 6, clue: 'Cool three hearts to quiet the warning vents. Echo shelters you from their heat.', kinds: [7, 2, 5], relics: ['The unhatched sunrise', 'A fire carried home', 'Cinderroot promise'] },
     { name: 'Astral Canopy', subtitle: 'Every distant light was once a seed', color: '#bab3ff', w: 39, h: 33, enemies: 9, tile: 40, layout: 'constellation', feature: 'stars', landmark: 'Star anchor', landmarkIcon: 47, clue: 'Wake star anchors I, II, III in order. They stitch shortcuts across the sky.', kinds: [8, 6, 8], relics: ['The wandering sphere', 'Dust from a new star', 'Crown of the far canopy'] },
+    { name: 'Sunken Belfry', subtitle: 'Some promises are louder than the sea', color: '#73ded3', w: 39, h: 33, enemies: 7, tile: 48, layout: 'belfry', feature: 'bells', landmark: 'Tide chime', landmarkIcon: 66, clue: 'Restore three tide chimes for a gentler guardian encounter. Three heartseeds wake the Bellkeeper’s arena.', kinds: [3, 9, 1], guardian: 'bellkeeper', relics: ['A bell without a sound', 'The ferryman’s promise', 'Pearl of the long rain'] },
+    { name: 'Mycelium Warrens', subtitle: 'A thousand small lights share one dream', color: '#d0a3e8', w: 39, h: 35, enemies: 8, tile: 52, layout: 'warrens', feature: 'spores', landmark: 'Dreamcap', landmarkIcon: 67, clue: 'Wake the dreamcaps. Restored caps carry you through the underground root network.', kinds: [10, 4, 10], relics: ['The listening mushroom', 'Sporeglass lantern', 'A letter from the roots'] },
+    { name: 'Stormglass Causeway', subtitle: 'Even the wildest wind can learn to rest', color: '#9cbef8', w: 41, h: 33, enemies: 7, tile: 56, layout: 'causeways', feature: 'vanes', landmark: 'Wind vane', landmarkIcon: 68, clue: 'Turn the wind vanes to calm the causeways. Three heartseeds call the Tempest Roc.', kinds: [11, 5, 6], guardian: 'tempest', relics: ['A feather full of thunder', 'The broken weathercock', 'The eye of a quiet storm'] },
+    { name: 'Sundial Desert', subtitle: 'The dunes remember every footstep', color: '#e8bf85', w: 41, h: 35, enemies: 8, tile: 64, layout: 'dunes', feature: 'sundials', landmark: 'Sun dial', landmarkIcon: 69, clue: 'Align the three sun dials in their marked worlds. Their shadows uncover passages beneath the dunes.', kinds: [12, 7, 5], relics: ['An hour made of sand', 'The oasis compass', 'A seed older than rain'] },
+    { name: 'Velvet Labyrinth', subtitle: 'Every thread leads back to someone', color: '#e39ebd', w: 41, h: 35, enemies: 8, tile: 68, layout: 'weave', feature: 'looms', landmark: 'Silk lantern', landmarkIcon: 70, clue: 'Restore the silk lanterns. Fold looms swap the Bloom and Echo shortcuts marked around them.', kinds: [13, 4, 8], relics: ['The weaver’s silver needle', 'A ribbon for the moon', 'The unfinished tapestry'] },
+    { name: 'Aurora Crown', subtitle: 'Dawn is a promise we make together', color: '#c0f0d9', w: 43, h: 35, enemies: 8, tile: 72, layout: 'aurora', feature: 'auroras', landmark: 'Dawn prism', landmarkIcon: 71, clue: 'Light three dawn prisms in order. The Dawn Hart waits beyond the last aurora.', kinds: [14, 8, 6], guardian: 'dawnhart', relics: ['The first ray of morning', 'A crown of unwritten skies', 'The keeper’s last seed'] },
   ];
 
   // The first nine identifiers are unchanged from the original release.
@@ -73,17 +79,56 @@
     ['The moth’s lantern', 'In the far dark, the moths do not follow light. They carry it to places that have never seen any.'],
     ['A crown for nobody', 'The last keeper refused the crown. Leave it here, she said. A garden should not need a king.'],
     ['Room for another path', 'Pip reached the end of the oldest map and unfolded a blank page. The first mark was a little lantern. The second was a way home.'],
+    ['The drowned bell', 'The bell rang for three days after the sea took the tower. It was not calling for help. It was telling the boats where the rocks were.'],
+    ['The Bellkeeper', 'The great shell carries a bell cast from every key in the old town. Nobody wanted to lock their doors again.'],
+    ['A promise to return', 'The tide comes back without being asked. The ferryman thought people should try to be a little more like the tide.'],
+    ['The quiet between', 'Every bell has two voices: the sound it makes, and the silence it leaves room for.'],
+    ['Lanterns underwater', 'The keeper lowered a light into the well. A hundred tiny lights answered from below.'],
+    ['The last crossing', 'The Bellkeeper had waited so long for a passenger that it forgot how to stop guarding the shore. Pip offered it a story.'],
+    ['The listening earth', 'Under the paths, the mushrooms pass messages between trees. Most of the messages say: are you warm enough?'],
+    ['A little borrowed glow', 'Fireflies lend their light to the dreamcaps on cloudy nights. By morning, every borrowed spark is returned.'],
+    ['No one travels alone', 'The root network has no beginning. Wherever Pip entered it, someone had already left a little light.'],
+    ['Spore post', 'A letter sent through the warrens arrives with a small mushroom attached. This is how the recipient knows it was read with care.'],
+    ['The quiet gardeners', 'The smallest creatures turn the largest fallen trees into a place for new things to grow.'],
+    ['One shared dream', 'The dreamcaps do not dream of being tall. They dream of every root having enough rain.'],
+    ['The storm’s nest', 'The roc built its nest from broken weather vanes. Every direction deserved a place to rest.'],
+    ['An empty sky', 'When the winds stopped, the windkeepers learned that silence could be frightening too. They asked the roc to sing again.'],
+    ['A feather’s weight', 'One stormglass feather weighs nothing until someone tries to carry it alone.'],
+    ['What the wind brings', 'The causeway was built for travellers who had nowhere else to go. Its stones are warm even in winter.'],
+    ['A safe landing', 'Pip watched the roc circle the tower. It was looking for somewhere to put down all the weather it had been carrying.'],
+    ['The storm remembers', 'Under the thunder, the old guardian still knew the tune the windkeepers sang at dusk.'],
+    ['A patient sea', 'The dunes were once the floor of an ocean. The shells have never stopped listening for it.'],
+    ['The sun dial', 'The dial has no numbers. Its shadow tells you only whether someone beside you needs shade.'],
+    ['An oasis kept secret', 'The mapmaker left the oasis off the map, then planted a line of trees leading straight to it.'],
+    ['The oldest seed', 'It waited beneath the sand through a hundred dry seasons. Waiting was not the same as giving up.'],
+    ['Footsteps at dawn', 'Every morning the wind erases the paths. Every morning someone walks them again.'],
+    ['The useful hour', 'Pip turned the hourglass over. Instead of sand, one small flower fell through.'],
+    ['The weaver’s hands', 'The first weaver made a blanket large enough for everyone. The labyrinth grew from the threads left over.'],
+    ['Two kinds of silk', 'Bloom holds the threads you can see. Echo holds the knots that keep them together.'],
+    ['The unfinished corner', 'The tapestry has one empty corner. The weaver left it for whoever came next.'],
+    ['A moth’s mistake', 'A moth chewed a hole in the moon’s ribbon. Through it, the stars found their way into the garden.'],
+    ['Threads of return', 'A lost firefly ties a thread of light to the person who brings it home. The thread does not fade.'],
+    ['The gentle knot', 'The best knot holds tightly when it is needed and opens easily when it is time to leave.'],
+    ['The first keeper', 'Before there were lanterns, the Dawn Hart carried the morning in its antlers. It has never asked anyone to thank it.'],
+    ['A sky in pieces', 'The aurora is made of every colour the garden could not fit into its flowers.'],
+    ['The long night', 'The Hart mistook the folded world for a winter without an end. It kept the dawn safe, and forgot to let it go.'],
+    ['Room for the sunrise', 'Pip did not try to take the morning. Pip opened the lantern and made a place for it.'],
+    ['The last seed', 'The keeper’s last seed was not rare or powerful. It was the kind that grows almost anywhere, if someone remembers to water it.'],
+    ['A promise fulfilled', 'At the crown of the world, the great guardian lowered its antlers. For the first time in a very long night, the garden woke itself.'],
   ];
 
   BIOMES.forEach((biome, index) => {
     biome.memories = index < 3 ? [index * 3, index * 3 + 1, index * 3 + 2, 9 + index * 3, 10 + index * 3, 11 + index * 3] : Array.from({ length: 6 }, (_, i) => 18 + (index - 3) * 6 + i);
   });
-  const RELICS = BIOMES.flatMap((biome, region) => biome.relics.map((name, i) => ({ id: region * 3 + i, name, region, icon: 16 + region * 3 + i })));
+  const RELICS = BIOMES.flatMap((biome, region) => biome.relics.map((name, i) => ({ id: region * 3 + i, name, region, icon: region < 9 ? 16 + region * 3 + i : 48 + (region - 9) * 3 + i })));
   const TRAILS = [
     { id: 'dawn', name: 'The First Light', subtitle: 'Follow the roots of the waking tree', route: [0, 1, 2], requires: null, icon: 1 },
     { id: 'frontier', name: 'The Amber Frontier', subtitle: 'Across tide, harvest, and turning gears', route: [3, 4, 5], requires: 'dawn', icon: 44 },
     { id: 'horizon', name: 'The Far Horizon', subtitle: 'Through frost and fire into the stars', route: [6, 7, 8], requires: 'frontier', icon: 47 },
     { id: 'pilgrimage', name: 'The Long Way Home', subtitle: 'A saved pilgrimage through all nine regions', route: [0, 3, 4, 1, 5, 6, 2, 7, 8], requires: 'horizon', icon: 42 },
+    { id: 'rainbound', name: 'The Rainbound Wilds', subtitle: 'Bells beneath the tide, dreams beneath the roots', route: [9, 10, 11], requires: 'frontier', icon: 66 },
+    { id: 'aurora', name: 'Where Dawn Begins', subtitle: 'Across sand and silk to the first morning', route: [12, 13, 14], requires: 'rainbound', icon: 71 },
+    { id: 'homecoming', name: 'All the Little Lights', subtitle: 'One saved journey through all fifteen gardens', route: [0, 3, 9, 4, 10, 1, 5, 11, 6, 12, 7, 13, 2, 8, 14], requires: 'aurora', icon: 79 },
   ];
   const ENEMIES = [
     { name: 'Thorn beetle', hp: 3, damage: 1, windup: .85, move: .85, rest: 1.05, range: 1, pattern: 'cross', hint: 'A close bite. Dodge sideways or guard the marked cross.' },
@@ -95,6 +140,12 @@
     { name: 'Frostglass owl', hp: 4, damage: 1, windup: 1.2, move: 1, rest: 1.4, range: 4, pattern: 'fan', hint: 'Throws a broad fan of frost. Retreat or guard it.' },
     { name: 'Ember salamander', hp: 6, damage: 2, windup: 1.15, move: .9, rest: 1.5, range: 3, pattern: 'line', hint: 'Breathes fire along its lane. Watch the ground, not its tail.' },
     { name: 'Astral moth', hp: 5, damage: 2, windup: 1.3, move: .85, rest: 1.4, range: 5, pattern: 'burst', hint: 'Marks your tile and its neighbours. Dash beyond the whole pattern.' },
+    { name: 'Pearlback snail', hp: 6, damage: 1, windup: 1.35, move: 1.3, rest: 1.5, range: 3, pattern: 'burst', hint: 'A slow pearl splash. Its warning stays where you were standing.' },
+    { name: 'Dreamcap hopper', hp: 4, damage: 1, windup: 1.1, move: .8, rest: 1.3, range: 2, pattern: 'ring', hint: 'A broad spore puff. Give it space or reflect the burst.' },
+    { name: 'Stormglass drake', hp: 6, damage: 2, windup: 1.2, move: .8, rest: 1.4, range: 4, pattern: 'line', hint: 'Lightning travels down one marked lane. Step sideways.' },
+    { name: 'Sundial scorpion', hp: 6, damage: 2, windup: 1.2, move: 1, rest: 1.4, range: 3, pattern: 'fan', hint: 'Its golden sting fans outward. Dodge past the narrow end.' },
+    { name: 'Velvet weaver', hp: 5, damage: 1, windup: 1.3, move: .85, rest: 1.5, range: 4, pattern: 'cross', hint: 'Silk follows straight paths. The diagonals are clear.' },
+    { name: 'Aurora sprite', hp: 5, damage: 2, windup: 1.35, move: 1, rest: 1.5, range: 5, pattern: 'burst', hint: 'Marks a star around your feet. Move before the light closes.' },
   ];
   const BLESSINGS = [
     { id: 'radiance', name: 'Sunfire lantern', text: 'Your lantern sweep deals +1 damage.', icon: 6 },
@@ -128,6 +179,21 @@
     { id: 'mend', name: 'Moonwell shelter', icon: 19, cost: 4, text: 'Restore four hearts and gain a 1.5-second shield.', requirement: 'Restore the Frostglass Grotto.' },
     { id: 'nova', name: 'Cinder blossom', icon: 37, cost: 4, text: 'Deal four damage and daze nearby foes in a large burst.', requirement: 'Restore the Caldera and discover 9 relics.' },
     { id: 'stars', name: 'The far lantern', icon: 42, cost: 5, text: 'Strike visible foes for four damage and gain a protective shield.', requirement: 'Finish The Far Horizon and discover 18 relics.' },
+    { id: 'tide', name: 'Bellwater pulse', icon: 75, cost: 3, text: 'Deal three damage nearby; restore two hearts and gain a brief shield.', requirement: 'Awaken the Bellkeeper.' },
+    { id: 'tempest', name: 'Storm feather', icon: 76, cost: 3, text: 'Strike nearby foes for four damage and instantly recover your dash.', requirement: 'Awaken the Tempest Roc.' },
+    { id: 'dawn', name: 'Daybreak', icon: 77, cost: 4, text: 'Strike visible foes for five damage, heal two hearts, and recover your guard.', requirement: 'Awaken the Dawn Hart.' },
   ];
-  return { BIOMES, MEMORIES, RELICS, TRAILS, ENEMIES, BLESSINGS, UPGRADES, ARTS };
+  const GUARDIANS = [
+    { id: 'bellkeeper', name: 'The Bellkeeper', epithet: 'A promise beneath the tide', region: 9, hp: 30, color: '#73ded3', icon: 75, art: 'tide', intro: 'The last ferry has been waiting for centuries. Let your lantern remind its guardian that the crossing is over.', hint: 'Cross the gaps between bell waves. When the bell opens, move in and strike. A marked Bloom or Echo attack only hurts in that world.', attacks: ['Tolling lanes', 'The rising tide', 'Echo of the bell'] },
+    { id: 'tempest', name: 'The Tempest Roc', epithet: 'The storm that forgot to rest', region: 11, hp: 36, color: '#9cbef8', icon: 76, art: 'tempest', intro: 'The old windkeeper carries a sky full of storms. Find the quiet between its wingbeats and help it land.', hint: 'Step out of the long flight lane. Feather marks stay where you stood. The roc lands near you after a dive: that is your opening.', attacks: ['Stormflight', 'Falling feathers', 'Crosswind'] },
+    { id: 'dawnhart', name: 'The Dawn Hart', epithet: 'Keeper of the first morning', region: 14, hp: 44, color: '#c0f0d9', icon: 77, art: 'dawn', intro: 'The Hart has guarded the sunrise through a winter without end. Show it that the garden is ready for morning.', hint: 'Read the realm symbol, cross the gaps in its roots, and strike while the antlers dim. Its final phase alternates Bloom and Echo.', attacks: ['Roots of morning', 'Crown of light', 'The turning sky'] },
+  ];
+  const CHARMS = [
+    { id: 'none', name: 'An open lantern', icon: 6, text: 'Travel with your familiar starting kit.', requirement: 'Always available.' },
+    { id: 'firefly', name: 'Firefly promise', icon: 73, text: '+1 focus capacity and a guiding thread at the start of each region.', requirement: 'Bring 3 lost fireflies home.' },
+    { id: 'bell', name: 'Tidekeeper’s vow', icon: 75, text: 'A successful guard restores one heart.', requirement: 'Awaken the Bellkeeper.' },
+    { id: 'feather', name: 'Windkeeper’s ribbon', icon: 76, text: 'Mothstep recovers 25% faster.', requirement: 'Awaken the Tempest Roc.' },
+    { id: 'crown', name: 'The dawn seed', icon: 77, text: '+2 maximum hearts and a seedbomb at the start of each region.', requirement: 'Awaken the Dawn Hart.' },
+  ];
+  return { BIOMES, MEMORIES, RELICS, TRAILS, ENEMIES, BLESSINGS, UPGRADES, ARTS, GUARDIANS, CHARMS };
 }));

@@ -28,7 +28,7 @@ async function mount(saved) {
   w.requestAnimationFrame = fn => { raf.push(fn); return ++serial; };
   w.performance.now = () => now;
   if (saved) w.localStorage.setItem(C.SAVE_KEY, JSON.stringify(saved));
-  for (const file of ['content.js', 'world.js', 'engine.js', 'core.js', 'render.js']) w.eval(fs.readFileSync(path.join(root, 'js', file), 'utf8'));
+  for (const file of ['content.js', 'world-v2.js', 'world.js', 'engine.js', 'guardians.js', 'core.js', 'render.js']) w.eval(fs.readFileSync(path.join(root, 'js', file), 'utf8'));
   let game = null;
   const create = w.Lumenwild.createExpedition, read = w.Lumenwild.readSave;
   w.Lumenwild.createExpedition = (...args) => { game = create(...args); return game; };
@@ -50,16 +50,16 @@ describe('Lumenwild expanded browser interface', () => {
   let ui;
   afterEach(() => ui?.close());
 
-  test('fresh camp loads all artwork and exposes atlas chapters, 54 journal pages and 27 workshop levels', async () => {
+  test('fresh camp loads all artwork and exposes atlas chapters, 90 journal pages and 27 workshop levels', async () => {
     ui = await mount();
     expect(ui.w.document.querySelector('#loadStatus').textContent).toContain('Ready when you are');
     expect(ui.w.document.querySelector('#mainAction').disabled).toBe(false);
-    ui.click('#journeysButton'); expect(ui.w.document.querySelectorAll('[data-region]')).toHaveLength(9);
+    ui.click('#journeysButton'); expect(ui.w.document.querySelectorAll('[data-region]')).toHaveLength(15);
     expect(ui.w.document.querySelector('[data-trail="frontier"]').disabled).toBe(true);
     ui.click('#closeDialog'); ui.click('#journalButton');
-    expect(ui.w.document.querySelectorAll('.journal-entry')).toHaveLength(54); expect(ui.w.document.querySelectorAll('.relic-card')).toHaveLength(27);
+    expect(ui.w.document.querySelectorAll('.journal-entry')).toHaveLength(90); expect(ui.w.document.querySelectorAll('.relic-card')).toHaveLength(45);
     ui.click('#closeDialog'); ui.click('#workshopButton');
-    expect(ui.w.document.querySelectorAll('[data-upgrade]')).toHaveLength(5); expect(ui.w.document.querySelectorAll('[data-art]')).toHaveLength(6);
+    expect(ui.w.document.querySelectorAll('[data-upgrade]')).toHaveLength(5); expect(ui.w.document.querySelectorAll('[data-art]')).toHaveLength(9);
     expect(ui.w.document.querySelector('[data-art="gust"]').disabled).toBe(false);
   });
 
@@ -120,13 +120,13 @@ describe('Lumenwild expanded browser interface', () => {
     ui.frame(1); expect(JSON.parse(ui.w.localStorage.getItem(C.SAVE_KEY)).profile.light).toBe(12);
   });
 
-  test('renderer handles all nine maps, relics, landmarks, warnings and vents without invalid drawing coordinates', async () => {
+  test('renderer handles all fifteen maps, relics, landmarks, warnings and vents without invalid drawing coordinates', async () => {
     ui = await mount();
     const Renderer = ui.w.LumenwildRenderer;
     const render = new Renderer(ui.w.document.querySelector('#world'), ui.w.document.querySelector('#minimap'));
     try {
       await render.load(() => {});
-      for (let region = 0; region < 9; region += 1) {
+      for (let region = 0; region < C.BIOMES.length; region += 1) {
         const game = new C.Game({ seed: 193, trail: 'survey', region });
         game.seen = new Set(game.map.tiles.map((_, i) => i)); game.visible = new Set(game.seen);
         game.map.enemies[0].intent = [{ x: 3, y: 3 }]; game.map.enemies[0].windup = .2; game.map.enemies[0].windupTotal = 1;
@@ -134,5 +134,51 @@ describe('Lumenwild expanded browser interface', () => {
         game.phase = 1; render.draw(game, 1.1, .05);
       }
     } finally { render.observer.disconnect(); }
+  });
+
+  test('an unlocked trial opens its introduction, runs the boss HUD, pauses exactly, and allows a safe retreat', async () => {
+    const profile = C.profile({ runs: 1, guardians: { bellkeeper: 1 } });
+    ui = await mount(JSON.parse(C.writeSave(profile, null)));
+    ui.click('#journeysButton'); expect(ui.w.document.querySelector('[data-guardian="bellkeeper"]').disabled).toBe(false);
+    expect(ui.w.document.querySelector('[data-guardian="tempest"]').disabled).toBe(true);
+    ui.click('[data-guardian="bellkeeper"]');
+    const options = [...ui.w.document.querySelectorAll('#dialogActions button')];
+    expect(options[2].disabled).toBe(true); options[0].click();
+    expect(ui.game.trail).toBe('trial');
+    Object.assign(ui.game.player, ui.game.map.arena.entry);
+    ui.key('KeyE'); expect(ui.w.document.querySelector('#dialogTitle').textContent).toBe('The Bellkeeper');
+    ui.click('#dialogActions button'); ui.frame(1.6);
+    expect(ui.game.boss.state).toBe('active'); expect(ui.w.document.querySelector('#guardianHud').hidden).toBe(false);
+    expect(ui.w.document.querySelector('#guardianPattern').textContent).toContain('Tolling lanes');
+    ui.key('Escape'); const saved = JSON.stringify(ui.game.snapshot()); ui.frame(2);
+    expect(JSON.stringify(ui.game.snapshot())).toBe(saved);
+    [...ui.w.document.querySelectorAll('#dialogActions button')].find(b => b.textContent.includes('Leave the arena')).click();
+    expect(ui.game.boss.state).toBe('sleeping'); expect(ui.w.document.querySelector('#guardianHud').hidden).toBe(true);
+  });
+
+  test('the wayfarer opens real purchase controls and an unaffordable purchase is disabled', async () => {
+    ui = await mount({ version: 3, profile: C.profile({ runs: 1 }), run: null }); ui.click('#mainAction');
+    const trader = ui.game.map.entities.find(e => e.type === 'trader'); Object.assign(ui.game.player, { x: trader.x, y: trader.y });
+    ui.key('KeyE'); expect(ui.w.document.querySelector('#dialogTitle').textContent).toBe('A little help along the path.');
+    expect(ui.w.document.querySelector('#dialogActions button').disabled).toBe(true);
+    ui.click('#closeDialog'); ui.game.light = 8; ui.key('KeyE');
+    [...ui.w.document.querySelectorAll('#dialogActions button')].find(b => b.textContent.startsWith('Trail supplies')).click();
+    expect(ui.game.inventory.bomb).toBe(4); expect(ui.game.light).toBe(0); expect(trader.done).toBe(true);
+  });
+
+  test('guardian gifts and the firefly charm persist as a chosen loadout without changing an active run', async () => {
+    const profile = C.profile({ runs: 1, rescues: 3, guardians: { bellkeeper: 1, tempest: 1, dawnhart: 1 } });
+    const game = new C.Game({ seed: 3 });
+    ui = await mount(JSON.parse(C.writeSave(profile, game))); ui.click('#workshopButton');
+    expect(ui.w.document.querySelectorAll('[data-charm]')).toHaveLength(5);
+    ui.click('[data-charm="feather"]'); ui.click('[data-art="tide"]');
+    const stored = JSON.parse(ui.w.localStorage.getItem(C.SAVE_KEY));
+    expect(stored.profile.selectedCharm).toBe('feather'); expect(stored.profile.selectedArt).toBe('tide');
+    expect(stored.run.charm).toBe('none'); expect(stored.run.art).toBe('gust');
+    ui.click('[data-charm="firefly"]'); ui.click('[data-art="dawn"]');
+    expect(JSON.parse(ui.w.localStorage.getItem(C.SAVE_KEY)).profile.selectedArt).toBe('dawn');
+    ui.click('[data-charm="none"]');
+    expect(JSON.parse(ui.w.localStorage.getItem(C.SAVE_KEY)).profile.selectedArt).toBe('gust');
+    expect(ui.w.document.querySelector('[data-art="dawn"]').disabled).toBe(true);
   });
 });

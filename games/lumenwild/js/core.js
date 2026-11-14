@@ -1,9 +1,9 @@
 (function (root, factory) {
   const common = typeof module === 'object' && module.exports;
-  const api = factory(common ? require('./content') : root.LumenwildContent, common ? require('./world') : root.LumenwildWorld, common ? require('./engine') : root.LumenwildEngine);
+  const api = factory(common ? require('./content') : root.LumenwildContent, common ? require('./world') : root.LumenwildWorld, common ? require('./engine') : root.LumenwildEngine, common ? require('./guardians') : root.LumenwildGuardians);
   if (common) module.exports = api;
   else root.Lumenwild = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (content, world, engine) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (content, world, engine, guardians) {
   'use strict';
   const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
   // Keep the v1 generator stable so unfinished expeditions retain their exact
@@ -156,5 +156,5 @@
     return false;
   }
 
-  return engine.createApi(content, world, { clamp, integer, distance, same, plain, hash, random, shuffle, walkable, distances, lineOfSight, generateLegacy, DIRS });
+  return engine.createApi(content, world, { clamp, integer, distance, same, plain, hash, random, shuffle, walkable, distances, lineOfSight, generateLegacy, DIRS }, guardians);
 }));

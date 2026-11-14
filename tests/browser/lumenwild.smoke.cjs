@@ -43,7 +43,7 @@ async function screenshot(page, name) {
   await page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true });
 }
 
-async function completeViaKeyboard(page) {
+async function completeViaKeyboard(page, prefix = 'journey') {
   const seen = new Set();
   for (let i = 0; i < 1600; i += 1) {
     const next = await page.evaluate(() => {
@@ -53,15 +53,18 @@ async function completeViaKeyboard(page) {
         const choices = g.choices();
         return { blessing: (choices.find(b => b.id === 'radiance') || choices.find(b => b.id === 'harvest') || choices[0]).id };
       }
-      if (document.querySelector('#dialog').open) return { close: true };
+      if (document.querySelector('#dialog').open) return { awaken: g.boss?.state === 'sleeping' && document.querySelector('#dialogTitle').textContent === C.GUARDIANS.find(b => b.id === g.boss.id)?.name, close: true };
       const input = window.__lumenNextAction(g, C);
+      if (input.action === 'awaken') return { challenge: true };
       const keys = { attack: 'Space', guard: 'KeyG', art: 'KeyR', shift: 'KeyQ', dash: 'Shift', medicine: 'Digit1', bomb: 'Digit2', thread: 'Digit3', interact: 'KeyE', wait: 'Period' };
       return { key: input.action === 'move' ? ['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'][input.direction] : keys[input.action], depth: g.depth };
     });
     if (next.status) return next.status;
+    if (next.awaken) { await page.locator('#dialogActions button').first().click(); continue; }
     if (next.close) { await page.locator('#closeDialog').click(); continue; }
+    if (next.challenge) { await press(page, 'KeyE'); continue; }
     if (next.blessing) {
-      await screenshot(page, `blessing-${seen.size}`);
+      await screenshot(page, `${prefix}-blessing-${seen.size}`);
       await page.locator(`[data-blessing="${next.blessing}"]`).click();
       continue;
     }
@@ -70,7 +73,7 @@ async function completeViaKeyboard(page) {
       console.log(`PLAYING garden ${next.depth + 1} through real keyboard input`);
     }
     await press(page, next.key);
-    if (i % 55 === 35) await screenshot(page, `garden-${next.depth + 1}`);
+    if (i % 55 === 35) await screenshot(page, `${prefix}-garden-${next.depth + 1}`);
   }
   throw new Error('Playthrough exceeded input limit');
 }
@@ -147,6 +150,26 @@ async function completeViaKeyboard(page) {
     await page.locator('#dailyButton').click(); await page.getByRole('button', { name: 'Begin a new journey' }).click();
     check('daily loadout excludes purchased upgrades', await page.evaluate(() => window.__lumenGame.daily && window.__lumenGame.player.hp === 7 && window.__lumenGame.upgrades.hearth === 0));
 
+    // Synthetic, disposable camp fixture opens rematches for direct UI review.
+    // All fight inputs after this fixture go through the shipped keyboard/UI.
+    const guardians = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await observe(guardians);
+    await guardians.addInitScript(() => {
+      if (!sessionStorage.getItem('guardianFixture')) {
+        localStorage.setItem('lumenwild.garden.v1', JSON.stringify({ version: 3, profile: { runs: 1, trails: { dawn: 1, frontier: 1, horizon: 1, rainbound: 1, aurora: 1 }, guardians: { bellkeeper: 1, tempest: 1, dawnhart: 1 } }, run: null }));
+        sessionStorage.setItem('guardianFixture', 'ready');
+      }
+    });
+    await guardians.goto(base); await guardians.locator('#mainAction:enabled').waitFor();
+    for (const id of ['bellkeeper', 'tempest', 'dawnhart']) {
+      await guardians.locator('#journeysButton').click();
+      check(`${id} trial is available from its illustrated atlas card`, await guardians.locator(`[data-guardian="${id}"]`).isEnabled());
+      await guardians.locator(`[data-guardian="${id}"]`).click(); await guardians.locator('[data-trial-tier="2"]').click();
+      check(`${id} trial completes through ordinary keyboard input`, await completeViaKeyboard(guardians, `guardian-${id}`) === 'won');
+      await screenshot(guardians, `guardian-${id}-result`);
+      await guardians.getByRole('button', { name: 'Back to the keeper’s camp' }).click();
+    }
+
     const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     await observe(phone); await phone.goto(base); await phone.locator('#mainAction:enabled').waitFor();
     await screenshot(phone, '05-phone-camp');
@@ -164,6 +187,29 @@ async function completeViaKeyboard(page) {
     await phone.setViewportSize({ width: 390, height: 844 });
     await phone.evaluate(() => window.dispatchEvent(new Event('blur')));
     check('focus loss pauses and clears controls', await phone.locator('#dialogTitle').textContent() === 'The garden can wait.');
+
+    const bossPhone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await observe(bossPhone);
+    await bossPhone.addInitScript(() => localStorage.setItem('lumenwild.garden.v1', JSON.stringify({ version: 3, profile: { runs: 1, guardians: { bellkeeper: 1 } }, run: null })));
+    await bossPhone.goto(base); await bossPhone.locator('#mainAction:enabled').waitFor();
+    await bossPhone.locator('#journeysButton').tap(); await bossPhone.locator('[data-guardian="bellkeeper"]').tap(); await bossPhone.locator('[data-trial-tier="1"]').tap();
+    for (let i = 0; i < 30; i += 1) {
+      const direction = await bossPhone.evaluate(() => {
+        const g = window.__lumenGame, C = window.Lumenwild;
+        if (g.nearby()?.type === 'guardian') return -1;
+        const next = g.guide()[1]; return C.DIRS.findIndex(([dx, dy]) => next.x === g.player.x + dx && next.y === g.player.y + dy);
+      });
+      if (direction < 0) break;
+      await bossPhone.locator(`[data-dir="${direction}"]`).tap(); await bossPhone.waitForTimeout(170);
+    }
+    await bossPhone.locator('[data-action="interact"]').tap(); await bossPhone.getByRole('button', { name: 'Raise your lantern' }).tap();
+    await bossPhone.waitForFunction(() => window.__lumenGame.boss.mode === 'windup');
+    await screenshot(bossPhone, 'guardian-phone-portrait');
+    check('phone guardian HUD names the attack and phase', await bossPhone.locator('#guardianHud').isVisible() && (await bossPhone.locator('#guardianPattern').textContent()).includes('Tolling lanes'));
+    await bossPhone.locator('[data-action="guard"]').tap();
+    check('touch guard works during a guardian encounter', await bossPhone.evaluate(() => window.__lumenGame.guardTime > 0));
+    await bossPhone.setViewportSize({ width: 844, height: 390 }); await screenshot(bossPhone, 'guardian-phone-landscape');
+    check('landscape guardian and action deck fit the viewport', await bossPhone.locator('#world').evaluate(el => el.getBoundingClientRect().height >= 160) && await bossPhone.locator('.action-deck').evaluate(el => el.getBoundingClientRect().bottom <= innerHeight));
 
     const blocked = await browser.newPage({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
     await observe(blocked);

@@ -1,0 +1,603 @@
+{
+  "save": {
+    "version": 2,
+    "profile": {
+      "light": 267,
+      "medalAwards": 0,
+      "wins": 0,
+      "runs": 0,
+      "best": 0,
+      "dailyBest": 0,
+      "upgrades": {
+        "hearth": 0,
+        "satchel": 0,
+        "lens": 0,
+        "ward": 0,
+        "focus": 0
+      },
+      "memories": [],
+      "relics": [],
+      "trails": {
+        "dawn": 1,
+        "frontier": 1,
+        "horizon": 0,
+        "pilgrimage": 0
+      },
+      "regions": [
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        }
+      ],
+      "selectedTrail": "horizon",
+      "selectedArt": "gust",
+      "sound": false,
+      "gentle": false
+    },
+    "run": {
+      "generator": 2,
+      "seed": 22119,
+      "daily": false,
+      "gentle": false,
+      "upgrades": {
+        "hearth": 2,
+        "satchel": 0,
+        "lens": 0,
+        "ward": 0,
+        "focus": 1
+      },
+      "trail": "horizon",
+      "surveyRegion": 0,
+      "plan": [
+        {
+          "memories": [
+            40,
+            38,
+            37
+          ],
+          "relic": 20
+        },
+        {
+          "memories": [
+            45,
+            44,
+            43
+          ],
+          "relic": 22
+        },
+        {
+          "memories": [
+            52,
+            50,
+            49
+          ],
+          "relic": 25
+        }
+      ],
+      "tier": 1,
+      "art": "snare",
+      "depth": 0,
+      "phase": 0,
+      "turn": 2,
+      "steps": 1,
+      "kills": 0,
+      "light": 1,
+      "score": 10,
+      "elapsed": 0.1,
+      "memories": [],
+      "relics": [],
+      "blessings": [],
+      "records": [
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        }
+      ],
+      "inventory": {
+        "medicine": 2,
+        "bomb": 2,
+        "thread": 3
+      },
+      "player": {
+        "x": 4,
+        "y": 3,
+        "facing": 1,
+        "hp": 9
+      },
+      "cooldowns": {
+        "attack": 0,
+        "dash": 0,
+        "shift": 0,
+        "guard": 3.1,
+        "art": 0
+      },
+      "focus": 4,
+      "shield": 0.7000000000000001,
+      "guardTime": 0.55,
+      "guideTurns": 0,
+      "status": "playing",
+      "seen": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        149,
+        150,
+        151,
+        152,
+        153,
+        154,
+        186,
+        187,
+        188,
+        189,
+        190,
+        191,
+        222,
+        225,
+        226,
+        227,
+        228,
+        262,
+        299,
+        224,
+        261
+      ],
+      "opened": [],
+      "entities": [
+        {
+          "id": "e0",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e1",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e2",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e3",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e4",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e5",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e6",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e7",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e8",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e9",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e10",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e11",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e12",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e13",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e14",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e15",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e16",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e17",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e18",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e19",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e20",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e21",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e22",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e23",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e24",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e25",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e26",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e27",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e28",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e29",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e30",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e31",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e32",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e33",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e34",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e35",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e36",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e37",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e38",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e39",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e40",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e41",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e42",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e43",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e44",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e45",
+          "done": true,
+          "progress": 0
+        }
+      ],
+      "enemies": [
+        {
+          "id": "foe0",
+          "x": 18,
+          "y": 19,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 0.5,
+          "known": false
+        },
+        {
+          "id": "foe1",
+          "x": 20,
+          "y": 1,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 0.5,
+          "known": false
+        },
+        {
+          "id": "foe2",
+          "x": 15,
+          "y": 27,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 0.5,
+          "known": false
+        },
+        {
+          "id": "foe3",
+          "x": 1,
+          "y": 16,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 0.5,
+          "known": false
+        },
+        {
+          "id": "foe4",
+          "x": 23,
+          "y": 14,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 0.5,
+          "known": false
+        },
+        {
+          "id": "foe5",
+          "x": 24,
+          "y": 4,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 0.5,
+          "known": false
+        },
+        {
+          "id": "foe6",
+          "x": 7,
+          "y": 14,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 0.5,
+          "known": false
+        },
+        {
+          "id": "foe7",
+          "x": 10,
+          "y": 29,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 0.5,
+          "known": false
+        }
+      ],
+      "vents": []
+    }
+  },
+  "mapDigest": "2dbfb962067a3c9304be55feae9df61e5e14dab573df2332b271bd1bcf902df8"
+}

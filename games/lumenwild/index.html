@@ -5,14 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0e0f13">
   <meta name="description" content="Carry a little light into a living labyrinth. Explore two intertwined worlds, outwit creatures, and bring a forgotten garden back to life.">
-  <title>Lumenwild · Beyond the Fold</title>
+  <title>Lumenwild · The Waking Guardians</title>
   <link rel="icon" type="image/webp" href="assets/prop-1.webp">
   <link rel="preload" as="image" href="assets/cover.webp">
   <link rel="stylesheet" href="/css/color-theme.css">
   <link rel="stylesheet" href="css/game.css">
   <script defer src="js/content.js"></script>
+  <script defer src="js/world-v2.js"></script>
   <script defer src="js/world.js"></script>
   <script defer src="js/engine.js"></script>
+  <script defer src="js/guardians.js"></script>
   <script defer src="js/core.js"></script>
   <script defer src="js/render.js"></script>
   <script defer src="js/game.js"></script>
@@ -22,7 +24,7 @@
   <header class="topbar">
     <a href="/games" class="wordmark" aria-label="Lumenwild — back to all games">
       <span class="brand-sigil" aria-hidden="true">✧</span>
-      <span>LUMENWILD<small>BEYOND THE FOLD</small></span>
+      <span>LUMENWILD<small>THE WAKING GUARDIANS</small></span>
     </a>
     <div class="top-actions">
       <span id="saveStatus" class="save-status">A world worth getting lost in</span>
@@ -37,11 +39,11 @@
     <div class="camp-grain" aria-hidden="true"></div>
     <section class="camp-story" aria-labelledby="title">
       <div class="eyebrow"><span class="little-line"></span> A LANTERN. A LABYRINTH. A WAY HOME.</div>
-      <h1 id="title">Lumenwild<span>Beyond the Fold</span></h1>
+      <h1 id="title">Lumenwild<span>The Waking Guardians</span></h1>
       <p>Somewhere between the world and its reflection,<br class="desktop-break"> a forgotten garden is waiting for your light.</p>
-      <div class="story-tags"><span>Nine living labyrinths</span><i>✦</i><span>Two intertwined worlds</span></div>
-      <div class="chapter-marks" aria-label="Four journeys across nine regions">
-        <span><b>I</b> The First Light</span><span><b>II</b> The Amber Frontier</span><span><b>III</b> The Far Horizon</span>
+      <div class="story-tags"><span>Fifteen living labyrinths</span><i>✦</i><span>Three ancient guardians</span></div>
+      <div class="chapter-marks" aria-label="New adventures beyond the fold">
+        <span><b>✦</b> The Rainbound Wilds</span><span><b>☼</b> Where Dawn Begins</span><span><b>∞</b> Guardian trials</span>
       </div>
     </section>
 
@@ -54,8 +56,9 @@
       <button id="dailyButton" class="daily-button" type="button" disabled><span aria-hidden="true">☼</span><span>Today’s wandering<small id="dailyDate">A shared seed · a fresh challenge</small></span><span aria-hidden="true">→</span></button>
       <label class="gentle-option"><input id="gentleMode" type="checkbox"><span>Gentle journey<small>More hearts, slower warnings. All the wonder.</small></span></label>
       <div id="loadStatus" class="load-status" role="status">Lighting the lantern…</div>
-      <div class="camp-stats"><div><strong id="campLight">0</strong><span>Starlight</span></div><div><strong id="campWins">0 / 27</strong><span>Survey medals</span></div><div><strong id="campMemories">0 / 54</strong><span>Memories</span></div></div>
-      <button id="workshopButton" class="workshop-button" type="button"><img src="assets/prop-32.webp" width="48" height="48" alt=""><span><strong>Grow your keeper’s camp</strong><small id="workshopDetail">27 upgrades · 6 lantern arts</small></span><span aria-hidden="true">↗</span></button>
+      <div class="camp-stats"><div><strong id="campLight">0</strong><span>Starlight</span></div><div><strong id="campWins">0 / 45</strong><span>Survey medals</span></div><div><strong id="campMemories">0 / 90</strong><span>Memories</span></div></div>
+      <p id="guardianProgress" class="guardian-progress">Three sleeping guardians · a world still waking</p>
+      <button id="workshopButton" class="workshop-button" type="button"><img src="assets/prop-32.webp" width="48" height="48" alt=""><span><strong>Grow your keeper’s camp</strong><small id="workshopDetail">27 upgrades · 9 lantern arts · 4 charms</small></span><span aria-hidden="true">↗</span></button>
       <div class="camp-footer"><button id="journalButton" class="text-button" type="button">Open your journal <span aria-hidden="true">↗</span></button><button id="settingsButton" class="text-button muted" type="button">Settings</button></div>
     </section>
     <div class="camp-caption">TAKE YOUR TIME. THE GARDEN WILL WAIT.</div>
@@ -72,6 +75,11 @@
     <section id="stage" class="stage" aria-label="Garden exploration">
       <canvas id="world" tabindex="0" role="application" aria-label="Lumenwild garden. Move with WASD or arrow keys. Space attacks, Q shifts the world, E interacts. G guards, R uses your equipped art. Enemy warning rings count down in real time. Escape pauses.">This game requires a browser with Canvas support.</canvas>
       <div class="region-label"><span id="chapterLabel">REGION 1 / 3</span><h2 id="regionName">Verdant Hollows</h2><p id="regionSubtitle">Where the lanterns first took root</p><p id="regionQuest" class="region-quest">Landmarks 0 / 3 · Relic waiting</p></div>
+      <div id="guardianHud" class="guardian-hud" role="group" aria-label="Guardian encounter" hidden>
+        <div><strong id="guardianName"></strong><span id="guardianStage"></span></div>
+        <progress id="guardianHealth" max="30" value="30" aria-label="Guardian resolve"></progress>
+        <p id="guardianPattern"></p>
+      </div>
       <button id="mapButton" class="minimap-button" type="button" aria-label="Open the garden atlas, M"><canvas id="minimap" width="176" height="132" aria-hidden="true"></canvas><span>THE ATLAS <kbd>M</kbd></span></button>
       <div id="toast" class="game-toast" role="status" aria-live="polite" hidden></div>
       <div class="objective"><span class="objective-dot" aria-hidden="true"></span><span id="objectiveText">Find three heartseeds. Bring them to the waygate.</span></div>

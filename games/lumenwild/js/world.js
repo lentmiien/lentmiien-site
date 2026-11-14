@@ -1,12 +1,14 @@
 (function (root, factory) {
   const content = typeof module === 'object' && module.exports ? require('./content') : root.LumenwildContent;
-  const api = factory(content);
+  const previous = typeof module === 'object' && module.exports ? require('./world-v2') : root.LumenwildWorldV2;
+  const api = factory(content, previous);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.LumenwildWorld = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (content) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (content, previous) {
   'use strict';
 
-  function generate(seed, region, plan, tier, helpers) {
+  function generate(seed, region, plan, tier, helpers, version = 3) {
+    if (version === 2) return previous.generate(seed, region, plan, tier, helpers);
     const { hash, random, shuffle, walkable, distances, distance, DIRS } = helpers;
     const biome = content.BIOMES[region];
     const rng = random(hash(`${seed}:beyond:${region}`));
@@ -29,7 +31,25 @@
       }
     };
 
-    if (biome.layout === 'clockwork') {
+    if (biome.layout === 'belfry') {
+      const cx = Math.floor(map.w / 2), cy = Math.floor(map.h / 2);
+      for (const r of [3, 7, 11]) {
+        const corners = [{ x: cx - r, y: cy - r }, { x: cx + r, y: cy - r }, { x: cx + r, y: cy + r }, { x: cx - r, y: cy + r }];
+        corners.forEach((p, i) => { line(p, corners[(i + 1) % 4]); room(p.x, p.y, 2); });
+      }
+      line({ x: 3, y: 3 }, { x: cx, y: cy - 11 });
+      line({ x: cx, y: cy - 11 }, { x: cx, y: cy + 11 });
+      line({ x: cx - 11, y: cy }, { x: cx + 11, y: cy });
+    } else if (biome.layout === 'causeways' || biome.layout === 'aurora') {
+      const terraces = [];
+      for (let y = 4; y < map.h - 3; y += 8) for (let x = 4; x < map.w - 3; x += 8) {
+        const p = { x, y: y + (biome.layout === 'aurora' && x % 16 === 4 ? 1 : 0) };
+        room(p.x, p.y, 2, biome.layout === 'aurora'); terraces.push(p);
+        if (x > 4) line(terraces[terraces.length - 2], p);
+        if (y > 4 && (x % 16 === 4 || rng() < .65)) line({ x, y: p.y - 8 }, p);
+      }
+      line({ x: 3, y: 3 }, terraces[0]);
+    } else if (biome.layout === 'clockwork') {
       for (let y = 3; y < map.h - 2; y += 8) for (let x = 3; x < map.w - 2; x += 8) {
         room(x, y, 2);
         if (x > 3) { line({ x: x - 8, y }, { x, y }); line({ x: x - 8, y: y + 2 }, { x, y: y + 2 }); }
@@ -65,7 +85,25 @@
         set(x + next[0], y + next[1]); set(x + next[0] * 2, y + next[1] * 2);
         stack.push([x + next[0] * 2, y + next[1] * 2]);
       }
-      if (biome.layout === 'library') {
+      if (biome.layout === 'warrens') {
+        let last = { x: 3, y: 3 };
+        for (let i = 0; i < 15; i += 1) {
+          const p = { x: 5 + Math.floor(rng() * (map.w - 10)), y: 5 + Math.floor(rng() * (map.h - 10)) };
+          room(p.x, p.y, 2 + i % 2, true); line(last, p); last = p;
+        }
+      } else if (biome.layout === 'dunes') {
+        const cx = Math.floor(map.w / 2), cy = Math.floor(map.h / 2);
+        for (const r of [4, 8, 12]) {
+          const corners = [{ x: cx - r, y: cy - r }, { x: cx + r, y: cy - r }, { x: cx + r, y: cy + r }, { x: cx - r, y: cy + r }];
+          corners.forEach((p, i) => line(p, corners[(i + 1) % 4]));
+        }
+        room(cx, cy, 3, true);
+      } else if (biome.layout === 'weave') {
+        for (let x = 5; x < map.w - 4; x += 6) {
+          line({ x, y: 3 }, { x, y: map.h - 4 });
+          for (let y = 5; y < map.h - 3; y += 8) room(x, y, 1);
+        }
+      } else if (biome.layout === 'library') {
         for (let y = 3; y < map.h - 2; y += 6) { line({ x: 2, y }, { x: map.w - 3, y }); room(map.w - 5, y, 1); }
       } else if (biome.layout === 'groves' || biome.layout === 'caverns') {
         for (let i = 0; i < 8; i += 1) room(4 + Math.floor(rng() * (map.w - 8)), 4 + Math.floor(rng() * (map.h - 8)), biome.layout === 'caverns' ? 2 + i % 2 : 2, true);
@@ -86,9 +124,19 @@
       }
     }
     room(3, 3, 1);
+    if (biome.guardian) {
+      const x = map.w - 9, y = map.h - 9;
+      map.arena = { x, y, radius: 5, entry: { x, y: y + 5 }, home: { x, y: y - 1 } };
+      room(x, y, 5);
+      // The arena has an ordinary connected approach in both realms. Its
+      // boundary is enforced only during a deliberately started encounter.
+      line({ x: 3, y: map.h - 5 }, map.arena.entry);
+      line({ x: 3, y: 3 }, { x: 3, y: map.h - 5 });
+    }
+    const inArena = p => map.arena && Math.abs(p.x - map.arena.x) <= 5 && Math.abs(p.y - map.arena.y) <= 5;
     const walls = [];
     for (let y = 2; y < map.h - 2; y += 1) for (let x = 2; x < map.w - 2; x += 1) {
-      if (map.tiles[y * map.w + x] !== 1 || distance({ x, y }, { x: 3, y: 3 }) < 5) continue;
+      if (inArena({ x, y }) || map.tiles[y * map.w + x] !== 1 || distance({ x, y }, { x: 3, y: 3 }) < 5) continue;
       if ((walkable(map, x - 1, y) && walkable(map, x + 1, y)) || (walkable(map, x, y - 1) && walkable(map, x, y + 1))) walls.push({ x, y });
     }
     const openCount = Math.min(5, Math.max(0, walls.length - 4));
@@ -100,7 +148,7 @@
     const reachable = distances(map, { x: 3, y: 3 }, 0);
     const candidates = [];
     for (let y = 1; y < map.h - 1; y += 1) for (let x = 1; x < map.w - 1; x += 1) {
-      if (map.tiles[y * map.w + x] === 0 && reachable[y * map.w + x] > 5) candidates.push({ x, y });
+      if (!inArena({ x, y }) && map.tiles[y * map.w + x] === 0 && reachable[y * map.w + x] > 5) candidates.push({ x, y });
     }
     const reserved = new Set(['3,3', '4,3', '2,3', '3,2', '3,4']);
     const cells = shuffle(candidates, rng);
@@ -127,6 +175,14 @@
     add('bomb', take()); add('thread', take()); add('well', take());
     add('shrine', take(), { sequence: shuffle([0, 1, 2], rng), progress: 0 });
     add('mote', { x: 4, y: 3 });
+    const nearCamp = cells.filter(p => !reserved.has(`${p.x},${p.y}`)).sort((a, b) => reachable[a.y * map.w + a.x] - reachable[b.y * map.w + b.x]);
+    add('trader', nearCamp[Math.min(5, nearCamp.length - 1)]);
+    add('courier', take());
+    if (map.shortcuts.length) {
+      const loom = add('loom', take(), { progress: 0 });
+      loom.links = map.shortcuts.slice().sort((a, b) => distance({ x: a % map.w, y: Math.floor(a / map.w) }, loom) - distance({ x: b % map.w, y: Math.floor(b / map.w) }, loom)).slice(0, 8);
+    }
+    if (map.arena) add('guardian', map.arena.entry);
     if (biome.feature === 'vents') {
       for (let i = 0; i < 5; i += 1) {
         const p = take(); reserved.add(`${p.x},${p.y}`);
@@ -143,5 +199,14 @@
     map.clearings = [...new Set(map.clearings)];
     return map;
   }
-  return { generate };
+  function trial(region, helpers) {
+    const map = { w: 19, h: 17, tiles: Array(19 * 17).fill(1), entities: [], enemies: [], shortcuts: [], vents: [], clearings: [] };
+    map.arena = { x: 10, y: 8, radius: 5, entry: { x: 10, y: 13 }, home: { x: 10, y: 7 } };
+    for (let y = 3; y <= 13; y += 1) for (let x = 5; x <= 15; x += 1) { map.tiles[y * map.w + x] = 0; map.clearings.push(y * map.w + x); }
+    for (let y = 3; y <= 13; y += 1) map.tiles[y * map.w + 3] = 0;
+    for (let x = 3; x <= 10; x += 1) { map.tiles[3 * map.w + x] = 0; map.tiles[13 * map.w + x] = 0; }
+    map.entities = [{ id: 'e0', type: 'portal', x: 3, y: 3, done: false }, { id: 'e1', type: 'guardian', ...map.arena.entry, done: false }];
+    return map;
+  }
+  return { generate, trial };
 }));

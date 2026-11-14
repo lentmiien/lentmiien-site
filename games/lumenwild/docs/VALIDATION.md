@@ -1,41 +1,38 @@
-# Lumenwild expansion validation
+# Lumenwild validation
 
-Validation used repository-pinned Node **26.13.0** on 2026-11-14. The default shell resolved Node 24.22.1, so test commands explicitly selected the Volta-installed Node 26 executable.
+Validation uses repository-pinned Node **26.13.0**. The default shell resolves Node 24.22.1, so commands explicitly select the Volta-installed Node 26 executable. Current implementation date: 2026-11-15 JST.
 
-## Current expansion checks
-
-The focused command is:
+## Focused checks
 
 ```sh
-npm test -- tests/unit/lumenwildGame.test.js tests/unit/lumenwildExpansion.test.js tests/unit/lumenwildUi.test.js --coverage=false
+npm test -- tests/unit/lumenwildGame.test.js tests/unit/lumenwildExpansion.test.js tests/unit/lumenwildGuardians.test.js tests/unit/lumenwildUi.test.js --coverage=false
 ```
 
-**60 tests passed across three suites.** The focused checks cover:
+**Result: 4 suites passed, 91 tests passed, no skipped tests** (18.734 seconds). All 14 game, helper, unit-test, and browser-smoke JavaScript files also passed syntax parsing under Node 26.13.0. `git diff --check` passed.
 
-- Forty seeds across all nine regions (360 generated maps): objectives reachable in both realms, unique item placements, closed borders, phase passages, and bounded enemy populations.
-- Deterministic maps, valid realm-aware routes, supplies, healing, run transitions, blessing uniqueness, and negative action tests.
-- A lone beetle damages an idle player without a player move. Sweeps have a cooldown and do not cancel its wind-up; repeated sweeping still allows the enemy to hit.
-- Dodging locked attack footprints, timed guard and counterattacks, deliberate art interruptions, and damage grace against simultaneous attacks.
-- Bounded real-time steps, no offline catch-up, and frozen state outside active play.
-- Ten complete original-chapter runs and complete Frontier, Horizon, and nine-region pilgrimage runs using ordinary timed model inputs. The pilot does not grant supplies, teleport, alter enemies, or bypass cooldowns.
-- Preference for unknown memories and relics; all 54 pages and 27 relics appear across three fully explored visits per region without rare-drop grinding.
-- Chapter gates and automatic selection of newly opened chapters, optional survey tiers, medal requirements, upgrade caps, unlock conditions, focus capacity, and banking exactly once.
-- Root lanterns, gear and prism shortcuts, remote memory-lens discoveries, safe ferry travel, ordered star anchors, and caldera vents with Echo protection and cooling-heart shutdown.
-- A synthetic checkpoint saved by the original implementation: old map reconstruction matches its original SHA-256 digest; original purchases, pages, inventory, defeated enemies, and position survive migration and a second version-2 round trip.
-- Expanded save round trips, long-route progress, exact future simulation outcomes, and rejection or bounding of malformed plans, regions, shortcuts, positions, attack footprints, and numeric state.
-- Daily route/loot/loadout independence from a player’s permanent collection, art, difficulty, and upgrades.
-- Seven jsdom checks run the shipped browser scripts: atlas and collections, workshop purchases and equipped arts, migrated camp journeys, real-time damage, paused menus, early banking, and all nine render paths. Canvas is a nonvisual context that checks finite drawing coordinates; these checks do not verify browser layout or actual raster output.
+The focused suites cover:
 
-All **142 WebP assets** exist (approximately **3.35 MiB**). The 89 new assets were mechanically extracted from built-in image-generation outputs. The generated sheets and a packaged terrain/creature/relic contact sheet were visually inspected. All new creature and prop sheets have genuine alpha transparency. `git diff --check` and JavaScript syntax checks pass.
+- Forty seeds across the original nine regions and twenty across the six new regions: 480 maps with connected objectives in both realms, unique placements, and bounded populations. New arenas contain no ordinary enemies.
+- Ordinary one-on-one damage, sweep cooldowns without interrupting wind-ups, guarded counters, damage grace, and no offline catch-up.
+- Timed-input playthroughs of the original chapters, the nine-region pilgrimage, both new chapters, and the fifteen-region homecoming. The playthrough pilot uses ordinary public inputs, readable maps, and warning footprints; it does not grant supplies, teleport, edit enemies, or bypass cooldowns.
+- All three guardians at all three tiers, with no permanent upgrades. Isolated combat fixtures separately prove idle-player damage, committed patterns, realm-specific damage, safe ground, timed reflections, three-phase health gates, and landmark preparation.
+- Failed-attempt and voluntary-retreat supply restoration, arena boundaries, immediate trial completion, gifts and rematch gates, and nonduplicating seal awards. Trials cannot advance surveys.
+- Loom orientations and save restoration while standing on a changed shortcut; one-time trader purchases and rejection of invalid/insufficient-currency purchases; saved firefly carrying/delivery and one-time rescue rewards.
+- Ninety memories and forty-five relics distributed without overlap, discovery preference, all chapter prerequisites, equipment choices, survey requirements, upgrade caps, and reward banking. Charm bonuses persist; removing the extra-focus charm falls back to a usable art without altering an ongoing expedition.
+- Synthetic version-one and version-two checkpoints retain their original map digests and camp state. Version-three active boss patterns, landing targets, retry kits, cooldowns and future simulation restore deterministically.
+- Rejection/bounding of corrupt save versions, paths, coordinates, guardian states, attack footprints, retry kits, identifiers, arrays, and numeric values. Saves never provide resource URLs or HTML.
+- DOM checks run shipped scripts in jsdom: assets, atlas cards, journal, workshop upgrades/arts/charms, old saves, pauses, trader purchases, guardian introduction/HUD/retreat, banking, and renderer paths. The Canvas context is nonvisual and checks finite coordinates; this is not browser layout verification.
 
-## Environment limitations
+## Artwork and drawing review
 
-A fresh browser visual check could not run in this session. The localhost static preview was rejected with `listen EPERM`; Chromium launch was blocked; the connected browser host was unavailable. The updated Playwright smoke test is syntax-checked but **has not passed for this expansion**. Desktop/mobile layout, real Canvas appearance, browser audio, and touch ergonomics still need a browser-capable environment. Prior release screenshots are not evidence for the new interface.
+The expansion adds **101 WebP files**; all **243 game WebP assets** exist, totalling 6,137,908 bytes (about 5.85 MiB). Generated sheets and packaged sprites were inspected. Imagegen editing removed unwanted background haze from the roc and landmark sheets. Creature, guardian and prop alpha was preserved during grid extraction and resizing. Prompts and file ranges are in [the artwork record](../assets/GUARDIAN-ASSETS.md).
 
-The full `npm test` command was attempted with its normal coverage and worker configuration. It was stopped after repeated unrelated fixture failures: localhost listeners rejected with `EPERM` (and consequent null `server.address()`/hook timeouts), unavailable private-image storage, and a blocked `spawnSync python3`. This is not a successful full-suite run. Tests or coverage requirements were not removed to hide these failures. The attempt log is `/tmp/lumenwild-expansion-jest.log`; the focused result is `/tmp/lumenwild-expansion-focused.log`.
+A diagnostic Canvas-to-SVG adapter also exercised the shipped renderer with its actual art and drawing coordinates, and the resulting images were visually inspected for the Belfry, Roc, Dawn Hart, Warrens, and Velvet Labyrinth. This can reveal artwork/camera/footprint problems, but it is **not a native browser Canvas or CSS layout check**. It was used to improve the arena layout so touch controls and the guardian HUD have reserved space.
 
-No app.js/prestart/setup invocation, production database access, package change, deployment, or server-route change was required.
+## Browser and full-suite limitations
 
-## Suggested browser check
+This environment rejected a localhost static preview with `listen EPERM`. Chromium failed during launch with `sandbox_host_linux.cc: shutdown: Operation not permitted`; the connected browser tool also reported its access host unavailable. Therefore **the current browser smoke suite has not passed**, and desktop/mobile CSS layout, native Canvas appearance, audio and real touch ergonomics require a browser-capable environment.
 
-Run the optional `tests/browser/lumenwild.smoke.cjs` command described in the README in an environment that permits a localhost fixture and Chromium. It now covers the timed-input pilot, paused combat clock, frontier unlock, world-atlas screenshots, new marsh start, and ten touch controls, in addition to the original storage, audio, keyboard, reduced-motion, and reload checks.
+The optional `tests/browser/lumenwild.smoke.cjs` was updated for the guardian expansion. It includes keyboard playthroughs of all three tier-II trials, synthetic camp fixtures for unlocked content, guardian screenshots, and touch/landscape guardian checks, alongside the previous storage, audio, keyboard, chapter and reduced-motion checks. It is syntax-checked, not claimed as executed successfully.
+
+The full application suite was not rerun for this client-only change. The previous expansion's full-suite attempt was blocked by the same sandbox's localhost/private-fixture/process restrictions; that historical failed attempt is not a passing result for this release. No tests or coverage requirements were removed. No app.js, prestart, setup, database connection, package installation, deployment, or route mutation was needed.

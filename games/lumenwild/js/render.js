@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   const C = window.Lumenwild;
-  const PROP = { mote: 0, seed: 1, medicine: 2, bomb: 3, thread: 4, chest: 5, portal: 7, shrine: 9, memory: 11, well: 14 };
+  const PROP = { mote: 0, seed: 1, medicine: 2, bomb: 3, thread: 4, chest: 5, portal: 7, shrine: 9, memory: 11, well: 14, trader: 72, courier: 73, loom: 74, guardian: 78 };
   const TAU = Math.PI * 2;
 
   class Renderer {
@@ -18,6 +18,7 @@
       this.ghosts = [];
       this.rings = [];
       this.footsteps = [];
+      this.impacts = [];
       this.walkTime = 0;
       this.shiftFlash = 0;
       this.hurtFlash = 0;
@@ -33,9 +34,10 @@
     async load(progress) {
       const names = [
         ...Array.from({ length: 8 }, (_, i) => `fox-${i}`),
-        ...Array.from({ length: 36 }, (_, i) => `enemy-${i}`),
-        ...Array.from({ length: 48 }, (_, i) => `prop-${i}`),
-        ...Array.from({ length: 48 }, (_, i) => `tile-${i}`),
+        ...Array.from({ length: 60 }, (_, i) => `enemy-${i}`),
+        ...Array.from({ length: 80 }, (_, i) => `prop-${i}`),
+        ...Array.from({ length: 80 }, (_, i) => `tile-${i}`),
+        ...C.GUARDIANS.flatMap(b => Array.from({ length: 4 }, (_, i) => `boss-${b.id}-${i}`)),
       ];
       let loaded = 0;
       const missing = [];
@@ -71,7 +73,7 @@
 
     reset(game) {
       this.camera = { ...game.player }; this.hero = { ...game.player };
-      this.actors.clear(); this.particles = []; this.ghosts = []; this.rings = []; this.footsteps = [];
+      this.actors.clear(); this.particles = []; this.ghosts = []; this.rings = []; this.footsteps = []; this.impacts = [];
       this.lastMap = game.map;
     }
 
@@ -104,7 +106,9 @@
     effects(events, game) {
       for (const event of events) {
         const x = event.x ?? game.player.x, y = event.y ?? game.player.y;
-        if (['pickup', 'seed', 'chest', 'freed', 'puzzleSolved', 'landmark', 'relic', 'secret'].includes(event.type)) this.burst(x, y, event.type === 'freed' ? '#87dab1' : '#ffc247', event.type === 'seed' ? 38 : 18);
+        if (['pickup', 'seed', 'chest', 'freed', 'puzzleSolved', 'landmark', 'relic', 'secret', 'bossDefeated', 'courierHome'].includes(event.type)) this.burst(x, y, event.type === 'freed' ? '#87dab1' : '#ffc247', ['seed', 'bossDefeated'].includes(event.type) ? 48 : 18);
+        if (event.type === 'bossImpact') this.impacts.push({ cells: event.cells, realm: event.realm, life: .38 });
+        if (['bossPhase', 'bossStart', 'loom'].includes(event.type)) this.rings.push({ x, y, age: 0, life: .8, range: 5, color: '#ffc247' });
         if (event.type === 'hit') this.burst(x, y, '#ffdda0', 13);
         if (event.type === 'freed' && !this.reduced) this.ghosts.push({ x, y, kind: event.kind, life: .7 });
         if (event.type === 'sweep') this.rings.push({ x, y, age: 0, life: .35, range: game.stats().reach + .5, color: '#ffc247', arc: true });
@@ -124,19 +128,26 @@
       }
       this.rings = this.rings.slice(-8);
       this.ghosts = this.ghosts.slice(-10);
+      this.impacts = this.impacts.slice(-2);
     }
 
     draw(game, elapsed, dt) {
       if (!this.ctx || !game) return;
       if (this.lastMap !== game.map) this.reset(game);
-      const ctx = this.ctx, { map, player } = game, t = this.tile;
+      const ctx = this.ctx, { map, player } = game, fighting = game.boss?.state === 'active';
+      // Reserve real space for the health banner and touch controls. A fixed
+      // arena camera must not put safe tiles underneath the direction pad.
+      const narrow = this.width < 700, low = this.height < 300;
+      const top = low ? 70 : narrow ? 88 : 104, bottom = narrow ? 112 : low ? 8 : 72;
+      const arenaHeight = Math.max(66, this.height - top - bottom);
+      const t = fighting ? Math.min((this.width - (narrow ? 28 : 280)) / 11, arenaHeight / 11) : this.tile;
       const smooth = this.reduced ? 1 : 1 - Math.exp(-dt * 16);
       this.hero.x += (player.x - this.hero.x) * smooth;
       this.hero.y += (player.y - this.hero.y) * smooth;
       this.camera.x += (this.hero.x - this.camera.x) * (this.reduced ? 1 : 1 - Math.exp(-dt * 8));
       this.camera.y += (this.hero.y - this.camera.y) * (this.reduced ? 1 : 1 - Math.exp(-dt * 8));
-      const offsetX = this.width / 2 - (this.camera.x + .5) * t;
-      const offsetY = this.height / 2 - (this.camera.y + .5) * t;
+      const offsetX = this.width / 2 - ((fighting ? map.arena.x : this.camera.x) + .5) * t;
+      const offsetY = (fighting ? top + arenaHeight / 2 : this.height / 2) - ((fighting ? map.arena.y : this.camera.y) + .5) * t;
       const point = (x, y) => ({ x: offsetX + (x + .5) * t, y: offsetY + (y + .5) * t });
       ctx.fillStyle = game.phase ? '#09111b' : '#0a1512';
       ctx.fillRect(0, 0, this.width, this.height);
@@ -160,8 +171,9 @@
         }
         const open = C.walkable(map, x, y, game.phase);
         const base = game.biome.tile;
-        const watery = ['canals', 'constellation'].includes(game.biome.layout);
-        let frame = base + (tile === 1 ? watery && (x + y) % 4 !== 0 ? 2 : 1 : map.clearings.includes(index) ? 3 : 0);
+        const watery = ['canals', 'constellation', 'belfry', 'causeways', 'aurora'].includes(game.biome.layout);
+        const arenaTile = map.arena && Math.abs(x - map.arena.x) <= 5 && Math.abs(y - map.arena.y) <= 5;
+        let frame = base + (tile === 1 ? watery && (x + y) % 4 !== 0 ? 2 : 1 : map.clearings.includes(index) && !arenaTile ? 3 : 0);
         if (tile >= 2) frame = open ? base + 3 : tile === 2 ? 12 : 13;
         const image = this.images[`tile-${frame}`];
         ctx.globalAlpha = visible ? 1 : .27;
@@ -190,6 +202,18 @@
           ctx.font = '14px Georgia'; ctx.textAlign = 'center'; ctx.fillText(tile === 2 ? '☼' : '☾', px + t / 2, py + t / 2 + 5);
         }
         ctx.globalAlpha = 1;
+      }
+
+      if (map.arena && (fighting || game.seen.has(map.arena.y * map.w + map.arena.x))) {
+        const p = point(map.arena.x, map.arena.y), size = t * 8;
+        const tile = this.images[`tile-${77 + C.GUARDIANS.findIndex(b => b.id === game.boss.id)}`];
+        if (tile) { ctx.globalAlpha = .55; ctx.drawImage(tile, p.x - size / 2, p.y - size / 2, size, size); ctx.globalAlpha = 1; }
+        if (fighting) {
+          ctx.strokeStyle = '#ffc247'; ctx.lineWidth = 2;
+          ctx.strokeRect(p.x - t * 5.5, p.y - t * 5.5, t * 11, t * 11);
+          ctx.setLineDash([3, 8]); ctx.globalAlpha = .4;
+          ctx.strokeRect(p.x - t * 5.7, p.y - t * 5.7, t * 11.4, t * 11.4); ctx.setLineDash([]); ctx.globalAlpha = 1;
+        }
       }
 
       for (const foot of this.footsteps) {
@@ -231,6 +255,28 @@
         ctx.beginPath(); ctx.arc(p.x, p.y, t * .36, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - enemy.windup / Math.max(.01, enemy.windupTotal))); ctx.stroke();
       }
 
+      if (fighting && game.boss.mode === 'windup') {
+        const boss = game.boss, dangerous = boss.realm === -1 || boss.realm === game.phase;
+        for (const cell of boss.intent) {
+          const p = point(cell.x, cell.y);
+          ctx.fillStyle = dangerous ? 'rgba(255,77,79,.28)' : 'rgba(139,219,230,.10)';
+          ctx.fillRect(p.x - t * .46, p.y - t * .46, t * .92, t * .92);
+          ctx.strokeStyle = dangerous ? '#ff9b83' : '#8bdbe6'; ctx.lineWidth = dangerous ? 2 : 1;
+          ctx.strokeRect(p.x - t * .43, p.y - t * .43, t * .86, t * .86);
+          ctx.fillStyle = dangerous ? '#fff1ce' : '#8bdbe6'; ctx.font = `bold ${Math.max(10, t * .32)}px sans-serif`; ctx.textAlign = 'center';
+          ctx.fillText(boss.realm === -1 ? '!' : boss.realm ? '☾' : '☼', p.x, p.y + t * .13);
+          ctx.strokeStyle = dangerous ? '#ffe6bb' : '#8bdbe6'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(p.x, p.y, t * .32, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - boss.timer / Math.max(.01, boss.total))); ctx.stroke();
+        }
+      }
+      for (const impact of this.impacts) {
+        impact.life -= dt;
+        ctx.globalAlpha = Math.max(0, impact.life / .38) * (this.reduced ? .25 : .6);
+        ctx.fillStyle = impact.realm === -1 || impact.realm === game.phase ? '#ffb68c' : '#8bdbe6';
+        for (const cell of impact.cells) { const p = point(cell.x, cell.y); ctx.fillRect(p.x - t * .45, p.y - t * .45, t * .9, t * .9); }
+      }
+      this.impacts = this.impacts.filter(i => i.life > 0); ctx.globalAlpha = 1;
+
       if (!game.records[game.region].landmark) for (const vent of map.vents) {
         if (!game.visible.has(vent.y * map.w + vent.x)) continue;
         const p = point(vent.x, vent.y);
@@ -243,7 +289,7 @@
       }
 
       for (const e of map.entities) {
-        if (e.done && !['chest', 'shrine', 'well', 'landmark'].includes(e.type)) continue;
+        if (e.done && !['chest', 'shrine', 'well', 'landmark', 'trader', 'guardian'].includes(e.type)) continue;
         const index = e.y * map.w + e.x;
         if (!game.seen.has(index)) continue;
         const p = point(e.x, e.y), visible = game.visible.has(index);
@@ -263,6 +309,10 @@
         if (e.type === 'relic' && visible) {
           ctx.fillStyle = '#ffe2a2'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('REGIONAL RELIC', p.x, p.y + t * .5);
         }
+        if (['trader', 'loom', 'guardian', 'courier'].includes(e.type) && visible && !e.done && !fighting) {
+          ctx.fillStyle = '#ffe2a2'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText({ trader: 'WAYFARER · E', loom: 'FOLD LOOM · E', guardian: 'GUARDIAN · E', courier: 'LOST FIREFLY' }[e.type], p.x, p.y + t * .55);
+        }
         if (e.type === 'seed' && visible) {
           ctx.fillStyle = wrongPhase ? '#8bdbe6' : '#ffe2a2'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
           ctx.fillText(wrongPhase ? `${e.phase ? 'ECHO' : 'BLOOM'} · Q` : 'HEARTSEED', p.x, p.y + t * .52);
@@ -270,6 +320,18 @@
         if (e.type === 'portal' && visible) {
           ctx.fillStyle = '#a1e9d3'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('WAYGATE', p.x, p.y + t * .55);
           for (let i = 0; i < 3; i += 1) { ctx.fillStyle = i < game.seeds ? '#ffc247' : '#38564c'; ctx.beginPath(); ctx.arc(p.x + (i - 1) * 12, p.y + t * .72, 3, 0, TAU); ctx.fill(); }
+        }
+      }
+
+      if (game.boss && (fighting || game.visible.has(game.boss.y * map.w + game.boss.x))) {
+        const boss = game.boss, p = point(boss.x, boss.y), recovered = boss.mode === 'recovery';
+        const frame = boss.state === 'defeated' ? 3 : recovered ? 2 : boss.mode === 'windup' ? 1 : 0;
+        ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + t * .3, t * .95, t * .3, 0, 0, TAU); ctx.fill();
+        if (recovered || boss.state === 'defeated') this.glow(p.x, p.y, t * 2, 'rgba(255,194,71,.25)');
+        this.sprite(`boss-${boss.id}-${frame}`, p.x, p.y - t * .5, t * 3, t * 3, boss.state === 'sleeping' ? .7 : 1);
+        if (recovered) {
+          ctx.strokeStyle = '#ffc247'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.x, p.y, t * 1.35, 0, TAU); ctx.stroke();
+          ctx.fillStyle = '#ffe6bb'; ctx.font = `bold ${Math.max(10, t * .3)}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText('OPEN HEART · ×2', p.x, p.y + t * 1.1);
         }
       }
 
@@ -305,6 +367,11 @@
       const stride = this.walkTime > .05 ? 4 : 0;
       const hop = !this.reduced && this.walkTime > 0 ? -Math.sin(this.walkTime / .24 * Math.PI) * 4 : 0;
       this.sprite(`fox-${facing + stride}`, hero.x, hero.y - t * .23 + hop, t * 1.02, t * 1.2);
+      if (game.carrying) {
+        const bob = this.reduced ? 0 : Math.sin(elapsed * 3) * t * .08;
+        this.glow(hero.x + t * .6, hero.y - t * .6 + bob, t * .5, 'rgba(255,194,71,.3)');
+        this.sprite('prop-73', hero.x + t * .6, hero.y - t * .6 + bob, t * .45);
+      }
       if (game.shield || game.guardTime) {
         ctx.strokeStyle = game.guardTime ? '#ffe2a2' : '#8bdbe6'; ctx.lineWidth = game.guardTime ? 4 : 2; ctx.globalAlpha = .8;
         ctx.beginPath(); ctx.ellipse(hero.x, hero.y, t * .55, t * .65, 0, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;

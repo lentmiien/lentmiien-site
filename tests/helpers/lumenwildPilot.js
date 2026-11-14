@@ -5,6 +5,33 @@
 function nextAction(game, C) {
   const p = game.player;
   if (p.hp <= 3 && game.inventory.medicine) return { action: 'medicine' };
+  if (game.boss?.state === 'active') {
+    const boss = game.boss;
+    const threatened = cell => boss.mode === 'windup' && (boss.realm === -1 || boss.realm === game.phase) && boss.intent.some(c => c.x === cell.x && c.y === cell.y);
+    const reach = cell => Math.max(Math.abs(cell.x - boss.x), Math.abs(cell.y - boss.y));
+    if (threatened(p) && boss.timer < .4 && !game.cooldowns.guard) return { action: 'guard' };
+    if (boss.mode === 'recovery' && C.distance(p, boss) <= 4 && game.inventory.bomb) return { action: 'bomb' };
+    if (boss.mode === 'recovery' && C.distance(p, boss) <= 3 && game.focus >= C.ARTS.find(a => a.id === game.art).cost && !game.cooldowns.art) return { action: 'art' };
+    if (reach(p) <= game.stats().reach + 1 && !threatened(p)) return { action: game.cooldowns.attack ? 'wait' : 'attack' };
+    // Walk toward an attack position that is safe when the visible pattern
+    // lands. The search reads only the same arena and warning tiles as a player.
+    const queue = [{ ...p, first: -1, steps: 0 }], seen = new Set([`${p.x},${p.y}`]);
+    let best = null, score = Infinity;
+    for (let i = 0; i < queue.length; i += 1) {
+      const cell = queue[i];
+      const value = cell.steps + Math.max(0, reach(cell) - game.stats().reach - 1) * 2;
+      if (!threatened(cell) && value < score) { score = value; best = cell; }
+      for (let dir = 0; dir < 4; dir += 1) {
+        const [dx, dy] = C.DIRS[dir], next = { x: cell.x + dx, y: cell.y + dy, steps: cell.steps + 1, first: cell.first < 0 ? dir : cell.first };
+        const key = `${next.x},${next.y}`;
+        if (seen.has(key) || !game.canStep(next.x, next.y) || game.enemyAt(next.x, next.y)) continue;
+        seen.add(key); queue.push(next);
+      }
+    }
+    if (best?.first >= 0) return { action: 'move', direction: best.first };
+    return { action: game.cooldowns.attack ? 'wait' : 'attack' };
+  }
+  if (game.nearby()?.type === 'guardian' && game.seeds === 3) return { action: 'awaken' };
   const threats = game.map.enemies.filter(e => e.hp > 0 && e.windup > 0 && e.windup < .45 && e.intent.some(c => c.x === p.x && c.y === p.y));
   if (threats.length && game.shield <= .1 && game.guardTime <= .1) {
     if (!game.cooldowns.guard) return { action: 'guard' };
@@ -39,7 +66,7 @@ function finishExpedition(game, C) {
     }
     advance(game, .16);
     const input = nextAction(game, C);
-    game.act(input.action, input.direction);
+    if (input.action === 'awaken') game.startBoss(); else game.act(input.action, input.direction);
   }
   throw new Error('Expedition exceeded bounded playthrough length');
 }

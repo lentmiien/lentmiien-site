@@ -11,12 +11,12 @@ function activate(game, landmark) {
 }
 
 describe('Lumenwild exploration and long-term progression', () => {
-  test('preserves original journal IDs and distributes 54 pages and 27 relics without overlap', () => {
-    expect(C.MEMORIES).toHaveLength(54); expect(C.RELICS).toHaveLength(27);
-    expect(new Set(C.BIOMES.flatMap(b => b.memories)).size).toBe(54);
+  test('preserves original journal IDs and distributes 90 pages and 45 relics without overlap', () => {
+    expect(C.MEMORIES).toHaveLength(90); expect(C.RELICS).toHaveLength(45);
+    expect(new Set(C.BIOMES.flatMap(b => b.memories)).size).toBe(90);
     expect(C.MEMORIES[0][0]).toBe('A light left on');
     expect(C.UPGRADES.reduce((sum, u) => sum + u.costs.length, 0)).toBe(27);
-    expect(C.ARTS).toHaveLength(6); expect(C.BLESSINGS).toHaveLength(16);
+    expect(C.ARTS).toHaveLength(9); expect(C.BLESSINGS).toHaveLength(16);
   });
 
   test('new visits prefer unknown pages and relics, and the chosen discoveries survive a save', () => {
@@ -88,7 +88,7 @@ describe('Lumenwild exploration and long-term progression', () => {
   test('each art has a meaningful persistent discovery milestone', () => {
     const p = C.profile(); expect(C.ARTS.filter(a => C.artUnlocked(p, a.id)).map(a => a.id)).toEqual(['gust']);
     p.relics = Array.from({ length: 18 }, (_, i) => i); p.regions[5].clears = 1; p.regions[6].clears = 1; p.regions[7].clears = 1; p.trails.horizon = 1;
-    expect(C.ARTS.every(a => C.artUnlocked(p, a.id))).toBe(true);
+    expect(C.ARTS.filter(a => !['tide', 'tempest', 'dawn'].includes(a.id)).every(a => C.artUnlocked(p, a.id))).toBe(true);
     expect(C.artUnlocked(p, '__proto__')).toBe(false);
   });
 
@@ -151,7 +151,7 @@ describe('Lumenwild versioned saves', () => {
     expect(createHash('sha256').update(JSON.stringify(originalMap)).digest('hex')).toBe(fixture.mapDigest);
     expect(game.inventory).toEqual(old.inventory);
     const v2 = C.readSave(C.writeSave(result.profile, game)); expect(v2.invalid).toBe(false); expect(v2.game.snapshot()).toEqual(game.snapshot());
-    expect(C.createExpedition(result.profile, { seed: 91, trail: 'frontier' }).generator).toBe(2);
+    expect(C.createExpedition(result.profile, { seed: 91, trail: 'frontier' }).generator).toBe(3);
   });
 
   test('nine-region progress, chosen discoveries, art, timers, and future combat restore deterministically', () => {

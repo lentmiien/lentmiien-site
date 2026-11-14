@@ -12,6 +12,9 @@
     const image = make('img', className);
     image.src = `assets/prop-${index}.webp`; image.alt = ''; return image;
   };
+  const guardianArt = (id, frame = 0, className = 'guardian-portrait') => {
+    const image = make('img', className); image.src = `assets/boss-${id}-${frame}.webp`; image.alt = ''; return image;
+  };
   const renderer = new window.LumenwildRenderer($('world'), $('minimap'));
   const dialog = $('dialog');
   let profile = C.profile(), game = null, playing = false, ready = false;
@@ -46,7 +49,10 @@
     play(type) {
       if (type === 'move') this.note(120, .045, 0, 'triangle', .18);
       if (['pickup', 'chest', 'memory', 'relic', 'landmark'].includes(type)) { this.note(659, .18); this.note(988, .27, .07); }
-      if (['seed', 'puzzleSolved', 'restored'].includes(type)) [392, 494, 587, 784].forEach((n, i) => this.note(n, .6, i * .12, 'sine', .7));
+      if (['seed', 'puzzleSolved', 'restored', 'bossDefeated', 'courierHome'].includes(type)) [392, 494, 587, 784].forEach((n, i) => this.note(n, .6, i * .12, 'sine', .7));
+      if (['bossStart', 'bossPhase'].includes(type)) [147, 220, 294].forEach((n, i) => this.note(n, .8, i * .15, 'triangle', .5));
+      if (type === 'bossWarning') { this.note(196, .4, 0, 'sine', .4); this.note(294, .4, .12, 'sine', .3); }
+      if (type === 'bossImpact') this.note(73, .25, 0, 'triangle', .5);
       if (type === 'sweep') { this.note(260, .12, 0, 'triangle', .4); this.note(520, .12, .04, 'sine', .3); }
       if (type === 'shift') [220, 330, 440].forEach((n, i) => this.note(n, .5, i * .06, 'sine', .5));
       if (type === 'hurt') this.note(92, .18, 0, 'triangle', .9);
@@ -104,8 +110,9 @@
     playing = false; held = null;
     $('playScreen').hidden = true; $('campScreen').hidden = false; $('pauseButton').hidden = true;
     $('campLight').textContent = profile.light;
-    $('campWins').textContent = `${C.medals(profile)} / 27`;
+    $('campWins').textContent = `${C.medals(profile)} / ${C.BIOMES.length * 3}`;
     $('campMemories').textContent = `${profile.memories.length} / ${C.MEMORIES.length}`;
+    $('guardianProgress').textContent = `${C.GUARDIANS.filter(b => profile.guardians[b.id]).length} / 3 guardians awakened · ${C.guardianMedals(profile)} / 9 trial seals · ${profile.rescues} fireflies home`;
     $('gentleMode').checked = profile.gentle;
     $('continueButton').hidden = !game || !['playing', 'blessing'].includes(game.status);
     $('mainAction').classList.toggle('secondary', !$('continueButton').hidden);
@@ -114,7 +121,7 @@
     profile.selectedTrail = selected.id;
     $('selectedJourney').textContent = `${selected.name} · ${selected.route.length} regions`;
     $('mainAction').querySelector('span').replaceChildren(document.createTextNode('Begin your journey'), make('small', '', selected.name));
-    $('workshopDetail').textContent = `${Object.values(profile.upgrades).reduce((a, b) => a + b, 0)} / 27 upgrades · ${C.ARTS.filter(a => C.artUnlocked(profile, a.id)).length} / 6 arts`;
+    $('workshopDetail').textContent = `${Object.values(profile.upgrades).reduce((a, b) => a + b, 0)} / 27 upgrades · ${C.ARTS.filter(a => C.artUnlocked(profile, a.id)).length} / ${C.ARTS.length} arts · ${C.CHARMS.filter(c => c.id !== 'none' && C.charmUnlocked(profile, c.id)).length} / 4 charms`;
     setSound();
   }
 
@@ -142,8 +149,9 @@
     $('chapterLabel').textContent = `${game.daily ? 'DAILY · ' : game.gentle ? 'GENTLE · ' : ''}REGION ${game.depth + 1} / ${game.journey.length}${game.tier > 1 ? ` · TIER ${game.tier}` : ''}`;
     $('regionName').textContent = region.name; $('regionSubtitle').textContent = region.subtitle;
     const landmarks = game.map.entities.filter(e => e.type === 'landmark'), relic = game.map.entities.find(e => e.type === 'relic');
-    $('regionQuest').textContent = landmarks.length ? `Landmarks ${landmarks.filter(e => e.done).length} / 3 · ${relic?.done ? 'Relic found' : 'Relic waiting'}` : 'An original journey · new paths await at camp';
-    $('objectiveText').textContent = game.seeds === 3 ? 'All heartseeds found. Return to the waygate and press E.' : `Find ${3 - game.seeds} heartseed${game.seeds === 2 ? '' : 's'}. Explore Bloom and Echo.`;
+    $('regionQuest').textContent = game.trail === 'trial' ? 'A guardian trial · no maze to repeat' : landmarks.length ? `Landmarks ${landmarks.filter(e => e.done).length} / 3 · ${relic?.done ? 'Relic found' : 'Relic waiting'}` : 'An original journey · new paths await at camp';
+    $('objectiveText').textContent = game.boss?.state === 'active' ? 'Dodge the warning. Strike the open heart. Escape pauses or lets you leave.' : game.seeds === 3 ? game.boss?.state === 'sleeping' ? 'Heartseeds ready. Find the guardian’s arena and press E.' : 'All heartseeds found. Return to the waygate and press E.' : `Find ${3 - game.seeds} heartseed${game.seeds === 2 ? '' : 's'}. Explore Bloom and Echo.`;
+    if (game.carrying) $('objectiveText').textContent += ' A firefly needs a ride to the waygate.';
     if (game.guideTurns) $('objectiveText').textContent += ` Thread: ${game.guideTurns} actions.`;
     for (const [key, label] of [['attack', 'Ready'], ['shift', 'Shift world'], ['dash', 'Dash ahead'], ['guard', 'Reflect a hit']]) {
       $(`${key}Cooldown`).textContent = game.cooldowns[key] > 0 ? `${game.cooldowns[key].toFixed(1)}s` : label;
@@ -160,7 +168,16 @@
     }
     const nearby = game.nearby();
     $('interactPrompt').hidden = !nearby;
-    if (nearby) $('interactPrompt').querySelector('span').textContent = { portal: game.seeds === 3 ? 'Restore the garden' : 'The waygate', chest: 'Open treasure cache', well: 'Drink from the spring', shrine: 'Read the runes', landmark: nearby.done ? 'Ride the ferry' : `Restore ${region.landmark}${region.feature === 'stars' ? ` ${nearby.number}` : ''}` }[nearby.type];
+    if (nearby) $('interactPrompt').querySelector('span').textContent = { portal: game.carrying ? 'Bring the firefly home' : game.seeds === 3 ? 'Restore the garden' : 'The waygate', chest: 'Open treasure cache', well: 'Drink from the spring', shrine: 'Read the runes', landmark: nearby.done ? region.feature === 'spores' ? 'Travel through the roots' : 'Ride the ferry' : `Restore ${region.landmark}${['stars', 'auroras'].includes(region.feature) ? ` ${nearby.number}` : ''}`, trader: 'Visit the wayfarer', loom: 'Turn the fold loom', guardian: 'Meet the guardian' }[nearby.type];
+    const boss = game.boss, active = boss?.state === 'active';
+    $('guardianHud').hidden = !active; $('stage').classList.toggle('boss-active', !!active);
+    if (active) {
+      $('guardianName').textContent = C.GUARDIANS.find(b => b.id === boss.id).name;
+      $('guardianStage').textContent = `PHASE ${boss.stage} / 3 · ${boss.hp} / ${boss.maxHp}`;
+      $('guardianHealth').max = boss.maxHp; $('guardianHealth').value = boss.hp;
+      $('guardianHud').classList.toggle('opening', boss.mode === 'recovery');
+      $('guardianPattern').textContent = boss.mode === 'recovery' ? `Open heart · double damage · ${boss.timer.toFixed(1)}s` : boss.mode === 'windup' ? `${boss.attack} · ${boss.realm === -1 ? 'both worlds' : boss.realm ? '☾ Echo only' : '☼ Bloom only'} · ${boss.timer.toFixed(1)}s` : boss.mode === 'transition' ? 'A new pattern gathers · find your footing.' : 'The guardian stirs. Find your footing.';
+    }
     $('blessingSummary').textContent = game.blessings.length ? game.blessings.map(id => C.BLESSINGS.find(b => b.id === id).name).join(' · ') : 'A small lantern can change everything.';
     renderer.drawMap(game);
   }
@@ -169,7 +186,7 @@
     held = null;
     if (!dialog.open) previousFocus = document.activeElement;
     dialogKind = kind; dialogLocked = locked;
-    dialog.classList.toggle('map-dialog', ['map', 'journeys', 'workshop', 'journal'].includes(kind));
+    dialog.classList.toggle('map-dialog', ['map', 'journeys', 'workshop', 'journal', 'trials'].includes(kind));
     $('dialogEyebrow').textContent = eyebrow;
     $('dialogTitle').textContent = title;
     $('dialogBody').replaceChildren(); $('dialogActions').replaceChildren();
@@ -235,7 +252,7 @@
     const pending = game.events.splice(0);
     renderer.effects(pending, game);
     for (const event of pending) sound.play(event.type);
-    const meaningful = pending.filter(e => e.text && !['pickup', 'warning'].includes(e.type));
+    const meaningful = pending.filter(e => e.text && !['pickup', 'warning', 'bossWarning'].includes(e.type));
     const message = meaningful.at(-1) || pending.find(e => e.text);
     if (message && message.type !== 'memory') toast(message.text, message.type === 'hurt' ? 4500 : 3300);
     const memory = pending.find(e => e.type === 'memory');
@@ -251,6 +268,9 @@
       button('Carry it home →', closeDialog);
     }
     if (pending.some(e => e.type === 'puzzle')) puzzle();
+    if (pending.some(e => e.type === 'trader')) trader();
+    if (pending.some(e => e.type === 'challenge' || e.type === 'bossRetry')) guardianEncounter(pending.some(e => e.type === 'bossRetry'));
+    if (pending.some(e => e.type === 'bossDefeated') && game.trail !== 'trial') guardianVictory();
     updateHud(); save();
     if (game.status === 'blessing') blessings();
     if (['won', 'lost', 'returned'].includes(game.status)) finish();
@@ -291,15 +311,16 @@
     held = null;
     if (!C.bankExpedition(profile, game)) return;
     const won = game.status === 'won', trail = C.TRAILS.find(t => t.id === game.trail);
-    const unlocked = won && trail ? C.TRAILS.find(t => t.requires === trail.id) : null;
-    const body = openDialog('result', won ? 'A PATH RESTORED' : 'EVERY JOURNEY LEAVES A LITTLE LIGHT', won ? 'And the world opened.' : 'Home is a light left on.', true);
-    body.append(art(won ? game.biome.landmarkIcon : 10, 'result-art'));
-    body.append(make('p', '', unlocked ? `${trail.name} is complete. ${unlocked.name} is now open on your world atlas.` : won ? 'Your lantern has brought life back to this path. Look in your atlas for regional secrets, missing relics, and the next survey medal.' : 'Every piece of starlight and every discovery comes home with you. Your completed regions count towards their surveys.'));
+    const unlocked = won && trail ? C.TRAILS.filter(t => t.requires === trail.id) : [];
+    const trial = game.trail === 'trial' && won;
+    const body = openDialog('result', trial ? 'A GUARDIAN TRIAL COMPLETE' : won ? 'A PATH RESTORED' : 'EVERY JOURNEY LEAVES A LITTLE LIGHT', trial ? 'An old promise, kept.' : won ? 'And the world opened.' : 'Home is a light left on.', true);
+    body.append(trial ? guardianArt(game.boss.id, 3) : art(won ? game.biome.landmarkIcon : 10, 'result-art'));
+    body.append(make('p', '', trial ? `${C.GUARDIANS.find(b => b.id === game.boss.id).name} remembers your light. ${game.tier < 3 ? 'The next trial tier is ready in the world atlas.' : 'The radiant seal is yours. Every tier of this guardian is restored.'}` : unlocked.length ? `${trail.name} is complete. ${unlocked.map(t => t.name).join(' and ')} ${unlocked.length > 1 ? 'are' : 'is'} now open on your world atlas.` : won ? 'Your lantern has brought life back to this path. Look in your atlas for regional secrets, missing relics, and the next survey medal.' : 'Every piece of starlight and every discovery comes home with you. Your completed regions count towards their surveys.'));
     const stats = make('div', 'result-stats');
-    for (const [value, title] of [[game.light + (game.medalReward || 0), 'Starlight brought home'], [game.score, 'Expedition score'], [game.kills, 'Creatures freed']]) {
+    for (const [value, title] of [[game.light + (game.medalReward || 0) + (game.guardianReward || 0), 'Starlight brought home'], [game.score, 'Expedition score'], [game.kills, 'Creatures freed']]) {
       const box = make('div'); box.append(make('strong', '', value), make('span', '', title)); stats.append(box);
     }
-    body.append(stats, make('p', '', `${profile.memories.length} / 54 memories · ${profile.relics.length} / 27 relics · ${C.medals(profile)} / 27 survey medals. New visits favour discoveries you have not found yet.`));
+    body.append(stats, make('p', '', `${profile.memories.length} / ${C.MEMORIES.length} memories · ${profile.relics.length} / ${C.RELICS.length} relics · ${C.medals(profile)} / ${C.BIOMES.length * 3} survey medals. New visits favour discoveries you have not found yet.`));
     save(true);
     button('Back to the keeper’s camp →', () => { game = null; closeDialog(); camp(); save(true); });
   }
@@ -351,8 +372,41 @@
     const body = openDialog('pause', 'REST YOUR PAWS', 'The garden can wait.');
     body.append(make('p', '', 'Your expedition is saved in this browser. You can return to camp and continue this exact journey later.'));
     button('Keep wandering →', closeDialog);
+    if (game.boss?.state === 'active') button('Leave the arena and prepare again', () => { game.retreatBoss(); closeDialog(); events(); }, false);
     button('Save and return to camp', () => { save(true); closeDialog(); camp(); }, false);
     button('Finish early and bank discoveries', () => { game.status = 'returned'; closeDialog(); finish(); }, false);
+  }
+
+  function trader() {
+    const body = openDialog('trader', 'THE WANDERING WAYFARER', 'A little help along the path.');
+    body.append(art(72, 'result-art'), make('p', '', `You have ${game.light} starlight in this expedition. The wayfarer can share one bundle before moving on. Camp savings stay at camp.`));
+    for (const [id, label, price, text] of [['tonic', 'Moonberry bundle', 6, 'Two tonics and three hearts of healing.'], ['supplies', 'Trail supplies', 8, 'Two seedbombs and a guiding thread.'], ['chart', 'A map of small wonders', 10, 'Mark heartseeds, relics, landmarks, the firefly, and the guardian. Refill focus and gain a long guiding thread.']]) {
+      const card = make('div', 'trade-offer'); card.append(make('h3', '', label), make('p', '', text)); body.append(card);
+      const buy = button(`${label} · ${price} starlight`, () => {
+        if (game.trade(id)) { closeDialog(); events(); }
+        else toast('Your satchel is full, or you need more expedition starlight.');
+      });
+      buy.disabled = game.light < price || id === 'tonic' && game.inventory.medicine === 9 && game.player.hp === game.stats().maxHp || id === 'supplies' && game.inventory.bomb === 9 && game.inventory.thread === 9;
+    }
+    button('Keep exploring', closeDialog, false);
+  }
+
+  function guardianEncounter(retry = false) {
+    const boss = game.boss, spec = C.GUARDIANS.find(b => b.id === boss?.id);
+    if (!spec || boss.state !== 'sleeping') return;
+    const body = openDialog('guardian', retry ? 'YOUR LANTERN CATCHES YOU' : spec.epithet.toUpperCase(), spec.name);
+    body.append(guardianArt(spec.id), make('p', '', retry ? 'That was a chance to learn. Your hearts and the supplies you entered with have been restored. Try again, or return to the maze whenever you like.' : spec.intro), make('p', 'region-mechanic', spec.hint));
+    body.append(make('p', '', 'Every attack leaves an open heart: your strikes deal double damage during this recovery. Guardian attacks keep their pattern when you fold or cast an art. G still reflects a hit.'));
+    body.append(make('p', '', `${game.records[game.region].landmark ? 'All landmarks restored: attack warnings last longer. ' : game.trail !== 'trial' ? 'Restoring all three regional landmarks gives longer attack warnings. ' : ''}Hearts and focus refill when the encounter begins. You can save mid-fight, or leave through the pause menu.`));
+    button(retry ? 'Try the encounter again →' : 'Raise your lantern →', () => { if (game.startBoss()) { closeDialog(); events(); } });
+    button('A little more time to prepare', closeDialog, false);
+  }
+
+  function guardianVictory() {
+    const spec = C.GUARDIANS.find(b => b.id === game.boss.id), skill = C.ARTS.find(a => a.id === spec.art);
+    const body = openDialog('guardianVictory', 'AN OLD FRIEND, REMEMBERED', `${spec.name} awakens.`);
+    body.append(guardianArt(spec.id, 3), make('p', '', 'The old promise is kept. The guardian lowers its head, and the garden begins to breathe again.'), make('p', 'region-mechanic', `${skill.name} and a guardian charm are now available in the workshop. Guardian trials let you return straight to the encounter, with three mastery tiers.`), make('p', '', 'Your hearts and focus are restored. Bring the heartseeds to the waygate to finish this region, or stay a little longer to explore.'));
+    button('Carry the morning with you →', closeDialog);
   }
 
   function atlas() {
@@ -362,12 +416,12 @@
     canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', 'Discovered paths, items, the waygate, and your current location. Unexplored paths are hidden.');
     body.append(canvas); renderer.drawMap(game, canvas, true);
     const legend = make('div', 'map-legend');
-    for (const [symbol, label] of [['●', 'You'], ['✦', 'Heartseed'], ['◉', 'Waygate'], ['☼ / ☾', 'Folded paths']]) {
+    for (const [symbol, label] of [['●', 'You'], ['✦', 'Heartseed'], ['◉', 'Waygate'], ['☼ / ☾', 'Folded paths'], ['♜', 'Guardian arena']]) {
       const item = make('span'); item.append(make('b', '', symbol), document.createTextNode(label)); legend.append(item);
     }
     game.recordSurvey();
     body.append(make('p', 'region-mechanic', `${game.biome.clue} · ${game.map.entities.filter(e => e.type === 'landmark' && e.done).length}/3 landmarks · ${game.records[game.region].explored}% explored`));
-    body.append(legend, make('p', '', 'The atlas remembers where you have been. A guiding thread traces the shortest route to a heartseed, or back to the waygate. Blue rings on the trail mean shift worlds there.'));
+    body.append(legend, make('p', '', 'Threads guide a carried firefly home first, then lead to a heartseed, the guardian, or the waygate. Blue rings on the trail mean shift worlds there. Fold looms swap nearby shortcuts; their affected paths are revealed on this atlas.'));
     button('Back to the garden →', closeDialog);
     const thread = button(`Use a guiding thread (${game.inventory.thread})`, () => {
       closeDialog(); lastAction = 0; act('thread'); if (!dialog.open) atlas();
@@ -379,7 +433,7 @@
     const body = openDialog('journal', 'THE KEEPER’S JOURNAL', 'Small things, remembered.');
     const known = new Set([...profile.memories, ...(game?.memories || [])]);
     const relics = new Set([...profile.relics, ...(game?.relics || [])]);
-    body.append(make('p', '', `${known.size} / 54 memories · ${relics.size} / 27 relics. Each new visit favours pages and relics you have yet to discover. Every find stays with you.`));
+    body.append(make('p', '', `${known.size} / ${C.MEMORIES.length} memories · ${relics.size} / ${C.RELICS.length} relics. Each new visit favours pages and relics you have yet to discover. Every find stays with you.`));
     C.BIOMES.forEach((region, i) => {
       const section = make('details', 'journal-region-section');
       const summary = make('summary');
@@ -402,8 +456,8 @@
 
   function journeys() {
     const body = openDialog('journeys', 'THE WORLD BEYOND THE FOLD', 'There is always another path.');
-    const illustration = make('img', 'journey-illustration'); illustration.src = 'assets/journey-atlas.webp';
-    illustration.alt = 'Nine connected gardens, from green hollows through marsh and clockwork, to frost, fire, and a canopy of stars.';
+    const illustration = make('img', 'journey-illustration'); illustration.src = 'assets/guardians-atlas.webp';
+    illustration.alt = 'New paths through flooded bell towers, glowing mushroom warrens, storm bridges, desert ruins, silk gardens, and an aurora-lit crown.';
     body.append(illustration, make('p', '', 'Choose a chapter, or revisit an unlocked region for its missing discoveries. Every journey can be saved and continued later.'));
     const trails = make('div', 'trail-grid');
     C.TRAILS.forEach(trail => {
@@ -413,7 +467,15 @@
       card.append(art(trail.icon), text);
       card.addEventListener('click', () => { profile.selectedTrail = trail.id; save(true); closeDialog(); camp(); }); trails.append(card);
     });
-    body.append(trails, make('h3', 'section-title', 'The regional survey'), make('p', '', 'Bronze: restore a region. Silver: two visits completed, four pages, two relics, 65% explored. Gold: three visits, every page and relic, the regional secret, and 85% explored. Each medal awards 25 starlight; medals open the higher camp upgrades.'));
+    body.append(trails, make('h3', 'section-title', 'The waking guardians'), make('p', '', 'Meet three guardians in the new chapters. Awaken each once to unlock its art, charm, and direct arena rematches. Each new trial seal brings 40 starlight.'));
+    const bosses = make('div', 'guardian-grid');
+    C.GUARDIANS.forEach(spec => {
+      const rank = profile.guardians[spec.id], card = make('button', 'guardian-card'); card.type = 'button'; card.dataset.guardian = spec.id;
+      card.disabled = !rank;
+      card.append(guardianArt(spec.id, rank ? 3 : 0), make('strong', '', spec.name), make('span', 'survey-stars', '✦'.repeat(rank) + '◇'.repeat(3 - rank)), make('small', '', rank ? 'Enter a guardian trial →' : `Waiting in ${C.BIOMES[spec.region].name}`));
+      card.addEventListener('click', () => guardianTrial(spec)); bosses.append(card);
+    });
+    body.append(bosses, make('h3', 'section-title', 'The regional survey'), make('p', '', 'Bronze: restore a region. Silver: two visits completed, four pages, two relics, 65% explored. Gold: three visits, every page and relic, the regional secret, and 85% explored. Each medal awards 25 starlight; medals open the higher camp upgrades.'));
     const regions = make('div', 'region-grid');
     C.BIOMES.forEach((region, i) => {
       const unlocked = C.regionUnlocked(profile, i), rank = C.medal(profile, i), record = profile.regions[i];
@@ -425,9 +487,21 @@
     body.append(regions); button('Back to camp →', closeDialog);
   }
 
+  function guardianTrial(spec) {
+    const body = openDialog('trials', 'GUARDIAN TRIALS', spec.name);
+    body.append(guardianArt(spec.id, 3), make('p', '', spec.hint), make('p', '', 'Go straight to the arena with your camp equipment. Trials have no heartseed hunt and do not advance regional surveys. Win a tier to open the next; each guardian has three trial seals. Failed attempts restore your starting supplies.'));
+    for (let tier = 1; tier <= 3; tier += 1) {
+      const enter = button(`${['Remembered', 'Resonant', 'Radiant'][tier - 1]} · tier ${['I', 'II', 'III'][tier - 1]}${profile.guardians[spec.id] >= tier ? ' · sealed' : ''}`, () => start(false, { trail: 'trial', region: spec.region, tier }), tier === Math.min(3, profile.guardians[spec.id] + 1));
+      enter.disabled = tier > profile.guardians[spec.id] + 1;
+      enter.dataset.trialTier = tier;
+    }
+    button('Back to the world atlas', journeys, false);
+  }
+
   function regionVisit(index) {
     const region = C.BIOMES[index], body = openDialog('region', 'A REGIONAL EXPEDITION', region.name);
     body.append(art(region.landmarkIcon, 'result-art'), make('p', '', region.clue), make('p', '', 'A fresh maze in one region. Bring three heartseeds to the waygate to complete the visit. Explore for the three landmarks, three journal pages, and a regional relic before returning.'));
+    if (region.guardian) body.append(make('p', 'region-mechanic', 'This region has a guardian. Gather the heartseeds, then visit its arena. Restoring all landmarks gives longer warnings during the encounter.'));
     button('Wander this region →', () => start(false, { trail: 'survey', region: index }));
     if (profile.regions[index].clears > 0) {
       body.append(make('p', '', 'Optional deeper surveys strengthen creatures and slightly shorten their warnings. They award more starlight and score. The number of enemies stays the same.'));
@@ -439,7 +513,7 @@
 
   function workshop() {
     const body = openDialog('workshop', 'THE KEEPER’S WORKSHOP', 'A camp that grows with you.');
-    body.append(make('p', '', `${profile.light} starlight · ${C.medals(profile)} / 27 survey medals. Upgrades and equipped arts apply to your next expedition. Existing journeys keep their starting kit.`));
+    body.append(make('p', '', `${profile.light} starlight · ${C.medals(profile)} / ${C.BIOMES.length * 3} survey medals. Upgrades and equipped arts apply to your next expedition. Existing journeys keep their starting kit.`));
     const upgrades = make('div', 'upgrade-list');
     for (const upgrade of C.UPGRADES) {
       const level = profile.upgrades[upgrade.id], cost = upgrade.costs[level], requirement = C.upgradeRequirement(profile, upgrade.id);
@@ -455,12 +529,25 @@
     body.append(upgrades, make('h3', 'section-title', 'Choose a lantern art'), make('p', '', 'Press R to cast your equipped art. Focus recharges during exploration; freeing creatures and reflecting attacks restore it faster. Springs and solved shrines refill it.'));
     const arts = make('div', 'art-grid');
     C.ARTS.forEach(skill => {
-      const unlocked = C.artUnlocked(profile, skill.id), selected = profile.selectedArt === skill.id, capacity = 3 + profile.upgrades.focus;
+      const unlocked = C.artUnlocked(profile, skill.id), selected = profile.selectedArt === skill.id, capacity = 3 + profile.upgrades.focus + (profile.selectedCharm === 'firefly' && C.charmUnlocked(profile, 'firefly') ? 1 : 0);
       const card = make('button', `art-card${selected ? ' selected' : ''}`); card.type = 'button'; card.disabled = !unlocked || capacity < skill.cost; card.dataset.art = skill.id;
       const copy = make('span'); copy.append(make('strong', '', skill.name), make('small', '', skill.text), make('small', 'trail-state', !unlocked ? skill.requirement : capacity < skill.cost ? `Needs ${skill.cost} focus capacity · upgrade The deep well` : `${selected ? 'Equipped · ' : ''}${skill.cost} focus`));
       card.append(art(skill.icon), copy); card.addEventListener('click', () => { profile.selectedArt = skill.id; save(true); workshop(); }); arts.append(card);
     });
-    body.append(arts); button('Back to camp →', () => { closeDialog(); camp(); });
+    body.append(arts, make('h3', 'section-title', 'A keepsake for the road'), make('p', '', `${profile.rescues} fireflies brought home. Equip one charm for your next expedition; guardian charms are gifts from awakened guardians.`));
+    const charms = make('div', 'art-grid');
+    C.CHARMS.forEach(charm => {
+      const unlocked = C.charmUnlocked(profile, charm.id), selected = profile.selectedCharm === charm.id;
+      const card = make('button', `art-card${selected ? ' selected' : ''}`); card.type = 'button'; card.dataset.charm = charm.id; card.disabled = !unlocked;
+      const copy = make('span'); copy.append(make('strong', '', charm.name), make('small', '', charm.text), make('small', 'trail-state', unlocked ? selected ? 'Equipped' : 'Ready for your lantern' : charm.requirement));
+      card.append(art(charm.icon), copy); card.addEventListener('click', () => {
+        profile.selectedCharm = charm.id;
+        const capacity = 3 + profile.upgrades.focus + (charm.id === 'firefly' ? 1 : 0);
+        if (C.ARTS.find(a => a.id === profile.selectedArt).cost > capacity) profile.selectedArt = 'gust';
+        save(true); workshop();
+      }); charms.append(card);
+    });
+    body.append(charms); button('Back to camp →', () => { closeDialog(); camp(); });
   }
 
   function help() {
@@ -470,7 +557,8 @@
     for (const [icon, title, text] of [[8, 'A world that folds', 'Bloom opens golden paths; Echo opens blue paths. Q folds the world on ordinary ground and briefly dazes nearby creatures. Landmarks can open permanent shortcuts.'], [23, 'Read the warning', 'Enemy warning rings count down even if you stand still. Space deals damage but does not cancel an attack. G reflects a strike; R, bombs, and folding can interrupt. Dodge out of marked tiles.'], [3, 'A full little satchel', 'Tonics heal five hearts. Seedbombs damage and daze creatures within four tiles, stopping at walls. Threads guide you for forty actions, including realm changes.'], [9, 'Listen to the ruins', 'Shrines hide a three-note song across both worlds. Three regional landmarks restore a secret. Ferry bells carry you across the marsh; star anchors wake in numbered order.']]) {
       const card = make('div', 'guide-card'); card.append(art(icon), make('h3', '', title), make('p', '', text)); grid.append(card);
     }
-    body.append(grid);
+    body.append(grid, make('h3', 'section-title', 'Small detours, large discoveries'), make('p', '', 'The wayfarer trades expedition starlight for tonics, supplies, or a map. Carry a lost firefly to the waygate for a reward; three rescues unlock a charm. Fold looms swap the nearby Bloom and Echo shortcuts without closing the ordinary paths.'));
+    body.append(make('h3', 'section-title', 'Meet the guardians'), make('p', '', 'Complete The Amber Frontier to open The Rainbound Wilds. The Bellkeeper and Tempest Roc await there; Where Dawn Begins leads to the Dawn Hart. Collect three heartseeds, approach the arena, and press E. Guardians have three phases, visible warning shapes, and double-damage recovery windows. Arts cannot cancel their attacks. Failed attempts restore your starting arena supplies, and the pause menu lets you leave. Win once to unlock a new art, charm, and direct trials on the world atlas.'));
     const table = make('table', 'control-table');
     for (const [keys, description] of [['WASD / arrows', 'Move · hold a direction to keep walking'], ['Space', 'Lantern sweep · a short recovery between strikes'], ['G / R', 'Timed mirror guard / equipped lantern art'], ['Q / Shift', 'Fold between worlds / dash in your facing direction'], ['E', 'Use caches, springs, shrines, landmarks, and waygates'], ['1 / 2 / 3', 'Tonic / seedbomb / guiding thread'], ['M / J / Escape', 'Atlas / journal / pause'], ['Touch', 'Direction pad, swipe the garden, or tap an ability']]) {
       const row = make('tr'); row.append(make('td', '', keys), make('td', '', description)); table.append(row);
