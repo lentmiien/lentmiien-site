@@ -1,72 +1,89 @@
-# Lumenwild · The Folded Garden
+# Lumenwild · Beyond the Fold
 
-A standalone, original maze adventure about a small fox bringing a forgotten botanical world back to life.
+A standalone maze adventure about a lantern fox restoring a forgotten botanical world. **Play at `/lumenwild/`**, or find Lumenwild in `/games`.
 
-**Play at `/lumenwild/`.** The existing game directory discovery also adds **Lumenwild** to `/games`. The application mounts game directories at startup; restart the application normally if it was already running when this folder was added. No app-route changes, database migration, environment variables, package installation, or build step are required.
+No app-route changes, database migration, environment variables, dependency installation, or build step are required. All code and artwork are local. The existing game directory mount serves this folder.
 
-## The adventure
+## The expanded adventure
 
-Recover three heartseeds in each of three gardens, then bring them to the waygate where you arrived. Restore all three gardens to awaken the world-tree. A full journey is intended to take roughly 10–20 minutes when exploring, with no timer. Save and return to camp at any time.
+Three chapters open nine regions, followed by a saved pilgrimage through the whole world. Recover three heartseeds in each region and return to its waygate. Explore the detours before leaving: each visit holds three journal pages, a regional relic, a rune shrine, and three landmarks. There is no expedition deadline; save and continue whenever you like.
 
-- **Two intertwined worlds.** Bloom opens sun-marked passages; Echo opens moon-marked passages. Some seeds only exist in one realm. Shifting also interrupts enemy attacks and dazes nearby creatures.
-- **Readable, tactical combat.** Enemies act only when you do. Thorn beetles, wisps, and garden sentinels announce their next attack with marked tiles. Sweep your lantern to interrupt and free them, dash away, or use a seedbomb. Damage has a grace period; multiple foes cannot pile damage onto one turn.
-- **Exploration with rewards.** Find starlight, heartseeds, treasure caches, healing springs, medicines, bombs, guiding threads, and nine persistent journal memories. Optional rune shrines split a three-note clue across both worlds.
-- **Build your keeper.** Choose a blessing after each restored garden: stronger or wider attacks, healing on defeat, longer dashes, shields, extra supplies, greater sight, or more hearts. Spend banked starlight on nine permanent camp upgrade levels.
-- **A reason to return.** Fresh generated mazes and different blessing choices on each expedition. Daily expeditions use a UTC date seed and a standard kit, ignoring camp and gentle-mode bonuses. There is no online leaderboard. Daily best is a local personal record across dates.
-- **A gentler path.** Optional gentle journeys grant three extra hearts and two extra tonics, and reduce sentinel damage. Failed runs retain earned starlight and memories.
-- **Original art.** Fifty-three local WebP assets: one title illustration, eight directional fox frames, twelve creature frames, sixteen props, and sixteen terrain tiles. All artwork together is approximately 1.5 MB. Fog, lighting, camera motion, particles, footsteps, and realm transitions are rendered in Canvas 2D. Optional procedural audio needs no downloads.
+| Chapter | Regions | Distinct exploration |
+| --- | --- | --- |
+| The First Light | Verdant Hollows, Moonwell Archive, Glassbloom Conservatory | Winding hedges, library aisles, and open courtyards; root lanterns, memory lenses, and glass blossoms |
+| The Amber Frontier | Tideweave Marsh, Saffron Orchard, Clockwork Cloister | Ferry landings, branching orchard groves, and connected clockwork chambers; bells transport you and rootgears open permanent shortcuts |
+| The Far Horizon | Frostglass Grotto, Cinderroot Caldera, Astral Canopy | Open caves, caldera rings, and island bridges; thawing prisms, cooling hearts, and star anchors activated in order |
+| The Long Way Home | All nine regions | A longer expedition with eight distinct blessing choices and a resumable checkpoint |
 
-## Controls
+The next chapter opens when you finish the previous one. Existing victories count as completion of The First Light, so returning players can immediately choose The Amber Frontier. You can also revisit any unlocked region on its own. After restoring it once, optional tier II and III surveys offer stronger creatures and larger rewards without adding more enemies.
+
+- **54 persistent journal pages and 27 regional relics.** New expeditions prefer discoveries you have not found yet. The journal groups stories and relics by region.
+- **27 survey medals.** Each region has bronze, silver, and gold requirements combining completed visits, exploration, relics, journal pages, and its landmark secret. Every medal awards 25 starlight. Requirements are visible in the world atlas.
+- **27 permanent upgrade levels.** Five camp facilities improve hearts, supplies, sight, guarding, and focus. Higher levels require survey medals and larger starlight investments.
+- **Six lantern arts.** Discoveries unlock a gale, briar binding, astral lance, healing shelter, cinder burst, and the far lantern. Equip one at camp; some require additional focus capacity from The deep well.
+- **16 expedition blessings.** Choose from three after each restored region. Blessings include stronger sweeps, counterattacks, healing, exploration markers, faster recovery, and alchemy. Offers do not repeat blessings already chosen.
+- **Two intertwined worlds.** Bloom opens sun paths; Echo opens moon paths. Seeds and landmarks may require a particular realm. Fold on ordinary ground to change routes and briefly daze nearby creatures.
+- **Daily journeys.** A UTC-date seed selects one region from each chapter. Daily loadouts, discoveries, and difficulty are independent of camp upgrades, collections, equipped arts, and gentle settings. Scores remain local; there is no online leaderboard.
+
+## Combat and controls
+
+Enemies move and attack on a real-time clock. Their marked tiles and closing rings show where and when a strike will land. **Standing still does not stop them. Ordinary lantern sweeps deal damage but do not interrupt a committed attack.** Guard, move out of the warning, dash, or use a deliberate interruption from folding, a bomb, or an art. A short damage grace period prevents several creatures landing hits together.
+
+Nine enemy types use bites, targeted shots, slams, long lanes, crosses, frost fans, and star bursts. The field guide explains each pattern. Gentle journeys add hearts and tonics, extend warning times, and limit incoming damage to one heart.
 
 | Input | Action |
 | --- | --- |
-| WASD / arrow keys | Move; hold to continue walking |
-| Space | Unlimited lantern sweep; interrupts attacks |
+| WASD / arrows | Move; hold to continue walking |
+| Space | Lantern sweep, with a short recovery between strikes |
+| G | Mirror guard: time it to block and counter an incoming hit |
+| R | Equipped lantern art; consumes regenerating focus |
 | Q | Fold between Bloom and Echo |
 | Shift | Mothstep dash in the direction you face |
-| E | Open caches, drink at springs, inspect shrines, restore waygates |
-| 1 | Moonberry tonic: heal five hearts |
-| 2 | Seedbomb: four damage within four tiles, blocked by walls |
-| 3 | Guiding thread: follow the route to the next heartseed or home |
-| M / J | Atlas / journal |
-| Period | Wait one turn |
-| Escape | Pause |
-| Touch | Direction pad, swipes across the garden, and ability buttons |
+| E | Use caches, springs, shrines, landmarks, and waygates |
+| 1 / 2 / 3 | Healing tonic / seedbomb / guiding thread |
+| M / J | Region atlas / journal |
+| Escape | Pause, save for later, or finish early and bank discoveries |
+| Touch | Direction pad, swipes, and ten on-screen action buttons |
 
-A blue ring on a guiding trail means shift worlds on that tile. You must step off a folded passage before shifting if it would close under your feet. A wall bump, blocked ability, or full-health tonic does not cost a turn or supply. Reading dialogs pauses input; losing focus pauses the game. Device reduced-motion preferences disable bobbing, particles, and motion transitions.
+Menus, reading dialogs, focus loss, and hidden tabs pause combat. No elapsed offline time is replayed on resume. Reduced-motion preferences disable decorative movement. Optional sound is generated with Web Audio.
 
-## Saves and privacy
+## Saves and compatibility
 
-One namespaced localStorage entry (`lumenwild.garden.v1`) stores the camp and current expedition. Actions autosave with a short debounce; leaving the page or returning to camp flushes immediately. Maps regenerate from their seed and validated state restores discoveries, combat, inventory, and unfinished rune sequences. Memories are retained as they are found. Starlight is banked when a run ends, win or lose; replacing an unfinished expedition discards its unbanked starlight after an in-game confirmation.
+The same localStorage key, `lumenwild.garden.v1`, now stores version 2 data. Existing camp upgrades, starlight, victories, and the first nine journal pages keep their meanings. Unfinished original expeditions use a frozen legacy generator so their maps, placements, collected items, and defeated creatures remain intact. New expeditions use the expanded world generator. Combat timing updates also apply to resumed original runs.
 
-Progress is local to this browser, not an account or device sync. If storage is unavailable, the game remains playable and displays a notice. Settings has an explicit reset confirmation. No runtime external services, tracking, database, session APIs, or network writes are used. See [the security contract](docs/SECURITY.md).
+Actions autosave with a short debounce; active combat checkpoints every two seconds. Leaving the page or returning to camp flushes immediately. Starlight and completed surveys are banked on victory, defeat, or an early return. Starting a replacement journey brings the existing journey’s discoveries home after an in-game confirmation. Results cannot award twice on reload.
 
-## Development and verification
+Progress stays in this browser, without account or device sync. Storage failures show a visible notice without preventing play. Reset requires confirmation and removes only this game’s saved data. There are no runtime external services, tracking, uploads, HTTP mutations, or database operations. See [the security contract](docs/SECURITY.md).
 
-- `js/core.js`: deterministic generation, rules, progression, pathfinding, and save validation; CommonJS-compatible for tests.
-- `js/render.js`: generated artwork, world rendering, effects, camera, and atlas.
-- `js/game.js`: input, UI, accessible dialogs, local saves, and optional Web Audio.
-- `assets/GENERATED-ASSETS.md`: exact image prompts and packaging provenance.
-- `docs/VALIDATION.md`: verification results and limitations.
+## Art and implementation
 
-Use the Node version pinned in the root package.json (26.13.0). A focused test run:
+The expansion adds **89 generated WebP assets**: 32 terrain tiles, 24 creature poses, 32 relic/landmark icons, and an illustrated world atlas. Combined with the originals, the game has **142 WebP assets, approximately 3.35 MiB**. Art was generated with the imagegen skill’s built-in tool and mechanically packaged with Sharp. Prompts and provenance are in [the original asset record](assets/GENERATED-ASSETS.md) and [the expansion asset record](assets/EXPANSION-ASSETS.md).
+
+- `js/content.js`: regions, stories, relics, enemies, chapters, blessings, upgrades, and arts.
+- `js/core.js`: shared geometry and random helpers; frozen legacy map generation; CommonJS/browser entry point.
+- `js/world.js`: nine layout styles and regional placements.
+- `js/engine.js`: progression, combat clocks, pathfinding, and bounded versioned save validation.
+- `js/render.js`: Canvas artwork, fog, effects, attack warnings, and the region atlas.
+- `js/game.js`: input, dialogs, camp, world atlas, workshop, journal, saves, and sound.
+
+## Verification
+
+Use Node **26.13.0**, pinned by Volta in the repository. Run focused tests with:
 
 ```sh
-npm test -- tests/unit/lumenwildGame.test.js --coverage=false
+npm test -- tests/unit/lumenwildGame.test.js tests/unit/lumenwildExpansion.test.js tests/unit/lumenwildUi.test.js --coverage=false
 ```
 
-Optional browser QA uses an existing Playwright installation; it is not a runtime dependency and is not added to package.json. The script starts and closes its own localhost-only static fixture, and drives a complete expedition using keyboard inputs:
+[Validation notes](docs/VALIDATION.md) distinguish simulation/DOM checks from actual browser checks. The optional Playwright smoke test starts a localhost-only static fixture, never app.js or prestart:
 
 ```sh
 PLAYWRIGHT_MODULE=/path/to/playwright CHROMIUM_PATH=/path/to/chrome node tests/browser/lumenwild.smoke.cjs
 ```
 
-Screenshots and browser results go to `/tmp/lumenwild-review` by default; set `LUMENWILD_REVIEW_OUTPUT` to change that location.
-
-For a manual static preview from the repository root, without app.js, prestart, database access, or background services:
+It writes screenshots and results to `/tmp/lumenwild-review` by default (`LUMENWILD_REVIEW_OUTPUT` overrides this). A manual static preview from the repository root is:
 
 ```sh
 node -e "const express = require('express'); const app = express(); app.use('/css', express.static('public/css')); app.use('/lumenwild', express.static('games/lumenwild')); app.listen(8098, '127.0.0.1');"
 ```
 
-Then open `http://127.0.0.1:8098/lumenwild/`. Stop the preview with Ctrl+C.
+Open `http://127.0.0.1:8098/lumenwild/`; stop the preview with Ctrl+C.

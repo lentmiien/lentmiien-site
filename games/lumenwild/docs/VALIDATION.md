@@ -1,74 +1,41 @@
-# Lumenwild validation
+# Lumenwild expansion validation
 
-Verified locally on 2026-11-14 with the repository-pinned Node **26.13.0**. The shell initially resolved Node 24; verification explicitly used the Volta-installed pinned executable. Browser checks used headless Chromium through an existing Playwright installation, without adding a dependency.
+Validation used repository-pinned Node **26.13.0** on 2026-11-14. The default shell resolved Node 24.22.1, so test commands explicitly selected the Volta-installed Node 26 executable.
 
-## Simulation and save tests
+## Current expansion checks
 
-`npm test -- tests/unit/lumenwildGame.test.js --coverage=false`
+The focused command is:
 
-**28 tests passed.** Coverage includes:
-
-- 120 seeds in every biome (360 gardens): unique placements, required-objective reachability in both realms, closed map borders, bounded creature populations, and deterministic generation.
-- Realm-aware route planning with legal moves and explicit safe shift steps.
-- Rejected invalid inputs, wall bumps, unsafe shifts, unearned exits, incorrect blessing choices, and empty consumables.
-- Realm-specific seeds, collection exactly once, healing limits, dash cooldowns, and wall-blocked attacks.
-- Visible enemy wind-up, dodgeable attacks, interruption, defeat rewards, and protection from multiple hits in one turn.
-- Optional rune success, recovery from a wrong note, proximity checks, and single rewards.
-- Ten complete three-region expeditions using ordinary simulation inputs, without teleporting, granting supplies, or bypassing enemies.
-- Exact save round trips, resumable blessing choices, invalid/oversized/incompatible saves, unsafe state, profile allowlists, and camp purchase bounds.
-- A living creature occupying a defeated creature’s old position remains resumable; overlapping living creatures are rejected.
-- Daily runs ignore camp bonuses and gentle mode.
-
-An additional continuous save check completed seed 501 with **443 successful state reconstructions**, restoring after every action and garden transition, including 14 defeated creatures. The final state was a normal victory.
-
-## Browser checks
-
-`tests/browser/lumenwild.smoke.cjs` passed **26 checks** against a dedicated static Express fixture. It did not start app.js, run prestart/setup, connect to a database, or launch background services.
-
-- All 52 runtime sprite/terrain images loaded, with no failed requests or browser exceptions. The title illustration and UI images also loaded. All requests stayed on the local origin.
-- Real audio context resumed after a user gesture.
-- Desktop keyboard input, collection, world folding, distinct canvas output, guiding thread consumption, atlas pausing, focus handling, and autosave/Continue worked.
-- Ability input immediately after a held movement step was accepted; walking repeat cannot silently discard a sweep, tonic, or other ability.
-- A complete expedition through all three gardens used **actual keyboard input at the shipped input cadence**, including combats, realm changes, both blessing choices, and the ending.
-- Victory banked rewards once, cleared the checkpoint, survived reload, and funded a persistent camp upgrade. A subsequent daily run correctly ignored that upgrade.
-- 1440×1000 desktop and 390×844 phone layouts had no horizontal overflow. All eight touch abilities fitted the phone viewport. Actual touch events moved the fox and shifted realms.
-- 844×390 phone landscape retained the stage and controls. Focus loss paused play. Reduced motion and blocked localStorage still allowed play, with a visible storage warning.
-
-Ten additional browser checks used explicit scenario fixtures for the optional shrine and defeat:
-
-- Bloom exposed the first two rune notes; Echo exposed the third. Reopening the clue kept focus in its modal.
-- A wrong note reset the song safely. The correct song granted visible rewards exactly once and persisted its completion.
-- Defeat banked earned starlight and cleared the checkpoint.
-- Cancelling reset retained progress; confirming reset cleared only the game's namespaced storage entry.
-- No browser exceptions occurred in these flows.
-
-Browser screenshots and detailed run results were written to `/tmp/lumenwild-review`. Selected compressed screenshots are retained below for review.
-
-## Visual review
-
-Inspected the title screen, in-game rendering in all three regions, both realm palettes, desktop controls, phone portrait and landscape, atlas, blessing choices, rune puzzle, victory, and defeat. The generated sheets were checked before packaging. All public assets are local WebP files with preserved sprite transparency.
-
-- [Camp and title screen](screenshots/camp.webp)
-- [Garden exploration](screenshots/garden.webp)
-- [Phone controls](screenshots/mobile.webp)
-- [Rune shrine](screenshots/rune-shrine.webp)
-- [The ending](screenshots/ending.webp)
-
-## Scope and practical limits
-
-Progress is browser-local and does not sync across devices. There is no online leaderboard. The full app's startup/database lifecycle was deliberately not exercised; integration uses the existing directory-based static game mount, with no server changes. Chromium was verified; Safari and Firefox were not available for this run. Mobile checks used Chromium touch emulation rather than physical devices.
-
-The existing repository-wide suite includes fixture-gated skipped checks; no Lumenwild tests are skipped. See the repository suite result recorded below.
-
-## Repository-wide suite
-
-`npm test` passed with the configured two-worker pool and full coverage enabled:
-
-```text
-Test Suites: 17 skipped, 477 passed, 477 of 494 total
-Tests:       269 skipped, 7146 passed, 7415 total
-Snapshots:   0 total
-Time:        142.504 s
+```sh
+npm test -- tests/unit/lumenwildGame.test.js tests/unit/lumenwildExpansion.test.js tests/unit/lumenwildUi.test.js --coverage=false
 ```
 
-All configured coverage thresholds passed. The 17 skipped suites / 269 skipped tests remain governed by the repository's existing configuration and disposable integration-fixture requirements; they were not enabled or altered for this standalone game. The final focused run also verifies that a later blessing offer cannot repeat an already-owned blessing.
+**60 tests passed across three suites.** The focused checks cover:
+
+- Forty seeds across all nine regions (360 generated maps): objectives reachable in both realms, unique item placements, closed borders, phase passages, and bounded enemy populations.
+- Deterministic maps, valid realm-aware routes, supplies, healing, run transitions, blessing uniqueness, and negative action tests.
+- A lone beetle damages an idle player without a player move. Sweeps have a cooldown and do not cancel its wind-up; repeated sweeping still allows the enemy to hit.
+- Dodging locked attack footprints, timed guard and counterattacks, deliberate art interruptions, and damage grace against simultaneous attacks.
+- Bounded real-time steps, no offline catch-up, and frozen state outside active play.
+- Ten complete original-chapter runs and complete Frontier, Horizon, and nine-region pilgrimage runs using ordinary timed model inputs. The pilot does not grant supplies, teleport, alter enemies, or bypass cooldowns.
+- Preference for unknown memories and relics; all 54 pages and 27 relics appear across three fully explored visits per region without rare-drop grinding.
+- Chapter gates and automatic selection of newly opened chapters, optional survey tiers, medal requirements, upgrade caps, unlock conditions, focus capacity, and banking exactly once.
+- Root lanterns, gear and prism shortcuts, remote memory-lens discoveries, safe ferry travel, ordered star anchors, and caldera vents with Echo protection and cooling-heart shutdown.
+- A synthetic checkpoint saved by the original implementation: old map reconstruction matches its original SHA-256 digest; original purchases, pages, inventory, defeated enemies, and position survive migration and a second version-2 round trip.
+- Expanded save round trips, long-route progress, exact future simulation outcomes, and rejection or bounding of malformed plans, regions, shortcuts, positions, attack footprints, and numeric state.
+- Daily route/loot/loadout independence from a player’s permanent collection, art, difficulty, and upgrades.
+- Seven jsdom checks run the shipped browser scripts: atlas and collections, workshop purchases and equipped arts, migrated camp journeys, real-time damage, paused menus, early banking, and all nine render paths. Canvas is a nonvisual context that checks finite drawing coordinates; these checks do not verify browser layout or actual raster output.
+
+All **142 WebP assets** exist (approximately **3.35 MiB**). The 89 new assets were mechanically extracted from built-in image-generation outputs. The generated sheets and a packaged terrain/creature/relic contact sheet were visually inspected. All new creature and prop sheets have genuine alpha transparency. `git diff --check` and JavaScript syntax checks pass.
+
+## Environment limitations
+
+A fresh browser visual check could not run in this session. The localhost static preview was rejected with `listen EPERM`; Chromium launch was blocked; the connected browser host was unavailable. The updated Playwright smoke test is syntax-checked but **has not passed for this expansion**. Desktop/mobile layout, real Canvas appearance, browser audio, and touch ergonomics still need a browser-capable environment. Prior release screenshots are not evidence for the new interface.
+
+The full `npm test` command was attempted with its normal coverage and worker configuration. It was stopped after repeated unrelated fixture failures: localhost listeners rejected with `EPERM` (and consequent null `server.address()`/hook timeouts), unavailable private-image storage, and a blocked `spawnSync python3`. This is not a successful full-suite run. Tests or coverage requirements were not removed to hide these failures. The attempt log is `/tmp/lumenwild-expansion-jest.log`; the focused result is `/tmp/lumenwild-expansion-focused.log`.
+
+No app.js/prestart/setup invocation, production database access, package change, deployment, or server-route change was required.
+
+## Suggested browser check
+
+Run the optional `tests/browser/lumenwild.smoke.cjs` command described in the README in an environment that permits a localhost fixture and Chromium. It now covers the timed-input pilot, paused combat clock, frontier unlock, world-atlas screenshots, new marsh start, and ten touch controls, in addition to the original storage, audio, keyboard, reduced-motion, and reload checks.

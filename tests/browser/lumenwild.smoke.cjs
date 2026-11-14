@@ -6,6 +6,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const express = require('express');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const { nextAction } = require('../helpers/lumenwildPilot');
 const root = path.resolve(__dirname, '../..');
 const output = process.env.LUMENWILD_REVIEW_OUTPUT || '/tmp/lumenwild-review';
 const checks = [], errors = [], failedRequests = [], requests = [];
@@ -15,9 +16,11 @@ async function observe(page) {
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => requests.push(request.url()));
   page.on('response', response => { if (response.status() >= 400) failedRequests.push(`${response.status()} ${response.url()}`); });
+  await page.addInitScript({ content: `window.__lumenNextAction = ${nextAction.toString()};` });
   await page.addInitScript(() => {
     Object.defineProperty(window, 'Lumenwild', { configurable: true, set(api) {
-      const Original = api.Game, restore = Original.restore;
+      const Original = api.Game, restore = Original.restore, create = api.createExpedition;
+      api.createExpedition = (...args) => { const game = create(...args); window.__lumenGame = game; return game; };
       Original.restore = snapshot => { const game = restore(snapshot); window.__lumenGame = game; return game; };
       api.Game = class extends Original { constructor(...args) { super(...args); window.__lumenGame = this; } };
       Object.defineProperty(window, 'Lumenwild', { value: api, configurable: true });
@@ -51,16 +54,9 @@ async function completeViaKeyboard(page) {
         return { blessing: (choices.find(b => b.id === 'radiance') || choices.find(b => b.id === 'harvest') || choices[0]).id };
       }
       if (document.querySelector('#dialog').open) return { close: true };
-      if (g.player.hp <= 3 && g.inventory.medicine) return { key: 'Digit1', depth: g.depth };
-      const near = g.map.enemies.some(e => e.hp > 0 && Math.max(Math.abs(e.x - g.player.x), Math.abs(e.y - g.player.y)) <= g.stats().reach && C.lineOfSight(g.map, g.player, e, g.phase));
-      if (near) return { key: 'Space', depth: g.depth };
-      const route = g.guide();
-      if (route.length <= 1 && g.seeds === 3) return { key: 'KeyE', depth: g.depth };
-      const cell = route[1];
-      if (!cell) throw new Error('No route to the next objective');
-      if (cell.phase !== g.phase) return { key: g.shiftCooldown ? 'Period' : 'KeyQ', depth: g.depth };
-      const dir = C.DIRS.findIndex(([dx, dy]) => g.player.x + dx === cell.x && g.player.y + dy === cell.y);
-      return { key: ['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'][dir], depth: g.depth };
+      const input = window.__lumenNextAction(g, C);
+      const keys = { attack: 'Space', guard: 'KeyG', art: 'KeyR', shift: 'KeyQ', dash: 'Shift', medicine: 'Digit1', bomb: 'Digit2', thread: 'Digit3', interact: 'KeyE', wait: 'Period' };
+      return { key: input.action === 'move' ? ['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'][input.direction] : keys[input.action], depth: g.depth };
     });
     if (next.status) return next.status;
     if (next.close) { await page.locator('#closeDialog').click(); continue; }
@@ -84,8 +80,9 @@ async function completeViaKeyboard(page) {
   const app = express();
   app.use('/css', express.static(path.join(root, 'public/css')));
   app.use('/lumenwild', express.static(path.join(root, 'games/lumenwild')));
-  const server = await new Promise(resolve => {
+  const server = await new Promise((resolve, reject) => {
     const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
+    listener.on('error', reject);
   });
   const base = `http://127.0.0.1:${server.address().port}/lumenwild/`;
   let browser;
@@ -115,6 +112,9 @@ async function completeViaKeyboard(page) {
     await screenshot(page, '02-echo');
     await press(page, 'KeyM');
     const turn = await page.evaluate(() => window.__lumenGame.turn);
+    const pausedClock = await page.evaluate(() => window.__lumenGame.elapsed);
+    await page.waitForTimeout(1200);
+    check('map freezes the combat clock', await page.evaluate(t => window.__lumenGame.elapsed === t, pausedClock));
     await press(page, 'ArrowRight');
     check('map pauses gameplay and is keyboard dismissible', await page.evaluate(t => window.__lumenGame.turn === t && document.querySelector('#dialog').open, turn));
     await screenshot(page, '03-atlas'); await press(page, 'KeyM');
@@ -126,15 +126,25 @@ async function completeViaKeyboard(page) {
     await page.reload(); await page.locator('#mainAction:enabled').waitFor(); await page.locator('#continueButton').click();
     check('reload and Continue preserve the exact expedition', await page.evaluate(snapshot => JSON.stringify(window.__lumenGame.snapshot().entities) === JSON.stringify(snapshot.entities) && window.__lumenGame.turn === snapshot.turn && window.__lumenGame.phase === snapshot.phase && window.__lumenGame.player.x === snapshot.player.x && window.__lumenGame.inventory.thread === snapshot.inventory.thread, before));
     check('all three gardens complete through normal keyboard actions', await completeViaKeyboard(page) === 'won');
-    await page.waitForFunction(() => document.querySelector('#dialogTitle').textContent === 'And the garden breathed.');
+    await page.waitForFunction(() => document.querySelector('#dialogTitle').textContent === 'And the world opened.');
     await screenshot(page, '04-ending');
     const banked = await page.evaluate(() => JSON.parse(localStorage.getItem('lumenwild.garden.v1')));
     check('victory banks rewards once and clears the checkpoint', banked.profile.wins === 1 && banked.profile.light > 0 && banked.run === null);
     await page.reload(); await page.locator('#mainAction:enabled').waitFor();
     check('reloading the ending cannot duplicate rewards', await page.evaluate(p => JSON.parse(localStorage.getItem('lumenwild.garden.v1')).profile.light === p.light, banked.profile));
+    await page.locator('#workshopButton').click();
     await page.locator('[data-upgrade="hearth"]').click();
     check('camp purchase persists and spends the displayed cost', await page.evaluate(p => { const now = JSON.parse(localStorage.getItem('lumenwild.garden.v1')).profile; return now.upgrades.hearth === 1 && now.light === p.light - 18; }, banked.profile));
-    await page.locator('#dailyButton').click(); await page.getByRole('button', { name: 'Light the lantern' }).click();
+    await page.locator('#closeDialog').click();
+    await page.locator('#journeysButton').click();
+    check('frontier unlocks after the first chapter', await page.locator('[data-trail="frontier"]').isEnabled());
+    await screenshot(page, '08-world-atlas');
+    await page.locator('[data-trail="frontier"]').click();
+    await page.locator('#mainAction').click();
+    check('new chapter starts in the marsh', await page.evaluate(() => window.__lumenGame.region === 3));
+    await screenshot(page, '09-marsh');
+    await press(page, 'Escape'); await page.getByRole('button', { name: 'Save and return to camp' }).click();
+    await page.locator('#dailyButton').click(); await page.getByRole('button', { name: 'Begin a new journey' }).click();
     check('daily loadout excludes purchased upgrades', await page.evaluate(() => window.__lumenGame.daily && window.__lumenGame.player.hp === 7 && window.__lumenGame.upgrades.hearth === 0));
 
     const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -147,7 +157,7 @@ async function completeViaKeyboard(page) {
     await phone.waitForTimeout(150); await phone.locator('[data-action="shift"]').tap();
     check('touch abilities shift the world', await phone.evaluate(() => window.__lumenGame.phase === 1));
     await screenshot(phone, '06-phone-garden');
-    check('all eight touch abilities fit on screen', await phone.locator('.action-deck button').evaluateAll(buttons => buttons.length === 8 && buttons.every(button => { const r = button.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth; })));
+    check('all ten touch abilities fit on screen', await phone.locator('.action-deck button').evaluateAll(buttons => buttons.length === 10 && buttons.every(button => { const r = button.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth; })));
     await phone.setViewportSize({ width: 844, height: 390 }); await phone.waitForTimeout(250);
     await screenshot(phone, '07-phone-landscape');
     check('landscape stage and controls remain visible', await phone.locator('#world').evaluate(el => el.getBoundingClientRect().height >= 160) && await phone.locator('.action-deck').evaluate(el => el.getBoundingClientRect().bottom <= innerHeight));

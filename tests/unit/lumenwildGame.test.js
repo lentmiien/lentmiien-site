@@ -8,31 +8,7 @@ function positionBeside(game, entity) {
   return cell;
 }
 
-// Ordinary model inputs only. This pilot also exercises the realm-aware route
-// finder, interruptions, healing, cooldowns, and all three garden transitions.
-function finishExpedition(game) {
-  for (let actions = 0; actions < 3000; actions += 1) {
-    if (game.status === 'won' || game.status === 'lost') return game.status;
-    if (game.status === 'blessing') {
-      const choices = game.choices();
-      game.chooseBlessing((choices.find(b => b.id === 'radiance') || choices.find(b => b.id === 'harvest') || choices[0]).id);
-      continue;
-    }
-    if (game.player.hp <= 3 && game.inventory.medicine) { game.act('medicine'); continue; }
-    const nearEnemy = game.map.enemies.some(e => e.hp > 0 && Math.max(Math.abs(e.x - game.player.x), Math.abs(e.y - game.player.y)) <= game.stats().reach && C.lineOfSight(game.map, game.player, e, game.phase));
-    if (nearEnemy) { game.act('attack'); continue; }
-    const route = game.guide();
-    if (route.length <= 1 && game.seeds === 3) { game.act('interact'); continue; }
-    const next = route[1];
-    if (!next) throw new Error('Required objective has no route');
-    if (next.phase !== game.phase) game.act(game.shiftCooldown ? 'wait' : 'shift');
-    else {
-      const direction = C.DIRS.findIndex(([dx, dy]) => game.player.x + dx === next.x && game.player.y + dy === next.y);
-      if (!game.act('move', direction)) throw new Error('Guide supplied an unusable step');
-    }
-  }
-  throw new Error('Expedition exceeded bounded playthrough length');
-}
+const { advance, finishExpedition } = require('../helpers/lumenwildPilot');
 
 describe('Lumenwild garden generation', () => {
   test('reproduces a seed while different seeds vary the maze and rewards', () => {
@@ -41,9 +17,9 @@ describe('Lumenwild garden generation', () => {
     expect(C.generate(193, 0).entities).not.toEqual(C.generate(194, 0).entities);
   });
 
-  test('120 seeds across three biomes have connected objectives in both realms and bounded populations', () => {
-    for (let seed = 0; seed < 120; seed += 1) {
-      for (let depth = 0; depth < 3; depth += 1) {
+  test('40 seeds across all nine biomes have connected objectives in both realms and bounded populations', () => {
+    for (let seed = 0; seed < 40; seed += 1) {
+      for (let depth = 0; depth < 9; depth += 1) {
         const map = C.generate(seed, depth);
         expect(map.entities.filter(e => e.type === 'seed')).toHaveLength(3);
         expect(map.enemies.length).toBeLessThanOrEqual(10);
@@ -104,7 +80,7 @@ describe('Lumenwild play and combat', () => {
     Object.assign(game.player, { x: 3, y: 3 });
     expect(game.act('shift')).toBe(true); expect(game.phase).toBe(1);
     expect(game.act('shift')).toBe(false);
-    game.act('wait'); game.act('wait'); expect(game.act('shift')).toBe(true);
+    advance(game, 4.3); expect(game.act('shift')).toBe(true);
   });
 
   test('heartseeds require their realm, heal, and cannot be collected twice', () => {
@@ -118,25 +94,58 @@ describe('Lumenwild play and combat', () => {
     expect(game.nearby()?.type).not.toBe('portal');
   });
 
-  test('foes telegraph, can miss, and cannot hurt the player repeatedly in one turn', () => {
+  test('one enemy can damage an idle player without any player action', () => {
     const game = new C.Game({ seed: 2 });
-    game.map.enemies = [{ id: 'foe0', kind: 0, x: 4, y: 3, hp: 2, intent: [], stun: 0 }];
+    const enemy = { ...game.map.enemies[0], x: 4, y: 3, kind: 0, hp: 3, rest: 0, moveWait: 0 };
+    game.map.enemies = [enemy]; game.shield = 0;
     const initial = game.player.hp;
-    game.act('wait'); expect(game.player.hp).toBe(initial); expect(game.map.enemies[0].intent.length).toBeGreaterThan(0);
-    game.act('move', 3); expect(game.player.hp).toBe(initial);
-    game.map.enemies = [0, 1, 2].map(i => ({ id: `foe${i}`, kind: 2, x: 4 + i, y: 3, hp: 4, intent: [{ x: game.player.x, y: 3 }], stun: 0 }));
-    game.act('wait'); expect(game.player.hp).toBe(initial - 2);
-    game.map.enemies.forEach(e => { e.intent = [{ x: game.player.x, y: 3 }]; e.stun = 0; });
-    game.act('wait'); expect(game.player.hp).toBe(initial - 2);
+    advance(game, .1);
+    expect(enemy.intent).toContainEqual({ x: 3, y: 3 });
+    expect(game.player.hp).toBe(initial);
+    advance(game, .9);
+    expect(game.player.hp).toBe(initial - 1); expect(game.turn).toBe(0);
   });
 
-  test('unlimited lantern attacks interrupt enemies, kill, and award once', () => {
+  test('sweep spam cannot interrupt a committed one-on-one attack; kills award once', () => {
     const game = new C.Game({ seed: 2 });
-    game.map.enemies = [{ id: 'foe0', kind: 0, x: 4, y: 3, hp: 2, intent: [{ x: 3, y: 3 }], stun: 0 }];
-    game.act('attack'); expect(game.map.enemies[0].hp).toBe(1); expect(game.player.hp).toBe(7);
-    expect(game.map.enemies[0].intent).toEqual([]);
-    game.act('attack'); expect(game.kills).toBe(1); expect(game.light).toBe(2);
-    game.act('attack'); expect(game.kills).toBe(1); expect(game.light).toBe(2);
+    const enemy = { ...game.map.enemies[0], x: 4, y: 3, kind: 0, hp: 3, rest: 0 };
+    game.map.enemies = [enemy]; game.shield = 0;
+    advance(game, .05); const marked = enemy.intent.slice();
+    expect(game.act('attack')).toBe(true); expect(enemy.hp).toBe(2); expect(enemy.intent).toEqual(marked);
+    expect(game.act('attack')).toBe(false); expect(enemy.hp).toBe(2);
+    advance(game, .56); game.act('attack'); expect(enemy.hp).toBe(1);
+    advance(game, .35); expect(game.player.hp).toBe(6);
+    advance(game, .25); game.act('attack'); expect(game.kills).toBe(1); expect(game.light).toBe(2);
+    advance(game, .6); game.act('attack'); expect(game.kills).toBe(1); expect(game.light).toBe(2);
+  });
+
+  test('stepping out dodges a locked attack and damage grace prevents simultaneous hits', () => {
+    const game = new C.Game({ seed: 2 }); game.shield = 0;
+    game.map.enemies = [{ ...game.map.enemies[0], x: 4, y: 3, kind: 0, hp: 3, rest: 0 }];
+    advance(game, .1); game.act('move', 3); advance(game, .9);
+    expect(game.player.hp).toBe(7);
+    game.map.enemies = [0, 1, 2].map(i => ({ ...game.map.enemies[0], id: `foe${i}`, x: 4 + i, kind: 2, hp: 6, intent: [{ x: game.player.x, y: 3 }], windup: .05, stun: 0 }));
+    game.map.enemies.forEach(e => { game.map.tiles[e.y * game.map.w + e.x] = 0; });
+    advance(game, .1); expect(game.player.hp).toBe(5);
+  });
+
+  test('a timed guard reflects an attack and arts deliberately cancel wind-ups', () => {
+    const game = new C.Game({ seed: 2 }); game.shield = 0;
+    const enemy = { ...game.map.enemies[0], x: 4, y: 3, kind: 2, hp: 6, rest: 0 };
+    game.map.enemies = [enemy];
+    advance(game, .9); expect(game.act('guard')).toBe(true);
+    advance(game, .5); expect(game.player.hp).toBe(7); expect(enemy.hp).toBe(5); expect(enemy.stun).toBeGreaterThan(0);
+    expect(game.act('guard')).toBe(false);
+    enemy.stun = 0; enemy.windup = 1; enemy.intent = [{ x: 3, y: 3 }];
+    expect(game.act('art')).toBe(true); expect(enemy.intent).toEqual([]); expect(enemy.stun).toBe(1.5);
+    expect(game.focus).toBeLessThan(2); expect(game.act('art')).toBe(false);
+  });
+
+  test('simulation is bounded, never catches up offline, and stops outside play', () => {
+    const game = new C.Game({ seed: 2 });
+    game.update(Infinity); game.update(-1); expect(game.elapsed).toBe(0);
+    game.update(9999); expect(game.elapsed).toBe(.1);
+    game.status = 'blessing'; advance(game, 3); expect(game.elapsed).toBe(.1);
   });
 
   test('walls block lantern damage and seedbombs', () => {
@@ -190,7 +199,7 @@ describe('Lumenwild play and combat', () => {
 
   test.each([1, 2, 17, 42, 77, 120, 451, 1984, 2026, 56991])('ordinary inputs can complete all three gardens for seed %s', seed => {
     const game = new C.Game({ seed });
-    expect(finishExpedition(game)).toBe('won');
+    expect(finishExpedition(game, C)).toBe('won');
     expect(game.depth).toBe(2); expect(game.seeds).toBe(3); expect(game.blessings).toHaveLength(2);
     expect(game.kills).toBeGreaterThan(0); expect(game.score).toBeGreaterThan(1500);
   });
@@ -236,7 +245,7 @@ describe('Lumenwild saves and progression boundaries', () => {
     const game = new C.Game({ seed: 89 });
     for (const mutate of [
       s => { s.player.x = -2; }, s => { s.player.x = Infinity; }, s => { s.player.y = 1.5; },
-      s => { s.depth = 700; }, s => { s.blessings = ['radiance']; }, s => { s.seen = Array(1001).fill(1); },
+      s => { s.depth = 700; }, s => { s.blessings = ['radiance']; }, s => { s.seen = Array(1601).fill(1); },
       s => { s.enemies[0].intent = [{ x: -99, y: 1 }]; }, s => { s.entities[0].id = '__proto__'; },
       s => { s.status = 'blessing'; }, s => { s.enemies[0].x = s.player.x; s.enemies[0].y = s.player.y; },
     ]) {
@@ -244,7 +253,7 @@ describe('Lumenwild saves and progression boundaries', () => {
       expect(C.Game.restore(snapshot)).toBeNull();
     }
     const p = C.profile(JSON.parse('{"light":1e99,"wins":-3,"upgrades":{"hearth":999,"__proto__":{"polluted":true}},"memories":[0,999,"<script>",0],"sound":"true"}'));
-    expect(p.light).toBe(0); expect(p.wins).toBe(0); expect(p.upgrades.hearth).toBe(3); expect(p.memories).toEqual([0]); expect(p.sound).toBe(false);
+    expect(p.light).toBe(0); expect(p.wins).toBe(0); expect(p.upgrades.hearth).toBe(6); expect(p.memories).toEqual([0]); expect(p.sound).toBe(false);
     expect({}.polluted).toBeUndefined();
   });
 

@@ -33,9 +33,9 @@
     async load(progress) {
       const names = [
         ...Array.from({ length: 8 }, (_, i) => `fox-${i}`),
-        ...Array.from({ length: 12 }, (_, i) => `enemy-${i}`),
-        ...Array.from({ length: 16 }, (_, i) => `prop-${i}`),
-        ...Array.from({ length: 16 }, (_, i) => `tile-${i}`),
+        ...Array.from({ length: 36 }, (_, i) => `enemy-${i}`),
+        ...Array.from({ length: 48 }, (_, i) => `prop-${i}`),
+        ...Array.from({ length: 48 }, (_, i) => `tile-${i}`),
       ];
       let loaded = 0;
       const missing = [];
@@ -104,11 +104,11 @@
     effects(events, game) {
       for (const event of events) {
         const x = event.x ?? game.player.x, y = event.y ?? game.player.y;
-        if (['pickup', 'seed', 'chest', 'defeat', 'puzzleSolved'].includes(event.type)) this.burst(x, y, event.type === 'defeat' ? '#87dab1' : '#ffc247', event.type === 'seed' ? 38 : 18);
+        if (['pickup', 'seed', 'chest', 'freed', 'puzzleSolved', 'landmark', 'relic', 'secret'].includes(event.type)) this.burst(x, y, event.type === 'freed' ? '#87dab1' : '#ffc247', event.type === 'seed' ? 38 : 18);
         if (event.type === 'hit') this.burst(x, y, '#ffdda0', 13);
-        if (event.type === 'defeat' && !this.reduced) this.ghosts.push({ x, y, kind: event.kind, life: .7 });
+        if (event.type === 'freed' && !this.reduced) this.ghosts.push({ x, y, kind: event.kind, life: .7 });
         if (event.type === 'sweep') this.rings.push({ x, y, age: 0, life: .35, range: game.stats().reach + .5, color: '#ffc247', arc: true });
-        if (event.type === 'bomb') {
+        if (['bomb', 'art', 'parry'].includes(event.type)) {
           this.rings.push({ x, y, age: 0, life: .6, range: 4, color: '#8bdbe6' });
           this.burst(x, y, '#8bdbe6', 45);
         }
@@ -146,7 +146,7 @@
         const index = y * map.w + x, tile = map.tiles[index], seen = game.seen.has(index), visible = game.visible.has(index);
         const px = offsetX + x * t, py = offsetY + y * t;
         if (!seen) {
-          const mist = this.images[`tile-${((game.depth + game.phase) % 3) * 4 + 2}`];
+          const mist = this.images[`tile-${game.biome.tile + 2}`];
           if (mist) {
             ctx.globalAlpha = .08;
             ctx.drawImage(mist, px, py, t + .5, t + .5);
@@ -159,9 +159,10 @@
           continue;
         }
         const open = C.walkable(map, x, y, game.phase);
-        const terrainRow = game.phase ? (game.depth + 1) % 3 : game.depth;
-        let frame = terrainRow * 4 + (tile === 1 ? 1 : 0);
-        if (tile >= 2) frame = open ? terrainRow * 4 + 3 : tile === 2 ? 12 : 13;
+        const base = game.biome.tile;
+        const watery = ['canals', 'constellation'].includes(game.biome.layout);
+        let frame = base + (tile === 1 ? watery && (x + y) % 4 !== 0 ? 2 : 1 : map.clearings.includes(index) ? 3 : 0);
+        if (tile >= 2) frame = open ? base + 3 : tile === 2 ? 12 : 13;
         const image = this.images[`tile-${frame}`];
         ctx.globalAlpha = visible ? 1 : .27;
         if (image) ctx.drawImage(image, px, py, t + .5, t + .5);
@@ -174,8 +175,8 @@
             ctx.fillStyle = shade; ctx.fillRect(px, py + t - 8, t + 1, 20);
             ctx.fillStyle = 'rgba(139,219,185,.1)'; ctx.fillRect(px + 2, py + t - 12, t - 4, 1);
           }
-          if ((x * 11 + y * 7) % 13 === 0) {
-            this.sprite(`prop-${game.depth === 2 ? 14 : game.depth === 1 ? 12 : 13}`, px + t * .5, py + t * .4, t * .72, t * .72, visible ? .9 : .2);
+          if ((x * 11 + y * 7) % 17 === 0) {
+            this.sprite(`prop-${game.region < 3 ? [13, 12, 14][game.region] : game.biome.landmarkIcon}`, px + t * .5, py + t * .4, t * .65, t * .65, visible ? .75 : .2);
           }
         }
         if (tile >= 2) {
@@ -226,21 +227,42 @@
         ctx.fillStyle = 'rgba(255,77,79,.22)'; ctx.fillRect(p.x - t / 2 + 3, p.y - t / 2 + 3, t - 6, t - 6);
         ctx.strokeStyle = '#ff7e79'; ctx.lineWidth = 2; ctx.setLineDash([5, 3]); ctx.strokeRect(p.x - t / 2 + 4, p.y - t / 2 + 4, t - 8, t - 8); ctx.setLineDash([]);
         ctx.fillStyle = '#ffd7cb'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('!', p.x, p.y + 8);
+        ctx.strokeStyle = '#ffe6bb'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(p.x, p.y, t * .36, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - enemy.windup / Math.max(.01, enemy.windupTotal))); ctx.stroke();
+      }
+
+      if (!game.records[game.region].landmark) for (const vent of map.vents) {
+        if (!game.visible.has(vent.y * map.w + vent.x)) continue;
+        const p = point(vent.x, vent.y);
+        this.sprite('tile-45', p.x, p.y, t * .9, t * .9, game.phase ? .3 : .85);
+        if (vent.warning && !game.phase) {
+          this.glow(p.x, p.y, t, 'rgba(255,106,31,.5)');
+          ctx.fillStyle = '#ffe2a2'; ctx.font = 'bold 21px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('!', p.x, p.y + 6);
+          ctx.strokeStyle = '#ff6a1f'; ctx.lineWidth = 3; ctx.strokeRect(p.x - t * .45, p.y - t * .45, t * .9, t * .9);
+        }
       }
 
       for (const e of map.entities) {
-        if (e.done && !['chest', 'shrine', 'well'].includes(e.type)) continue;
+        if (e.done && !['chest', 'shrine', 'well', 'landmark'].includes(e.type)) continue;
         const index = e.y * map.w + e.x;
         if (!game.seen.has(index)) continue;
         const p = point(e.x, e.y), visible = game.visible.has(index);
         let alpha = visible ? 1 : .3;
-        const wrongPhase = e.type === 'seed' && e.phase !== -1 && game.phase !== e.phase;
+        const wrongPhase = ['seed', 'landmark'].includes(e.type) && e.phase !== -1 && game.phase !== e.phase;
         if (wrongPhase || e.done) alpha *= .45;
         const float = this.reduced ? 0 : Math.sin(elapsed * 2.5 + e.x) * 3;
-        const floating = ['seed', 'mote', 'thread'].includes(e.type);
-        if (visible && !e.done && ['seed', 'portal', 'well'].includes(e.type)) this.glow(p.x, p.y, t * .9, e.type === 'portal' ? 'rgba(25,227,227,.22)' : 'rgba(255,194,71,.23)', wrongPhase ? .3 : 1);
+        const floating = ['seed', 'mote', 'thread', 'relic'].includes(e.type);
+        if (visible && !e.done && ['seed', 'portal', 'well', 'relic', 'landmark'].includes(e.type)) this.glow(p.x, p.y, t * .9, e.type === 'portal' ? 'rgba(25,227,227,.22)' : 'rgba(255,194,71,.23)', wrongPhase ? .3 : 1);
         const size = e.type === 'portal' ? 1.55 : e.type === 'seed' ? .74 : ['mote', 'medicine', 'bomb', 'thread'].includes(e.type) ? .6 : 1;
-        this.sprite(`prop-${PROP[e.type]}`, p.x, p.y - (e.type === 'portal' ? t * .25 : 0) + (floating ? float : 0), t * size, t * size, alpha);
+        const icon = e.type === 'relic' ? C.RELICS[e.relic].icon : e.type === 'landmark' ? game.biome.landmarkIcon : PROP[e.type];
+        this.sprite(`prop-${icon}`, p.x, p.y - (e.type === 'portal' ? t * .25 : 0) + (floating ? float : 0), t * size, t * size, alpha);
+        if (e.type === 'landmark' && visible) {
+          ctx.fillStyle = e.done ? '#87dab1' : wrongPhase ? '#8bdbe6' : '#ffe2a2'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText(e.done ? 'RESTORED ✓' : `${['I', 'II', 'III'][e.number - 1]} · ${e.phase ? 'ECHO' : 'BLOOM'} · E`, p.x, p.y + t * .55);
+        }
+        if (e.type === 'relic' && visible) {
+          ctx.fillStyle = '#ffe2a2'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('REGIONAL RELIC', p.x, p.y + t * .5);
+        }
         if (e.type === 'seed' && visible) {
           ctx.fillStyle = wrongPhase ? '#8bdbe6' : '#ffe2a2'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
           ctx.fillText(wrongPhase ? `${e.phase ? 'ECHO' : 'BLOOM'} · Q` : 'HEARTSEED', p.x, p.y + t * .52);
@@ -262,7 +284,7 @@
         const frame = enemy.kind * 4 + (enemy.intent.length ? 2 : moving ? 1 : 0);
         const bob = enemy.kind === 1 && !this.reduced ? Math.sin(elapsed * 3 + enemy.x) * 4 : 0;
         this.sprite(`enemy-${frame}`, p.x, p.y - t * .13 + bob, t * size, t * size, C.walkable(map, enemy.x, enemy.y, game.phase) ? 1 : .35);
-        const max = enemy.kind === 2 ? 4 : 2;
+        const max = C.ENEMIES[enemy.kind].hp + game.tier - 1;
         for (let i = 0; i < max; i += 1) {
           ctx.fillStyle = i < enemy.hp ? '#ffb68c' : '#33393b'; ctx.fillRect(p.x + (i - (max - 1) / 2) * 9 - 3, p.y - t * .65, 6, 3);
         }
@@ -283,8 +305,8 @@
       const stride = this.walkTime > .05 ? 4 : 0;
       const hop = !this.reduced && this.walkTime > 0 ? -Math.sin(this.walkTime / .24 * Math.PI) * 4 : 0;
       this.sprite(`fox-${facing + stride}`, hero.x, hero.y - t * .23 + hop, t * 1.02, t * 1.2);
-      if (game.shield) {
-        ctx.strokeStyle = '#8bdbe6'; ctx.lineWidth = 2; ctx.globalAlpha = .65;
+      if (game.shield || game.guardTime) {
+        ctx.strokeStyle = game.guardTime ? '#ffe2a2' : '#8bdbe6'; ctx.lineWidth = game.guardTime ? 4 : 2; ctx.globalAlpha = .8;
         ctx.beginPath(); ctx.ellipse(hero.x, hero.y, t * .55, t * .65, 0, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
       }
 
@@ -345,10 +367,13 @@
         }); ctx.stroke(); ctx.setLineDash([]);
       }
       for (const e of map.entities) {
-        if (e.done || !game.seen.has(e.y * map.w + e.x) || e.type === 'mote') continue;
+        if (e.done && e.type !== 'landmark' || !game.seen.has(e.y * map.w + e.x) && !(game.has('finder') && ['seed', 'relic'].includes(e.type)) || e.type === 'mote') continue;
         const x = ox + (e.x + .5) * scale, y = oy + (e.y + .5) * scale;
-        if (large && this.images[`prop-${PROP[e.type]}`]) {
-          const size = Math.max(18, scale * 1.45); ctx.drawImage(this.images[`prop-${PROP[e.type]}`], x - size / 2, y - size / 2, size, size);
+        const icon = e.type === 'relic' ? C.RELICS[e.relic].icon : e.type === 'landmark' ? game.biome.landmarkIcon : PROP[e.type];
+        if (large && this.images[`prop-${icon}`]) {
+          const size = Math.max(18, scale * 1.45); ctx.globalAlpha = e.done ? .45 : 1;
+          ctx.drawImage(this.images[`prop-${icon}`], x - size / 2, y - size / 2, size, size); ctx.globalAlpha = 1;
+          if (e.type === 'landmark') { ctx.fillStyle = '#ffc247'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(String(e.number), x, y + size * .8); }
         } else {
           ctx.fillStyle = e.type === 'seed' ? '#ffc247' : e.type === 'portal' ? '#8bdbe6' : '#dad6b1';
           ctx.fillRect(x - 1.5, y - 1.5, 3, 3);

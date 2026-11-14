@@ -1,0 +1,415 @@
+{
+  "save": {
+    "version": 1,
+    "profile": {
+      "light": 161,
+      "wins": 2,
+      "runs": 3,
+      "best": 0,
+      "dailyBest": 0,
+      "upgrades": {
+        "hearth": 3,
+        "satchel": 3,
+        "lens": 3
+      },
+      "memories": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "sound": true,
+      "gentle": false
+    },
+    "run": {
+      "seed": 1947,
+      "daily": false,
+      "gentle": false,
+      "upgrades": {
+        "hearth": 3,
+        "satchel": 3,
+        "lens": 3
+      },
+      "depth": 2,
+      "phase": 1,
+      "turn": 4,
+      "steps": 1,
+      "kills": 0,
+      "light": 21,
+      "score": 425,
+      "memories": [],
+      "blessings": [
+        "drift",
+        "sight"
+      ],
+      "inventory": {
+        "medicine": 7,
+        "bomb": 5,
+        "thread": 5
+      },
+      "player": {
+        "x": 4,
+        "y": 3,
+        "facing": 1,
+        "hp": 10
+      },
+      "dashCooldown": 0,
+      "shiftCooldown": 2,
+      "shield": 0,
+      "guideTurns": 0,
+      "status": "playing",
+      "seen": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        133,
+        134,
+        135,
+        136,
+        137,
+        166,
+        167,
+        168,
+        169,
+        170,
+        198,
+        199,
+        200,
+        201,
+        202,
+        203,
+        204,
+        237,
+        239,
+        270,
+        273,
+        74,
+        138,
+        236,
+        269
+      ],
+      "entities": [
+        {
+          "id": "e0",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e1",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e2",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e3",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e4",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e5",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e6",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e7",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e8",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e9",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e10",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e11",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e12",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e13",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e14",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e15",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e16",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e17",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e18",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e19",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e20",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e21",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e22",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e23",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e24",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e25",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e26",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e27",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e28",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e29",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e30",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e31",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e32",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e33",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e34",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e35",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e36",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e37",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e38",
+          "done": true,
+          "progress": 0
+        }
+      ],
+      "enemies": [
+        {
+          "id": "foe0",
+          "x": 17,
+          "y": 19,
+          "hp": 0,
+          "intent": [],
+          "stun": 0,
+          "awake": false
+        },
+        {
+          "id": "foe1",
+          "x": 23,
+          "y": 20,
+          "hp": 2,
+          "intent": [],
+          "stun": 0,
+          "awake": false
+        },
+        {
+          "id": "foe2",
+          "x": 9,
+          "y": 17,
+          "hp": 2,
+          "intent": [],
+          "stun": 0,
+          "awake": false
+        },
+        {
+          "id": "foe3",
+          "x": 25,
+          "y": 1,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false
+        },
+        {
+          "id": "foe4",
+          "x": 31,
+          "y": 19,
+          "hp": 2,
+          "intent": [],
+          "stun": 0,
+          "awake": false
+        },
+        {
+          "id": "foe5",
+          "x": 16,
+          "y": 15,
+          "hp": 2,
+          "intent": [],
+          "stun": 0,
+          "awake": false
+        },
+        {
+          "id": "foe6",
+          "x": 23,
+          "y": 4,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false
+        },
+        {
+          "id": "foe7",
+          "x": 15,
+          "y": 1,
+          "hp": 2,
+          "intent": [],
+          "stun": 0,
+          "awake": false
+        },
+        {
+          "id": "foe8",
+          "x": 28,
+          "y": 7,
+          "hp": 2,
+          "intent": [],
+          "stun": 0,
+          "awake": false
+        },
+        {
+          "id": "foe9",
+          "x": 13,
+          "y": 11,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false
+        }
+      ]
+    }
+  },
+  "mapDigest": "b740b7e3d18aeec917b644d82367870802565cd47bb62cda1ae2f873ef01c367"
+}

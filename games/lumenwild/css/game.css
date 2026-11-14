@@ -196,3 +196,63 @@ h2, h3, p { margin-top: 0; }
   .topbar { height: 44px; }.wordmark small { display: none; }.play-screen { height: calc(100svh - 44px); min-height: 300px; }.expedition-bar { height: 49px; }.region-label { top: 10px; }.region-label h2 { font-size: 16px; }.region-label p { display: none; }.minimap-button canvas { height: 48px; width: 64px; }.dpad { grid-template: repeat(3,28px) / repeat(3,28px); }.action-deck { flex-wrap: nowrap; }.ability-group { flex-basis: 0; }.ability { min-height: 42px; }.ability img { width: 20px; height: 28px; }.ability small { display: none; }.bottom-hint { display: none; }.objective { padding: 5px 10px; bottom: 10px; }.stage { min-height: 160px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
+
+/* Beyond the Fold: atlas, collections, and the keeper's expanded workshop. */
+.workshop-button { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 18px; padding: 12px; text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; }
+.workshop-button:hover { border-color: var(--accent); }
+.workshop-button img { object-fit: contain; }
+.workshop-button > span:first-of-type { flex: 1; }
+.workshop-button strong { font-size: 12px; font-weight: 500; }
+.workshop-button small { display: block; font-size: 10px; margin-top: 7px; color: var(--text-muted); }
+.workshop-button > span:last-child { color: var(--accent); }
+.journey-illustration { width: 100%; display: block; max-height: 340px; object-fit: cover; border-radius: 9px; border: 1px solid var(--border); }
+.trail-grid, .art-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 20px 0; }
+.trail-card, .art-card { display: flex; gap: 12px; align-items: center; padding: 15px 12px; border: 1px solid var(--border); border-radius: 8px; text-align: left; background: var(--surface-2); }
+.trail-card img, .art-card img { width: 58px; height: 65px; object-fit: contain; flex-shrink: 0; }
+.trail-card strong, .art-card strong { display: block; font-size: 14px; font-family: Georgia, serif; font-weight: 400; color: var(--text); }
+.trail-card small, .art-card small { display: block; font-size: 10px; line-height: 1.6; color: var(--text-secondary); margin-top: 6px; }
+.trail-state { color: var(--accent) !important; }
+.trail-card.selected, .art-card.selected { background: var(--accent-tint); border-color: var(--accent); }
+.trail-card:hover:enabled, .art-card:hover:enabled, .region-card:hover:enabled { border-color: var(--accent); }
+.section-title { font: 400 25px Georgia, serif; margin: 28px 0 12px; }
+.region-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 20px 0; }
+.region-card { overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 0 0 16px; }
+.region-art { width: 100%; height: 100px; display: grid; place-items: center; background-size: 110px; box-shadow: inset 0 -30px 30px var(--surface-2); }
+.region-art img { height: 80px; width: 80px; object-fit: contain; filter: drop-shadow(0 4px 7px var(--bg)); }
+.region-card strong { font-size: 12px; font-weight: 500; padding: 0 4px; }
+.region-card small { color: var(--text-muted); font-size: 9px; }
+.survey-stars { color: var(--accent); letter-spacing: .23em; font-size: 20px; }
+.journal-region-section { border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); margin: 12px 0; padding: 12px 18px; }
+.journal-region-section summary { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; cursor: pointer; list-style: none; }
+.journal-region-section summary::after { content: '+'; margin-left: auto; color: var(--accent); }
+.journal-region-section[open] summary::after { content: '−'; }
+.journal-region-section summary img { width: 42px; height: 42px; object-fit: contain; }
+.journal-region-section summary strong { font-size: 14px; font-weight: 500; }
+.journal-region-section summary small { color: var(--text-muted); font-size: 10px; }
+.relic-shelf { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 20px 0; }
+.relic-card { text-align: center; background: var(--surface-1); border-radius: 8px; padding: 13px 8px; }
+.relic-card img { display: block; width: 100%; max-width: 100px; height: 100px; object-fit: contain; margin: auto; }
+.relic-card span { display: block; margin-top: 8px; font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+.relic-card.undiscovered img { filter: grayscale(1) brightness(.3); }
+.ability-group { grid-template-columns: repeat(5,minmax(0,1fr)); }
+.ability.recovering { opacity: .6; }
+.art-ability { border-color: var(--accent); background: var(--accent-tint); }
+.art-ability b { font-weight: 500; }
+.ability > span { min-width: 0; }
+.art-ability > span { font-size: 9px; }
+.ability small { line-height: 1.3; }
+.upgrade-copy > small + small { color: var(--accent); margin-top: 5px; }
+.region-mechanic { padding: 12px; border-radius: 6px; background: var(--accent-tint); border: 1px solid var(--border); }
+.region-label .region-quest { color: var(--accent); font-size: 9px; margin-top: 8px; }
+@media (min-width: 761px) and (max-width: 1250px) { .action-deck { flex-wrap: wrap; }.ability-group { flex-basis: 100%; }.deck-divider { display: none; }.ability { min-height: 50px; }.ability img { height: 35px; } }
+@media (max-width: 760px) {
+  .ability { flex-direction: column; justify-content: center; gap: 0; text-align: center; padding: 4px 2px; min-height: 64px; }
+  .ability img { width: 25px; height: 27px; }.ability > span { font-size: 8px; }.ability small { font-size: 6px; margin-top: 3px; }.art-ability > span { font-size: 7px; }
+  .trail-grid, .art-grid { grid-template-columns: 1fr; }.region-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+  .region-card strong { font-size: 11px; }.region-art { height: 85px; }.region-art img { height: 65px; width: 65px; }
+  .journal-region-section { padding: 10px; }.journal-region-section summary { gap: 7px; }.journal-region-section summary small { width: 100%; padding-left: 49px; }.journal-region-section summary::after { display: none; }
+  .relic-shelf { gap: 6px; }.relic-card img { height: 65px; }.relic-card span { font-size: 9px; }.relic-card { padding: 8px 3px; }
+}
+@media (max-height: 580px) and (orientation: landscape) {
+  .action-deck { flex-wrap: nowrap; }.ability-group { flex-basis: 0; }.ability { min-height: 40px; }.ability img { height: 22px; width: 22px; }.ability small { display: none; }
+}
