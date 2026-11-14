@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#07060d" />
+  <title>STARSMITH — Forged in the Void</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="./css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9C%A8%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <div id="stage">
+    <canvas id="game"></canvas>
+
+    <!-- ============ HUD ============ -->
+    <div id="hud" class="hidden">
+      <div class="hud-top">
+        <div class="hud-left">
+          <div class="stat-block">
+            <div class="stat-label">TIME <span id="time">0:00</span></div>
+          </div>
+          <div class="stat-block">
+            <div class="stat-label">LVL <span id="level-num">1</span></div>
+          </div>
+          <div class="stat-block score">
+            <div class="stat-label">✦ SCORE <span id="score">0</span></div>
+          </div>
+          <div class="stat-block dust">
+            <div class="stat-label">✧ DUST <span id="stardust">0</span></div>
+          </div>
+        </div>
+        <div class="hud-right">
+          <div id="abilities" class="abilities" title="Active abilities"></div>
+          <button id="btn-pause" class="icon-btn" title="Pause (P)">❚❚</button>
+          <button id="btn-mute" class="icon-btn" title="Mute (M)">🔊</button>
+        </div>
+      </div>
+
+      <div class="hud-bars">
+        <div class="bar hp-bar"><div id="hp-bar-fill" class="fill"></div><span id="hp-text" class="bar-text">100 / 100</span></div>
+        <div class="bar xp-bar"><div id="xp-bar-fill" class="fill"></div><span id="xp-text" class="bar-text" title="Experience">0 / 20</span></div>
+      </div>
+
+      <div id="boss-timer" class="boss-timer hidden">
+        <span class="boss-skull">☠</span> <span id="boss-text">Dreadforge in 3:00</span>
+      </div>
+    </div>
+
+    <!-- ============ MENU ============ -->
+    <div id="menu" class="overlay">
+      <div class="panel menu-panel">
+        <div class="title-glow">STARSMITH</div>
+        <div class="subtitle">FORGED IN THE VOID</div>
+        <p class="tagline">You are a spark that refused to die. Swarms of rust wraiths pour from the dark.
+          Forge your power, merge abilities into legendary combos, and survive as long as the ember holds.</p>
+
+        <div class="menu-stats">
+          <div><span class="k">Best Score</span><span id="menu-best" class="v">0</span></div>
+          <div><span class="k">Longest Run</span><span id="menu-best-time" class="v">0:00</span></div>
+          <div><span class="k">Star Dust</span><span id="menu-stardust" class="v dust">✧ 0</span></div>
+        </div>
+
+        <div class="controls-hint">
+          <span><b>Move</b> WASD / Arrows</span>
+          <span><b>Aim</b> Mouse</span>
+          <span><b>Pause</b> P</span>
+          <span><b>Mute</b> M</span>
+        </div>
+
+        <div class="menu-actions">
+          <button id="btn-start" class="btn primary big">⚒ FORGE</button>
+          <button id="btn-shop" class="btn">✧ UPGRADE FOUNDRY</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ LEVEL UP ============ -->
+    <div id="levelup" class="overlay hidden">
+      <div class="panel levelup-panel">
+        <div class="lu-head"><span id="lu-title">LEVEL UP</span><span id="lu-sub">Choose a forging</span></div>
+        <div id="levelup-cards" class="cards"></div>
+      </div>
+    </div>
+
+    <!-- ============ PAUSE ============ -->
+    <div id="pause" class="overlay hidden">
+      <div class="panel small-panel">
+        <div class="title-glow small">PAUSED</div>
+        <div class="menu-actions column">
+          <button id="btn-resume" class="btn primary">▶ RESUME</button>
+          <button id="btn-quit" class="btn">⏻ ABANDON RUN</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ GAME OVER ============ -->
+    <div id="gameover" class="overlay hidden">
+      <div class="panel over-panel">
+        <div class="over-skull">✦</div>
+        <div class="title-glow small">THE EMBER FADES</div>
+        <div id="over-reason" class="over-reason">Consumed by the void.</div>
+
+        <div class="over-stats">
+          <div><span class="k">Survived</span><span id="over-time" class="v">0:00</span></div>
+          <div><span class="k">Final Level</span><span id="over-level" class="v">1</span></div>
+          <div><span class="k">Slain</span><span id="over-kills" class="v">0</span></div>
+          <div><span class="k">Score</span><span id="over-score" class="v">0</span></div>
+          <div class="dust-row"><span class="k">Star Dust Earned</span><span id="over-dust" class="v dust">+✧ 0</span></div>
+        </div>
+
+        <div class="menu-actions">
+          <button id="btn-restart" class="btn primary big">⚒ FORGE AGAIN</button>
+          <button id="btn-shop-from-over" class="btn">✧ FOUNDRIE</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ SHOP (meta) ============ -->
+    <div id="shop" class="overlay hidden">
+      <div class="panel shop-panel">
+        <div class="shop-head">
+          <div>
+            <div class="title-glow small">UPGRADE FOUNDRY</div>
+            <div class="subtitle">Permanent enhancements · spend ✧ Star Dust</div>
+          </div>
+          <div class="shop-balance">✧ <span id="shop-balance">0</span></div>
+        </div>
+        <div id="shop-items" class="shop-items"></div>
+        <div class="shop-foot">
+          <button id="btn-shop-close" class="btn primary">CLOSE</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>

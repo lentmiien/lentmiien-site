@@ -1,0 +1,6 @@
+{
+  "name": "starsmith",
+  "private": true,
+  "type": "module",
+  "description": "STARSMITH - Forged in the Void (browser roguelite)"
+}
