@@ -271,6 +271,7 @@ describe('ConversationService', () => {
       validateAIMessageInput: jest.fn(),
       generateAIMessage: jest.fn().mockResolvedValue({
         response_id: null,
+        completionWindow: '2h',
         msg: aiMessages[2],
         messages: aiMessages,
       }),
@@ -280,11 +281,14 @@ describe('ConversationService', () => {
     const result = await service.postToConversationNew({
       conversationId: 'conv-1',
       userId: 'Lennart',
+      completionWindow: '2h',
       messageContent: { text: 'Use the tool.' },
       messageType: 'text',
       generateAI: true,
     });
 
+    expect(result.completionWindow).toBe('2h');
+    expect(messageService.generateAIMessage).toHaveBeenCalledWith(expect.objectContaining({ completionWindow: '2h' }));
     expect(conversation.messages).toEqual(['user-1', 'fc-1', 'out-1', 'final-1']);
     expect(result.aiMessages.map((message) => message.contentType)).toEqual([
       'function_call',

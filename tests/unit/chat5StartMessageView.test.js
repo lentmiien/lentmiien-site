@@ -80,6 +80,9 @@ describe('chat5 start message controls', () => {
       trainingStatus: {},
     });
 
+    expect(html).toContain('id="completionWindow"');
+    expect(html).toContain('aria-valuetext="soonest"');
+    expect(html).toContain('id="completionWindowNotice"');
     expect(html).toContain('id="startMessageId"');
     expect(html).toContain('value="message-2"');
     expect(html.match(/data-chat5-start-message-id=/g)).toHaveLength(2);

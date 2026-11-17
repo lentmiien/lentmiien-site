@@ -145,7 +145,7 @@ socket.emit(
 |-------|-----------|---------|--------------------------|
 | `chat5-joinConversation` | emit | `{ conversationId }` | Join the per-conversation room before sending/receiving updates. |
 | `chat5-leaveConversation` | emit | `{ conversationId }` | Leave the room when closing a tab or navigating away. |
-| `chat5-append` | emit | `{ conversation_id, prompt, response, settings }` | Append user text and optionally trigger an AI response. `settings` mirrors the Settings tab fields. |
+| `chat5-append` | emit | `{ conversation_id, prompt, response, settings, completionWindow? }` | Append user text and optionally trigger an AI response. `settings` mirrors the Settings tab fields. |
 | `chat5-messages` | on | `{ id, messages }` | Stream of newly created messages (user + AI). Add them to local store if `id` matches the active conversation. |
 | `chat5-notice` | on | `{ id, title }` | Broadcast when other members add messages. Show lightweight toasts/badges. |
 | `chat5-updateConversation` | emit + ack | `{ conversation_id, updates }` | Persist metadata (title, category, tags, members, summary, settings). Acknowledge payload echoes the sanitized conversation. |
@@ -214,3 +214,29 @@ This layout offers two key behaviours to keep in mind when designing the Vue rep
 - Quick filters driven by the tags and categories returned from `chat5-history-range`.
 
 With the new history endpoint and existing real-time events, the Vue client can progressively fetch data, keep optimistic state in sync, and optionally migrate brand-new UX elements without regressing existing server capabilities.
+
+### Per-send completion windows
+
+The conversation page offers soonest (default), 2h, and 8h beside Send & Response.
+This transient setting affects the response requested by that send, not automatic
+titles, summaries, Batch submissions, or subsequent tool follow-ups. The server
+allowlists the two discounted values and verifies the resolved provider/model.
+OpenAI GPT-6.2 Astra/Sol, GPT-6.1 Terra, and GPT-6 Luna (including dated snapshots)
+use background Responses with Standard processing and streaming disabled.
+Other models use their ordinary request path; the acknowledgement reports
+soonest so the page can display a non-error fallback notice after submission.
+
+Eligibility source: https://developers.openai.com/api/docs/guides/background
+(checked 2026-11-18). Update utils/openaiCompletionWindow.js when eligibility changes.
+The installed OpenAI SDK passes the new request body fields through unchanged.
+Default recovery retention is two days; installations overriding
+OPENAI_PENDING_MAX_AGE_MS must allow enough time for the selected window.
+
+Security scope: this is a bounded parameter on the existing logged-in chat5-append
+operation, not a new route or authorization redesign. Existing validated-principal,
+chat5 capability, conversation-member scope and socket request defenses remain the
+entry boundary. Only the enumerated window reaches the existing OpenAI integration;
+no caller-supplied provider options, destinations or identity are accepted. No new
+stored private data, logging of prompts, retention policy, or external host is added.
+The notification uses textContent. Negative tests cover malformed window values,
+unsupported model variants, and non-OpenAI providers.

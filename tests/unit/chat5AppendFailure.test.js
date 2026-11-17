@@ -43,3 +43,17 @@ test('saved prompt is acknowledged before optional title generation finishes', a
   await work;
   expect(ack).toHaveBeenCalledTimes(1);
 });
+
+test.each(['2h', '8h', 'soonest', { malicious: '8h' }])('append forwards a bounded window and acknowledges the server effective window: %p', async completionWindow => {
+  const handlers = {};
+  const room = { emit: jest.fn() };
+  const socket = { on: (name, fn) => { handlers[name] = fn; }, emit: jest.fn(), to: () => room };
+  await register({ io: { userRoom: id => id, conversationRoom: id => id, to: () => room }, socket, userName: 'owner', principal: { _id: 'owner' } });
+  conversationService.postToConversationNew.mockResolvedValue({ aiMessages: [], completionWindow: 'soonest' });
+  const ack = jest.fn();
+  await handlers['chat5-append']({ conversation_id: 'conv', response: true, completionWindow, settings: { title: 'Existing' } }, ack);
+  expect(conversationService.postToConversationNew).toHaveBeenLastCalledWith(expect.objectContaining({
+    completionWindow: typeof completionWindow === 'string' ? completionWindow : 'soonest',
+  }));
+  expect(ack).toHaveBeenCalledWith(expect.objectContaining({ ok: true, completionWindow: 'soonest' }));
+});

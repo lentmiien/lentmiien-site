@@ -937,6 +937,13 @@ function SwitchConversation(new_id) {
   updateMessageLoadControls();
 }
 
+const completionWindows = ['soonest', '2h', '8h'];
+document.getElementById('completionWindow')?.addEventListener('input', (event) => {
+  const value = completionWindows[Number(event.target.value)] || 'soonest';
+  document.getElementById('completionWindowValue').textContent = value;
+  event.target.setAttribute('aria-valuetext', value);
+});
+
 document.getElementById('sendAndResponse')?.addEventListener('click', () => {
   Append(Boolean(editor.getMarkdown().trim()), true);
 });
@@ -948,12 +955,18 @@ function Append(send, resp, userId) {
   const conversation_id = document.getElementById("id").textContent;
   const prompt = editor.getMarkdown();
   const settings = collectChatSettings();
-  const payload = {conversation_id, prompt: send ? prompt : null, response: resp, settings};
+  const completionWindow = completionWindows[Number(document.getElementById('completionWindow')?.value)] || 'soonest';
+  const notice = document.getElementById('completionWindowNotice');
+  if (notice) notice.textContent = '';
+  const payload = {conversation_id, prompt: send ? prompt : null, response: resp, settings, completionWindow};
   if (typeof userId === 'string' && userId.trim().length > 0) {
     payload.user_id = userId.trim();
   }
   socket.emit('chat5-append', payload, (result) => {
     hideLoadingPopup();
+    if (notice && result?.ok && result.completionWindow === 'soonest' && completionWindow !== 'soonest') {
+      notice.textContent = 'Request sent with “soonest”: the selected model does not support discounted completion windows.';
+    }
     // Keep rejected drafts and any newer text typed while the request ran.
     if (send && (result?.ok || result?.promptSaved) && editor.getMarkdown() === prompt
       && [conversation_id, result.conversationId].includes(document.getElementById('id').textContent)) {

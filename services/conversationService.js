@@ -1328,6 +1328,7 @@ class ConversationService {
     messageContent,
     messageType,
     generateAI = false,
+    completionWindow = 'soonest',
     s,
     c,
   }) {
@@ -1433,6 +1434,7 @@ class ConversationService {
 
     // Generate AI response
     let aiMessages = [];
+    let sentCompletionWindow = null;
     if (generateAI) {
       try {
         const conversationForAI = this.normalizeMembersForAI(conversation);
@@ -1441,9 +1443,11 @@ class ConversationService {
           response_provider,
           msg,
           messages: generatedMessages,
-        } = await this.messageService.generateAIMessage({conversation: conversationForAI,
+          completionWindow: effectiveWindow,
+        } = await this.messageService.generateAIMessage({conversation: conversationForAI, completionWindow,
           ...(authorizedMember ? { maxOutputTokens: 4096, privateRequest: true } : {}),
         });
+        sentCompletionWindow = effectiveWindow;
         const messagesToAppend = Array.isArray(generatedMessages) && generatedMessages.length > 0
           ? generatedMessages
           : (msg ? [msg] : []);
@@ -1493,7 +1497,7 @@ class ConversationService {
     conversation.updatedAt = new Date();
     await conversation.save();
 
-    return { conversation, userMessage, userMessages, aiMessages };
+    return { conversation, userMessage, userMessages, aiMessages, completionWindow: sentCompletionWindow };
   }
 
   async draftPromptForConversation({ conversationId, personality, responseType, notes = '', userName = 'draft-tool' }) {

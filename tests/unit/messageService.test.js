@@ -526,9 +526,10 @@ describe('MessageService', () => {
       messages: [],
     };
 
-    const result = await service.generateAIMessage({ conversation });
+    const result = await service.generateAIMessage({ conversation, completionWindow: '8h' });
 
-    expect(ai.chat).toHaveBeenCalled();
+    expect(result.completionWindow).toBe('soonest');
+    expect(ai.chat).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.objectContaining({ completionWindow: '8h' }));
     expect(Chat5Model).toHaveBeenCalledWith(expect.objectContaining({
       contentType: 'text',
       hideFromBot: true,
@@ -822,7 +823,7 @@ test('Miien submission fails before creating a placeholder when OpenAI returns n
     privateRequest: true, maxOutputTokens: 4096 })).rejects.toThrow('did not accept');
   expect(Chat5Model).not.toHaveBeenCalled();
   expect(ai.chat).toHaveBeenLastCalledWith(expect.any(Object), [], expect.any(Object),
-    { includeLastToolBatch: false, privateRequest: true, maxOutputTokens: 4096 });
+    { includeLastToolBatch: false, completionWindow: 'soonest', privateRequest: true, maxOutputTokens: 4096 });
 });
 
 test('Miien local token cap is runtime-only and does not change saved metadata', async () => {

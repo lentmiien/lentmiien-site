@@ -3082,3 +3082,17 @@ label,
   width: 100%;
   margin-top: 0.75rem;
 }
+
+.chat5-completion-window {
+  width: 15rem;
+  color: var(--text-secondary);
+}
+.chat5-completion-window input {
+  display: block;
+  width: 100%;
+  accent-color: var(--accent);
+}
+.chat5-completion-window input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}

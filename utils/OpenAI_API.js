@@ -852,6 +852,12 @@ const chat = async (conversation, messages, model, options = {}) => {
     background: true,
     // store: false,
   };
+  const completionWindow = require('./openaiCompletionWindow').effectiveCompletionWindow(options.completionWindow, model);
+  if (completionWindow !== 'soonest') {
+    inputParameters.background_options = { completion_window: completionWindow };
+    inputParameters.service_tier = 'default';
+    inputParameters.stream = false;
+  }
   if (conversation.metadata.outputFormat) {
     inputParameters['text'] = { format: { type: conversation.metadata.outputFormat } };
     if (model.api_model.indexOf("gpt-5") === 0 && conversation.metadata.verbosity) {

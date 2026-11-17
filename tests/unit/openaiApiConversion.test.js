@@ -638,3 +638,33 @@ test('music structured requests bound submission and keep private payloads out o
   expect(debugLog).not.toHaveBeenCalled();
   expect(require('../../utils/logger').error).toHaveBeenLastCalledWith('Error while generating structured OpenAI output', { category: 'music', metadata: { status: null } });
 });
+
+describe('discounted completion windows', () => {
+  test.each(['gpt-6.2-astra', 'gpt-6.2-sol', 'gpt-6.1-terra', 'gpt-6-luna', 'gpt-6.2-astra-2026-11-01']
+    .flatMap(model => ['2h', '8h'].map(window => [model, window])))('%s accepts %s', async (api_model, completionWindow) => {
+    mockResponsesCreate.mockClear().mockResolvedValue({ id: 'window-response' });
+    await chat({ metadata: {} }, [], { provider: 'OpenAI', api_model, context_type: 'system', in_modalities: ['text'] }, { completionWindow });
+    expect(mockResponsesCreate).toHaveBeenCalledWith(expect.objectContaining({
+      background: true, stream: false, service_tier: 'default',
+      background_options: { completion_window: completionWindow },
+    }));
+  });
+
+  test.each([
+    ['gpt-6.2-astra', 'soonest', 'OpenAI'],
+    ['gpt-6.2-astra', undefined, 'OpenAI'],
+    ['gpt-6.2-astra', { completion_window: '8h' }, 'OpenAI'],
+    ['gpt-6.2-astra', '24h', 'OpenAI'],
+    ['gpt-5.6-sol', '8h', 'OpenAI'],
+    ['gpt-6.2-astra-mini', '8h', 'OpenAI'],
+    ['gpt-6.2-astra', '8h', 'Ollama'],
+  ])('preserves ordinary requests for %s / %p / %s', async (api_model, completionWindow, provider) => {
+    mockResponsesCreate.mockClear().mockResolvedValue({ id: 'ordinary-response' });
+    await chat({ metadata: {} }, [], { provider, api_model, context_type: 'system', in_modalities: ['text'] }, { completionWindow });
+    const request = mockResponsesCreate.mock.calls[0][0];
+    expect(request.background).toBe(true);
+    expect(request).not.toHaveProperty('background_options');
+    expect(request).not.toHaveProperty('service_tier');
+    expect(request).not.toHaveProperty('stream');
+  });
+});

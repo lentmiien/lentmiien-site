@@ -784,13 +784,14 @@ module.exports = async function registerChat5_5Handlers({
         toolOutput: null,
       } : null;
 
-      const { userMessage, aiMessages = [] } = await conversationService.postToConversationNew({
+      const { userMessage, aiMessages = [], completionWindow } = await conversationService.postToConversationNew({
         conversationId,
         userId: messageUserId,
         requestPrincipal: principal,
         messageContent,
         messageType: hasPrompt ? "text" : null,
         generateAI: generateResponse,
+        completionWindow: require('../../utils/openaiCompletionWindow').normalizeCompletionWindow(raw.completionWindow),
         s: settingParams,
         c: conversationParams,
       });
@@ -813,7 +814,9 @@ module.exports = async function registerChat5_5Handlers({
       emitAdjustments(eventName, adjustments, { conversationId, createdNewConversation });
       if (typeof ack === 'function') {
         acknowledged = true;
-        ack({ ok: true, conversationId, promptSaved: Boolean(userMessage) });
+        ack({ ok: true, conversationId, promptSaved: Boolean(userMessage),
+          ...(completionWindow ? { completionWindow } : {}),
+        });
       }
       if (conversationParams.title === 'NEW') {
         try {

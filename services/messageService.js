@@ -1087,7 +1087,7 @@ class MessageService {
     await ollama.validateChatImages(conversation, [...messages, ...pendingMessages], model);
   }
 
-  async generateAIMessage({conversation, includeLastToolBatch = false, maxOutputTokens = null, privateRequest = false}) {
+  async generateAIMessage({conversation, includeLastToolBatch = false, maxOutputTokens = null, privateRequest = false, completionWindow = 'soonest'}) {
     // Generate a message through AI and save to database *Can possible generate multiple messages if using tools or reasoning
     const model = (await AIModelCards.find({api_model: conversation.metadata.model}))[0];
     if (!model) {
@@ -1107,7 +1107,7 @@ class MessageService {
     const runtimeConversation = cloneConversationForAI(conversation, effectiveContextPrompt);
 
     if (model.provider === "OpenAI") {
-      const response_id = await ai.chat(runtimeConversation, messages, model, { includeLastToolBatch,
+      const response_id = await ai.chat(runtimeConversation, messages, model, { includeLastToolBatch, completionWindow,
         ...(privateRequest ? { maxOutputTokens, privateRequest } : {}),
       });
       if (privateRequest && !response_id) throw new Error('Chat provider did not accept the request');
@@ -1133,7 +1133,8 @@ class MessageService {
       };
       const msg = new Chat5Model(message);
       await msg.save();
-      return {response_id, msg};
+      return {response_id, msg, completionWindow: response_id
+        ? require('../utils/openaiCompletionWindow').effectiveCompletionWindow(completionWindow, model) : null};
     }
 
     if (privateRequest && Number.isInteger(maxOutputTokens)) runtimeConversation.metadata.max_tokens = maxOutputTokens;
@@ -1171,6 +1172,7 @@ class MessageService {
     return {
       response_id: job.job_id,
       response_provider: 'Ollama',
+      completionWindow: 'soonest',
       msg,
     };
   }

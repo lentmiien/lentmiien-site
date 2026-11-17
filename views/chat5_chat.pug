@@ -438,8 +438,17 @@ block content
             button#chat5AppendBot.dropdown-item(type='button') Append as bot
           li
             button#generateTtsBtn.dropdown-item(type='button') Generate TTS audio
+      .chat5-completion-window
+        label.small(for='completionWindow') Completion window:
+          output#completionWindowValue.ms-1(for='completionWindow') soonest
+        input#completionWindow(type='range' min='0' max='2' step='1' value='0' aria-valuetext='soonest' aria-describedby='completionWindowLabels')
+        #completionWindowLabels.d-flex.justify-content-between.small
+          span soonest
+          span 2h
+          span 8h
       a(href='/local-ai/queue') Local queue
       button.btn.btn-outline-secondary.btn-sm(type='button', data-bs-toggle='modal', data-bs-target='#ttsKeywordsModal') Voice & tags
+    p#completionWindowNotice.small(role='status' aria-live='polite')
     p#localAiBatchStatus.small(role='status')
     details.local-ai-batch.mb-3
       summary Batch details & recovery
