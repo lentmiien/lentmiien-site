@@ -31,7 +31,66 @@
       }
     };
 
-    if (biome.layout === 'belfry') {
+    if (biome.layout === 'honeycomb') {
+      let lastRow = [];
+      for (let row = 0, y = 5; y < map.h - 3; row += 1, y += 7) {
+        const current = [];
+        for (let x = 5 + row % 2 * 3; x < map.w - 3; x += 7) {
+          const p = { x, y };
+          for (let dy = -2; dy <= 2; dy += 1) for (let dx = -3; dx <= 3; dx += 1) if (Math.abs(dx) + Math.abs(dy) < 5) set(x + dx, y + dy);
+          room(x, y, 1);
+          if (current.length) line(current.at(-1), p);
+          if (lastRow.length) line(lastRow[Math.min(current.length, lastRow.length - 1)], p);
+          current.push(p);
+        }
+        lastRow = current;
+      }
+      line({ x: 3, y: 3 }, { x: 5, y: 5 });
+    } else if (biome.layout === 'paperfold') {
+      let previousIsland = { x: 3, y: 3 };
+      for (let row = 0, y = 5; y < map.h - 4; row += 1, y += 8) {
+        const xs = [5, 14, 23, 32]; if (row % 2) xs.reverse();
+        for (const x of xs) {
+          const p = { x: x + Math.floor(rng() * 3), y };
+          for (let dy = -3; dy <= 3; dy += 1) for (let dx = -3; dx <= 3; dx += 1) if (Math.abs(dx) + Math.abs(dy) <= 3) set(p.x + dx, p.y + dy);
+          room(p.x, p.y, 1); line(previousIsland, p); previousIsland = p;
+        }
+      }
+    } else if (biome.layout === 'faults') {
+      let previousGallery = { x: 3, y: 3 };
+      for (let row = 0, y = 4; y < map.h - 3; row += 1, y += 6) {
+        const edge = row % 2 ? map.w - 5 : 4;
+        const p = { x: edge, y };
+        line(previousGallery, p); line({ x: 3, y }, { x: map.w - 4, y });
+        for (let x = 6; x < map.w - 5; x += 8) room(x + Math.floor(rng() * 3), y, 2, true);
+        previousGallery = { x: row % 2 ? 4 : map.w - 5, y };
+      }
+    } else if (biome.layout === 'bazaar') {
+      for (let y = 3; y < map.h - 2; y += 6) line({ x: 3, y }, { x: map.w - 4, y });
+      for (let x = 3; x < map.w - 2; x += 8) {
+        line({ x, y: 3 }, { x, y: map.h - 4 });
+        for (let y = 6; y < map.h - 3; y += 6) room(x, y, 2);
+      }
+      // Courtyards connect selected covered lanes into different local loops.
+      for (let i = 0; i < 5; i += 1) {
+        const p = { x: 7 + Math.floor(rng() * (map.w - 14)), y: 6 + Math.floor(rng() * (map.h - 12)) };
+        room(p.x, p.y, 2, true); line(p, { x: p.x, y: 3 + Math.round((p.y - 3) / 6) * 6 });
+      }
+    } else if (biome.layout === 'orbits') {
+      const center = { x: Math.floor(map.w / 2), y: Math.floor(map.h / 2) }, tilt = rng() * Math.PI;
+      for (const radius of [4, 8, 12]) {
+        let last = { x: center.x + radius, y: center.y };
+        for (let i = 1; i <= 64; i += 1) {
+          const angle = i / 64 * Math.PI * 2, next = { x: center.x + Math.round(Math.cos(angle) * radius), y: center.y + Math.round(Math.sin(angle) * radius) };
+          line(last, next); last = next;
+        }
+      }
+      for (let i = 0; i < 6; i += 1) {
+        const angle = tilt + i * Math.PI / 3, p = { x: center.x + Math.round(Math.cos(angle) * 12), y: center.y + Math.round(Math.sin(angle) * 12) };
+        line(center, p); room(p.x, p.y, 2, true);
+      }
+      line({ x: 3, y: 3 }, center); room(center.x, center.y, 2, true);
+    } else if (biome.layout === 'belfry') {
       const cx = Math.floor(map.w / 2), cy = Math.floor(map.h / 2);
       for (const r of [3, 7, 11]) {
         const corners = [{ x: cx - r, y: cy - r }, { x: cx + r, y: cy - r }, { x: cx + r, y: cy + r }, { x: cx - r, y: cy + r }];
@@ -85,7 +144,14 @@
         set(x + next[0], y + next[1]); set(x + next[0] * 2, y + next[1] * 2);
         stack.push([x + next[0] * 2, y + next[1] * 2]);
       }
-      if (biome.layout === 'warrens') {
+      if (biome.layout === 'rootroads') {
+        const trunk = Math.floor(map.w / 2);
+        line({ x: trunk, y: 3 }, { x: trunk, y: map.h - 4 });
+        for (let y = 6; y < map.h - 3; y += 6) for (const side of [-1, 1]) {
+          const p = { x: trunk + side * (9 + Math.floor(rng() * 5)), y: y - 2 };
+          line({ x: trunk, y }, { x: p.x, y }); line({ x: p.x, y }, p); room(p.x, p.y, 2, true);
+        }
+      } else if (biome.layout === 'warrens') {
         let last = { x: 3, y: 3 };
         for (let i = 0; i < 15; i += 1) {
           const p = { x: 5 + Math.floor(rng() * (map.w - 10)), y: 5 + Math.floor(rng() * (map.h - 10)) };
@@ -183,6 +249,12 @@
       loom.links = map.shortcuts.slice().sort((a, b) => distance({ x: a % map.w, y: Math.floor(a / map.w) }, loom) - distance({ x: b % map.w, y: Math.floor(b / map.w) }, loom)).slice(0, 8);
     }
     if (map.arena) add('guardian', map.arena.entry);
+    if (region >= 15) {
+      add('vaultkey', take(), { phase: 0 }); add('vaultkey', take(), { phase: 1 });
+      add('vault', take());
+      const beds = cells.filter(p => !reserved.has(`${p.x},${p.y}`)).sort((a, b) => reachable[a.y * map.w + a.x] - reachable[b.y * map.w + b.x]);
+      add('wishbed', beds[Math.min(8, beds.length - 1)], { progress: -1 });
+    }
     if (biome.feature === 'vents') {
       for (let i = 0; i < 5; i += 1) {
         const p = take(); reserved.add(`${p.x},${p.y}`);

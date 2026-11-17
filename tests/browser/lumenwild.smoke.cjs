@@ -78,6 +78,25 @@ async function completeViaKeyboard(page, prefix = 'journey') {
   throw new Error('Playthrough exceeded input limit');
 }
 
+async function visitDiscovery(page, type, phase) {
+  for (let i = 0; i < 700; i += 1) {
+    const next = await page.evaluate(({ type, phase }) => {
+      const g = window.__lumenGame, C = window.Lumenwild;
+      if (g.status !== 'playing') return { failed: g.status };
+      if (document.querySelector('#dialog').open) return { close: true };
+      const target = g.map.entities.find(e => e.type === type && (phase === undefined || e.phase === phase));
+      if (g.player.x === target.x && g.player.y === target.y && (phase === undefined || g.phase === phase)) return { arrived: true };
+      const input = window.__lumenNextAction(g, C, target);
+      const keys = { attack: 'Space', guard: 'KeyG', art: 'KeyR', shift: 'KeyQ', dash: 'Shift', medicine: 'Digit1', bomb: 'Digit2', thread: 'Digit3', interact: 'KeyE', wait: 'Period' };
+      return { key: input.action === 'move' ? ['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'][input.direction] : keys[input.action] };
+    }, { type, phase });
+    if (next.failed) throw new Error(`Discovery trip ended: ${next.failed}`);
+    if (next.arrived) return;
+    if (next.close) await page.locator('#closeDialog').click(); else await press(page, next.key);
+  }
+  throw new Error(`Discovery trip exceeded input limit: ${type}`);
+}
+
 (async () => {
   fs.mkdirSync(output, { recursive: true });
   const app = express();
@@ -156,12 +175,12 @@ async function completeViaKeyboard(page, prefix = 'journey') {
     await observe(guardians);
     await guardians.addInitScript(() => {
       if (!sessionStorage.getItem('guardianFixture')) {
-        localStorage.setItem('lumenwild.garden.v1', JSON.stringify({ version: 3, profile: { runs: 1, trails: { dawn: 1, frontier: 1, horizon: 1, rainbound: 1, aurora: 1 }, guardians: { bellkeeper: 1, tempest: 1, dawnhart: 1 } }, run: null }));
+        localStorage.setItem('lumenwild.garden.v1', JSON.stringify({ version: 4, profile: { runs: 1, trails: { dawn: 1, frontier: 1, horizon: 1, rainbound: 1, aurora: 1, seasons: 1, unwritten: 1 }, guardians: { bellkeeper: 1, tempest: 1, dawnhart: 1, honeyregent: 1, resonantwarden: 1, nightgardener: 1 } }, run: null }));
         sessionStorage.setItem('guardianFixture', 'ready');
       }
     });
     await guardians.goto(base); await guardians.locator('#mainAction:enabled').waitFor();
-    for (const id of ['bellkeeper', 'tempest', 'dawnhart']) {
+    for (const id of ['bellkeeper', 'tempest', 'dawnhart', 'honeyregent', 'resonantwarden', 'nightgardener']) {
       await guardians.locator('#journeysButton').click();
       check(`${id} trial is available from its illustrated atlas card`, await guardians.locator(`[data-guardian="${id}"]`).isEnabled());
       await guardians.locator(`[data-guardian="${id}"]`).click(); await guardians.locator('[data-trial-tier="2"]').click();
@@ -169,6 +188,23 @@ async function completeViaKeyboard(page, prefix = 'journey') {
       await screenshot(guardians, `guardian-${id}-result`);
       await guardians.getByRole('button', { name: 'Back to the keeper’s camp' }).click();
     }
+    await guardians.locator('#journeysButton').click(); await screenshot(guardians, 'seasons-world-atlas');
+    await guardians.locator('[data-trail="seasons"]').click(); await guardians.locator('#mainAction').click();
+    check('The Hidden Seasons completes through ordinary keyboard input', await completeViaKeyboard(guardians, 'seasons') === 'won');
+    await guardians.getByRole('button', { name: 'Back to the keeper’s camp' }).click();
+    await guardians.locator('#journeysButton').click(); await guardians.locator('[data-region="19"]').click(); await guardians.locator('#dialogActions button').first().click();
+    // Collect ordinary expedition currency before planting; this uses only
+    // movement and the shipped interactions, not modified inventory or health.
+    await visitDiscovery(guardians, 'seed', 0);
+    await visitDiscovery(guardians, 'wishbed'); await press(guardians, 'KeyE');
+    check('wishbed planting spends expedition light through E', await guardians.evaluate(() => window.__lumenGame.map.entities.find(e => e.type === 'wishbed').progress === 0));
+    await visitDiscovery(guardians, 'vaultkey', 0); await visitDiscovery(guardians, 'vaultkey', 1);
+    check('both realm keys can be collected through movement and folding', await guardians.evaluate(() => window.__lumenGame.vaultKeys() === 2));
+    await visitDiscovery(guardians, 'vault'); await press(guardians, 'KeyE');
+    check('realm vault opens through the real interact control', await guardians.evaluate(() => window.__lumenGame.map.entities.find(e => e.type === 'vault').done));
+    await screenshot(guardians, 'seasons-observatory-vault');
+    await visitDiscovery(guardians, 'wishbed'); await press(guardians, 'KeyE');
+    check('returning after exploration harvests the planted wishbed', await guardians.evaluate(() => window.__lumenGame.map.entities.find(e => e.type === 'wishbed').done));
 
     const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     await observe(phone); await phone.goto(base); await phone.locator('#mainAction:enabled').waitFor();
@@ -190,9 +226,9 @@ async function completeViaKeyboard(page, prefix = 'journey') {
 
     const bossPhone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     await observe(bossPhone);
-    await bossPhone.addInitScript(() => localStorage.setItem('lumenwild.garden.v1', JSON.stringify({ version: 3, profile: { runs: 1, guardians: { bellkeeper: 1 } }, run: null })));
+    await bossPhone.addInitScript(() => localStorage.setItem('lumenwild.garden.v1', JSON.stringify({ version: 4, profile: { runs: 1, guardians: { honeyregent: 1 } }, run: null })));
     await bossPhone.goto(base); await bossPhone.locator('#mainAction:enabled').waitFor();
-    await bossPhone.locator('#journeysButton').tap(); await bossPhone.locator('[data-guardian="bellkeeper"]').tap(); await bossPhone.locator('[data-trial-tier="1"]').tap();
+    await bossPhone.locator('#journeysButton').tap(); await bossPhone.locator('[data-guardian="honeyregent"]').tap(); await bossPhone.locator('[data-trial-tier="1"]').tap();
     for (let i = 0; i < 30; i += 1) {
       const direction = await bossPhone.evaluate(() => {
         const g = window.__lumenGame, C = window.Lumenwild;
@@ -205,7 +241,8 @@ async function completeViaKeyboard(page, prefix = 'journey') {
     await bossPhone.locator('[data-action="interact"]').tap(); await bossPhone.getByRole('button', { name: 'Raise your lantern' }).tap();
     await bossPhone.waitForFunction(() => window.__lumenGame.boss.mode === 'windup');
     await screenshot(bossPhone, 'guardian-phone-portrait');
-    check('phone guardian HUD names the attack and phase', await bossPhone.locator('#guardianHud').isVisible() && (await bossPhone.locator('#guardianPattern').textContent()).includes('Tolling lanes'));
+    check('phone guardian HUD names the attack and phase', await bossPhone.locator('#guardianHud').isVisible() && (await bossPhone.locator('#guardianPattern').textContent()).includes('Honeycomb waltz'));
+    check('phone guardian HUD previews the second strike', await bossPhone.locator('#guardianSequence').isVisible() && (await bossPhone.locator('#guardianSequence').textContent()).includes('2'));
     await bossPhone.locator('[data-action="guard"]').tap();
     check('touch guard works during a guardian encounter', await bossPhone.evaluate(() => window.__lumenGame.guardTime > 0));
     await bossPhone.setViewportSize({ width: 844, height: 390 }); await screenshot(bossPhone, 'guardian-phone-landscape');

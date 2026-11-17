@@ -271,6 +271,8 @@ h2, h3, p { margin-top: 0; }
 .guardian-hud.opening progress::-webkit-progress-value { background: var(--accent); }
 .guardian-hud p { margin: 0; color: var(--text-secondary); font-size: .72rem; text-align: center; }
 .guardian-hud.opening p { color: var(--accent); }
+.guardian-hud .guardian-sequence { margin-top: 4px; font-size: .65rem; color: var(--accent); }
+.vault-progress { color: var(--accent); }
 .boss-active .region-label, .boss-active .minimap-button, .boss-active .world-note { display: none; }
 .boss-active .game-toast { display: none; }
 .guardian-portrait { display: block; width: min(220px, 60%); height: 190px; object-fit: contain; margin: 0 auto 15px; }
@@ -305,6 +307,12 @@ h2, h3, p { margin-top: 0; }
 @media (min-width: 601px) and (max-width: 699px) {
   .boss-active .dpad { grid-template: repeat(3,28px) / repeat(3,28px); }
 }
+.arena-landscape .guardian-hud { top: 5px; left: 14px; transform: none; width: min(300px, 36%); padding: 6px 10px; }
+.arena-landscape .guardian-hud > div { gap: 5px; flex-wrap: wrap; }
+.arena-landscape .guardian-hud strong { font-size: .9rem; }
+.arena-landscape .guardian-hud p { font-size: .6rem; }
+.arena-landscape .guardian-hud progress { margin: 4px 0; }
+.arena-landscape.boss-active .objective { left: auto; right: 12px; transform: none; max-width: 200px; }
 @media (prefers-reduced-motion: reduce) {
   .guardian-hud progress::-webkit-progress-value { transition: none; }
 }

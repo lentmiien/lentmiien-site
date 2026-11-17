@@ -1,7 +1,8 @@
 (function () {
   'use strict';
   const C = window.Lumenwild;
-  const PROP = { mote: 0, seed: 1, medicine: 2, bomb: 3, thread: 4, chest: 5, portal: 7, shrine: 9, memory: 11, well: 14, trader: 72, courier: 73, loom: 74, guardian: 78 };
+  const PROP = { mote: 0, seed: 1, medicine: 2, bomb: 3, thread: 4, chest: 5, portal: 7, shrine: 9, memory: 11, well: 14, trader: 72, courier: 73, loom: 74, guardian: 78, vaultkey: 104, vault: 106, wishbed: 107 };
+  const entityIcon = (e, biome) => e.type === 'relic' ? C.RELICS[e.relic].icon : e.type === 'landmark' ? biome.landmarkIcon : e.type === 'vaultkey' ? 104 + e.phase : PROP[e.type];
   const TAU = Math.PI * 2;
 
   class Renderer {
@@ -34,9 +35,9 @@
     async load(progress) {
       const names = [
         ...Array.from({ length: 8 }, (_, i) => `fox-${i}`),
-        ...Array.from({ length: 60 }, (_, i) => `enemy-${i}`),
-        ...Array.from({ length: 80 }, (_, i) => `prop-${i}`),
-        ...Array.from({ length: 80 }, (_, i) => `tile-${i}`),
+        ...Array.from({ length: C.ENEMIES.length * 4 }, (_, i) => `enemy-${i}`),
+        ...Array.from({ length: 112 }, (_, i) => `prop-${i}`),
+        ...Array.from({ length: 112 }, (_, i) => `tile-${i}`),
         ...C.GUARDIANS.flatMap(b => Array.from({ length: 4 }, (_, i) => `boss-${b.id}-${i}`)),
       ];
       let loaded = 0;
@@ -64,6 +65,8 @@
       const rect = this.canvas.getBoundingClientRect();
       if (rect.width < 1 || rect.height < 1) return;
       this.width = rect.width; this.height = rect.height;
+      this.landscapeArena = this.width >= 650 && this.height < 300;
+      this.canvas.parentElement.classList.toggle('arena-landscape', this.landscapeArena);
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       this.canvas.width = Math.round(this.width * dpr);
       this.canvas.height = Math.round(this.height * dpr);
@@ -106,7 +109,7 @@
     effects(events, game) {
       for (const event of events) {
         const x = event.x ?? game.player.x, y = event.y ?? game.player.y;
-        if (['pickup', 'seed', 'chest', 'freed', 'puzzleSolved', 'landmark', 'relic', 'secret', 'bossDefeated', 'courierHome'].includes(event.type)) this.burst(x, y, event.type === 'freed' ? '#87dab1' : '#ffc247', ['seed', 'bossDefeated'].includes(event.type) ? 48 : 18);
+        if (['pickup', 'seed', 'chest', 'freed', 'puzzleSolved', 'landmark', 'relic', 'secret', 'bossDefeated', 'courierHome', 'vaultKey', 'vaultOpened', 'harvest', 'planted'].includes(event.type)) this.burst(x, y, event.type === 'freed' ? '#87dab1' : '#ffc247', ['seed', 'bossDefeated', 'vaultOpened'].includes(event.type) ? 48 : 18);
         if (event.type === 'bossImpact') this.impacts.push({ cells: event.cells, realm: event.realm, life: .38 });
         if (['bossPhase', 'bossStart', 'loom'].includes(event.type)) this.rings.push({ x, y, age: 0, life: .8, range: 5, color: '#ffc247' });
         if (event.type === 'hit') this.burst(x, y, '#ffdda0', 13);
@@ -138,15 +141,20 @@
       // Reserve real space for the health banner and touch controls. A fixed
       // arena camera must not put safe tiles underneath the direction pad.
       const narrow = this.width < 700, low = this.height < 300;
-      const top = low ? 70 : narrow ? 88 : 104, bottom = narrow ? 112 : low ? 8 : 72;
+      const sideBanner = this.landscapeArena;
+      const extra = game.boss?.beats === 2 ? 16 : 0;
+      const top = sideBanner ? 8 : (low ? 70 : narrow ? 88 : 104) + extra, bottom = sideBanner ? 8 : narrow ? 112 : low ? 8 : 72;
+      const left = sideBanner ? Math.min(300, this.width * .36) + 28 : 0;
+      const arenaWidth = sideBanner ? this.width - left - 232 : this.width - (narrow ? 28 : 280);
       const arenaHeight = Math.max(66, this.height - top - bottom);
-      const t = fighting ? Math.min((this.width - (narrow ? 28 : 280)) / 11, arenaHeight / 11) : this.tile;
+      const t = fighting ? Math.min(arenaWidth / 11, arenaHeight / 11) : this.tile;
       const smooth = this.reduced ? 1 : 1 - Math.exp(-dt * 16);
       this.hero.x += (player.x - this.hero.x) * smooth;
       this.hero.y += (player.y - this.hero.y) * smooth;
       this.camera.x += (this.hero.x - this.camera.x) * (this.reduced ? 1 : 1 - Math.exp(-dt * 8));
       this.camera.y += (this.hero.y - this.camera.y) * (this.reduced ? 1 : 1 - Math.exp(-dt * 8));
-      const offsetX = this.width / 2 - ((fighting ? map.arena.x : this.camera.x) + .5) * t;
+      const centerX = fighting && sideBanner ? left + arenaWidth / 2 : this.width / 2;
+      const offsetX = centerX - ((fighting ? map.arena.x : this.camera.x) + .5) * t;
       const offsetY = (fighting ? top + arenaHeight / 2 : this.height / 2) - ((fighting ? map.arena.y : this.camera.y) + .5) * t;
       const point = (x, y) => ({ x: offsetX + (x + .5) * t, y: offsetY + (y + .5) * t });
       ctx.fillStyle = game.phase ? '#09111b' : '#0a1512';
@@ -171,7 +179,7 @@
         }
         const open = C.walkable(map, x, y, game.phase);
         const base = game.biome.tile;
-        const watery = ['canals', 'constellation', 'belfry', 'causeways', 'aurora'].includes(game.biome.layout);
+        const watery = ['canals', 'constellation', 'belfry', 'causeways', 'aurora', 'paperfold', 'orbits'].includes(game.biome.layout);
         const arenaTile = map.arena && Math.abs(x - map.arena.x) <= 5 && Math.abs(y - map.arena.y) <= 5;
         let frame = base + (tile === 1 ? watery && (x + y) % 4 !== 0 ? 2 : 1 : map.clearings.includes(index) && !arenaTile ? 3 : 0);
         if (tile >= 2) frame = open ? base + 3 : tile === 2 ? 12 : 13;
@@ -206,7 +214,8 @@
 
       if (map.arena && (fighting || game.seen.has(map.arena.y * map.w + map.arena.x))) {
         const p = point(map.arena.x, map.arena.y), size = t * 8;
-        const tile = this.images[`tile-${77 + C.GUARDIANS.findIndex(b => b.id === game.boss.id)}`];
+        const spec = C.GUARDIANS.find(b => b.id === game.boss.id);
+        const tile = this.images[`tile-${spec.arenaTile ?? 77 + C.GUARDIANS.indexOf(spec)}`];
         if (tile) { ctx.globalAlpha = .55; ctx.drawImage(tile, p.x - size / 2, p.y - size / 2, size, size); ctx.globalAlpha = 1; }
         if (fighting) {
           ctx.strokeStyle = '#ffc247'; ctx.lineWidth = 2;
@@ -264,9 +273,16 @@
           ctx.strokeStyle = dangerous ? '#ff9b83' : '#8bdbe6'; ctx.lineWidth = dangerous ? 2 : 1;
           ctx.strokeRect(p.x - t * .43, p.y - t * .43, t * .86, t * .86);
           ctx.fillStyle = dangerous ? '#fff1ce' : '#8bdbe6'; ctx.font = `bold ${Math.max(10, t * .32)}px sans-serif`; ctx.textAlign = 'center';
-          ctx.fillText(boss.realm === -1 ? '!' : boss.realm ? '☾' : '☼', p.x, p.y + t * .13);
+          ctx.fillText(boss.realm === -1 ? boss.beats === 2 ? String(boss.beat) : '!' : boss.realm ? '☾' : '☼', p.x, p.y + t * .13);
           ctx.strokeStyle = dangerous ? '#ffe6bb' : '#8bdbe6'; ctx.lineWidth = 2;
           ctx.beginPath(); ctx.arc(p.x, p.y, t * .32, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - boss.timer / Math.max(.01, boss.total))); ctx.stroke();
+        }
+        for (const cell of boss.followup) {
+          const p = point(cell.x, cell.y);
+          ctx.strokeStyle = '#d8c4ff'; ctx.lineWidth = 1.5; ctx.setLineDash([2, 4]);
+          ctx.strokeRect(p.x - t * .35, p.y - t * .35, t * .7, t * .7); ctx.setLineDash([]);
+          ctx.fillStyle = '#e5d6ff'; ctx.font = `bold ${Math.max(9, t * .23)}px sans-serif`; ctx.textAlign = 'right';
+          ctx.fillText('2', p.x + t * .31, p.y - t * .15);
         }
       }
       for (const impact of this.impacts) {
@@ -289,18 +305,18 @@
       }
 
       for (const e of map.entities) {
-        if (e.done && !['chest', 'shrine', 'well', 'landmark', 'trader', 'guardian'].includes(e.type)) continue;
+        if (e.done && !['chest', 'shrine', 'well', 'landmark', 'trader', 'guardian', 'vault', 'wishbed'].includes(e.type)) continue;
         const index = e.y * map.w + e.x;
         if (!game.seen.has(index)) continue;
         const p = point(e.x, e.y), visible = game.visible.has(index);
         let alpha = visible ? 1 : .3;
-        const wrongPhase = ['seed', 'landmark'].includes(e.type) && e.phase !== -1 && game.phase !== e.phase;
+        const wrongPhase = ['seed', 'landmark', 'vaultkey'].includes(e.type) && e.phase !== -1 && game.phase !== e.phase;
         if (wrongPhase || e.done) alpha *= .45;
         const float = this.reduced ? 0 : Math.sin(elapsed * 2.5 + e.x) * 3;
-        const floating = ['seed', 'mote', 'thread', 'relic'].includes(e.type);
+        const floating = ['seed', 'mote', 'thread', 'relic', 'vaultkey'].includes(e.type);
         if (visible && !e.done && ['seed', 'portal', 'well', 'relic', 'landmark'].includes(e.type)) this.glow(p.x, p.y, t * .9, e.type === 'portal' ? 'rgba(25,227,227,.22)' : 'rgba(255,194,71,.23)', wrongPhase ? .3 : 1);
         const size = e.type === 'portal' ? 1.55 : e.type === 'seed' ? .74 : ['mote', 'medicine', 'bomb', 'thread'].includes(e.type) ? .6 : 1;
-        const icon = e.type === 'relic' ? C.RELICS[e.relic].icon : e.type === 'landmark' ? game.biome.landmarkIcon : PROP[e.type];
+        const icon = entityIcon(e, game.biome);
         this.sprite(`prop-${icon}`, p.x, p.y - (e.type === 'portal' ? t * .25 : 0) + (floating ? float : 0), t * size, t * size, alpha);
         if (e.type === 'landmark' && visible) {
           ctx.fillStyle = e.done ? '#87dab1' : wrongPhase ? '#8bdbe6' : '#ffe2a2'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
@@ -308,6 +324,11 @@
         }
         if (e.type === 'relic' && visible) {
           ctx.fillStyle = '#ffe2a2'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('REGIONAL RELIC', p.x, p.y + t * .5);
+        }
+        if (['vaultkey', 'vault', 'wishbed'].includes(e.type) && visible && !e.done) {
+          const label = e.type === 'vaultkey' ? `${e.phase ? '☾ ECHO' : '☼ BLOOM'} KEY` : e.type === 'vault' ? `REALM VAULT · ${game.vaultKeys()}/2 · E` : e.progress < 0 ? 'PLANT · 4 LIGHT · E' : e.progress < 24 ? `GROWING · ${e.progress}/24` : 'READY TO HARVEST · E';
+          ctx.fillStyle = e.type === 'wishbed' && e.progress === 24 ? '#87dab1' : '#ffe2a2'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(label, p.x, p.y + t * .55);
+          if (e.type === 'wishbed' && e.progress === 24) this.glow(p.x, p.y, t * .7, 'rgba(135,218,177,.22)');
         }
         if (['trader', 'loom', 'guardian', 'courier'].includes(e.type) && visible && !e.done && !fighting) {
           ctx.fillStyle = '#ffe2a2'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
@@ -436,7 +457,7 @@
       for (const e of map.entities) {
         if (e.done && e.type !== 'landmark' || !game.seen.has(e.y * map.w + e.x) && !(game.has('finder') && ['seed', 'relic'].includes(e.type)) || e.type === 'mote') continue;
         const x = ox + (e.x + .5) * scale, y = oy + (e.y + .5) * scale;
-        const icon = e.type === 'relic' ? C.RELICS[e.relic].icon : e.type === 'landmark' ? game.biome.landmarkIcon : PROP[e.type];
+        const icon = entityIcon(e, game.biome);
         if (large && this.images[`prop-${icon}`]) {
           const size = Math.max(18, scale * 1.45); ctx.globalAlpha = e.done ? .45 : 1;
           ctx.drawImage(this.images[`prop-${icon}`], x - size / 2, y - size / 2, size, size); ctx.globalAlpha = 1;

@@ -1,0 +1,946 @@
+{
+  "save": {
+    "version": 3,
+    "profile": {
+      "light": 341,
+      "medalAwards": 0,
+      "wins": 0,
+      "runs": 12,
+      "best": 0,
+      "dailyBest": 0,
+      "upgrades": {
+        "hearth": 0,
+        "satchel": 0,
+        "lens": 0,
+        "ward": 0,
+        "focus": 0
+      },
+      "memories": [
+        0,
+        8,
+        72,
+        89
+      ],
+      "relics": [
+        1,
+        32,
+        44
+      ],
+      "trails": {
+        "dawn": 1,
+        "frontier": 1,
+        "horizon": 0,
+        "pilgrimage": 0,
+        "rainbound": 1,
+        "aurora": 1,
+        "homecoming": 0
+      },
+      "regions": [
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        }
+      ],
+      "selectedTrail": "dawn",
+      "selectedArt": "tempest",
+      "selectedCharm": "feather",
+      "guardians": {
+        "bellkeeper": 1,
+        "tempest": 2,
+        "dawnhart": 0
+      },
+      "guardianAwards": 0,
+      "rescues": 0,
+      "sound": false,
+      "gentle": false
+    },
+    "run": {
+      "generator": 3,
+      "seed": 73619,
+      "daily": false,
+      "gentle": false,
+      "upgrades": {
+        "hearth": 0,
+        "satchel": 0,
+        "lens": 0,
+        "ward": 0,
+        "focus": 0
+      },
+      "trail": "survey",
+      "surveyRegion": 14,
+      "plan": [
+        {
+          "memories": [
+            89,
+            87,
+            84
+          ],
+          "relic": 43
+        }
+      ],
+      "tier": 1,
+      "art": "gust",
+      "charm": "none",
+      "depth": 0,
+      "phase": 0,
+      "turn": 0,
+      "steps": 0,
+      "kills": 0,
+      "light": 0,
+      "score": 0,
+      "elapsed": 1.6500000000000008,
+      "memories": [],
+      "relics": [],
+      "blessings": [],
+      "records": [
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        }
+      ],
+      "inventory": {
+        "medicine": 2,
+        "bomb": 2,
+        "thread": 3
+      },
+      "player": {
+        "x": 34,
+        "y": 30,
+        "facing": 0,
+        "hp": 7
+      },
+      "cooldowns": {
+        "attack": 0,
+        "dash": 0,
+        "shift": 0,
+        "guard": 0,
+        "art": 0
+      },
+      "focus": 3,
+      "shield": 0,
+      "guardTime": 0,
+      "guideTurns": 0,
+      "status": "playing",
+      "seen": [
+        44,
+        45,
+        46,
+        47,
+        48,
+        87,
+        88,
+        89,
+        90,
+        91,
+        130,
+        131,
+        132,
+        133,
+        134,
+        135,
+        173,
+        174,
+        175,
+        176,
+        177,
+        178,
+        179,
+        216,
+        217,
+        218,
+        219,
+        220,
+        221,
+        222,
+        223,
+        259,
+        260,
+        261,
+        262,
+        263,
+        264,
+        265,
+        302,
+        303,
+        304,
+        305,
+        306,
+        307,
+        347,
+        348,
+        349,
+        1107,
+        1108,
+        1109,
+        1110,
+        1111,
+        1149,
+        1150,
+        1151,
+        1152,
+        1153,
+        1154,
+        1155,
+        1191,
+        1192,
+        1193,
+        1194,
+        1195,
+        1196,
+        1197,
+        1198,
+        1199,
+        1233,
+        1234,
+        1235,
+        1236,
+        1237,
+        1238,
+        1239,
+        1240,
+        1241,
+        1242,
+        1243,
+        1276,
+        1277,
+        1278,
+        1279,
+        1280,
+        1281,
+        1282,
+        1283,
+        1284,
+        1285,
+        1286,
+        1319,
+        1320,
+        1321,
+        1322,
+        1323,
+        1324,
+        1325,
+        1326,
+        1327,
+        1328,
+        1329,
+        1362,
+        1363,
+        1364,
+        1365,
+        1366,
+        1367,
+        1368,
+        1369,
+        1370,
+        1371,
+        1372,
+        1406,
+        1407,
+        1408,
+        1409,
+        1410,
+        1411,
+        1412,
+        1413,
+        1414,
+        932,
+        933,
+        934,
+        935,
+        936,
+        937,
+        938,
+        939,
+        940,
+        941,
+        942,
+        975,
+        976,
+        977,
+        978,
+        979,
+        980,
+        981,
+        982,
+        983,
+        984,
+        985,
+        1018,
+        1019,
+        1020,
+        1021,
+        1022,
+        1023,
+        1024,
+        1025,
+        1026,
+        1027,
+        1028,
+        1061,
+        1062,
+        1063,
+        1064,
+        1065,
+        1066,
+        1067,
+        1068,
+        1069,
+        1070,
+        1071,
+        1104,
+        1105,
+        1106,
+        1112,
+        1113,
+        1114,
+        1147,
+        1148,
+        1156,
+        1157,
+        1190,
+        1200
+      ],
+      "opened": [],
+      "boss": {
+        "id": "dawnhart",
+        "x": 34,
+        "y": 25,
+        "hp": 44,
+        "maxHp": 44,
+        "state": "active",
+        "mode": "windup",
+        "stage": 1,
+        "cycle": 1,
+        "timer": 1.6499999999999997,
+        "total": 1.9,
+        "elapsed": 1.6500000000000008,
+        "intent": [
+          {
+            "x": 34,
+            "y": 21
+          },
+          {
+            "x": 34,
+            "y": 22
+          },
+          {
+            "x": 34,
+            "y": 23
+          },
+          {
+            "x": 34,
+            "y": 24
+          },
+          {
+            "x": 29,
+            "y": 25
+          },
+          {
+            "x": 30,
+            "y": 25
+          },
+          {
+            "x": 31,
+            "y": 25
+          },
+          {
+            "x": 32,
+            "y": 25
+          },
+          {
+            "x": 33,
+            "y": 25
+          },
+          {
+            "x": 35,
+            "y": 25
+          },
+          {
+            "x": 36,
+            "y": 25
+          },
+          {
+            "x": 37,
+            "y": 25
+          },
+          {
+            "x": 38,
+            "y": 25
+          },
+          {
+            "x": 39,
+            "y": 25
+          },
+          {
+            "x": 34,
+            "y": 26
+          },
+          {
+            "x": 34,
+            "y": 27
+          },
+          {
+            "x": 34,
+            "y": 28
+          },
+          {
+            "x": 34,
+            "y": 29
+          },
+          {
+            "x": 34,
+            "y": 30
+          },
+          {
+            "x": 34,
+            "y": 31
+          }
+        ],
+        "realm": -1,
+        "attack": "Roots of morning",
+        "landing": null,
+        "kit": {
+          "medicine": 2,
+          "bomb": 2,
+          "thread": 3
+        },
+        "hitsTaken": 0
+      },
+      "guardianWins": {
+        "bellkeeper": 0,
+        "tempest": 0,
+        "dawnhart": 0
+      },
+      "rescues": 0,
+      "recordedRescues": 0,
+      "carrying": false,
+      "delivered": false,
+      "entities": [
+        {
+          "id": "e0",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e1",
+          "done": true,
+          "progress": 0
+        },
+        {
+          "id": "e2",
+          "done": true,
+          "progress": 0
+        },
+        {
+          "id": "e3",
+          "done": true,
+          "progress": 0
+        },
+        {
+          "id": "e4",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e5",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e6",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e7",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e8",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e9",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e10",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e11",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e12",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e13",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e14",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e15",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e16",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e17",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e18",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e19",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e20",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e21",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e22",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e23",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e24",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e25",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e26",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e27",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e28",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e29",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e30",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e31",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e32",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e33",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e34",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e35",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e36",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e37",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e38",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e39",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e40",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e41",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e42",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e43",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e44",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e45",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e46",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e47",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e48",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e49",
+          "done": false,
+          "progress": 0
+        }
+      ],
+      "enemies": [
+        {
+          "id": "foe0",
+          "x": 35,
+          "y": 12,
+          "hp": 5,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 1,
+          "known": false
+        },
+        {
+          "id": "foe1",
+          "x": 21,
+          "y": 13,
+          "hp": 5,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 1,
+          "known": false
+        },
+        {
+          "id": "foe2",
+          "x": 33,
+          "y": 4,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 1,
+          "known": false
+        },
+        {
+          "id": "foe3",
+          "x": 28,
+          "y": 30,
+          "hp": 5,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 1,
+          "known": false
+        },
+        {
+          "id": "foe4",
+          "x": 28,
+          "y": 25,
+          "hp": 5,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 1,
+          "known": false
+        },
+        {
+          "id": "foe5",
+          "x": 20,
+          "y": 4,
+          "hp": 4,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 1,
+          "known": false
+        },
+        {
+          "id": "foe6",
+          "x": 36,
+          "y": 8,
+          "hp": 5,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 1,
+          "known": false
+        },
+        {
+          "id": "foe7",
+          "x": 37,
+          "y": 15,
+          "hp": 5,
+          "intent": [],
+          "stun": 0,
+          "awake": false,
+          "windup": 0,
+          "windupTotal": 0,
+          "moveWait": 0.4,
+          "rest": 1,
+          "known": false
+        }
+      ],
+      "vents": []
+    }
+  },
+  "digests": [
+    "2f9b0d4f512f72c1d79e0556165fd1c1c66e4bbe53492444ae0c560cd67ec1e6",
+    "cc498a801b47e31da964e71ba8fa9dbcb1c1d33da987fb853c654ae13c6322dc",
+    "dea340bdd496919454f5d26dd370ea5d4bf34a875fbe5130dd6e8c17225b9d4f",
+    "e530241408140b4e87e66694faa058f955537b16355fe1a35d6cb8cbcbf17f44",
+    "7652f2b0bbb8fa29b0765131a549917ea77641ba2f08f1fc789b5e59c392f046",
+    "47c20cfe0ccfc23b47920acab9d35710b8a68a4454560017b78b4d6889266db6",
+    "b5a4ba88023b406a514cc84e3d68be45ff249de3331edbb1418c247379008907",
+    "77301d3c942591f9502163b28ae447760826a79896be75651305a64a124d661e",
+    "9a7cf376949661afb871770c4d3bb79c2fe9d38e58747c69374aa11ad1dd4b4b",
+    "397bc873d22e7426352d570864088f100f9db382f25710df1fac6bcd6e8233f1",
+    "8929032f9361cee02b3aee3664b76fc196146e12879c3037ef2d1d1ccd5e7c1d",
+    "a4368b353d38b58e4c6c7d9dc88b0ed89a9a654234e0a833952e60cc9ea75a9b",
+    "a2eab1565275865fa394c5c97b6caec5ec74165f3d1855c5c08b1fe6f0d92838",
+    "4425e8c4020420db043a27b3bb26d2323b7b8747bd9da8fb3b839c62fcce2477",
+    "d2dff27ed3a4442574b16c42eecf4aa381af006cd87dd1e5046da5e026e17944"
+  ]
+}

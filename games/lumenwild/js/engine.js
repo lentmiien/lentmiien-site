@@ -8,7 +8,7 @@
   function createApi(content, world, helpers, guardians) {
     const { BIOMES, MEMORIES, RELICS, TRAILS, ENEMIES, BLESSINGS, UPGRADES, ARTS, GUARDIANS, CHARMS } = content;
     const { clamp, integer, distance, same, plain, hash, random, shuffle, walkable, distances, lineOfSight, generateLegacy, DIRS } = helpers;
-    const VERSION = 3, SAVE_KEY = 'lumenwild.garden.v1', MAX_SAVE = 180000;
+    const VERSION = 4, SAVE_KEY = 'lumenwild.garden.v1', MAX_SAVE = 180000;
     const number = (n, min, max, fallback = min) => Number.isFinite(n) ? clamp(n, min, max) : fallback;
     const ids = (list, max) => Array.isArray(list) ? [...new Set(list.filter(n => Number.isInteger(n) && n >= 0 && n < max))] : [];
     const emptyRecord = () => ({ clears: 0, explored: 0, landmark: false });
@@ -19,7 +19,7 @@
       return {
         light: integer(p.light, 0, 999999), medalAwards: integer(p.medalAwards, 0, BIOMES.length * 3), wins, runs: integer(p.runs, 0, 99999), best: integer(p.best, 0, 999999), dailyBest: integer(p.dailyBest, 0, 999999),
         upgrades: Object.fromEntries(UPGRADES.map(u => [u.id, integer(p.upgrades?.[u.id], 0, u.costs.length)])),
-        memories: ids(p.memories, MEMORIES.length), relics: ids(p.relics, RELICS.length),
+        memories: ids(p.memories, MEMORIES.length), relics: ids(p.relics, RELICS.length), vaults: ids(p.vaults, BIOMES.length).filter(i => i >= 15),
         trails: Object.fromEntries(TRAILS.map(t => [t.id, legacy && t.id === 'dawn' ? wins : integer(p.trails?.[t.id], 0, 99999)])),
         regions: BIOMES.map((_, i) => ({ clears: legacy && i < 3 ? wins : integer(p.regions?.[i]?.clears, 0, 99999), explored: integer(p.regions?.[i]?.explored, 0, 100), landmark: p.regions?.[i]?.landmark === true })),
         selectedTrail: TRAILS.some(t => t.id === p.selectedTrail) ? p.selectedTrail : legacy && wins ? 'frontier' : 'dawn',
@@ -50,7 +50,7 @@
     function charmUnlocked(p, id) {
       if (id === 'none') return true;
       if (id === 'firefly') return p.rescues >= 3;
-      const earned = { bell: p.guardians.bellkeeper, feather: p.guardians.tempest, crown: p.guardians.dawnhart };
+      const earned = { bell: p.guardians.bellkeeper, feather: p.guardians.tempest, crown: p.guardians.dawnhart, amber: p.guardians.honeyregent, chime: p.guardians.resonantwarden, twilight: p.guardians.nightgardener };
       return Object.hasOwn(earned, id) && earned[id] > 0;
     }
     function artUnlocked(p, id) {
@@ -63,6 +63,9 @@
       if (id === 'tide') return p.guardians.bellkeeper > 0;
       if (id === 'tempest') return p.guardians.tempest > 0;
       if (id === 'dawn') return p.guardians.dawnhart > 0;
+      if (id === 'nectar') return p.guardians.honeyregent > 0;
+      if (id === 'resonance') return p.guardians.resonantwarden > 0;
+      if (id === 'afterglow') return p.guardians.nightgardener > 0;
       return false;
     }
     function upgradeRequirement(p, id) {
@@ -77,7 +80,10 @@
       p.light -= cost; p.upgrades[id] += 1; return true;
     }
 
-    function dailyRoute(seed, generator) { return generator < 3 ? [seed % 3, 3 + (seed >>> 8) % 3, 6 + (seed >>> 16) % 3] : [seed % 5, 5 + (seed >>> 8) % 5, 10 + (seed >>> 16) % 5]; }
+    function dailyRoute(seed, generator) {
+      const size = generator < 3 ? 3 : generator === 3 ? 5 : 7;
+      return [seed % size, size + (seed >>> 8) % size, size * 2 + (seed >>> 16) % size];
+    }
     function discoveryPlan(seed, route, knownMemories = [], knownRelics = []) {
       return route.map(region => {
         const rng = random(hash(`${seed}:discoveries:${region}`));
@@ -88,12 +94,13 @@
     function generate(seed, region, options = {}) {
       if (!Number.isInteger(region) || region < 0 || region >= BIOMES.length) throw new RangeError('Unknown garden');
       const plan = options.plan || discoveryPlan(seed, [region])[0];
-      return world.generate(seed, region, plan, integer(options.tier, 1, 3, 1), helpers, options.generator === 2 ? 2 : 3);
+      return world.generate(seed, region, plan, integer(options.tier, 1, 3, 1), helpers, options.generator === 2 ? 2 : options.generator === 3 ? 3 : 4);
     }
 
     function syncDiscoveries(p, game) {
       p.memories = [...new Set([...p.memories, ...game.memories])];
       p.relics = [...new Set([...p.relics, ...game.relics])];
+      p.vaults = [...new Set([...p.vaults, ...game.vaults])];
       GUARDIANS.forEach(b => { p.guardians[b.id] = Math.max(p.guardians[b.id], game.guardianWins[b.id]); });
       p.rescues = Math.min(99999, p.rescues + Math.max(0, game.rescues - game.recordedRescues));
       game.recordedRescues = game.rescues;
@@ -144,7 +151,7 @@
         this.seed = integer(options.seed, 0, 4294967295, 1);
         this.daily = options.daily === true;
         this.gentle = !this.daily && options.gentle === true;
-        this.generator = [1, 2].includes(options.generator) ? options.generator : 3;
+        this.generator = [1, 2, 3].includes(options.generator) ? options.generator : 4;
         this.surveyRegion = integer(options.region ?? options.surveyRegion, 0, BIOMES.length - 1);
         this.trail = this.daily ? 'daily' : options.trail === 'trial' && BIOMES[this.surveyRegion].guardian ? 'trial' : options.trail === 'survey' ? 'survey' : TRAILS.some(t => t.id === options.trail) ? options.trail : 'dawn';
         this.journey = this.generator === 1 ? [0, 1, 2] : this.daily ? dailyRoute(this.seed, this.generator) : ['survey', 'trial'].includes(this.trail) ? [this.surveyRegion] : TRAILS.find(t => t.id === this.trail).route.slice();
@@ -154,7 +161,7 @@
         this.charm = !this.daily && CHARMS.some(c => c.id === options.charm) ? options.charm : 'none';
         this.upgrades = this.daily ? profile().upgrades : profile({ upgrades: options.upgrades }).upgrades;
         this.depth = 0; this.phase = 0; this.turn = 0; this.steps = 0; this.kills = 0; this.light = 0; this.score = 0; this.elapsed = 0;
-        this.memories = []; this.relics = []; this.blessings = [];
+        this.memories = []; this.relics = []; this.blessings = []; this.vaults = [];
         this.guardianWins = Object.fromEntries(GUARDIANS.map(b => [b.id, 0])); this.rescues = 0; this.recordedRescues = 0;
         this.records = BIOMES.map(emptyRecord);
         this.inventory = { medicine: Math.min(9, 2 + this.upgrades.satchel + (this.gentle ? 2 : 0)), bomb: Math.min(9, 2 + this.upgrades.satchel), thread: 3 };
@@ -170,6 +177,7 @@
       get dashCooldown() { return this.cooldowns.dash; }
       get shiftCooldown() { return this.cooldowns.shift; }
       has(id) { return this.blessings.includes(id) ? 1 : 0; }
+      vaultKeys() { return this.map.entities.filter(e => e.type === 'vaultkey' && e.done).length; }
       stats() {
         return {
           maxHp: 7 + this.upgrades.hearth + this.has('vitality') * 2 + (this.gentle ? 3 : 0) + (this.charm === 'crown' ? 2 : 0),
@@ -220,7 +228,7 @@
       retreatBoss(failed = false) { return guardians.retreat(this, failed); }
       nearby() {
         if (this.boss?.state === 'active') return null;
-        return this.map.entities.filter(e => (!e.done || (e.type === 'landmark' && ['ferries', 'spores'].includes(this.biome.feature))) && ['portal', 'chest', 'well', 'shrine', 'landmark', 'trader', 'loom', 'guardian'].includes(e.type) && distance(e, this.player) <= 1)
+        return this.map.entities.filter(e => (!e.done || (e.type === 'landmark' && ['ferries', 'spores', 'paper'].includes(this.biome.feature))) && ['portal', 'chest', 'well', 'shrine', 'landmark', 'trader', 'loom', 'guardian', 'vault', 'wishbed'].includes(e.type) && distance(e, this.player) <= 1)
           .sort((a, b) => distance(a, this.player) - distance(b, this.player))[0];
       }
       collect() {
@@ -251,7 +259,25 @@
         } else if (e.type === 'courier') {
           e.done = true; this.carrying = true; this.guideCache = null;
           this.emit('courier', 'A lost firefly joins your lantern. Bring it to the waygate for a reward.');
+        } else if (e.type === 'vaultkey') {
+          if (e.phase !== this.phase) { this.emit('hint', `The ${e.phase ? 'moon' : 'sun'} key waits in ${e.phase ? 'Echo' : 'Bloom'}. Fold to collect it.`); return; }
+          e.done = true; this.score += 25;
+          const vault = this.map.entities.find(item => item.type === 'vault');
+          if (vault) this.seen.add(vault.y * this.map.w + vault.x);
+          this.emit('vaultKey', `${e.phase ? 'Moon' : 'Sun'} key found · ${this.vaultKeys()} / 2. The vault is marked on your atlas.`, { x: e.x, y: e.y });
         }
+      }
+      tendWishbed(e) {
+        if (e.progress < 0) {
+          if (this.light < 4) { this.emit('hint', 'Plant a wishseed for four expedition starlight. It grows while you walk the maze.'); return false; }
+          this.light -= 4; e.progress = 0;
+          this.emit('planted', 'A wishseed takes root. Walk 24 tiles, then return for a tonic, healing, focus, and five starlight.'); return true;
+        }
+        if (e.progress < 24) { this.emit('hint', `Your wishbed is growing · ${24 - e.progress} more walking steps. Waiting and attacking do not grow it.`); return false; }
+        e.done = true; this.light += 5; this.score += 60;
+        this.inventory.medicine = Math.min(9, this.inventory.medicine + 1);
+        this.player.hp = Math.min(this.stats().maxHp, this.player.hp + 3); this.focus = this.stats().maxFocus;
+        this.emit('harvest', 'Your small kindness blooms · a tonic, three hearts, full focus, and five starlight.', { x: e.x, y: e.y }); return true;
       }
       deliverFirefly() {
         if (!this.carrying || this.delivered) return false;
@@ -277,7 +303,7 @@
         if (offer === 'tonic') { this.inventory.medicine = Math.min(9, this.inventory.medicine + 2); this.player.hp = Math.min(this.stats().maxHp, this.player.hp + 3); }
         if (offer === 'supplies') { this.inventory.bomb = Math.min(9, this.inventory.bomb + 2); this.inventory.thread = Math.min(9, this.inventory.thread + 1); }
         if (offer === 'chart') {
-          this.map.entities.filter(p => ['seed', 'relic', 'landmark', 'guardian', 'courier'].includes(p.type)).forEach(p => this.seen.add(p.y * this.map.w + p.x));
+          this.map.entities.filter(p => ['seed', 'relic', 'landmark', 'guardian', 'courier', 'vaultkey', 'vault', 'wishbed'].includes(p.type)).forEach(p => this.seen.add(p.y * this.map.w + p.x));
           this.guideTurns = 80; this.focus = this.stats().maxFocus;
         }
         this.light -= prices[offer]; e.done = true;
@@ -289,20 +315,20 @@
         this.guideCache = null; this.pathCache = null;
       }
       useLandmark(e) {
-        if (e.done && ['ferries', 'spores'].includes(this.biome.feature)) {
+        if (e.done && ['ferries', 'spores', 'paper'].includes(this.biome.feature)) {
           const landings = this.map.entities.filter(p => p.type === 'landmark').sort((a, b) => a.number - b.number);
           const target = landings[e.number % landings.length];
           const landing = [target, ...DIRS.map(([dx, dy]) => ({ x: target.x + dx, y: target.y + dy }))]
             .find(p => walkable(this.map, p.x, p.y, this.phase) && !this.enemyAt(p.x, p.y));
           if (!landing) { this.emit('hint', 'The landing is occupied. Try again when the path is clear.'); return false; }
           this.player.x = landing.x; this.player.y = landing.y; this.shield = .5;
-          this.emit('ferry', this.biome.feature === 'spores' ? 'The dreaming roots carry you to the next cap.' : 'The ferry carries your lantern across the marsh.'); this.collect(); return true;
+          this.emit('ferry', this.biome.feature === 'paper' ? 'A paper crane unfolds a path to the next island.' : this.biome.feature === 'spores' ? 'The dreaming roots carry you to the next cap.' : 'The ferry carries your lantern across the marsh.'); this.collect(); return true;
         }
         if (e.phase !== this.phase) { this.emit('hint', `${this.biome.landmark} answers in ${e.phase ? 'Echo' : 'Bloom'}.`); return false; }
         const count = this.map.entities.filter(p => p.type === 'landmark' && p.done).length;
-        if (['stars', 'auroras'].includes(this.biome.feature) && e.number !== count + 1) { this.emit('hint', `Begin with ${this.biome.landmark} ${count + 1}.`); return false; }
+        if (['stars', 'auroras', 'resonance', 'orbits'].includes(this.biome.feature) && e.number !== count + 1) { this.emit('hint', `Begin with ${this.biome.landmark} ${count + 1}.`); return false; }
         e.done = true; this.light += 4; this.score += 40; this.focus = Math.min(this.stats().maxFocus, this.focus + 1);
-        if (['grove', 'gears', 'prisms', 'stars', 'bells', 'vanes', 'sundials', 'looms', 'auroras'].includes(this.biome.feature)) this.openShortcuts(e);
+        if (['grove', 'gears', 'prisms', 'stars', 'bells', 'vanes', 'sundials', 'looms', 'auroras', 'nectar', 'resonance', 'lanterns', 'orbits', 'lastlight'].includes(this.biome.feature)) this.openShortcuts(e);
         if (this.biome.feature === 'mirrors') {
           const target = this.map.entities.find(p => p.type === 'seed' && !p.done);
           if (target) for (let y = target.y - 2; y <= target.y + 2; y += 1) for (let x = target.x - 2; x <= target.x + 2; x += 1) {
@@ -334,6 +360,16 @@
           this.emit('challenge', '', { guardian: this.boss.id }); return false;
         }
         if (e.type === 'trader') { this.emit('trader'); return false; }
+        if (e.type === 'wishbed') return this.tendWishbed(e);
+        if (e.type === 'vault') {
+          if (this.vaultKeys() < 2) { this.emit('hint', `This vault needs both realm keys · ${this.vaultKeys()} / 2. The sun key lives in Bloom; the moon key lives in Echo.`); return false; }
+          e.done = true; this.light += 24; this.score += 200; this.focus = this.stats().maxFocus;
+          this.inventory.bomb = Math.min(9, this.inventory.bomb + 2);
+          this.player.hp = Math.min(this.stats().maxHp, this.player.hp + 2);
+          if (!this.vaults.includes(this.region)) this.vaults.push(this.region);
+          this.openShortcuts(e);
+          this.emit('vaultOpened', 'Two worlds, one promise · +24 starlight, two seedbombs, two hearts, and full focus.', { x: e.x, y: e.y }); return true;
+        }
         if (e.type === 'loom') return this.useLoom(e);
         if (e.type === 'shrine') { this.emit('puzzle', '', { id: e.id }); return false; }
         if (e.type === 'landmark') return this.useLandmark(e);
@@ -419,8 +455,8 @@
         } else for (const e of foes) {
           if (this.art === 'lance') {
             if ((dx && e.y === p.y && (e.x - p.x) * dx > 0 || dy && e.x === p.x && (e.y - p.y) * dy > 0) && distance(e, p) <= 5) this.hit(e, 5);
-          } else if (['stars', 'dawn'].includes(this.art) ? this.visible.has(e.y * this.map.w + e.x) : distance(e, p) <= (['nova', 'tempest', 'tide'].includes(this.art) ? 4 : 3)) {
-            this.hit(e, this.art === 'gust' ? 1 : this.art === 'snare' ? 2 : this.art === 'tide' ? 3 : this.art === 'dawn' ? 5 : 4, this.art === 'snare' ? 3 : 1.5);
+          } else if (['stars', 'dawn', 'afterglow'].includes(this.art) ? this.visible.has(e.y * this.map.w + e.x) : distance(e, p) <= (this.art === 'resonance' ? 5 : ['nova', 'tempest', 'tide', 'nectar'].includes(this.art) ? 4 : 3)) {
+            this.hit(e, this.art === 'gust' ? 1 : ['snare', 'nectar'].includes(this.art) ? 2 : this.art === 'tide' ? 3 : this.art === 'dawn' ? 5 : 4, this.art === 'snare' ? 3 : ['nectar', 'resonance'].includes(this.art) ? 2 : 1.5);
           }
         }
         if (this.art === 'stars') this.shield = Math.max(this.shield, 1.5);
@@ -428,6 +464,8 @@
         if (this.art === 'tide') this.shield = Math.max(this.shield, .65);
         if (this.art === 'tempest') this.cooldowns.dash = 0;
         if (this.art === 'dawn') this.cooldowns.guard = 0;
+        if (this.art === 'nectar') { p.hp = Math.min(this.stats().maxHp, p.hp + 1); this.shield = Math.max(this.shield, 1); }
+        if (this.art === 'afterglow') { this.cooldowns.shift = 0; this.shield = Math.max(this.shield, 1.2); }
         if (this.has('roots')) p.hp = Math.min(this.stats().maxHp, p.hp + 1);
         this.focus -= art.cost; this.cooldowns.art = 1.5;
         if (fighting && this.boss.state === 'defeated') this.focus = this.stats().maxFocus;
@@ -436,7 +474,7 @@
       act(action, direction) {
         this.events = [];
         if (this.status !== 'playing') return false;
-        const p = this.player;
+        const p = this.player, stepsBefore = this.steps;
         let acted = false;
         if (action === 'move' && Number.isInteger(direction) && direction >= 0 && direction < 4) {
           p.facing = direction;
@@ -451,14 +489,14 @@
           this.cooldowns.attack = attackWait; this.emit('sweep'); acted = true;
         } else if (action === 'guard') {
           if (this.cooldowns.guard > 0) return false;
-          this.guardTime = this.stats().guardDuration; this.cooldowns.guard = 3.2;
+          this.guardTime = this.stats().guardDuration; this.cooldowns.guard = this.charm === 'chime' ? 2.56 : 3.2;
           this.emit('guard', 'Mirror guard · catch the attack as its ring closes'); acted = true;
         } else if (action === 'art') acted = this.castArt();
         else if (action === 'shift') {
           if (this.shiftCooldown > 0) { this.emit('hint', `The fold settles in ${this.shiftCooldown.toFixed(1)} seconds.`); return false; }
           if (!walkable(this.map, p.x, p.y, 1 - this.phase)) { this.emit('hint', 'Step off the folded path before shifting.'); return false; }
-          this.phase = 1 - this.phase; this.cooldowns.shift = 4.2;
-          this.shield = Math.max(this.shield, this.has('echo') ? 1 : .35);
+          this.phase = 1 - this.phase; this.cooldowns.shift = this.charm === 'twilight' ? 3.2 : 4.2;
+          this.shield = Math.max(this.shield, this.has('echo') ? 1 : this.charm === 'twilight' ? .7 : .35);
           this.map.enemies.forEach(e => { e.intent = []; e.windup = 0; if (distance(e, p) <= 5) e.stun = Math.max(e.stun, .9); });
           this.collect(); this.emit('shift', `${this.phase ? 'Echo' : 'Bloom'} awakened${this.boss?.state === 'active' ? ' · the guardian’s pattern continues' : ' · nearby creatures are dazed'}`); acted = true;
         } else if (action === 'dash') {
@@ -474,6 +512,7 @@
           if (!this.inventory.medicine || p.hp >= this.stats().maxHp) { this.emit('hint', this.inventory.medicine ? 'Your hearts are already full.' : 'No tonic left. Look for a spring or a cache.'); return false; }
           this.inventory.medicine -= 1; p.hp = Math.min(this.stats().maxHp, p.hp + 5);
           if (this.has('alchemist')) this.focus = this.stats().maxFocus;
+          if (this.charm === 'amber') { this.focus = Math.min(this.stats().maxFocus, this.focus + 2); this.shield = Math.max(this.shield, 1); }
           this.shield = Math.max(this.shield, .4); this.emit('heal', 'Moonberry tonic · five hearts restored'); acted = true;
         } else if (action === 'bomb') {
           if (!this.inventory.bomb) { this.emit('hint', 'No seedbombs left. Search a treasure cache.'); return false; }
@@ -488,6 +527,10 @@
         else if (action === 'wait') acted = true;
         else if (action === 'return') { this.recordSurvey(); this.status = 'returned'; this.emit('returned', 'Every discovery comes home with you.'); acted = true; }
         if (!acted) return false;
+        if (this.steps > stepsBefore && this.boss?.state !== 'active') for (const bed of this.map.entities.filter(e => e.type === 'wishbed' && !e.done && e.progress >= 0 && e.progress < 24)) {
+          bed.progress = Math.min(24, bed.progress + this.steps - stepsBefore);
+          if (bed.progress === 24) this.emit('gardenReady', 'Your wishbed has bloomed. Return to the sprout marked on your atlas.');
+        }
         this.turn += 1; this.guideTurns = Math.max(0, this.guideTurns - 1); this.reveal(); return true;
       }
       attackPattern(enemy) {
@@ -604,10 +647,10 @@
           generator: this.generator, seed: this.seed, daily: this.daily, gentle: this.gentle, upgrades: this.upgrades,
           trail: this.trail, surveyRegion: this.surveyRegion, plan: this.plan, tier: this.tier, art: this.art, charm: this.charm, depth: this.depth,
           phase: this.phase, turn: this.turn, steps: this.steps, kills: this.kills, light: this.light, score: this.score, elapsed: this.elapsed,
-          memories: this.memories, relics: this.relics, blessings: this.blessings, records: this.records, inventory: this.inventory, player: this.player,
+          memories: this.memories, relics: this.relics, vaults: this.vaults, blessings: this.blessings, records: this.records, inventory: this.inventory, player: this.player,
           cooldowns: this.cooldowns, focus: this.focus, shield: this.shield, guardTime: this.guardTime, guideTurns: this.guideTurns,
           status: this.status, seen: [...this.seen], opened: this.opened,
-          boss: this.boss ? { ...this.boss, intent: this.boss.intent.map(p => ({ ...p })), kit: this.boss.kit ? { ...this.boss.kit } : null } : null,
+          boss: this.boss ? { ...this.boss, intent: this.boss.intent.map(p => ({ ...p })), followup: this.boss.followup.map(p => ({ ...p })), kit: this.boss.kit ? { ...this.boss.kit } : null } : null,
           guardianWins: this.guardianWins, rescues: this.rescues, recordedRescues: this.recordedRescues, carrying: this.carrying, delivered: this.delivered,
           entities: this.map.entities.map(e => ({ id: e.id, done: e.done, progress: e.progress || 0 })),
           enemies: this.map.enemies.map(e => ({ id: e.id, x: e.x, y: e.y, hp: e.hp, intent: e.intent, stun: e.stun, awake: e.awake,
@@ -621,8 +664,9 @@
           !Array.isArray(s.blessings) || s.blessings.length !== s.depth || new Set(s.blessings).size !== s.blessings.length || s.blessings.some(id => !BLESSINGS.some(b => b.id === id)) ||
           !Array.isArray(s.entities) || s.entities.length > 100 || !Array.isArray(s.enemies) || s.enemies.length > 16 || !Array.isArray(s.seen) || s.seen.length > 1600) return null;
         const legacy = s.generator === undefined;
-        if (!legacy && (![1, 2, 3].includes(s.generator) || !['daily', 'survey', 'trial', ...TRAILS.map(t => t.id)].includes(s.trail))) return null;
+        if (!legacy && (![1, 2, 3, 4].includes(s.generator) || !['daily', 'survey', 'trial', ...TRAILS.map(t => t.id)].includes(s.trail))) return null;
         if (s.generator < 3 && (['rainbound', 'aurora', 'homecoming', 'trial'].includes(s.trail) || s.surveyRegion > 8)) return null;
+        if (s.generator < 4 && (['seasons', 'unwritten', 'tomorrow'].includes(s.trail) || s.surveyRegion > 14)) return null;
         const game = new Game({ ...s, generator: legacy ? 1 : s.generator, trail: legacy ? 'dawn' : s.trail });
         if (s.depth >= game.journey.length) return null;
         if (!legacy) {
@@ -644,6 +688,7 @@
         game.elapsed = number(s.elapsed, 0, 9999999);
         for (const key of ['medicine', 'bomb', 'thread']) game.inventory[key] = integer(s.inventory[key], 0, 9);
         game.memories = ids(s.memories, MEMORIES.length); game.relics = ids(s.relics, RELICS.length);
+        game.vaults = ids(s.vaults, BIOMES.length).filter(i => i >= 15);
         if (s.entities.length !== game.map.entities.length || s.enemies.length !== game.map.enemies.length) return null;
         for (let i = 0; i < game.map.entities.length; i += 1) {
           const e = game.map.entities[i], saved = s.entities[i];
@@ -651,7 +696,13 @@
           if (e.type !== 'portal') e.done = saved.done;
           if (e.type === 'shrine') e.progress = integer(saved.progress, 0, e.done ? 3 : 2);
           if (e.type === 'loom') { e.done = false; e.progress = integer(saved.progress, 0, 1); if (e.progress) game.useLoom(e, true); }
+          if (e.type === 'wishbed') {
+            if (!Number.isInteger(saved.progress) || saved.progress < -1 || saved.progress > 24 || e.done && saved.progress !== 24) return null;
+            e.progress = saved.progress;
+          }
         }
+        const vault = game.map.entities.find(e => e.type === 'vault');
+        if (vault?.done && game.vaultKeys() !== 2) return null;
         if (!walkable(game.map, s.player.x, s.player.y, s.phase)) return null;
         const occupied = new Set();
         for (let i = 0; i < game.map.enemies.length; i += 1) {
@@ -683,7 +734,7 @@
           if (!Array.isArray(s.vents) || s.vents.length !== game.map.vents.length) return null;
           game.map.vents.forEach((v, i) => { v.timer = number(s.vents[i]?.timer, 0, 7); v.warning = s.vents[i]?.warning === true; });
         }
-        if (game.generator === 3) {
+        if (game.generator >= 3) {
           if (!guardians.restore(game, s.boss, { ...helpers, number })) return null;
           if (s.status === 'blessing' && game.boss && game.boss.state !== 'defeated') return null;
           game.guardianWins = Object.fromEntries(GUARDIANS.map(b => [b.id, integer(s.guardianWins?.[b.id], 0, 3)]));
@@ -702,7 +753,7 @@
       if (typeof raw !== 'string' || raw.length > MAX_SAVE) return { profile: profile(), game: null, invalid: !!raw };
       try {
         const data = JSON.parse(raw);
-        if (!plain(data) || ![1, 2, VERSION].includes(data.version)) return { profile: profile(), game: null, invalid: true };
+        if (!plain(data) || ![1, 2, 3, VERSION].includes(data.version)) return { profile: profile(), game: null, invalid: true };
         const game = data.run ? Game.restore(data.run) : null;
         return { profile: profile(data.profile), game, invalid: !!data.run && !game, migrated: data.version < VERSION };
       } catch { return { profile: profile(), game: null, invalid: true }; }

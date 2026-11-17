@@ -50,16 +50,16 @@ describe('Lumenwild expanded browser interface', () => {
   let ui;
   afterEach(() => ui?.close());
 
-  test('fresh camp loads all artwork and exposes atlas chapters, 90 journal pages and 27 workshop levels', async () => {
+  test('fresh camp loads all artwork and exposes atlas chapters, 126 journal pages and 27 workshop levels', async () => {
     ui = await mount();
     expect(ui.w.document.querySelector('#loadStatus').textContent).toContain('Ready when you are');
     expect(ui.w.document.querySelector('#mainAction').disabled).toBe(false);
-    ui.click('#journeysButton'); expect(ui.w.document.querySelectorAll('[data-region]')).toHaveLength(15);
+    ui.click('#journeysButton'); expect(ui.w.document.querySelectorAll('[data-region]')).toHaveLength(21);
     expect(ui.w.document.querySelector('[data-trail="frontier"]').disabled).toBe(true);
     ui.click('#closeDialog'); ui.click('#journalButton');
-    expect(ui.w.document.querySelectorAll('.journal-entry')).toHaveLength(90); expect(ui.w.document.querySelectorAll('.relic-card')).toHaveLength(45);
+    expect(ui.w.document.querySelectorAll('.journal-entry')).toHaveLength(126); expect(ui.w.document.querySelectorAll('.relic-card')).toHaveLength(63);
     ui.click('#closeDialog'); ui.click('#workshopButton');
-    expect(ui.w.document.querySelectorAll('[data-upgrade]')).toHaveLength(5); expect(ui.w.document.querySelectorAll('[data-art]')).toHaveLength(9);
+    expect(ui.w.document.querySelectorAll('[data-upgrade]')).toHaveLength(5); expect(ui.w.document.querySelectorAll('[data-art]')).toHaveLength(12);
     expect(ui.w.document.querySelector('[data-art="gust"]').disabled).toBe(false);
   });
 
@@ -120,7 +120,7 @@ describe('Lumenwild expanded browser interface', () => {
     ui.frame(1); expect(JSON.parse(ui.w.localStorage.getItem(C.SAVE_KEY)).profile.light).toBe(12);
   });
 
-  test('renderer handles all fifteen maps, relics, landmarks, warnings and vents without invalid drawing coordinates', async () => {
+  test('renderer handles all twenty-one maps, relics, landmarks, warnings and vents without invalid drawing coordinates', async () => {
     ui = await mount();
     const Renderer = ui.w.LumenwildRenderer;
     const render = new Renderer(ui.w.document.querySelector('#world'), ui.w.document.querySelector('#minimap'));
@@ -170,7 +170,7 @@ describe('Lumenwild expanded browser interface', () => {
     const profile = C.profile({ runs: 1, rescues: 3, guardians: { bellkeeper: 1, tempest: 1, dawnhart: 1 } });
     const game = new C.Game({ seed: 3 });
     ui = await mount(JSON.parse(C.writeSave(profile, game))); ui.click('#workshopButton');
-    expect(ui.w.document.querySelectorAll('[data-charm]')).toHaveLength(5);
+    expect(ui.w.document.querySelectorAll('[data-charm]')).toHaveLength(8);
     ui.click('[data-charm="feather"]'); ui.click('[data-art="tide"]');
     const stored = JSON.parse(ui.w.localStorage.getItem(C.SAVE_KEY));
     expect(stored.profile.selectedCharm).toBe('feather'); expect(stored.profile.selectedArt).toBe('tide');
@@ -180,5 +180,32 @@ describe('Lumenwild expanded browser interface', () => {
     ui.click('[data-charm="none"]');
     expect(JSON.parse(ui.w.localStorage.getItem(C.SAVE_KEY)).profile.selectedArt).toBe('gust');
     expect(ui.w.document.querySelector('[data-art="dawn"]').disabled).toBe(true);
+  });
+
+  test('new chapters, realm vaults, and wishbed progress are exposed through the shipped interface', async () => {
+    const profile = C.profile({ runs: 1, trails: { aurora: 1 }, vaults: [15] });
+    ui = await mount(JSON.parse(C.writeSave(profile, null))); ui.click('#journeysButton');
+    expect(ui.w.document.querySelector('[data-trail="seasons"]').disabled).toBe(false);
+    expect(ui.w.document.querySelector('[data-trail="unwritten"]').disabled).toBe(true);
+    expect(ui.w.document.querySelector('.vault-progress').textContent).toContain('1 / 6');
+    ui.click('[data-region="15"]'); ui.click('#dialogActions button');
+    const game = ui.game; game.map.enemies.forEach(e => { e.hp = 0; });
+    const bed = game.map.entities.find(e => e.type === 'wishbed'); game.light = 4; game.player.x = bed.x; game.player.y = bed.y;
+    ui.key('KeyE'); expect(bed.progress).toBe(0); expect(ui.w.document.querySelector('#regionQuest').textContent).toContain('Wishbed 0/24');
+    for (const key of game.map.entities.filter(e => e.type === 'vaultkey')) { game.player.x = key.x; game.player.y = key.y; game.phase = key.phase; game.collect(); }
+    const vault = game.map.entities.find(e => e.type === 'vault'); game.player.x = vault.x; game.player.y = vault.y;
+    ui.key('KeyE'); expect(vault.done).toBe(true); expect(ui.w.document.querySelector('#regionQuest').textContent).toContain('Vault opened');
+  });
+
+  test('a new guardian shows the second strike and realm preview, then the recovery window', async () => {
+    const profile = C.profile({ runs: 1, guardians: { resonantwarden: 1 } });
+    ui = await mount(JSON.parse(C.writeSave(profile, null))); ui.click('#journeysButton'); ui.click('[data-guardian="resonantwarden"]'); ui.click('[data-trial-tier="1"]');
+    const game = ui.game; Object.assign(game.player, game.map.arena.entry); ui.key('KeyE');
+    expect(ui.w.document.querySelector('#dialogBody').textContent).toContain('Wait for both strikes');
+    ui.click('#dialogActions button'); ui.frame(1.6);
+    expect(ui.w.document.querySelector('#guardianPattern').textContent).toContain('1/2');
+    expect(ui.w.document.querySelector('#guardianSequence').textContent).toContain('dotted 2');
+    ui.frame(game.boss.timer + .05); expect(ui.w.document.querySelector('#guardianPattern').textContent).toContain('2/2');
+    ui.frame(game.boss.timer + .05); expect(ui.w.document.querySelector('#guardianPattern').textContent).toContain('Open heart');
   });
 });

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0e0f13">
   <meta name="description" content="Carry a little light into a living labyrinth. Explore two intertwined worlds, outwit creatures, and bring a forgotten garden back to life.">
-  <title>Lumenwild · The Waking Guardians</title>
+  <title>Lumenwild · The Unwritten Seasons</title>
   <link rel="icon" type="image/webp" href="assets/prop-1.webp">
   <link rel="preload" as="image" href="assets/cover.webp">
   <link rel="stylesheet" href="/css/color-theme.css">
@@ -24,7 +24,7 @@
   <header class="topbar">
     <a href="/games" class="wordmark" aria-label="Lumenwild — back to all games">
       <span class="brand-sigil" aria-hidden="true">✧</span>
-      <span>LUMENWILD<small>THE WAKING GUARDIANS</small></span>
+      <span>LUMENWILD<small>THE UNWRITTEN SEASONS</small></span>
     </a>
     <div class="top-actions">
       <span id="saveStatus" class="save-status">A world worth getting lost in</span>
@@ -39,11 +39,11 @@
     <div class="camp-grain" aria-hidden="true"></div>
     <section class="camp-story" aria-labelledby="title">
       <div class="eyebrow"><span class="little-line"></span> A LANTERN. A LABYRINTH. A WAY HOME.</div>
-      <h1 id="title">Lumenwild<span>The Waking Guardians</span></h1>
+      <h1 id="title">Lumenwild<span>The Unwritten Seasons</span></h1>
       <p>Somewhere between the world and its reflection,<br class="desktop-break"> a forgotten garden is waiting for your light.</p>
-      <div class="story-tags"><span>Fifteen living labyrinths</span><i>✦</i><span>Three ancient guardians</span></div>
+      <div class="story-tags"><span>Twenty-one living labyrinths</span><i>✦</i><span>Six ancient guardians</span></div>
       <div class="chapter-marks" aria-label="New adventures beyond the fold">
-        <span><b>✦</b> The Rainbound Wilds</span><span><b>☼</b> Where Dawn Begins</span><span><b>∞</b> Guardian trials</span>
+        <span><b>✦</b> The Hidden Seasons</span><span><b>☾</b> The Unwritten Sky</span><span><b>∞</b> Guardian trials</span>
       </div>
     </section>
 
@@ -56,9 +56,9 @@
       <button id="dailyButton" class="daily-button" type="button" disabled><span aria-hidden="true">☼</span><span>Today’s wandering<small id="dailyDate">A shared seed · a fresh challenge</small></span><span aria-hidden="true">→</span></button>
       <label class="gentle-option"><input id="gentleMode" type="checkbox"><span>Gentle journey<small>More hearts, slower warnings. All the wonder.</small></span></label>
       <div id="loadStatus" class="load-status" role="status">Lighting the lantern…</div>
-      <div class="camp-stats"><div><strong id="campLight">0</strong><span>Starlight</span></div><div><strong id="campWins">0 / 45</strong><span>Survey medals</span></div><div><strong id="campMemories">0 / 90</strong><span>Memories</span></div></div>
-      <p id="guardianProgress" class="guardian-progress">Three sleeping guardians · a world still waking</p>
-      <button id="workshopButton" class="workshop-button" type="button"><img src="assets/prop-32.webp" width="48" height="48" alt=""><span><strong>Grow your keeper’s camp</strong><small id="workshopDetail">27 upgrades · 9 lantern arts · 4 charms</small></span><span aria-hidden="true">↗</span></button>
+      <div class="camp-stats"><div><strong id="campLight">0</strong><span>Starlight</span></div><div><strong id="campWins">0 / 63</strong><span>Survey medals</span></div><div><strong id="campMemories">0 / 126</strong><span>Memories</span></div></div>
+      <p id="guardianProgress" class="guardian-progress">Six sleeping guardians · a world still waking</p>
+      <button id="workshopButton" class="workshop-button" type="button"><img src="assets/prop-32.webp" width="48" height="48" alt=""><span><strong>Grow your keeper’s camp</strong><small id="workshopDetail">27 upgrades · 12 lantern arts · 7 charms</small></span><span aria-hidden="true">↗</span></button>
       <div class="camp-footer"><button id="journalButton" class="text-button" type="button">Open your journal <span aria-hidden="true">↗</span></button><button id="settingsButton" class="text-button muted" type="button">Settings</button></div>
     </section>
     <div class="camp-caption">TAKE YOUR TIME. THE GARDEN WILL WAIT.</div>
@@ -79,6 +79,7 @@
         <div><strong id="guardianName"></strong><span id="guardianStage"></span></div>
         <progress id="guardianHealth" max="30" value="30" aria-label="Guardian resolve"></progress>
         <p id="guardianPattern"></p>
+        <p id="guardianSequence" class="guardian-sequence" hidden></p>
       </div>
       <button id="mapButton" class="minimap-button" type="button" aria-label="Open the garden atlas, M"><canvas id="minimap" width="176" height="132" aria-hidden="true"></canvas><span>THE ATLAS <kbd>M</kbd></span></button>
       <div id="toast" class="game-toast" role="status" aria-live="polite" hidden></div>

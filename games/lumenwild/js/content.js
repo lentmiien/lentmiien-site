@@ -21,6 +21,12 @@
     { name: 'Sundial Desert', subtitle: 'The dunes remember every footstep', color: '#e8bf85', w: 41, h: 35, enemies: 8, tile: 64, layout: 'dunes', feature: 'sundials', landmark: 'Sun dial', landmarkIcon: 69, clue: 'Align the three sun dials in their marked worlds. Their shadows uncover passages beneath the dunes.', kinds: [12, 7, 5], relics: ['An hour made of sand', 'The oasis compass', 'A seed older than rain'] },
     { name: 'Velvet Labyrinth', subtitle: 'Every thread leads back to someone', color: '#e39ebd', w: 41, h: 35, enemies: 8, tile: 68, layout: 'weave', feature: 'looms', landmark: 'Silk lantern', landmarkIcon: 70, clue: 'Restore the silk lanterns. Fold looms swap the Bloom and Echo shortcuts marked around them.', kinds: [13, 4, 8], relics: ['The weaver’s silver needle', 'A ribbon for the moon', 'The unfinished tapestry'] },
     { name: 'Aurora Crown', subtitle: 'Dawn is a promise we make together', color: '#c0f0d9', w: 43, h: 35, enemies: 8, tile: 72, layout: 'aurora', feature: 'auroras', landmark: 'Dawn prism', landmarkIcon: 71, clue: 'Light three dawn prisms in order. The Dawn Hart waits beyond the last aurora.', kinds: [14, 8, 6], guardian: 'dawnhart', relics: ['The first ray of morning', 'A crown of unwritten skies', 'The keeper’s last seed'] },
+    { name: 'Honeyglass Apiary', subtitle: 'A summer carefully kept for everyone', color: '#edc579', w: 41, h: 33, enemies: 7, tile: 80, layout: 'honeycomb', feature: 'nectar', landmark: 'Nectar fountain', landmarkIcon: 98, clue: 'Fill three nectar fountains to open wax shortcuts and soften the Honey Regent’s warnings. Her attacks arrive in pairs.', kinds: [15, 4, 15], guardian: 'honeyregent', relics: ['A drop of endless summer', 'The blossom crown', 'A promise sealed in wax'] },
+    { name: 'Paperwind Reach', subtitle: 'Every blank page is somewhere to go', color: '#c4d5ed', w: 41, h: 35, enemies: 8, tile: 84, layout: 'paperfold', feature: 'paper', landmark: 'Paper crane', landmarkIcon: 99, clue: 'Unfold the cranes in their marked realms. Restored cranes carry you between paper islands.', kinds: [16, 11, 16], relics: ['The unposted letter', 'An atlas with no edges', 'The first paper wing'] },
+    { name: 'Singing Quarry', subtitle: 'Stone remembers the songs we forget', color: '#8ed4bd', w: 43, h: 35, enemies: 7, tile: 88, layout: 'faults', feature: 'resonance', landmark: 'Resonance chime', landmarkIcon: 100, clue: 'Sound chimes I, II, III in order. The Resonant Warden answers every strike with an aftershock.', kinds: [17, 5, 17], guardian: 'resonantwarden', relics: ['The stone that sang', 'A copper tuning fork', 'A silence worth keeping'] },
+    { name: 'Lanternwake Bazaar', subtitle: 'There is always a stall left open', color: '#efa3a1', w: 41, h: 35, enemies: 8, tile: 96, layout: 'bazaar', feature: 'lanterns', landmark: 'Market lantern', landmarkIcon: 101, clue: 'Light the three market lanterns to open the covered lanes. Look for a wishbed to plant while you explore.', kinds: [18, 13, 18], relics: ['A coin for a stranger', 'The last tea cup', 'A lantern from home'] },
+    { name: 'Mirrorsea Observatory', subtitle: 'The stars are closer in the water', color: '#aaaeea', w: 43, h: 35, enemies: 8, tile: 100, layout: 'orbits', feature: 'orbits', landmark: 'Moon dial', landmarkIcon: 102, clue: 'Align the moon dials I, II, III. Find the Bloom and Echo keys to open the optional vault.', kinds: [19, 14, 19], relics: ['The moon’s spare reflection', 'A compass for tomorrow', 'One unwritten constellation'] },
+    { name: 'Lastlight Orchard', subtitle: 'Even endings need somewhere to grow', color: '#dac1eb', w: 43, h: 35, enemies: 8, tile: 104, layout: 'rootroads', feature: 'lastlight', landmark: 'Evening sapling', landmarkIcon: 103, clue: 'Wake the evening saplings. The Night Gardener tends two waves of shadow before resting the lantern.', kinds: [20, 8, 20], guardian: 'nightgardener', relics: ['A seed for another keeper', 'The night gardener’s lantern', 'The branch that held tomorrow'] },
   ];
 
   // The first nine identifiers are unchanged from the original release.
@@ -115,12 +121,48 @@
     ['Room for the sunrise', 'Pip did not try to take the morning. Pip opened the lantern and made a place for it.'],
     ['The last seed', 'The keeper’s last seed was not rare or powerful. It was the kind that grows almost anywhere, if someone remembers to water it.'],
     ['A promise fulfilled', 'At the crown of the world, the great guardian lowered its antlers. For the first time in a very long night, the garden woke itself.'],
+    ['Summer in a jar', 'The bees kept one jar for the first cold day. When the day came, they gave it to a traveller who had forgotten the smell of flowers.'],
+    ['Six sides', 'Every room in the apiary touches another. The architect thought nobody should have to knock very loudly to be heard.'],
+    ['A borrowed crown', 'The Regent wears the blossoms for one morning, then returns them to the trees. A crown should leave something growing behind.'],
+    ['The empty comb', 'One chamber is always empty. It belongs to the bee who has not arrived yet.'],
+    ['The second wingbeat', 'Pip stepped forward when the first wingbeat ended. The queen gently tapped the ground twice. Listen to the whole sentence, little keeper.'],
+    ['A shared summer', 'When the hive opened, the air smelled of a thousand different gardens. No bee could remember which sweetness was theirs.'],
+    ['The first fold', 'The mapmaker folded a letter into a bird because there was no one left to carry it. By evening, the bird had found someone.'],
+    ['A blank horizon', 'The white edge of the map was not unfinished. It was an invitation to the person holding it.'],
+    ['Paper rain', 'The clouds shed little scraps of paper. Children catch them and write down things they hope will happen.'],
+    ['The careful crease', 'Every crease remembers a hand. Pip traced one that had been made by someone in a hurry, and another that had been made with love.'],
+    ['A letter returned', 'The letter came back without an address. Inside, in very small writing, someone had added: I am still looking for you.'],
+    ['Wings for tomorrow', 'The cranes do not ask where you came from. They unfold a little room beside themselves and wait.'],
+    ['The quarry choir', 'Each stone sang one note. Taken together, they knew a song older than the mountain.'],
+    ['A patient listener', 'The Warden spent a century listening to a cracked bell. It wanted to learn the part of the song the bell could no longer sing.'],
+    ['The copper seam', 'The miners followed copper through the rock until it led them into a room full of sleeping roots. They put their tools away.'],
+    ['What comes after', 'A stone falls once. The mountain answers twice. The quarry keepers learned to leave room for the reply.'],
+    ['A quiet gift', 'Pip brought no song to the Warden. Pip sat down and listened. Sometimes that is enough.'],
+    ['The open mountain', 'When the last chime sounded, a seam opened in the rock. Through it came the smell of rain on a forest nobody had seen.'],
+    ['The night market', 'The market opens when the roads grow dark. Its keepers believe that being lost should not also mean being hungry.'],
+    ['One more cup', 'The tea seller sets out one more cup than there are guests. The cup has never gone unused.'],
+    ['A different currency', 'The oldest stall accepts stories instead of coins. Its owner has become very rich and owns almost nothing.'],
+    ['The wishbed', 'Plant something before you leave, said the gardener. It gives the path a reason to welcome you back.'],
+    ['An honest bargain', 'A child traded a polished stone for a lantern. The merchant kept the stone in the place of honour above the till.'],
+    ['After closing', 'When the stalls close, their lanterns stay lit. Someone may still be on the road.'],
+    ['The second sky', 'The observatory watches the water on cloudy nights. The stars keep their appointments there too.'],
+    ['Two little keys', 'One key belonged to the waking keeper. The other belonged to the keeper in a dream. They agreed to open the vault together.'],
+    ['A useful reflection', 'The mirror shows the sky as it might be tomorrow. The astronomers use it mostly to decide which seedlings need shelter.'],
+    ['The wandering moon', 'The moon once lost its reflection. A little boat carried it home in a bowl of water.'],
+    ['A patient orbit', 'The dial turns too slowly to see. Pip left a petal beside it and came back when the petal had become a flower.'],
+    ['The unwritten star', 'There is one empty place in the observatory’s chart. Nobody has tried to fill it. New things need somewhere to arrive.'],
+    ['The evening keeper', 'The Night Gardener lights each tree before the sky goes dark. The trees have never asked why. They know what a kindness looks like.'],
+    ['The last fruit', 'The final fruit is always left on the branch. It belongs to whoever needs it after everyone else has gone home.'],
+    ['Two shadows', 'The gardener’s lantern casts one shadow for what has ended and another for what is beginning. Walk patiently between them.'],
+    ['The borrowed staff', 'The root staff will someday be a tree again. The gardener has promised to put it somewhere with a good view.'],
+    ['Someone after us', 'Pip planted a seed beside a blank sign. Naming it could be a pleasure for another keeper.'],
+    ['A long tomorrow', 'The gardener lowered the lantern. Beyond the orchard, the road was dark and full of possibility. Pip left one small light at the gate.'],
   ];
 
   BIOMES.forEach((biome, index) => {
     biome.memories = index < 3 ? [index * 3, index * 3 + 1, index * 3 + 2, 9 + index * 3, 10 + index * 3, 11 + index * 3] : Array.from({ length: 6 }, (_, i) => 18 + (index - 3) * 6 + i);
   });
-  const RELICS = BIOMES.flatMap((biome, region) => biome.relics.map((name, i) => ({ id: region * 3 + i, name, region, icon: region < 9 ? 16 + region * 3 + i : 48 + (region - 9) * 3 + i })));
+  const RELICS = BIOMES.flatMap((biome, region) => biome.relics.map((name, i) => ({ id: region * 3 + i, name, region, icon: region < 9 ? 16 + region * 3 + i : region < 15 ? 48 + (region - 9) * 3 + i : 80 + (region - 15) * 3 + i })));
   const TRAILS = [
     { id: 'dawn', name: 'The First Light', subtitle: 'Follow the roots of the waking tree', route: [0, 1, 2], requires: null, icon: 1 },
     { id: 'frontier', name: 'The Amber Frontier', subtitle: 'Across tide, harvest, and turning gears', route: [3, 4, 5], requires: 'dawn', icon: 44 },
@@ -129,6 +171,9 @@
     { id: 'rainbound', name: 'The Rainbound Wilds', subtitle: 'Bells beneath the tide, dreams beneath the roots', route: [9, 10, 11], requires: 'frontier', icon: 66 },
     { id: 'aurora', name: 'Where Dawn Begins', subtitle: 'Across sand and silk to the first morning', route: [12, 13, 14], requires: 'rainbound', icon: 71 },
     { id: 'homecoming', name: 'All the Little Lights', subtitle: 'One saved journey through all fifteen gardens', route: [0, 3, 9, 4, 10, 1, 5, 11, 6, 12, 7, 13, 2, 8, 14], requires: 'aurora', icon: 79 },
+    { id: 'seasons', name: 'The Hidden Seasons', subtitle: 'Through honey, folded skies, and singing stone', route: [15, 16, 17], requires: 'aurora', icon: 98 },
+    { id: 'unwritten', name: 'The Unwritten Sky', subtitle: 'Night markets, mirrored stars, and one last orchard', route: [18, 19, 20], requires: 'seasons', icon: 102 },
+    { id: 'tomorrow', name: 'The Long Tomorrow', subtitle: 'A saved six-region journey across the new frontiers', route: [15, 18, 16, 19, 17, 20], requires: 'unwritten', icon: 111 },
   ];
   const ENEMIES = [
     { name: 'Thorn beetle', hp: 3, damage: 1, windup: .85, move: .85, rest: 1.05, range: 1, pattern: 'cross', hint: 'A close bite. Dodge sideways or guard the marked cross.' },
@@ -146,6 +191,12 @@
     { name: 'Sundial scorpion', hp: 6, damage: 2, windup: 1.2, move: 1, rest: 1.4, range: 3, pattern: 'fan', hint: 'Its golden sting fans outward. Dodge past the narrow end.' },
     { name: 'Velvet weaver', hp: 5, damage: 1, windup: 1.3, move: .85, rest: 1.5, range: 4, pattern: 'cross', hint: 'Silk follows straight paths. The diagonals are clear.' },
     { name: 'Aurora sprite', hp: 5, damage: 2, windup: 1.35, move: 1, rest: 1.5, range: 5, pattern: 'burst', hint: 'Marks a star around your feet. Move before the light closes.' },
+    { name: 'Honeyglass drone', hp: 5, damage: 1, windup: 1.15, move: .85, rest: 1.4, range: 3, pattern: 'fan', hint: 'Pollen spreads in a fan. Step beside its flight path.' },
+    { name: 'Inkwing crane', hp: 5, damage: 1, windup: 1.2, move: .8, rest: 1.4, range: 5, pattern: 'line', hint: 'A paper dart follows the marked line. Move sideways.' },
+    { name: 'Copper chimeback', hp: 7, damage: 2, windup: 1.35, move: 1.15, rest: 1.6, range: 2, pattern: 'cross', hint: 'Copper notes travel along the axes. Seek a diagonal.' },
+    { name: 'Lantern tanuki', hp: 5, damage: 1, windup: 1.2, move: .9, rest: 1.4, range: 4, pattern: 'target', hint: 'Its lantern marks your old position. Keep walking.' },
+    { name: 'Mirrorfin ray', hp: 6, damage: 2, windup: 1.35, move: .9, rest: 1.5, range: 4, pattern: 'burst', hint: 'A constellation forms at your feet. Leave the entire cross.' },
+    { name: 'Twilight hare', hp: 5, damage: 1, windup: 1.2, move: .75, rest: 1.35, range: 3, pattern: 'fan', hint: 'Petals fan out in front of it. Guard or step around the roots.' },
   ];
   const BLESSINGS = [
     { id: 'radiance', name: 'Sunfire lantern', text: 'Your lantern sweep deals +1 damage.', icon: 6 },
@@ -182,11 +233,17 @@
     { id: 'tide', name: 'Bellwater pulse', icon: 75, cost: 3, text: 'Deal three damage nearby; restore two hearts and gain a brief shield.', requirement: 'Awaken the Bellkeeper.' },
     { id: 'tempest', name: 'Storm feather', icon: 76, cost: 3, text: 'Strike nearby foes for four damage and instantly recover your dash.', requirement: 'Awaken the Tempest Roc.' },
     { id: 'dawn', name: 'Daybreak', icon: 77, cost: 4, text: 'Strike visible foes for five damage, heal two hearts, and recover your guard.', requirement: 'Awaken the Dawn Hart.' },
+    { id: 'nectar', name: 'Summer shelter', icon: 108, cost: 3, text: 'Deal two damage nearby, daze creatures, heal one heart, and gain a one-second shield.', requirement: 'Awaken the Honey Regent.' },
+    { id: 'resonance', name: 'Mountain song', icon: 109, cost: 3, text: 'Send a five-tile pulse for four damage; ordinary creatures are dazed for two seconds.', requirement: 'Awaken the Resonant Warden.' },
+    { id: 'afterglow', name: 'The evening light', icon: 110, cost: 4, text: 'Strike visible foes for four damage, gain a shield, and recover your fold.', requirement: 'Awaken the Night Gardener.' },
   ];
   const GUARDIANS = [
     { id: 'bellkeeper', name: 'The Bellkeeper', epithet: 'A promise beneath the tide', region: 9, hp: 30, color: '#73ded3', icon: 75, art: 'tide', intro: 'The last ferry has been waiting for centuries. Let your lantern remind its guardian that the crossing is over.', hint: 'Cross the gaps between bell waves. When the bell opens, move in and strike. A marked Bloom or Echo attack only hurts in that world.', attacks: ['Tolling lanes', 'The rising tide', 'Echo of the bell'] },
     { id: 'tempest', name: 'The Tempest Roc', epithet: 'The storm that forgot to rest', region: 11, hp: 36, color: '#9cbef8', icon: 76, art: 'tempest', intro: 'The old windkeeper carries a sky full of storms. Find the quiet between its wingbeats and help it land.', hint: 'Step out of the long flight lane. Feather marks stay where you stood. The roc lands near you after a dive: that is your opening.', attacks: ['Stormflight', 'Falling feathers', 'Crosswind'] },
     { id: 'dawnhart', name: 'The Dawn Hart', epithet: 'Keeper of the first morning', region: 14, hp: 44, color: '#c0f0d9', icon: 77, art: 'dawn', intro: 'The Hart has guarded the sunrise through a winter without end. Show it that the garden is ready for morning.', hint: 'Read the realm symbol, cross the gaps in its roots, and strike while the antlers dim. Its final phase alternates Bloom and Echo.', attacks: ['Roots of morning', 'Crown of light', 'The turning sky'] },
+    { id: 'honeyregent', name: 'The Honey Regent', epithet: 'A summer too precious to share', region: 15, hp: 42, color: '#edc579', icon: 108, art: 'nectar', arenaTile: 92, sequence: true, intro: 'The Regent sealed the hive to keep one perfect summer safe. Help her remember that sweetness grows when it is shared.', hint: 'Watch for two strikes. Dotted tiles marked 2 show the follow-up before it begins. Dodge the honeycomb, step out of her flight lane, then strike after both wingbeats.', attacks: ['Honeycomb waltz', 'Royal flight', 'Nectarfall'] },
+    { id: 'resonantwarden', name: 'The Resonant Warden', epithet: 'The mountain waits for an answer', region: 17, hp: 48, color: '#8ed4bd', icon: 109, art: 'resonance', arenaTile: 93, sequence: true, intro: 'The Warden has been holding the mountain’s last note for centuries. Let your lantern become the answer it has been waiting for.', hint: 'The first shockwave always has an aftershock. Preview tiles marked 2 show where it will land. Its final song changes realm between strikes; safe ground works in either world.', attacks: ['Mountain heartbeat', 'Copper fault', 'The answering echo'] },
+    { id: 'nightgardener', name: 'The Night Gardener', epithet: 'Someone must leave the last light on', region: 20, hp: 54, color: '#dac1eb', icon: 110, art: 'afterglow', arenaTile: 108, sequence: true, intro: 'The gardener has kept every lantern burning, afraid that leaving one dark would mean forgetting someone. Show the old keeper that tomorrow can hold their light too.', hint: 'Read both shadows: solid warnings strike first, dotted 2 warnings follow. The moon symbols show which realm is affected. Wait for the lantern to lower before attacking the open heart.', attacks: ['Pruning shadows', 'Lantern eclipse', 'Two sides of night'] },
   ];
   const CHARMS = [
     { id: 'none', name: 'An open lantern', icon: 6, text: 'Travel with your familiar starting kit.', requirement: 'Always available.' },
@@ -194,6 +251,9 @@
     { id: 'bell', name: 'Tidekeeper’s vow', icon: 75, text: 'A successful guard restores one heart.', requirement: 'Awaken the Bellkeeper.' },
     { id: 'feather', name: 'Windkeeper’s ribbon', icon: 76, text: 'Mothstep recovers 25% faster.', requirement: 'Awaken the Tempest Roc.' },
     { id: 'crown', name: 'The dawn seed', icon: 77, text: '+2 maximum hearts and a seedbomb at the start of each region.', requirement: 'Awaken the Dawn Hart.' },
+    { id: 'amber', name: 'Nectar locket', icon: 108, text: 'Tonics also restore two focus and give a longer protective shield.', requirement: 'Awaken the Honey Regent.' },
+    { id: 'chime', name: 'The listening stone', icon: 109, text: 'Mirror guard recovers 20% faster.', requirement: 'Awaken the Resonant Warden.' },
+    { id: 'twilight', name: 'A light for later', icon: 110, text: 'Fold recovers one second faster and gives a longer shield.', requirement: 'Awaken the Night Gardener.' },
   ];
   return { BIOMES, MEMORIES, RELICS, TRAILS, ENEMIES, BLESSINGS, UPGRADES, ARTS, GUARDIANS, CHARMS };
 }));

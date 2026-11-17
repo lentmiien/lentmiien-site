@@ -16,11 +16,11 @@ function standInWarning(game) {
 }
 
 describe('The Waking Guardians content and exploration', () => {
-  test('all fifteen regions have unique discoveries and three new stages unlock together in each chapter', () => {
-    expect(C.BIOMES).toHaveLength(15);
-    expect(C.MEMORIES).toHaveLength(90); expect(C.RELICS).toHaveLength(45);
-    expect(new Set(C.BIOMES.map(b => b.layout)).size).toBe(15);
-    expect(new Set(C.BIOMES.flatMap(b => b.memories)).size).toBe(90);
+  test('all regions have unique discoveries and three new stages unlock together in each chapter', () => {
+    expect(C.BIOMES).toHaveLength(21);
+    expect(C.MEMORIES).toHaveLength(126); expect(C.RELICS).toHaveLength(63);
+    expect(new Set(C.BIOMES.map(b => b.layout)).size).toBe(21);
+    expect(new Set(C.BIOMES.flatMap(b => b.memories)).size).toBe(126);
     const p = C.profile();
     expect(C.createExpedition(p, { trail: 'rainbound' })).toBeNull();
     p.trails.frontier = 1;
@@ -31,7 +31,7 @@ describe('The Waking Guardians content and exploration', () => {
     expect(C.createExpedition(p, { trail: 'aurora' }).journey).toEqual([12, 13, 14]);
     p.trails.aurora = 1;
     expect(C.createExpedition(p, { trail: 'homecoming' }).journey).toHaveLength(15);
-    expect(C.regionUnlocked(p, -1)).toBe(false); expect(C.regionUnlocked(p, 15)).toBe(false);
+    expect(C.regionUnlocked(p, -1)).toBe(false); expect(C.regionUnlocked(p, 21)).toBe(false);
   });
 
   test('120 new mazes have reachable objectives, separated arenas, and bounded populations in both worlds', () => {
@@ -53,7 +53,7 @@ describe('The Waking Guardians content and exploration', () => {
     }
   });
 
-  test('all 90 memories and 45 relics are reachable through three discovery plans without duplicate grinding', () => {
+  test('the first fifteen regions’ 90 memories and 45 relics are reachable through three discovery plans without duplicate grinding', () => {
     const memories = [], relics = [];
     for (let visit = 0; visit < 3; visit += 1) {
       const game = new C.Game({ seed: visit + 900, trail: 'homecoming', knownMemories: memories, knownRelics: relics });
@@ -235,7 +235,7 @@ describe('Guardian expansion save compatibility', () => {
     expect(loaded.invalid).toBe(false); expect(loaded.migrated).toBe(true); expect(loaded.game.generator).toBe(2);
     expect(createHash('sha256').update(JSON.stringify(loaded.game.map)).digest('hex')).toBe(v2.mapDigest);
     expect(loaded.game.player).toEqual(v2.save.run.player); expect(loaded.profile.light).toBe(267);
-    expect(loaded.profile.guardians).toEqual({ bellkeeper: 0, tempest: 0, dawnhart: 0 });
+    expect(loaded.profile.guardians).toMatchObject({ bellkeeper: 0, tempest: 0, dawnhart: 0 });
     expect(C.Game.restore(loaded.game.snapshot()).snapshot()).toEqual(loaded.game.snapshot());
   });
 

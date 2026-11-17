@@ -2,7 +2,7 @@
 
 // Uses only ordinary public model inputs and readable attack telegraphs. No
 // position, health, inventory, cooldown, or enemy state is altered by this pilot.
-function nextAction(game, C) {
+function nextAction(game, C, target = null) {
   const p = game.player;
   if (p.hp <= 3 && game.inventory.medicine) return { action: 'medicine' };
   if (game.boss?.state === 'active') {
@@ -31,7 +31,7 @@ function nextAction(game, C) {
     if (best?.first >= 0) return { action: 'move', direction: best.first };
     return { action: game.cooldowns.attack ? 'wait' : 'attack' };
   }
-  if (game.nearby()?.type === 'guardian' && game.seeds === 3) return { action: 'awaken' };
+  if (!target && game.nearby()?.type === 'guardian' && game.seeds === 3) return { action: 'awaken' };
   const threats = game.map.enemies.filter(e => e.hp > 0 && e.windup > 0 && e.windup < .45 && e.intent.some(c => c.x === p.x && c.y === p.y));
   if (threats.length && game.shield <= .1 && game.guardTime <= .1) {
     if (!game.cooldowns.guard) return { action: 'guard' };
@@ -43,7 +43,7 @@ function nextAction(game, C) {
   }
   const near = game.map.enemies.some(e => e.hp > 0 && Math.max(Math.abs(e.x - p.x), Math.abs(e.y - p.y)) <= game.stats().reach && C.lineOfSight(game.map, p, e, game.phase));
   if (near) return { action: game.cooldowns.attack ? 'wait' : 'attack' };
-  const path = game.guide();
+  const path = target ? game.route(target) : game.guide();
   if (path.length <= 1 && game.seeds === 3) return { action: 'interact' };
   const cell = path[1];
   if (!cell) throw new Error('Required objective has no route');
