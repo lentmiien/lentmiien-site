@@ -17,10 +17,10 @@ function standInWarning(game) {
 
 describe('The Waking Guardians content and exploration', () => {
   test('all regions have unique discoveries and three new stages unlock together in each chapter', () => {
-    expect(C.BIOMES).toHaveLength(21);
-    expect(C.MEMORIES).toHaveLength(126); expect(C.RELICS).toHaveLength(63);
-    expect(new Set(C.BIOMES.map(b => b.layout)).size).toBe(21);
-    expect(new Set(C.BIOMES.flatMap(b => b.memories)).size).toBe(126);
+    expect(C.BIOMES).toHaveLength(23);
+    expect(C.MEMORIES).toHaveLength(138); expect(C.RELICS).toHaveLength(69);
+    expect(new Set(C.BIOMES.map(b => b.layout)).size).toBe(23);
+    expect(new Set(C.BIOMES.flatMap(b => b.memories)).size).toBe(138);
     const p = C.profile();
     expect(C.createExpedition(p, { trail: 'rainbound' })).toBeNull();
     p.trails.frontier = 1;

@@ -11,12 +11,12 @@ function activate(game, landmark) {
 }
 
 describe('Lumenwild exploration and long-term progression', () => {
-  test('preserves original journal IDs and distributes 126 pages and 63 relics without overlap', () => {
-    expect(C.MEMORIES).toHaveLength(126); expect(C.RELICS).toHaveLength(63);
-    expect(new Set(C.BIOMES.flatMap(b => b.memories)).size).toBe(126);
+  test('preserves original journal IDs and distributes 138 pages and 69 relics without overlap', () => {
+    expect(C.MEMORIES).toHaveLength(138); expect(C.RELICS).toHaveLength(69);
+    expect(new Set(C.BIOMES.flatMap(b => b.memories)).size).toBe(138);
     expect(C.MEMORIES[0][0]).toBe('A light left on');
     expect(C.UPGRADES.reduce((sum, u) => sum + u.costs.length, 0)).toBe(27);
-    expect(C.ARTS).toHaveLength(12); expect(C.BLESSINGS).toHaveLength(16);
+    expect(C.ARTS).toHaveLength(13); expect(C.BLESSINGS).toHaveLength(16);
   });
 
   test('new visits prefer unknown pages and relics, and the chosen discoveries survive a save', () => {
@@ -151,7 +151,7 @@ describe('Lumenwild versioned saves', () => {
     expect(createHash('sha256').update(JSON.stringify(originalMap)).digest('hex')).toBe(fixture.mapDigest);
     expect(game.inventory).toEqual(old.inventory);
     const v2 = C.readSave(C.writeSave(result.profile, game)); expect(v2.invalid).toBe(false); expect(v2.game.snapshot()).toEqual(game.snapshot());
-    expect(C.createExpedition(result.profile, { seed: 91, trail: 'frontier' }).generator).toBe(4);
+    expect(C.createExpedition(result.profile, { seed: 91, trail: 'frontier' }).generator).toBe(5);
   });
 
   test('nine-region progress, chosen discoveries, art, timers, and future combat restore deterministically', () => {

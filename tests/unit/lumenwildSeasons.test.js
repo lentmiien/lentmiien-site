@@ -22,9 +22,9 @@ describe('The Unwritten Seasons exploration', () => {
     expect(C.createExpedition(p, { trail: 'unwritten' }).journey).toEqual([18, 19, 20]);
     p.trails.unwritten = 1;
     expect(C.createExpedition(p, { trail: 'tomorrow' }).journey).toEqual([15, 18, 16, 19, 17, 20]);
-    expect(C.regionUnlocked(p, 20)).toBe(true); expect(C.regionUnlocked(p, 21)).toBe(false);
-    expect(new Set(C.BIOMES.map(b => b.layout)).size).toBe(21);
-    expect(C.GUARDIANS).toHaveLength(6);
+    expect(C.regionUnlocked(p, 20)).toBe(true); expect(C.regionUnlocked(p, 21)).toBe(true);
+    expect(new Set(C.BIOMES.map(b => b.layout)).size).toBe(23);
+    expect(C.GUARDIANS.filter(b => !b.hidden)).toHaveLength(7);
   });
 
   test('180 new mazes keep objectives, optional discoveries, and arenas connected in both realms', () => {
@@ -172,7 +172,7 @@ describe('Unwritten Seasons save compatibility and validation', () => {
     const daily = new C.Game({ seed: 769, daily: true, generator: 3 });
     expect(daily.journey).toEqual([769 % 5, 5 + (769 >>> 8) % 5, 10 + (769 >>> 16) % 5]);
     expect(C.Game.restore(daily.snapshot()).journey).toEqual(daily.journey);
-    expect(new C.Game({ seed: 769, daily: true }).journey).toEqual([769 % 7, 7 + (769 >>> 8) % 7, 14 + (769 >>> 16) % 7]);
+    expect(new C.Game({ seed: 769, daily: true, generator: 4 }).journey).toEqual([769 % 7, 7 + (769 >>> 8) % 7, 14 + (769 >>> 16) % 7]);
   });
 
   test('corrupt follow-up attacks and impossible optional discoveries cannot be restored', () => {
@@ -184,6 +184,6 @@ describe('Unwritten Seasons save compatibility and validation', () => {
     for (const corrupt of [s => { s.entities.find(e => e.id === maze.map.entities.find(e => e.type === 'wishbed').id).progress = 999; }, s => { s.entities.find(e => e.id === maze.map.entities.find(e => e.type === 'vault').id).done = true; }, s => { s.generator = 3; }]) {
       const saved = JSON.parse(JSON.stringify(maze.snapshot())); corrupt(saved); expect(C.Game.restore(saved)).toBeNull();
     }
-    expect(C.profile({ vaults: [0, 15, 15, 20, 21, '__proto__'] }).vaults).toEqual([15, 20]);
+    expect(C.profile({ vaults: [0, 15, 15, 20, 23, '__proto__'] }).vaults).toEqual([15, 20]);
   });
 });

@@ -313,6 +313,36 @@ h2, h3, p { margin-top: 0; }
 .arena-landscape .guardian-hud p { font-size: .6rem; }
 .arena-landscape .guardian-hud progress { margin: 4px 0; }
 .arena-landscape.boss-active .objective { left: auto; right: 12px; transform: none; max-width: 200px; }
+@media (max-height: 580px) and (orientation: landscape) {
+  .hearts { gap: 3px; }
+  .heart { width: 10px; height: 10px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .guardian-hud progress::-webkit-progress-value { transition: none; }
+}
+
+/* A home for the finished story and the last collection challenge. */
+.ending-illustration { display: block; width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 12px; margin: 16px 0 22px; }
+.ending-lead { font-family: Georgia, serif; font-size: 1.12rem; color: var(--text); }
+.ending-button { display: block; margin: 12px auto; }
+.keeper-title, .mastery-record { color: var(--accent); text-align: center; }
+.keeper-title { font-family: Georgia, serif; margin: 16px 0 12px; }
+.secret-button { border-color: var(--accent); background: var(--accent-tint); }
+.collection-panel { margin: 24px 0; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.collection-panel h3 { margin: 8px 0 18px; font-family: Georgia, serif; font-size: 1.35rem; }
+.collection-panel > p { font-size: .85rem; }
+.collection-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.collection-counts strong, .collection-counts span { display: block; }
+.collection-counts strong { color: var(--accent); font-size: 1.05rem; }
+.collection-counts span { color: var(--text-secondary); font-size: .75rem; margin: 4px 0 8px; }
+.collection-counts progress { width: 100%; height: 5px; accent-color: var(--accent); }
+.collection-hints summary { cursor: pointer; color: var(--accent); font-size: .85rem; }
+.collection-hints p { font-size: .8rem; margin: 9px 0; }
+.collection-panel .primary-button { margin-top: 18px; }
+.journal-filter { display: flex; align-items: center; gap: 10px; color: var(--text-secondary); margin: 18px 0; font-size: .85rem; cursor: pointer; }
+.journal-filter input { accent-color: var(--accent); }
+.journal-region-section > .text-button { margin: 8px 0 16px; }
+@media (max-width: 600px) {
+  .collection-panel { padding: 15px; }
+  .collection-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

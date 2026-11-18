@@ -27,7 +27,10 @@
     { name: 'Lanternwake Bazaar', subtitle: 'There is always a stall left open', color: '#efa3a1', w: 41, h: 35, enemies: 8, tile: 96, layout: 'bazaar', feature: 'lanterns', landmark: 'Market lantern', landmarkIcon: 101, clue: 'Light the three market lanterns to open the covered lanes. Look for a wishbed to plant while you explore.', kinds: [18, 13, 18], relics: ['A coin for a stranger', 'The last tea cup', 'A lantern from home'] },
     { name: 'Mirrorsea Observatory', subtitle: 'The stars are closer in the water', color: '#aaaeea', w: 43, h: 35, enemies: 8, tile: 100, layout: 'orbits', feature: 'orbits', landmark: 'Moon dial', landmarkIcon: 102, clue: 'Align the moon dials I, II, III. Find the Bloom and Echo keys to open the optional vault.', kinds: [19, 14, 19], relics: ['The moon’s spare reflection', 'A compass for tomorrow', 'One unwritten constellation'] },
     { name: 'Lastlight Orchard', subtitle: 'Even endings need somewhere to grow', color: '#dac1eb', w: 43, h: 35, enemies: 8, tile: 104, layout: 'rootroads', feature: 'lastlight', landmark: 'Evening sapling', landmarkIcon: 103, clue: 'Wake the evening saplings. The Night Gardener tends two waves of shadow before resting the lantern.', kinds: [20, 8, 20], guardian: 'nightgardener', relics: ['A seed for another keeper', 'The night gardener’s lantern', 'The branch that held tomorrow'] },
+    { name: 'Dawnroot Approach', subtitle: 'Every road remembers where it began', color: '#a9d6b0', w: 43, h: 35, enemies: 8, tile: 112, layout: 'rootbridges', feature: 'beacons', landmark: 'Homeward beacon', landmarkIcon: 118, clue: 'Light the three homeward beacons to open the root bridges. The oldest garden lies just beyond them.', kinds: [21, 15, 21], relics: ['The compass that came home', 'A seed kept through winter', 'The bell at the beginning'] },
+    { name: 'Heart of the Garden', subtitle: 'A little light was enough', color: '#e6d6a2', w: 43, h: 35, enemies: 8, tile: 116, layout: 'heartpetals', feature: 'heartflowers', landmark: 'Heart blossom', landmarkIcon: 119, clue: 'Open heart blossoms I, II, III. The First Keeper waits at the roots of every path; read all three strikes before approaching.', kinds: [22, 20, 22], guardian: 'firstkeeper', relics: ['The morning in a bottle', 'The very first key', 'A lantern for everyone'] },
   ];
+  const SECRET_BIOME = { name: 'The Unlit Between', subtitle: 'One last light beyond the edge of the map', color: '#c9b7ed', tile: 120, layout: 'eclipse', guardian: 'hollowstar', landmarkIcon: 122, clue: 'Four strikes. Four phases. Only the open heart takes damage. Your collection brought you here; patience will bring you home.' };
 
   // The first nine identifiers are unchanged from the original release.
   const MEMORIES = [
@@ -157,12 +160,24 @@
     ['The borrowed staff', 'The root staff will someday be a tree again. The gardener has promised to put it somewhere with a good view.'],
     ['Someone after us', 'Pip planted a seed beside a blank sign. Naming it could be a pleasure for another keeper.'],
     ['A long tomorrow', 'The gardener lowered the lantern. Beyond the orchard, the road was dark and full of possibility. Pip left one small light at the gate.'],
+    ['The returning path', 'The path was not shorter on the way home. Pip had simply learned to notice the places where it rested.'],
+    ['A root for every road', 'Beneath the farthest island and the highest star, one small root still remembered the first garden.'],
+    ['The keeper’s seat', 'There was a chair beside the beacon. It had been made for someone smaller than the person who built it.'],
+    ['A bell before sunrise', 'The bell did not wake the garden. It told the sleepers that someone was already there, keeping watch.'],
+    ['What we carry', 'Pip’s lantern was no heavier than before. Yet inside it were the names of places that had once been dark.'],
+    ['Almost home', 'Through the roots, Pip saw the first tree. It looked smaller now. Or perhaps the world had grown.'],
+    ['The keeper who waited', 'The old fox had planted a garden so nobody would have to travel through the dark alone. Then it forgot that it, too, could ask for company.'],
+    ['Three small promises', 'To remember. To return. To leave a light for someone else. The keeper traced each promise slowly in the earth.'],
+    ['An open heart', 'The brightest part of the great tree was not its crown. It was the little hollow where a tired traveller could sit.'],
+    ['A garden without a gate', 'When the last gate opened, the keeper did not build another. Some things are finished when they can be shared.'],
+    ['The empty place', 'Pip put every little treasure on the shelf. In the space between their shadows, a star opened its eye.'],
+    ['The light we leave', 'Morning reached the farthest path. Pip set the lantern in the window, where anyone could see it, and went outside to play.'],
   ];
 
   BIOMES.forEach((biome, index) => {
     biome.memories = index < 3 ? [index * 3, index * 3 + 1, index * 3 + 2, 9 + index * 3, 10 + index * 3, 11 + index * 3] : Array.from({ length: 6 }, (_, i) => 18 + (index - 3) * 6 + i);
   });
-  const RELICS = BIOMES.flatMap((biome, region) => biome.relics.map((name, i) => ({ id: region * 3 + i, name, region, icon: region < 9 ? 16 + region * 3 + i : region < 15 ? 48 + (region - 9) * 3 + i : 80 + (region - 15) * 3 + i })));
+  const RELICS = BIOMES.flatMap((biome, region) => biome.relics.map((name, i) => ({ id: region * 3 + i, name, region, icon: region < 9 ? 16 + region * 3 + i : region < 15 ? 48 + (region - 9) * 3 + i : region < 21 ? 80 + (region - 15) * 3 + i : 112 + (region - 21) * 3 + i })));
   const TRAILS = [
     { id: 'dawn', name: 'The First Light', subtitle: 'Follow the roots of the waking tree', route: [0, 1, 2], requires: null, icon: 1 },
     { id: 'frontier', name: 'The Amber Frontier', subtitle: 'Across tide, harvest, and turning gears', route: [3, 4, 5], requires: 'dawn', icon: 44 },
@@ -174,6 +189,7 @@
     { id: 'seasons', name: 'The Hidden Seasons', subtitle: 'Through honey, folded skies, and singing stone', route: [15, 16, 17], requires: 'aurora', icon: 98 },
     { id: 'unwritten', name: 'The Unwritten Sky', subtitle: 'Night markets, mirrored stars, and one last orchard', route: [18, 19, 20], requires: 'seasons', icon: 102 },
     { id: 'tomorrow', name: 'The Long Tomorrow', subtitle: 'A saved six-region journey across the new frontiers', route: [15, 18, 16, 19, 17, 20], requires: 'unwritten', icon: 111 },
+    { id: 'finale', name: 'The Returning Light', subtitle: 'Two final gardens. The promise at the heart of it all.', route: [21, 22], requires: 'unwritten', icon: 120, chapter: true },
   ];
   const ENEMIES = [
     { name: 'Thorn beetle', hp: 3, damage: 1, windup: .85, move: .85, rest: 1.05, range: 1, pattern: 'cross', hint: 'A close bite. Dodge sideways or guard the marked cross.' },
@@ -197,6 +213,8 @@
     { name: 'Lantern tanuki', hp: 5, damage: 1, windup: 1.2, move: .9, rest: 1.4, range: 4, pattern: 'target', hint: 'Its lantern marks your old position. Keep walking.' },
     { name: 'Mirrorfin ray', hp: 6, damage: 2, windup: 1.35, move: .9, rest: 1.5, range: 4, pattern: 'burst', hint: 'A constellation forms at your feet. Leave the entire cross.' },
     { name: 'Twilight hare', hp: 5, damage: 1, windup: 1.2, move: .75, rest: 1.35, range: 3, pattern: 'fan', hint: 'Petals fan out in front of it. Guard or step around the roots.' },
+    { name: 'Dawnroot pangolin', hp: 7, damage: 2, windup: 1.3, move: .95, rest: 1.45, range: 3, pattern: 'fan', hint: 'Roots fan outward. Guard the final beat or step beside the narrow end.' },
+    { name: 'Heartblossom cub', hp: 6, damage: 2, windup: 1.2, move: .85, rest: 1.5, range: 4, pattern: 'burst', hint: 'Petals surround your last position. Leave the whole flower before it closes.' },
   ];
   const BLESSINGS = [
     { id: 'radiance', name: 'Sunfire lantern', text: 'Your lantern sweep deals +1 damage.', icon: 6 },
@@ -236,6 +254,7 @@
     { id: 'nectar', name: 'Summer shelter', icon: 108, cost: 3, text: 'Deal two damage nearby, daze creatures, heal one heart, and gain a one-second shield.', requirement: 'Awaken the Honey Regent.' },
     { id: 'resonance', name: 'Mountain song', icon: 109, cost: 3, text: 'Send a five-tile pulse for four damage; ordinary creatures are dazed for two seconds.', requirement: 'Awaken the Resonant Warden.' },
     { id: 'afterglow', name: 'The evening light', icon: 110, cost: 4, text: 'Strike visible foes for four damage, gain a shield, and recover your fold.', requirement: 'Awaken the Night Gardener.' },
+    { id: 'firstlight', name: 'First light', icon: 120, cost: 5, text: 'Strike visible foes for six damage and instantly recover both dash and fold.', requirement: 'Awaken the First Keeper.' },
   ];
   const GUARDIANS = [
     { id: 'bellkeeper', name: 'The Bellkeeper', epithet: 'A promise beneath the tide', region: 9, hp: 30, color: '#73ded3', icon: 75, art: 'tide', intro: 'The last ferry has been waiting for centuries. Let your lantern remind its guardian that the crossing is over.', hint: 'Cross the gaps between bell waves. When the bell opens, move in and strike. A marked Bloom or Echo attack only hurts in that world.', attacks: ['Tolling lanes', 'The rising tide', 'Echo of the bell'] },
@@ -244,6 +263,8 @@
     { id: 'honeyregent', name: 'The Honey Regent', epithet: 'A summer too precious to share', region: 15, hp: 42, color: '#edc579', icon: 108, art: 'nectar', arenaTile: 92, sequence: true, intro: 'The Regent sealed the hive to keep one perfect summer safe. Help her remember that sweetness grows when it is shared.', hint: 'Watch for two strikes. Dotted tiles marked 2 show the follow-up before it begins. Dodge the honeycomb, step out of her flight lane, then strike after both wingbeats.', attacks: ['Honeycomb waltz', 'Royal flight', 'Nectarfall'] },
     { id: 'resonantwarden', name: 'The Resonant Warden', epithet: 'The mountain waits for an answer', region: 17, hp: 48, color: '#8ed4bd', icon: 109, art: 'resonance', arenaTile: 93, sequence: true, intro: 'The Warden has been holding the mountain’s last note for centuries. Let your lantern become the answer it has been waiting for.', hint: 'The first shockwave always has an aftershock. Preview tiles marked 2 show where it will land. Its final song changes realm between strikes; safe ground works in either world.', attacks: ['Mountain heartbeat', 'Copper fault', 'The answering echo'] },
     { id: 'nightgardener', name: 'The Night Gardener', epithet: 'Someone must leave the last light on', region: 20, hp: 54, color: '#dac1eb', icon: 110, art: 'afterglow', arenaTile: 108, sequence: true, intro: 'The gardener has kept every lantern burning, afraid that leaving one dark would mean forgetting someone. Show the old keeper that tomorrow can hold their light too.', hint: 'Read both shadows: solid warnings strike first, dotted 2 warnings follow. The moon symbols show which realm is affected. Wait for the lantern to lower before attacking the open heart.', attacks: ['Pruning shadows', 'Lantern eclipse', 'Two sides of night'] },
+    { id: 'firstkeeper', name: 'The First Keeper', epithet: 'The promise at the heart of every path', region: 22, hp: 66, color: '#e6d6a2', icon: 120, art: 'firstlight', arenaTile: 124, sequence: true, beats: 3, finale: true, intro: 'The first keeper has held the garden together for so long that it has forgotten how to rest. Carry your light through its three promises, and show it that the garden is no longer alone.', hint: 'Three strikes, then an open heart. Dotted numbers preview the next strike. The last promise changes realms before returning to both worlds. Restore the heart blossoms for more time.', attacks: ['Roots of every road', 'The lantern procession', 'One light, two worlds'] },
+    { id: 'hollowstar', name: 'The Hollow Star', epithet: 'The silence between every remembered thing', region: null, hp: 152, color: '#c9b7ed', icon: 122, arenaTile: 125, sequence: true, beats: 4, phases: 4, hidden: true, intro: 'Every story has been remembered. Every keepsake has come home. In the quiet between them, the last star wakes. It asks for nothing but your full attention.', hint: 'Four committed strikes per sequence, four phases. Only the open heart takes damage. Follow the numbered preview, move between safe lanes, and save your art for the short opening. This is the final mastery challenge.', attacks: ['The vanishing road', 'Eclipse procession', 'The unremembered sky'] },
   ];
   const CHARMS = [
     { id: 'none', name: 'An open lantern', icon: 6, text: 'Travel with your familiar starting kit.', requirement: 'Always available.' },
@@ -254,6 +275,7 @@
     { id: 'amber', name: 'Nectar locket', icon: 108, text: 'Tonics also restore two focus and give a longer protective shield.', requirement: 'Awaken the Honey Regent.' },
     { id: 'chime', name: 'The listening stone', icon: 109, text: 'Mirror guard recovers 20% faster.', requirement: 'Awaken the Resonant Warden.' },
     { id: 'twilight', name: 'A light for later', icon: 110, text: 'Fold recovers one second faster and gives a longer shield.', requirement: 'Awaken the Night Gardener.' },
+    { id: 'keeper', name: 'The home lantern', icon: 121, text: 'Your lantern sweep reaches one tile farther during a guardian’s open-heart recovery.', requirement: 'Awaken the First Keeper.' },
   ];
-  return { BIOMES, MEMORIES, RELICS, TRAILS, ENEMIES, BLESSINGS, UPGRADES, ARTS, GUARDIANS, CHARMS };
+  return { SECRET_BIOME, BIOMES, MEMORIES, RELICS, TRAILS, ENEMIES, BLESSINGS, UPGRADES, ARTS, GUARDIANS, CHARMS };
 }));

@@ -31,7 +31,24 @@
       }
     };
 
-    if (biome.layout === 'honeycomb') {
+    if (biome.layout === 'rootbridges') {
+      const center = { x: 21, y: 17 };
+      line({ x: 3, y: 3 }, center); room(center.x, center.y, 3, true);
+      for (let row = 0; row < 4; row += 1) {
+        const y = 5 + row * 8, bend = 18 + Math.floor(rng() * 7);
+        line(center, { x: bend, y });
+        for (const x of [6, 36]) { line({ x: bend, y }, { x, y }); room(x, y, 3, true); }
+      }
+    } else if (biome.layout === 'heartpetals') {
+      const center = { x: 21, y: 17 }, petals = [];
+      room(center.x, center.y, 3, true); line({ x: 3, y: 3 }, center);
+      for (let i = 0; i < 8; i += 1) {
+        const angle = i * Math.PI / 4, p = { x: center.x + Math.round(Math.cos(angle) * 14), y: center.y + Math.round(Math.sin(angle) * 11) };
+        line(center, p); room(p.x, p.y, 2 + Math.floor(rng() * 2), true); petals.push(p);
+        if (i) line(petals[i - 1], p);
+      }
+      line(petals[7], petals[0]);
+    } else if (biome.layout === 'honeycomb') {
       let lastRow = [];
       for (let row = 0, y = 5; y < map.h - 3; row += 1, y += 7) {
         const current = [];

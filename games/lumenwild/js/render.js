@@ -2,7 +2,7 @@
   'use strict';
   const C = window.Lumenwild;
   const PROP = { mote: 0, seed: 1, medicine: 2, bomb: 3, thread: 4, chest: 5, portal: 7, shrine: 9, memory: 11, well: 14, trader: 72, courier: 73, loom: 74, guardian: 78, vaultkey: 104, vault: 106, wishbed: 107 };
-  const entityIcon = (e, biome) => e.type === 'relic' ? C.RELICS[e.relic].icon : e.type === 'landmark' ? biome.landmarkIcon : e.type === 'vaultkey' ? 104 + e.phase : PROP[e.type];
+  const entityIcon = (e, biome) => biome.layout === 'eclipse' && e.type === 'portal' ? 123 : e.type === 'relic' ? C.RELICS[e.relic].icon : e.type === 'landmark' ? biome.landmarkIcon : e.type === 'vaultkey' ? 104 + e.phase : PROP[e.type];
   const TAU = Math.PI * 2;
 
   class Renderer {
@@ -36,8 +36,8 @@
       const names = [
         ...Array.from({ length: 8 }, (_, i) => `fox-${i}`),
         ...Array.from({ length: C.ENEMIES.length * 4 }, (_, i) => `enemy-${i}`),
-        ...Array.from({ length: 112 }, (_, i) => `prop-${i}`),
-        ...Array.from({ length: 112 }, (_, i) => `tile-${i}`),
+        ...Array.from({ length: 124 }, (_, i) => `prop-${i}`),
+        ...Array.from({ length: 128 }, (_, i) => `tile-${i}`),
         ...C.GUARDIANS.flatMap(b => Array.from({ length: 4 }, (_, i) => `boss-${b.id}-${i}`)),
       ];
       let loaded = 0;
@@ -142,7 +142,7 @@
       // arena camera must not put safe tiles underneath the direction pad.
       const narrow = this.width < 700, low = this.height < 300;
       const sideBanner = this.landscapeArena;
-      const extra = game.boss?.beats === 2 ? 16 : 0;
+      const extra = game.boss?.beats > 1 ? 16 : 0;
       const top = sideBanner ? 8 : (low ? 70 : narrow ? 88 : 104) + extra, bottom = sideBanner ? 8 : narrow ? 112 : low ? 8 : 72;
       const left = sideBanner ? Math.min(300, this.width * .36) + 28 : 0;
       const arenaWidth = sideBanner ? this.width - left - 232 : this.width - (narrow ? 28 : 280);
@@ -179,7 +179,7 @@
         }
         const open = C.walkable(map, x, y, game.phase);
         const base = game.biome.tile;
-        const watery = ['canals', 'constellation', 'belfry', 'causeways', 'aurora', 'paperfold', 'orbits'].includes(game.biome.layout);
+        const watery = ['canals', 'constellation', 'belfry', 'causeways', 'aurora', 'paperfold', 'orbits', 'rootbridges', 'eclipse'].includes(game.biome.layout);
         const arenaTile = map.arena && Math.abs(x - map.arena.x) <= 5 && Math.abs(y - map.arena.y) <= 5;
         let frame = base + (tile === 1 ? watery && (x + y) % 4 !== 0 ? 2 : 1 : map.clearings.includes(index) && !arenaTile ? 3 : 0);
         if (tile >= 2) frame = open ? base + 3 : tile === 2 ? 12 : 13;
@@ -273,7 +273,7 @@
           ctx.strokeStyle = dangerous ? '#ff9b83' : '#8bdbe6'; ctx.lineWidth = dangerous ? 2 : 1;
           ctx.strokeRect(p.x - t * .43, p.y - t * .43, t * .86, t * .86);
           ctx.fillStyle = dangerous ? '#fff1ce' : '#8bdbe6'; ctx.font = `bold ${Math.max(10, t * .32)}px sans-serif`; ctx.textAlign = 'center';
-          ctx.fillText(boss.realm === -1 ? boss.beats === 2 ? String(boss.beat) : '!' : boss.realm ? '☾' : '☼', p.x, p.y + t * .13);
+          ctx.fillText(boss.realm === -1 ? boss.beats > 1 ? String(boss.beat) : '!' : boss.realm ? '☾' : '☼', p.x, p.y + t * .13);
           ctx.strokeStyle = dangerous ? '#ffe6bb' : '#8bdbe6'; ctx.lineWidth = 2;
           ctx.beginPath(); ctx.arc(p.x, p.y, t * .32, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - boss.timer / Math.max(.01, boss.total))); ctx.stroke();
         }
@@ -282,7 +282,7 @@
           ctx.strokeStyle = '#d8c4ff'; ctx.lineWidth = 1.5; ctx.setLineDash([2, 4]);
           ctx.strokeRect(p.x - t * .35, p.y - t * .35, t * .7, t * .7); ctx.setLineDash([]);
           ctx.fillStyle = '#e5d6ff'; ctx.font = `bold ${Math.max(9, t * .23)}px sans-serif`; ctx.textAlign = 'right';
-          ctx.fillText('2', p.x + t * .31, p.y - t * .15);
+          ctx.fillText(String(boss.beat + 1), p.x + t * .31, p.y - t * .15);
         }
       }
       for (const impact of this.impacts) {

@@ -50,16 +50,16 @@ describe('Lumenwild expanded browser interface', () => {
   let ui;
   afterEach(() => ui?.close());
 
-  test('fresh camp loads all artwork and exposes atlas chapters, 126 journal pages and 27 workshop levels', async () => {
+  test('fresh camp loads all artwork and exposes atlas chapters, 138 journal pages and 27 workshop levels', async () => {
     ui = await mount();
     expect(ui.w.document.querySelector('#loadStatus').textContent).toContain('Ready when you are');
     expect(ui.w.document.querySelector('#mainAction').disabled).toBe(false);
-    ui.click('#journeysButton'); expect(ui.w.document.querySelectorAll('[data-region]')).toHaveLength(21);
+    ui.click('#journeysButton'); expect(ui.w.document.querySelectorAll('[data-region]')).toHaveLength(23);
     expect(ui.w.document.querySelector('[data-trail="frontier"]').disabled).toBe(true);
     ui.click('#closeDialog'); ui.click('#journalButton');
-    expect(ui.w.document.querySelectorAll('.journal-entry')).toHaveLength(126); expect(ui.w.document.querySelectorAll('.relic-card')).toHaveLength(63);
+    expect(ui.w.document.querySelectorAll('.journal-entry')).toHaveLength(138); expect(ui.w.document.querySelectorAll('.relic-card')).toHaveLength(69);
     ui.click('#closeDialog'); ui.click('#workshopButton');
-    expect(ui.w.document.querySelectorAll('[data-upgrade]')).toHaveLength(5); expect(ui.w.document.querySelectorAll('[data-art]')).toHaveLength(12);
+    expect(ui.w.document.querySelectorAll('[data-upgrade]')).toHaveLength(5); expect(ui.w.document.querySelectorAll('[data-art]')).toHaveLength(13);
     expect(ui.w.document.querySelector('[data-art="gust"]').disabled).toBe(false);
   });
 
@@ -120,7 +120,7 @@ describe('Lumenwild expanded browser interface', () => {
     ui.frame(1); expect(JSON.parse(ui.w.localStorage.getItem(C.SAVE_KEY)).profile.light).toBe(12);
   });
 
-  test('renderer handles all twenty-one maps, relics, landmarks, warnings and vents without invalid drawing coordinates', async () => {
+  test('renderer handles all twenty-three maps, relics, landmarks, warnings and vents without invalid drawing coordinates', async () => {
     ui = await mount();
     const Renderer = ui.w.LumenwildRenderer;
     const render = new Renderer(ui.w.document.querySelector('#world'), ui.w.document.querySelector('#minimap'));
@@ -170,7 +170,7 @@ describe('Lumenwild expanded browser interface', () => {
     const profile = C.profile({ runs: 1, rescues: 3, guardians: { bellkeeper: 1, tempest: 1, dawnhart: 1 } });
     const game = new C.Game({ seed: 3 });
     ui = await mount(JSON.parse(C.writeSave(profile, game))); ui.click('#workshopButton');
-    expect(ui.w.document.querySelectorAll('[data-charm]')).toHaveLength(8);
+    expect(ui.w.document.querySelectorAll('[data-charm]')).toHaveLength(9);
     ui.click('[data-charm="feather"]'); ui.click('[data-art="tide"]');
     const stored = JSON.parse(ui.w.localStorage.getItem(C.SAVE_KEY));
     expect(stored.profile.selectedCharm).toBe('feather'); expect(stored.profile.selectedArt).toBe('tide');
@@ -187,7 +187,7 @@ describe('Lumenwild expanded browser interface', () => {
     ui = await mount(JSON.parse(C.writeSave(profile, null))); ui.click('#journeysButton');
     expect(ui.w.document.querySelector('[data-trail="seasons"]').disabled).toBe(false);
     expect(ui.w.document.querySelector('[data-trail="unwritten"]').disabled).toBe(true);
-    expect(ui.w.document.querySelector('.vault-progress').textContent).toContain('1 / 6');
+    expect(ui.w.document.querySelector('.vault-progress').textContent).toContain('1 / 8');
     ui.click('[data-region="15"]'); ui.click('#dialogActions button');
     const game = ui.game; game.map.enemies.forEach(e => { e.hp = 0; });
     const bed = game.map.entities.find(e => e.type === 'wishbed'); game.light = 4; game.player.x = bed.x; game.player.y = bed.y;
@@ -208,4 +208,62 @@ describe('Lumenwild expanded browser interface', () => {
     ui.frame(game.boss.timer + .05); expect(ui.w.document.querySelector('#guardianPattern').textContent).toContain('2/2');
     ui.frame(game.boss.timer + .05); expect(ui.w.document.querySelector('#guardianPattern').textContent).toContain('Open heart');
   });
+
+  test('collection progress hides the secret until every group is complete and the journal filters finished regions', async () => {
+    const profile = C.profile({ runs: 1, memories: C.BIOMES[0].memories, relics: [0, 1, 2] });
+    ui = await mount(JSON.parse(C.writeSave(profile, null)));
+    expect(ui.w.document.querySelector('#secretButton').hidden).toBe(true);
+    ui.click('#journeysButton'); expect(ui.w.document.querySelector('[data-guardian="hollowstar"]')).toBeNull();
+    expect(ui.w.document.querySelector('#dialogBody').textContent).not.toContain('The Hollow Star');
+    ui.click('#closeDialog'); ui.click('#journalButton');
+    expect(ui.w.document.querySelector('[data-collection="memories"]').textContent).toContain('6 / 138');
+    expect(ui.w.document.querySelector('[data-secret]')).toBeNull();
+    ui.click('#missingOnly'); expect(ui.w.document.querySelector('.journal-region-section').hidden).toBe(true);
+    expect(ui.w.document.querySelector('[data-find-region="1"]')).not.toBeNull();
+    ui.click('[data-find-region="1"]'); expect(ui.w.document.querySelector('#dialogTitle').textContent).toBe('Moonwell Archive');
+  });
+
+  test('finishing the final chapter shows the illustrated ending and replay never awards it twice', async () => {
+    const profile = C.profile({ runs: 1, selectedTrail: 'finale', trails: { unwritten: 1 } });
+    ui = await mount(JSON.parse(C.writeSave(profile, null))); ui.click('#mainAction');
+    const { finishExpedition } = require('../helpers/lumenwildPilot');
+    expect(finishExpedition(ui.game, C)).toBe('won'); ui.key('Space');
+    expect(ui.w.document.querySelector('#dialogTitle').textContent).toBe('The garden is home.');
+    expect(ui.w.document.querySelector('.ending-illustration').getAttribute('src')).toBe('assets/finale-ending.webp');
+    const before = JSON.parse(ui.w.localStorage.getItem(C.SAVE_KEY));
+    expect(before.profile.trails.finale).toBe(1); expect(before.run).toBeNull();
+    ui.click('#dialogActions button'); expect(ui.w.document.querySelector('#endingButton').hidden).toBe(false);
+    ui.click('#endingButton'); ui.click('#dialogActions button');
+    expect(JSON.parse(ui.w.localStorage.getItem(C.SAVE_KEY)).profile).toEqual(before.profile);
+  });
+
+  test('the complete collection reveals a four-phase encounter with a numbered next-strike preview and a persistent title', async () => {
+    const profile = C.profile({
+      runs: 1, rescues: 3, memories: C.MEMORIES.map((_, i) => i), relics: C.RELICS.map(r => r.id),
+      trails: Object.fromEntries(C.TRAILS.map(t => [t.id, 1])), regions: C.BIOMES.map(() => ({ clears: 1 })),
+      guardians: Object.fromEntries(C.GUARDIANS.filter(b => !b.hidden).map(b => [b.id, 1])),
+      upgrades: Object.fromEntries(C.UPGRADES.map(u => [u.id, u.costs.length])), selectedArt: 'firstlight', selectedCharm: 'keeper', gentle: true,
+    });
+    ui = await mount(JSON.parse(C.writeSave(profile, null)));
+    expect(ui.w.document.querySelector('#secretButton').hidden).toBe(false);
+    ui.click('#secretButton'); expect(ui.w.document.querySelector('#dialogBody').textContent).toContain('Gentle mode does not apply');
+    ui.click('[data-secret-start]'); const game = ui.game;
+    expect(game.trail).toBe('secret'); expect(game.gentle).toBe(false); expect(game.inventory.bomb).toBe(2);
+    Object.assign(game.player, game.map.arena.entry); ui.key('KeyE'); ui.click('#dialogActions button'); ui.frame(1.6);
+    expect(ui.w.document.querySelector('#guardianStage').textContent).toContain('PHASE 1 / 4');
+    expect(ui.w.document.querySelector('#guardianPattern').textContent).toContain('1/4');
+    ui.frame(game.boss.timer + .05);
+    expect(ui.w.document.querySelector('#guardianSequence').textContent).toContain('dotted 3');
+    ui.frame(game.boss.timer + .05);
+    expect(ui.w.document.querySelector('#guardianSequence').textContent).toContain('dotted 4');
+    ui.key('Escape'); const before = JSON.stringify(game.snapshot()); ui.frame(3); expect(JSON.stringify(game.snapshot())).toBe(before);
+    ui.click('#closeDialog');
+    const { finishExpedition } = require('../helpers/lumenwildPilot');
+    expect(finishExpedition(game, C)).toBe('won'); ui.key('Space');
+    expect(ui.w.document.querySelector('#dialogTitle').textContent).toBe('Unfading Keeper');
+    expect(JSON.parse(ui.w.localStorage.getItem(C.SAVE_KEY)).profile.mastery.clears).toBe(1);
+    ui.click('#dialogActions button'); expect(ui.w.document.querySelector('#keeperTitle').hidden).toBe(false);
+    ui.click('#secretButton'); expect(ui.w.document.querySelector('.mastery-record').textContent).toContain('1 clears');
+  });
+
 });

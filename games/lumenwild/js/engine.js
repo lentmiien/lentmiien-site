@@ -6,9 +6,9 @@
   'use strict';
 
   function createApi(content, world, helpers, guardians) {
-    const { BIOMES, MEMORIES, RELICS, TRAILS, ENEMIES, BLESSINGS, UPGRADES, ARTS, GUARDIANS, CHARMS } = content;
+    const { SECRET_BIOME, BIOMES, MEMORIES, RELICS, TRAILS, ENEMIES, BLESSINGS, UPGRADES, ARTS, GUARDIANS, CHARMS } = content;
     const { clamp, integer, distance, same, plain, hash, random, shuffle, walkable, distances, lineOfSight, generateLegacy, DIRS } = helpers;
-    const VERSION = 4, SAVE_KEY = 'lumenwild.garden.v1', MAX_SAVE = 180000;
+    const VERSION = 5, SAVE_KEY = 'lumenwild.garden.v1', MAX_SAVE = 180000;
     const number = (n, min, max, fallback = min) => Number.isFinite(n) ? clamp(n, min, max) : fallback;
     const ids = (list, max) => Array.isArray(list) ? [...new Set(list.filter(n => Number.isInteger(n) && n >= 0 && n < max))] : [];
     const emptyRecord = () => ({ clears: 0, explored: 0, landmark: false });
@@ -25,8 +25,9 @@
         selectedTrail: TRAILS.some(t => t.id === p.selectedTrail) ? p.selectedTrail : legacy && wins ? 'frontier' : 'dawn',
         selectedArt: ARTS.some(a => a.id === p.selectedArt) ? p.selectedArt : 'gust',
         selectedCharm: CHARMS.some(c => c.id === p.selectedCharm) ? p.selectedCharm : 'none',
-        guardians: Object.fromEntries(GUARDIANS.map(b => [b.id, integer(p.guardians?.[b.id], 0, 3)])),
-        guardianAwards: integer(p.guardianAwards, 0, GUARDIANS.length * 3), rescues: integer(p.rescues, 0, 99999),
+        guardians: Object.fromEntries(GUARDIANS.map(b => [b.id, integer(p.guardians?.[b.id], 0, b.hidden ? 1 : 3)])),
+        guardianAwards: integer(p.guardianAwards, 0, GUARDIANS.filter(b => !b.hidden).length * 3), rescues: integer(p.rescues, 0, 99999),
+        mastery: { clears: integer(p.mastery?.clears, 0, 99999), bestTime: number(p.mastery?.bestTime, 0, 999999), bestHits: integer(p.mastery?.bestHits, 0, 999999) },
         sound: p.sound === true, gentle: p.gentle === true,
       };
     }
@@ -45,15 +46,16 @@
       return !!trail && (!trail.requires || p.trails[trail.requires] > 0);
     };
     const regionUnlocked = (p, region) => Number.isInteger(region) && region >= 0 && region < BIOMES.length &&
-      TRAILS.some(t => t.route.length === 3 && t.route.includes(region) && trailUnlocked(p, t.id));
-    const guardianMedals = p => GUARDIANS.reduce((sum, b) => sum + p.guardians[b.id], 0);
+      TRAILS.some(t => (t.chapter || t.route.length === 3) && t.route.includes(region) && trailUnlocked(p, t.id));
+    const guardianMedals = p => GUARDIANS.filter(b => !b.hidden).reduce((sum, b) => sum + p.guardians[b.id], 0);
     function charmUnlocked(p, id) {
       if (id === 'none') return true;
       if (id === 'firefly') return p.rescues >= 3;
-      const earned = { bell: p.guardians.bellkeeper, feather: p.guardians.tempest, crown: p.guardians.dawnhart, amber: p.guardians.honeyregent, chime: p.guardians.resonantwarden, twilight: p.guardians.nightgardener };
+      const earned = { bell: p.guardians.bellkeeper, feather: p.guardians.tempest, crown: p.guardians.dawnhart, amber: p.guardians.honeyregent, chime: p.guardians.resonantwarden, twilight: p.guardians.nightgardener, keeper: p.guardians.firstkeeper };
       return Object.hasOwn(earned, id) && earned[id] > 0;
     }
     function artUnlocked(p, id) {
+      if (id === 'firstlight') return p.guardians.firstkeeper > 0;
       if (id === 'gust') return true;
       if (id === 'snare') return p.relics.length >= 3;
       if (id === 'lance') return p.regions[5].clears > 0;
@@ -68,6 +70,17 @@
       if (id === 'afterglow') return p.guardians.nightgardener > 0;
       return false;
     }
+    function collectionProgress(p) {
+      const groups = [
+        { id: 'memories', name: 'Memories', found: MEMORIES.filter((_, i) => p.memories.includes(i)).length, total: MEMORIES.length },
+        { id: 'relics', name: 'Relics', found: RELICS.filter(r => p.relics.includes(r.id)).length, total: RELICS.length },
+        { id: 'arts', name: 'Lantern arts', found: ARTS.filter(a => artUnlocked(p, a.id)).length, total: ARTS.length },
+        { id: 'charms', name: 'Keepsakes', found: CHARMS.filter(c => c.id !== 'none' && charmUnlocked(p, c.id)).length, total: CHARMS.length - 1 },
+      ];
+      return { groups, complete: groups.every(g => g.found === g.total) };
+    }
+    const secretUnlocked = p => collectionProgress(p).complete;
+
     function upgradeRequirement(p, id) {
       const level = p.upgrades[id] || 0;
       return level < 3 ? 0 : (level - 2) * 5;
@@ -81,6 +94,7 @@
     }
 
     function dailyRoute(seed, generator) {
+      if (generator >= 5) return [seed % 8, 8 + (seed >>> 8) % 8, 16 + (seed >>> 16) % 7];
       const size = generator < 3 ? 3 : generator === 3 ? 5 : 7;
       return [seed % size, size + (seed >>> 8) % size, size * 2 + (seed >>> 16) % size];
     }
@@ -94,7 +108,7 @@
     function generate(seed, region, options = {}) {
       if (!Number.isInteger(region) || region < 0 || region >= BIOMES.length) throw new RangeError('Unknown garden');
       const plan = options.plan || discoveryPlan(seed, [region])[0];
-      return world.generate(seed, region, plan, integer(options.tier, 1, 3, 1), helpers, options.generator === 2 ? 2 : options.generator === 3 ? 3 : 4);
+      return world.generate(seed, region, plan, integer(options.tier, 1, 3, 1), helpers, options.generator === 2 ? 2 : options.generator === 3 ? 3 : options.generator === 4 ? 4 : 5);
     }
 
     function syncDiscoveries(p, game) {
@@ -120,9 +134,15 @@
       if (game.daily) p.dailyBest = Math.max(p.dailyBest, game.score);
       if (game.status === 'won') {
         p.wins = Math.min(99999, p.wins + 1);
+        if (game.trail === 'secret' && game.boss?.state === 'defeated') {
+          const first = p.mastery.clears === 0;
+          p.mastery.bestTime = first ? game.boss.elapsed : Math.min(p.mastery.bestTime, game.boss.elapsed);
+          p.mastery.bestHits = first ? game.boss.hitsTaken : Math.min(p.mastery.bestHits, game.boss.hitsTaken);
+          p.mastery.clears = Math.min(99999, p.mastery.clears + 1);
+        }
         if (!game.daily && TRAILS.some(t => t.id === game.trail)) {
           p.trails[game.trail] = Math.min(99999, p.trails[game.trail] + 1);
-          const next = TRAILS.find(t => t.requires === game.trail);
+          const next = TRAILS.find(t => t.requires === game.trail && t.chapter) || TRAILS.find(t => t.requires === game.trail);
           if (next && p.trails[next.id] === 0 && p.selectedTrail === game.trail) p.selectedTrail = next.id;
         }
       }
@@ -136,8 +156,12 @@
     }
     function createExpedition(p, options) {
       const trail = options.trail || p.selectedTrail;
-      const trial = trail === 'trial' && GUARDIANS.find(b => b.region === options.region);
-      if (!options.daily && (trail === 'trial' ? !trial || !p.guardians[trial.id] : trail === 'survey' ? !regionUnlocked(p, options.region) : !trailUnlocked(p, trail))) return null;
+      const trial = trail === 'trial' && GUARDIANS.find(b => !b.hidden && b.region === options.region);
+      if (trail === 'secret') {
+        if (options.daily || !secretUnlocked(p)) return null;
+        options = { ...options, region: 22, tier: 1, generator: 5 };
+      }
+      if (!options.daily && (trail === 'secret' ? !secretUnlocked(p) : trail === 'trial' ? !trial || !p.guardians[trial.id] : trail === 'survey' ? !regionUnlocked(p, options.region) : !trailUnlocked(p, trail))) return null;
       const tier = trial ? integer(options.tier, 1, Math.min(3, p.guardians[trial.id] + 1), 1) : !options.daily && options.tier > 1 && p.regions[options.region ?? 0]?.clears > 0 ? integer(options.tier, 1, 3) : 1;
       const charm = charmUnlocked(p, p.selectedCharm) ? p.selectedCharm : 'none';
       const capacity = 3 + p.upgrades.focus + (charm === 'firefly' ? 1 : 0);
@@ -150,13 +174,13 @@
       constructor(options = {}) {
         this.seed = integer(options.seed, 0, 4294967295, 1);
         this.daily = options.daily === true;
-        this.gentle = !this.daily && options.gentle === true;
-        this.generator = [1, 2, 3].includes(options.generator) ? options.generator : 4;
-        this.surveyRegion = integer(options.region ?? options.surveyRegion, 0, BIOMES.length - 1);
-        this.trail = this.daily ? 'daily' : options.trail === 'trial' && BIOMES[this.surveyRegion].guardian ? 'trial' : options.trail === 'survey' ? 'survey' : TRAILS.some(t => t.id === options.trail) ? options.trail : 'dawn';
-        this.journey = this.generator === 1 ? [0, 1, 2] : this.daily ? dailyRoute(this.seed, this.generator) : ['survey', 'trial'].includes(this.trail) ? [this.surveyRegion] : TRAILS.find(t => t.id === this.trail).route.slice();
+        this.gentle = !this.daily && options.trail !== 'secret' && options.gentle === true;
+        this.generator = [1, 2, 3, 4].includes(options.generator) ? options.generator : 5;
+        this.surveyRegion = !this.daily && options.trail === 'secret' ? 22 : integer(options.region ?? options.surveyRegion, 0, BIOMES.length - 1);
+        this.trail = this.daily ? 'daily' : options.trail === 'secret' ? 'secret' : options.trail === 'trial' && BIOMES[this.surveyRegion].guardian ? 'trial' : options.trail === 'survey' ? 'survey' : TRAILS.some(t => t.id === options.trail) ? options.trail : 'dawn';
+        this.journey = this.generator === 1 ? [0, 1, 2] : this.daily ? dailyRoute(this.seed, this.generator) : ['survey', 'trial', 'secret'].includes(this.trail) ? [this.surveyRegion] : TRAILS.find(t => t.id === this.trail).route.slice();
         this.plan = discoveryPlan(this.seed, this.journey, this.daily ? [] : ids(options.knownMemories, MEMORIES.length), this.daily ? [] : ids(options.knownRelics, RELICS.length));
-        this.tier = this.daily ? 1 : integer(options.tier, 1, 3, 1);
+        this.tier = this.daily || this.trail === 'secret' ? 1 : integer(options.tier, 1, 3, 1);
         this.art = this.daily ? 'gust' : ARTS.some(a => a.id === options.art) ? options.art : 'gust';
         this.charm = !this.daily && CHARMS.some(c => c.id === options.charm) ? options.charm : 'none';
         this.upgrades = this.daily ? profile().upgrades : profile({ upgrades: options.upgrades }).upgrades;
@@ -173,7 +197,7 @@
       }
 
       get region() { return this.journey[this.depth]; }
-      get biome() { return BIOMES[this.region]; }
+      get biome() { return this.trail === 'secret' ? SECRET_BIOME : BIOMES[this.region]; }
       get dashCooldown() { return this.cooldowns.dash; }
       get shiftCooldown() { return this.cooldowns.shift; }
       has(id) { return this.blessings.includes(id) ? 1 : 0; }
@@ -181,29 +205,30 @@
       stats() {
         return {
           maxHp: 7 + this.upgrades.hearth + this.has('vitality') * 2 + (this.gentle ? 3 : 0) + (this.charm === 'crown' ? 2 : 0),
-          damage: 1 + this.has('radiance'), reach: 1 + this.has('reach'), sight: 5 + this.upgrades.lens + this.has('sight') * 2,
+          damage: 1 + this.has('radiance'), reach: 1 + this.has('reach') + (this.charm === 'keeper' && this.boss?.mode === 'recovery' ? 1 : 0), sight: 5 + this.upgrades.lens + this.has('sight') * 2,
           dash: 3 + this.has('drift'), dashWait: (this.has('drift') ? 1.9 : 2.8) * (this.charm === 'feather' ? .75 : 1),
           attackWait: this.has('quick') ? .44 : .55, guardDuration: .65 + this.upgrades.ward * .07,
           maxFocus: 3 + this.upgrades.focus + this.has('focus') * 2 + (this.charm === 'firefly' ? 1 : 0),
         };
       }
       enterGarden() {
-        this.map = this.trail === 'trial' ? world.trial(this.region, helpers) : this.generator === 1 ? generateLegacy(this.seed, this.region) : generate(this.seed, this.region, { plan: this.plan[this.depth], tier: this.tier, generator: this.generator });
+        this.map = ['trial', 'secret'].includes(this.trail) ? world.trial(this.region, helpers) : this.generator === 1 ? generateLegacy(this.seed, this.region) : generate(this.seed, this.region, { plan: this.plan[this.depth], tier: this.tier, generator: this.generator });
         this.map.shortcuts ||= []; this.map.vents ||= []; this.map.clearings ||= [];
         if (this.generator === 1) this.map.enemies.forEach(e => Object.assign(e, { hp: ENEMIES[e.kind].hp, windup: 0, windupTotal: 0, moveWait: .4, rest: .5, known: false }));
         this.opened = []; this.seen = new Set(); this.visible = new Set(); this.guideCache = null; this.pathCache = null;
-        this.player.x = 3; this.player.y = 3; this.phase = 0; this.seeds = this.trail === 'trial' ? 3 : 0;
+        this.player.x = 3; this.player.y = 3; this.phase = 0; this.seeds = ['trial', 'secret'].includes(this.trail) ? 3 : 0;
         this.carrying = false; this.delivered = false;
         this.boss = this.map.arena ? guardians.create(this.biome.guardian, this.map.arena, this.tier) : null;
         if (this.charm === 'firefly') { this.inventory.thread = Math.min(9, this.inventory.thread + 1); this.focus = Math.min(this.stats().maxFocus, this.focus + 1); }
         if (this.charm === 'crown') { this.player.hp = Math.min(this.stats().maxHp, this.player.hp + 2); this.inventory.bomb = Math.min(9, this.inventory.bomb + 1); }
+        if (this.trail === 'secret') this.inventory = { medicine: 2, bomb: 2, thread: 0 };
         Object.keys(this.cooldowns).forEach(key => { this.cooldowns[key] = 0; });
         this.guardTime = 0; this.shield = .8; this.guideTurns = 0;
         this.reveal();
       }
       emit(type, text = '', extra = {}) { if (this.events.length < 100) this.events.push({ type, text, ...extra }); }
       recordSurvey() {
-        if (this.trail === 'trial') return;
+        if (['trial', 'secret'].includes(this.trail)) return;
         const floor = this.map.tiles.reduce((sum, tile) => sum + (tile !== 1 ? 1 : 0), 0);
         const seenFloor = [...this.seen].filter(i => this.map.tiles[i] !== 1).length;
         this.records[this.region].explored = Math.max(this.records[this.region].explored, Math.min(100, Math.round(seenFloor / Math.max(1, floor) * 100)));
@@ -326,9 +351,9 @@
         }
         if (e.phase !== this.phase) { this.emit('hint', `${this.biome.landmark} answers in ${e.phase ? 'Echo' : 'Bloom'}.`); return false; }
         const count = this.map.entities.filter(p => p.type === 'landmark' && p.done).length;
-        if (['stars', 'auroras', 'resonance', 'orbits'].includes(this.biome.feature) && e.number !== count + 1) { this.emit('hint', `Begin with ${this.biome.landmark} ${count + 1}.`); return false; }
+        if (['stars', 'auroras', 'resonance', 'orbits', 'heartflowers'].includes(this.biome.feature) && e.number !== count + 1) { this.emit('hint', `Begin with ${this.biome.landmark} ${count + 1}.`); return false; }
         e.done = true; this.light += 4; this.score += 40; this.focus = Math.min(this.stats().maxFocus, this.focus + 1);
-        if (['grove', 'gears', 'prisms', 'stars', 'bells', 'vanes', 'sundials', 'looms', 'auroras', 'nectar', 'resonance', 'lanterns', 'orbits', 'lastlight'].includes(this.biome.feature)) this.openShortcuts(e);
+        if (['grove', 'gears', 'prisms', 'stars', 'bells', 'vanes', 'sundials', 'looms', 'auroras', 'nectar', 'resonance', 'lanterns', 'orbits', 'lastlight', 'beacons', 'heartflowers'].includes(this.biome.feature)) this.openShortcuts(e);
         if (this.biome.feature === 'mirrors') {
           const target = this.map.entities.find(p => p.type === 'seed' && !p.done);
           if (target) for (let y = target.y - 2; y <= target.y + 2; y += 1) for (let x = target.x - 2; x <= target.x + 2; x += 1) {
@@ -350,7 +375,7 @@
           if (this.carrying) this.deliverFirefly();
           if (this.seeds < 3) { this.emit('hint', `The waygate needs ${3 - this.seeds} more heartseeds.`); return false; }
           if (this.boss && this.boss.state !== 'defeated') { this.emit('hint', 'The heartseeds are ready. Find the guardian’s arena and awaken it before restoring this region.'); return false; }
-          this.recordSurvey(); if (this.trail !== 'trial') this.records[this.region].clears = 1;
+          this.recordSurvey(); if (!['trial', 'secret'].includes(this.trail)) this.records[this.region].clears = 1;
           this.score += 200 * this.tier + this.records[this.region].explored; this.light += 10 * this.tier;
           this.status = this.depth === this.journey.length - 1 ? 'won' : 'blessing';
           this.emit('restored', this.biome.name); return true;
@@ -455,8 +480,8 @@
         } else for (const e of foes) {
           if (this.art === 'lance') {
             if ((dx && e.y === p.y && (e.x - p.x) * dx > 0 || dy && e.x === p.x && (e.y - p.y) * dy > 0) && distance(e, p) <= 5) this.hit(e, 5);
-          } else if (['stars', 'dawn', 'afterglow'].includes(this.art) ? this.visible.has(e.y * this.map.w + e.x) : distance(e, p) <= (this.art === 'resonance' ? 5 : ['nova', 'tempest', 'tide', 'nectar'].includes(this.art) ? 4 : 3)) {
-            this.hit(e, this.art === 'gust' ? 1 : ['snare', 'nectar'].includes(this.art) ? 2 : this.art === 'tide' ? 3 : this.art === 'dawn' ? 5 : 4, this.art === 'snare' ? 3 : ['nectar', 'resonance'].includes(this.art) ? 2 : 1.5);
+          } else if (['stars', 'dawn', 'afterglow', 'firstlight'].includes(this.art) ? this.visible.has(e.y * this.map.w + e.x) : distance(e, p) <= (this.art === 'resonance' ? 5 : ['nova', 'tempest', 'tide', 'nectar'].includes(this.art) ? 4 : 3)) {
+            this.hit(e, this.art === 'gust' ? 1 : ['snare', 'nectar'].includes(this.art) ? 2 : this.art === 'tide' ? 3 : this.art === 'dawn' ? 5 : this.art === 'firstlight' ? 6 : 4, this.art === 'snare' ? 3 : ['nectar', 'resonance'].includes(this.art) ? 2 : 1.5);
           }
         }
         if (this.art === 'stars') this.shield = Math.max(this.shield, 1.5);
@@ -465,6 +490,7 @@
         if (this.art === 'tempest') this.cooldowns.dash = 0;
         if (this.art === 'dawn') this.cooldowns.guard = 0;
         if (this.art === 'nectar') { p.hp = Math.min(this.stats().maxHp, p.hp + 1); this.shield = Math.max(this.shield, 1); }
+        if (this.art === 'firstlight') { this.cooldowns.shift = 0; this.cooldowns.dash = 0; }
         if (this.art === 'afterglow') { this.cooldowns.shift = 0; this.shield = Math.max(this.shield, 1.2); }
         if (this.has('roots')) p.hp = Math.min(this.stats().maxHp, p.hp + 1);
         this.focus -= art.cost; this.cooldowns.art = 1.5;
@@ -650,7 +676,7 @@
           memories: this.memories, relics: this.relics, vaults: this.vaults, blessings: this.blessings, records: this.records, inventory: this.inventory, player: this.player,
           cooldowns: this.cooldowns, focus: this.focus, shield: this.shield, guardTime: this.guardTime, guideTurns: this.guideTurns,
           status: this.status, seen: [...this.seen], opened: this.opened,
-          boss: this.boss ? { ...this.boss, intent: this.boss.intent.map(p => ({ ...p })), followup: this.boss.followup.map(p => ({ ...p })), kit: this.boss.kit ? { ...this.boss.kit } : null } : null,
+          boss: this.boss ? { ...this.boss, intent: this.boss.intent.map(p => ({ ...p })), followup: this.boss.followup.map(p => ({ ...p })), queue: this.boss.queue.map(strike => ({ realm: strike.realm, cells: strike.cells.map(p => ({ ...p })) })), kit: this.boss.kit ? { ...this.boss.kit } : null } : null,
           guardianWins: this.guardianWins, rescues: this.rescues, recordedRescues: this.recordedRescues, carrying: this.carrying, delivered: this.delivered,
           entities: this.map.entities.map(e => ({ id: e.id, done: e.done, progress: e.progress || 0 })),
           enemies: this.map.enemies.map(e => ({ id: e.id, x: e.x, y: e.y, hp: e.hp, intent: e.intent, stun: e.stun, awake: e.awake,
@@ -664,9 +690,15 @@
           !Array.isArray(s.blessings) || s.blessings.length !== s.depth || new Set(s.blessings).size !== s.blessings.length || s.blessings.some(id => !BLESSINGS.some(b => b.id === id)) ||
           !Array.isArray(s.entities) || s.entities.length > 100 || !Array.isArray(s.enemies) || s.enemies.length > 16 || !Array.isArray(s.seen) || s.seen.length > 1600) return null;
         const legacy = s.generator === undefined;
-        if (!legacy && (![1, 2, 3, 4].includes(s.generator) || !['daily', 'survey', 'trial', ...TRAILS.map(t => t.id)].includes(s.trail))) return null;
+        if (!legacy && (![1, 2, 3, 4, 5].includes(s.generator) || !['daily', 'survey', 'trial', 'secret', ...TRAILS.map(t => t.id)].includes(s.trail))) return null;
         if (s.generator < 3 && (['rainbound', 'aurora', 'homecoming', 'trial'].includes(s.trail) || s.surveyRegion > 8)) return null;
         if (s.generator < 4 && (['seasons', 'unwritten', 'tomorrow'].includes(s.trail) || s.surveyRegion > 14)) return null;
+        if (s.generator < 5 && (['finale', 'secret'].includes(s.trail) || s.surveyRegion > 20)) return null;
+        if (s.trail === 'secret' && (s.generator !== 5 || s.daily !== false || s.gentle !== false || s.tier !== 1 || s.depth !== 0 || s.surveyRegion !== 22)) return null;
+        if (s.trail === 'secret') {
+          const validKit = kit => plain(kit) && ['medicine', 'bomb'].every(key => Number.isInteger(kit[key]) && kit[key] >= 0 && kit[key] <= 2) && kit.thread === 0;
+          if (!validKit(s.inventory) || s.boss?.state === 'active' && !validKit(s.boss.kit)) return null;
+        }
         const game = new Game({ ...s, generator: legacy ? 1 : s.generator, trail: legacy ? 'dawn' : s.trail });
         if (s.depth >= game.journey.length) return null;
         if (!legacy) {
@@ -720,7 +752,7 @@
             moveWait: number(saved.moveWait, 0, 5), rest: number(saved.rest, 0, 5) });
           if (!e.windup) e.intent = [];
         }
-        game.seeds = game.trail === 'trial' ? 3 : game.map.entities.filter(e => e.type === 'seed' && e.done).length;
+        game.seeds = ['trial', 'secret'].includes(game.trail) ? 3 : game.map.entities.filter(e => e.type === 'seed' && e.done).length;
         if (s.status === 'blessing' && (game.depth === game.journey.length - 1 || game.seeds !== 3)) return null;
         game.status = s.status;
         for (const key of Object.keys(game.cooldowns)) game.cooldowns[key] = number(s.cooldowns?.[key], 0, 5);
@@ -737,7 +769,7 @@
         if (game.generator >= 3) {
           if (!guardians.restore(game, s.boss, { ...helpers, number })) return null;
           if (s.status === 'blessing' && game.boss && game.boss.state !== 'defeated') return null;
-          game.guardianWins = Object.fromEntries(GUARDIANS.map(b => [b.id, integer(s.guardianWins?.[b.id], 0, 3)]));
+          game.guardianWins = Object.fromEntries(GUARDIANS.map(b => [b.id, integer(s.guardianWins?.[b.id], 0, b.hidden ? 1 : 3)]));
           game.rescues = integer(s.rescues, 0, game.journey.length);
           game.recordedRescues = integer(s.recordedRescues, 0, game.rescues);
           game.carrying = s.carrying === true; game.delivered = s.delivered === true;
@@ -753,15 +785,17 @@
       if (typeof raw !== 'string' || raw.length > MAX_SAVE) return { profile: profile(), game: null, invalid: !!raw };
       try {
         const data = JSON.parse(raw);
-        if (!plain(data) || ![1, 2, 3, VERSION].includes(data.version)) return { profile: profile(), game: null, invalid: true };
-        const game = data.run ? Game.restore(data.run) : null;
-        return { profile: profile(data.profile), game, invalid: !!data.run && !game, migrated: data.version < VERSION };
+        if (!plain(data) || ![1, 2, 3, 4, VERSION].includes(data.version)) return { profile: profile(), game: null, invalid: true };
+        const savedProfile = profile(data.profile);
+        let game = data.run ? Game.restore(data.run) : null;
+        if (game?.trail === 'secret' && !secretUnlocked(savedProfile)) game = null;
+        return { profile: savedProfile, game, invalid: !!data.run && !game, migrated: data.version < VERSION };
       } catch { return { profile: profile(), game: null, invalid: true }; }
     }
     function writeSave(p, game) {
       return JSON.stringify({ version: VERSION, profile: profile(p), run: game && ['playing', 'blessing'].includes(game.status) ? game.snapshot() : null });
     }
-    return { ...content, ...helpers, VERSION, SAVE_KEY, MAX_SAVE, Game, generate, profile, buyUpgrade, upgradeRequirement, medal, medals, guardianMedals, trailUnlocked, regionUnlocked, artUnlocked, charmUnlocked, createExpedition, bankExpedition, syncDiscoveries, discoveryPlan, readSave, writeSave };
+    return { ...content, ...helpers, VERSION, SAVE_KEY, MAX_SAVE, Game, generate, profile, buyUpgrade, upgradeRequirement, medal, medals, guardianMedals, trailUnlocked, regionUnlocked, artUnlocked, charmUnlocked, collectionProgress, secretUnlocked, createExpedition, bankExpedition, syncDiscoveries, discoveryPlan, readSave, writeSave };
   }
   return { createApi };
 }));

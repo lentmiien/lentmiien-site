@@ -1,0 +1,646 @@
+{
+  "save": {
+    "version": 4,
+    "profile": {
+      "light": 528,
+      "medalAwards": 0,
+      "wins": 0,
+      "runs": 9,
+      "best": 0,
+      "dailyBest": 0,
+      "upgrades": {
+        "hearth": 0,
+        "satchel": 0,
+        "lens": 0,
+        "ward": 0,
+        "focus": 0
+      },
+      "memories": [],
+      "relics": [],
+      "vaults": [
+        15,
+        19
+      ],
+      "trails": {
+        "dawn": 0,
+        "frontier": 0,
+        "horizon": 0,
+        "pilgrimage": 0,
+        "rainbound": 0,
+        "aurora": 0,
+        "homecoming": 0,
+        "seasons": 0,
+        "unwritten": 1,
+        "tomorrow": 0
+      },
+      "regions": [
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        }
+      ],
+      "selectedTrail": "dawn",
+      "selectedArt": "gust",
+      "selectedCharm": "none",
+      "guardians": {
+        "bellkeeper": 0,
+        "tempest": 0,
+        "dawnhart": 0,
+        "honeyregent": 0,
+        "resonantwarden": 0,
+        "nightgardener": 1
+      },
+      "guardianAwards": 0,
+      "rescues": 0,
+      "sound": false,
+      "gentle": false
+    },
+    "run": {
+      "generator": 4,
+      "seed": 56192,
+      "daily": false,
+      "gentle": false,
+      "upgrades": {
+        "hearth": 0,
+        "satchel": 0,
+        "lens": 0,
+        "ward": 0,
+        "focus": 0
+      },
+      "trail": "trial",
+      "surveyRegion": 20,
+      "plan": [
+        {
+          "memories": [
+            124,
+            123,
+            122
+          ],
+          "relic": 60
+        }
+      ],
+      "tier": 1,
+      "art": "gust",
+      "charm": "none",
+      "depth": 0,
+      "phase": 0,
+      "turn": 0,
+      "steps": 0,
+      "kills": 0,
+      "light": 0,
+      "score": 0,
+      "elapsed": 2.000000000000001,
+      "memories": [],
+      "relics": [],
+      "vaults": [],
+      "blessings": [],
+      "records": [
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        },
+        {
+          "clears": 0,
+          "explored": 0,
+          "landmark": false
+        }
+      ],
+      "inventory": {
+        "medicine": 2,
+        "bomb": 2,
+        "thread": 3
+      },
+      "player": {
+        "x": 10,
+        "y": 12,
+        "facing": 0,
+        "hp": 7
+      },
+      "cooldowns": {
+        "attack": 0,
+        "dash": 0,
+        "shift": 0,
+        "guard": 0,
+        "art": 0
+      },
+      "focus": 3,
+      "shield": 0,
+      "guardTime": 0,
+      "guideTurns": 0,
+      "status": "playing",
+      "seen": [
+        40,
+        41,
+        42,
+        43,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        97,
+        98,
+        99,
+        102,
+        103,
+        117,
+        136,
+        155,
+        141,
+        142,
+        143,
+        144,
+        145,
+        159,
+        160,
+        161,
+        162,
+        163,
+        164,
+        165,
+        177,
+        178,
+        179,
+        180,
+        181,
+        182,
+        183,
+        184,
+        185,
+        195,
+        196,
+        197,
+        198,
+        199,
+        200,
+        201,
+        202,
+        203,
+        204,
+        205,
+        214,
+        215,
+        216,
+        217,
+        218,
+        219,
+        220,
+        221,
+        222,
+        223,
+        224,
+        233,
+        234,
+        235,
+        236,
+        237,
+        238,
+        239,
+        240,
+        241,
+        242,
+        243,
+        252,
+        253,
+        254,
+        255,
+        256,
+        257,
+        258,
+        259,
+        260,
+        261,
+        262,
+        272,
+        273,
+        274,
+        275,
+        276,
+        277,
+        278,
+        279,
+        280,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        100,
+        101,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        128,
+        129,
+        138,
+        139,
+        140,
+        146,
+        147,
+        148,
+        157,
+        158,
+        166,
+        167,
+        176,
+        186
+      ],
+      "opened": [],
+      "boss": {
+        "id": "nightgardener",
+        "x": 10,
+        "y": 7,
+        "hp": 54,
+        "maxHp": 54,
+        "state": "active",
+        "mode": "windup",
+        "stage": 1,
+        "cycle": 1,
+        "timer": 1.6500000000000006,
+        "total": 2.25,
+        "elapsed": 2.000000000000001,
+        "intent": [
+          {
+            "x": 5,
+            "y": 3
+          },
+          {
+            "x": 6,
+            "y": 4
+          },
+          {
+            "x": 7,
+            "y": 5
+          },
+          {
+            "x": 8,
+            "y": 6
+          },
+          {
+            "x": 9,
+            "y": 7
+          },
+          {
+            "x": 10,
+            "y": 8
+          },
+          {
+            "x": 11,
+            "y": 9
+          },
+          {
+            "x": 12,
+            "y": 10
+          },
+          {
+            "x": 13,
+            "y": 11
+          },
+          {
+            "x": 14,
+            "y": 12
+          },
+          {
+            "x": 15,
+            "y": 13
+          }
+        ],
+        "realm": -1,
+        "attack": "Pruning shadows",
+        "landing": null,
+        "kit": {
+          "medicine": 2,
+          "bomb": 2,
+          "thread": 3
+        },
+        "hitsTaken": 0,
+        "followup": [
+          {
+            "x": 15,
+            "y": 3
+          },
+          {
+            "x": 14,
+            "y": 4
+          },
+          {
+            "x": 13,
+            "y": 5
+          },
+          {
+            "x": 12,
+            "y": 6
+          },
+          {
+            "x": 11,
+            "y": 7
+          },
+          {
+            "x": 10,
+            "y": 8
+          },
+          {
+            "x": 9,
+            "y": 9
+          },
+          {
+            "x": 8,
+            "y": 10
+          },
+          {
+            "x": 7,
+            "y": 11
+          },
+          {
+            "x": 6,
+            "y": 12
+          },
+          {
+            "x": 5,
+            "y": 13
+          }
+        ],
+        "followupRealm": -1,
+        "beat": 1,
+        "beats": 2
+      },
+      "guardianWins": {
+        "bellkeeper": 0,
+        "tempest": 0,
+        "dawnhart": 0,
+        "honeyregent": 0,
+        "resonantwarden": 0,
+        "nightgardener": 0
+      },
+      "rescues": 0,
+      "recordedRescues": 0,
+      "carrying": false,
+      "delivered": false,
+      "entities": [
+        {
+          "id": "e0",
+          "done": false,
+          "progress": 0
+        },
+        {
+          "id": "e1",
+          "done": false,
+          "progress": 0
+        }
+      ],
+      "enemies": [],
+      "vents": []
+    }
+  },
+  "digests": [
+    "f3656bbe19850d6c26d9b64fb03e0909b5c9c9d700f6751825582aab67ef05bc",
+    "a186dd7bc22071f14f184728de0481d7223601a6479b18b4a2cbfafd29f8f6d1",
+    "89f59fea8b9b9cdbd31015cb134a0c07eb55199892442cbb97998b8081c73dc2",
+    "5251965c58c2892c949bea219600b307ede2b0c8b7e8b005c32057d59cabf72c",
+    "6730b1eecb2cec8d24b17e141e321e861e237cc1960dc651b0247ae88a58076a",
+    "7d804e1b4f92d9dbd7680afd3f2a884aca1bff3326051eb22340f901c3b2df52",
+    "198db399da609dab13d12f50b1591497bb3ac8a39cc4fd919c500c4eab83a63b",
+    "1bf21b5e455966382474f429921b7436b12a84d6705ba2212066f281689abfa0",
+    "8744a2bda31814bf1cb9e3ad99f7689f01ec97f2c06e9f323c0208124ba4d4a4",
+    "48747935851fbb622b91898bc3dbe118c5ec4ac7fff7f1c95804f988749e09c5",
+    "80c8b07fbd5f205c2099ab741ee0b3ab960ad75104894e57fa847564a5269178",
+    "3718ce4ecf8ab6fc922176e2e01398055431a67a48289a55789827a05308cc46",
+    "f9c04225a8bd5d4417fbe3d1f60e4ccfd72287e554e4159db789b62c3e8dc14e",
+    "e83a76002de89d8c17a8d8fe6f6bbebbb0a00b29a96de7d4af2017e127560cbd",
+    "3006f152357de3a81da036167cb932fedb40886ecbf752bda181f6bddb14534e",
+    "a0d013af480ee28c509d9a813228ad809e13465d817ab97a8e717b1a2943de3d",
+    "c9a345cc41462ff49412759dac44bc8259ac2485da97e3ac419ab0b0e19fbea3",
+    "feeff83593617c59be48bbc75ee34bce6260010885162b64cd4d26714d733279",
+    "fe7bf3c9f4c49da83800a2a40a84667c39afae6603e4b62de7bceca126b84fcd",
+    "86852a9809af4b267cdd9d383f8f2c7158344dace07a7d6efa97aab5be1f6904",
+    "e3044581bfe5f834fa6403a2fde0cdddb352a43f50c475b8ecb4f85cfde4f0ed"
+  ]
+}
