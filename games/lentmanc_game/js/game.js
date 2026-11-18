@@ -5,8 +5,9 @@
   const mapData = window.GAME_MAPS;
   const story = window.GAME_STORY;
   const AudioController = window.GameAudio;
+  const mapArt = window.GAME_MAP_ART;
 
-  if (!characters || !mapData || !story || !AudioController) {
+  if (!characters || !mapData || !story || !AudioController || !mapArt || !window.createMapRenderer) {
     const loadingStatus = document.getElementById('loadingStatus');
     if (loadingStatus) {
       loadingStatus.textContent = 'The game data could not be loaded. Reload the page to try again.';
@@ -191,6 +192,8 @@
   };
 
   const ctx = dom.worldCanvas.getContext('2d', { alpha: false });
+  const mapImages = new Map();
+  const drawExploration = window.createMapRenderer(mapArt, characters, mapImages);
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
   const storage = createStorageAdapter();
   let settings = loadSettings();
@@ -481,7 +484,10 @@
     return new Promise((resolve) => {
       const image = new Image();
       const done = (ok) => resolve({ src, ok });
-      image.onload = () => done(true);
+      image.onload = () => {
+        if (src === mapArt.terrain || src === mapArt.sprites) mapImages.set(src, image);
+        done(true);
+      };
       image.onerror = () => done(false);
       image.src = src;
     });
@@ -495,7 +501,7 @@
     updateContinueButton();
     showLoadingProgress(12, 'Opening the map of the Hand…');
 
-    const initialAssets = story.assets.initial;
+    const initialAssets = [...story.assets.initial, mapArt.terrain, mapArt.sprites];
     let finished = 0;
     await Promise.all(initialAssets.map((asset) => preloadImage(asset).then((result) => {
       finished += 1;
@@ -708,22 +714,14 @@
 
   function getVisibleMapItems() {
     if (!currentMap) return [];
-    const items = [];
-    currentMap.npcs.forEach((npc) => {
-      if (evaluate(npc.when)) items.push({ ...npc, mapType: 'npc' });
-    });
-    currentMap.interactions.forEach((interaction) => {
-      if (evaluate(interaction.when)) items.push({ ...interaction, mapType: interaction.type || 'object' });
-    });
-    return items;
+    return [...currentMap.npcs, ...currentMap.interactions].filter(item => evaluate(item.when));
   }
 
   function getItemCenter(item) {
     return { x: item.x + 0.5, y: item.y + 0.5 };
   }
 
-  function findNearestInteraction() {
-    const items = getVisibleMapItems();
+  function findNearestInteraction(items = getVisibleMapItems()) {
     let nearest = null;
     let nearestDistance = Infinity;
     for (const item of items) {
@@ -737,8 +735,8 @@
     return nearest;
   }
 
-  function updateInteractionPrompt() {
-    nearestInteraction = findNearestInteraction();
+  function updateInteractionPrompt(items) {
+    nearestInteraction = findNearestInteraction(items);
     if (!nearestInteraction || activeScene || currentScreen !== 'game') {
       dom.interactionPrompt.hidden = true;
       dom.touchInteractButton.setAttribute('aria-label', 'Interact');
@@ -748,9 +746,11 @@
     const label = isComplete && nearestInteraction.repeatSceneId
       ? nearestInteraction.label.replace(/^(Inspect|Pick|Enter|Approach|Study|Map|Listen|Tie|Open|Release|Help|Hear|Warn)\s+/i, 'Review ')
       : nearestInteraction.label;
-    dom.interactionPromptText.textContent = label;
-    dom.interactionPrompt.hidden = false;
-    dom.touchInteractButton.setAttribute('aria-label', label);
+    if (dom.interactionPrompt.hidden || dom.interactionPromptText.textContent !== label) {
+      dom.interactionPromptText.textContent = label;
+      dom.touchInteractButton.setAttribute('aria-label', label);
+      dom.interactionPrompt.hidden = false;
+    }
   }
 
   function interact() {
@@ -1900,6 +1900,7 @@
     const canMove = currentScreen === 'game'
       && dom.gameScreen.hidden === false
       && !activeScene
+      && dom.travelOverlay.hidden
       && anyDialogOpen() === false
       && dom.gameOverOverlay.hidden
       && dom.endingOverlay.hidden
@@ -1909,9 +1910,10 @@
     if (canMove) {
       updateMovement(delta);
       state.playTimeMs += delta * 1000;
+      const items = getVisibleMapItems();
+      updateInteractionPrompt(items);
+      renderMap(false, items);
     }
-    updateInteractionPrompt();
-    renderMap(false);
 
     if (playerMovedThisFrame && timestamp - lastSaveMovementTime > 12000) {
       lastSaveMovementTime = timestamp;
@@ -1963,23 +1965,19 @@
     });
   }
 
-  function renderMap(forceCamera) {
-    if (!ctx || !currentMap || canvasCssWidth <= 1 || canvasCssHeight <= 1) return;
+  function renderMap(forceCamera, items = getVisibleMapItems()) {
+    if (!ctx || !currentMap || currentScreen !== 'game' || canvasCssWidth <= 1 || canvasCssHeight <= 1) return;
     const width = currentMap.tiles[0].length;
     const height = currentMap.tiles.length;
-    const desiredColumns = canvasCssWidth < 600 ? 13 : canvasCssWidth < 980 ? 16 : 19;
-    const desiredRows = canvasCssHeight < 420 ? 8 : canvasCssHeight < 650 ? 10 : 11;
-    const tileSize = clamp(Math.min(canvasCssWidth / desiredColumns, canvasCssHeight / desiredRows), 24, 64);
+    const desiredColumns = canvasCssWidth < 680 ? 10 : 17;
+    const tileSize = Math.max(30, canvasCssWidth / width, canvasCssHeight / height,
+      Math.min(canvasCssWidth / desiredColumns, canvasCssHeight / 9.5));
     const worldWidth = width * tileSize;
     const worldHeight = height * tileSize;
     const maxCameraX = Math.max(0, worldWidth - canvasCssWidth);
     const maxCameraY = Math.max(0, worldHeight - canvasCssHeight);
-    const targetX = maxCameraX > 0
-      ? clamp(state.player.x * tileSize - canvasCssWidth / 2, 0, maxCameraX)
-      : (worldWidth - canvasCssWidth) / 2;
-    const targetY = maxCameraY > 0
-      ? clamp(state.player.y * tileSize - canvasCssHeight / 2, 0, maxCameraY)
-      : (worldHeight - canvasCssHeight) / 2;
+    const targetX = clamp(state.player.x * tileSize - canvasCssWidth / 2, 0, maxCameraX);
+    const targetY = clamp(state.player.y * tileSize - canvasCssHeight / 2, 0, maxCameraY);
     if (forceCamera || settings.reducedMotion) {
       camera.x = targetX;
       camera.y = targetY;
@@ -1988,433 +1986,16 @@
       camera.y += (targetY - camera.y) * 0.11;
     }
 
-    ctx.fillStyle = currentMap.palette.wall;
-    ctx.fillRect(0, 0, canvasCssWidth, canvasCssHeight);
-    const startX = Math.max(0, Math.floor(camera.x / tileSize) - 1);
-    const endX = Math.min(width, Math.ceil((camera.x + canvasCssWidth) / tileSize) + 1);
-    const startY = Math.max(0, Math.floor(camera.y / tileSize) - 1);
-    const endY = Math.min(height, Math.ceil((camera.y + canvasCssHeight) / tileSize) + 1);
-
-    for (let y = startY; y < endY; y += 1) {
-      for (let x = startX; x < endX; x += 1) {
-        drawTile(currentMap.tiles[y][x], x, y, tileSize);
-      }
-    }
-
-    getVisibleMapItems().forEach((item) => {
-      if (item.mapType === 'npc') drawNpc(item, tileSize);
-      else drawMapObject(item, tileSize);
-      drawInteractionMarker(item, tileSize);
+    const view = { ...camera, size: tileSize, width: canvasCssWidth, height: canvasCssHeight };
+    const time = settings.decorativeMotion && !settings.reducedMotion ? animationTime : 0;
+    drawExploration(ctx, currentMap, view, {
+      player: state.player,
+      items,
+      completed: state.completedInteractions,
+      nearest: nearestInteraction,
+      time,
+      walking: playerMovedThisFrame,
     });
-    drawPlayer(tileSize);
-  }
-
-  function tileScreenPosition(x, y, tileSize) {
-    return {
-      x: x * tileSize - camera.x,
-      y: y * tileSize - camera.y,
-    };
-  }
-
-  function drawTile(symbol, x, y, size) {
-    const point = tileScreenPosition(x, y, size);
-    const { ground, groundAlt, path, wall, water, detail } = currentMap.palette;
-    const variation = hash(x, y) % 9;
-    const baseGround = variation < 4 ? ground : groundAlt;
-    ctx.fillStyle = baseGround;
-    ctx.fillRect(point.x, point.y, size + 0.5, size + 0.5);
-
-    if (symbol === ':' || symbol === '=') {
-      ctx.fillStyle = path;
-      ctx.fillRect(point.x, point.y, size + 0.5, size + 0.5);
-      ctx.strokeStyle = hexToRgba('#ffffff', 0.05);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(point.x, point.y + size * 0.22);
-      ctx.lineTo(point.x + size, point.y + size * 0.22);
-      ctx.moveTo(point.x, point.y + size * 0.78);
-      ctx.lineTo(point.x + size, point.y + size * 0.78);
-      ctx.stroke();
-    }
-
-    if (symbol === '=') {
-      ctx.strokeStyle = hexToRgba(detail, 0.34);
-      ctx.lineWidth = Math.max(1, size * 0.035);
-      for (let offset = 0; offset < size; offset += size / 4) {
-        ctx.beginPath();
-        ctx.moveTo(point.x + offset, point.y);
-        ctx.lineTo(point.x + offset, point.y + size);
-        ctx.stroke();
-      }
-    }
-
-    if (symbol === '#' || symbol === 'I') {
-      ctx.fillStyle = symbol === 'I' ? '#263642' : wall;
-      ctx.fillRect(point.x, point.y, size + 0.5, size + 0.5);
-      ctx.fillStyle = symbol === 'I' ? 'rgba(213, 231, 241, 0.15)' : 'rgba(255, 255, 255, 0.045)';
-      ctx.beginPath();
-      ctx.moveTo(point.x, point.y);
-      ctx.lineTo(point.x + size, point.y);
-      ctx.lineTo(point.x + size * 0.72, point.y + size * 0.18);
-      ctx.lineTo(point.x + size * 0.12, point.y + size * 0.24);
-      ctx.closePath();
-      ctx.fill();
-    } else if (symbol === 'T') {
-      drawTree(point.x, point.y, size, variation);
-    } else if (symbol === 'H') {
-      drawBuilding(point.x, point.y, size, variation);
-    } else if (symbol === '~') {
-      ctx.fillStyle = water;
-      ctx.fillRect(point.x, point.y, size + 0.5, size + 0.5);
-      ctx.strokeStyle = hexToRgba('#8de4ef', 0.18);
-      ctx.lineWidth = Math.max(1, size * 0.025);
-      const waveOffset = settings.decorativeMotion ? (animationTime * 14 + variation * 3) % (size / 2) : 0;
-      for (let wave = -size / 2; wave < size * 1.5; wave += size / 3) {
-        ctx.beginPath();
-        ctx.moveTo(point.x + wave + waveOffset, point.y + size * 0.4);
-        ctx.lineTo(point.x + wave + size * 0.2 + waveOffset, point.y + size * 0.34);
-        ctx.lineTo(point.x + wave + size * 0.4 + waveOffset, point.y + size * 0.4);
-        ctx.stroke();
-      }
-    } else if (symbol === 'L') {
-      ctx.fillStyle = '#3b1b17';
-      ctx.fillRect(point.x, point.y, size + 0.5, size + 0.5);
-      ctx.strokeStyle = hexToRgba('#ff6a1f', 0.72);
-      ctx.lineWidth = Math.max(2, size * 0.07);
-      ctx.beginPath();
-      ctx.moveTo(point.x - size * 0.2, point.y + size * 0.25);
-      ctx.bezierCurveTo(
-        point.x + size * 0.25,
-        point.y + size * (0.1 + variation * 0.02),
-        point.x + size * 0.55,
-        point.y + size * 0.82,
-        point.x + size * 1.2,
-        point.y + size * 0.55,
-      );
-      ctx.stroke();
-    } else if (symbol === 'r') {
-      ctx.fillStyle = hexToRgba('#15171a', 0.45);
-      for (let rock = 0; rock < 3; rock += 1) {
-        const rx = point.x + ((variation * 11 + rock * 17) % 70) / 100 * size;
-        const ry = point.y + ((variation * 19 + rock * 23) % 66) / 100 * size;
-        ctx.beginPath();
-        ctx.arc(rx, ry, size * (0.055 + rock * 0.013), 0, Math.PI * 2);
-        ctx.fill();
-      }
-    } else if (symbol === 'V') {
-      ctx.fillStyle = '#1f2022';
-      ctx.beginPath();
-      ctx.ellipse(point.x + size / 2, point.y + size * 0.62, size * 0.21, size * 0.1, 0, 0, Math.PI * 2);
-      ctx.fill();
-      if (settings.decorativeMotion) {
-        ctx.strokeStyle = 'rgba(226, 231, 229, 0.26)';
-        ctx.lineWidth = size * 0.035;
-        ctx.beginPath();
-        ctx.moveTo(point.x + size * 0.43, point.y + size * 0.56);
-        ctx.bezierCurveTo(point.x + size * 0.26, point.y + size * 0.35, point.x + size * 0.65, point.y + size * 0.25, point.x + size * 0.5, point.y + size * 0.05);
-        ctx.stroke();
-      }
-    } else if (symbol === 's') {
-      ctx.fillStyle = variation < 4 ? '#c4d0d6' : '#adbdc6';
-      ctx.fillRect(point.x, point.y, size + 0.5, size + 0.5);
-      ctx.fillStyle = 'rgba(255,255,255,0.16)';
-      ctx.beginPath();
-      ctx.ellipse(point.x + size * 0.36, point.y + size * 0.24, size * 0.26, size * 0.09, -0.2, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (symbol === 'f') {
-      ctx.fillStyle = '#4d4236';
-      ctx.fillRect(point.x, point.y, size + 0.5, size + 0.5);
-      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-      ctx.strokeRect(point.x + 1, point.y + 1, size - 2, size - 2);
-    } else if (symbol === 'C') {
-      ctx.fillStyle = '#222a31';
-      ctx.fillRect(point.x, point.y, size + 0.5, size + 0.5);
-      ctx.strokeStyle = hexToRgba(detail, 0.65);
-      ctx.lineWidth = Math.max(1, size * 0.045);
-      ctx.beginPath();
-      ctx.arc(point.x + size / 2, point.y + size / 2, size * 0.31, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (symbol === 'O') {
-      ctx.fillStyle = '#282b2d';
-      ctx.beginPath();
-      ctx.arc(point.x + size / 2, point.y + size / 2, size * 0.35, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = hexToRgba(detail, 0.28);
-      ctx.stroke();
-    }
-
-    if (symbol === '.' || symbol === '*' || symbol === ':') {
-      ctx.fillStyle = hexToRgba(detail, 0.07);
-      ctx.fillRect(
-        point.x + ((variation * 17) % 82) / 100 * size,
-        point.y + ((variation * 29) % 80) / 100 * size,
-        Math.max(1, size * 0.025),
-        Math.max(1, size * 0.025),
-      );
-    }
-  }
-
-  function drawTree(x, y, size, variation) {
-    ctx.fillStyle = '#4b3528';
-    ctx.fillRect(x + size * 0.44, y + size * 0.45, size * 0.13, size * 0.46);
-    ctx.fillStyle = variation % 2 ? '#1e3a30' : '#244637';
-    ctx.beginPath();
-    ctx.arc(x + size * 0.5, y + size * 0.32, size * 0.36, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(151, 180, 127, 0.12)';
-    ctx.beginPath();
-    ctx.arc(x + size * 0.38, y + size * 0.22, size * 0.14, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  function drawBuilding(x, y, size, variation) {
-    ctx.fillStyle = currentMap.id === 'willowmere' || currentMap.id === 'ashfinger' ? '#392b27' : '#47372c';
-    ctx.fillRect(x + size * 0.08, y + size * 0.28, size * 0.84, size * 0.68);
-    ctx.fillStyle = variation % 2 ? '#5a3b31' : '#4a3430';
-    ctx.beginPath();
-    ctx.moveTo(x, y + size * 0.35);
-    ctx.lineTo(x + size * 0.5, y + size * 0.04);
-    ctx.lineTo(x + size, y + size * 0.35);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255, 194, 71, 0.22)';
-    ctx.fillRect(x + size * 0.4, y + size * 0.55, size * 0.19, size * 0.18);
-  }
-
-  function drawMapObject(item, tileSize) {
-    const point = getItemCenter(item);
-    const screenX = point.x * tileSize - camera.x;
-    const screenY = point.y * tileSize - camera.y;
-    const id = item.id;
-    ctx.save();
-    ctx.translate(screenX, screenY);
-
-    if (id.includes('mushroom')) {
-      const colors = id.includes('copper') ? ['#c86534', '#e59a55'] : id.includes('moon') ? ['#d7d2b3', '#f0e3a6'] : ['#ba6849', '#dca176'];
-      for (let index = 0; index < 3; index += 1) {
-        const offset = (index - 1) * tileSize * 0.15;
-        ctx.fillStyle = '#d1b98b';
-        ctx.fillRect(offset - tileSize * 0.025, -tileSize * 0.02, tileSize * 0.05, tileSize * 0.22);
-        ctx.fillStyle = colors[index % colors.length];
-        ctx.beginPath();
-        ctx.arc(offset, -tileSize * 0.04, tileSize * 0.12, Math.PI, 0);
-        ctx.fill();
-      }
-    } else if (id.includes('memorial')) {
-      ctx.fillStyle = '#4a4e52';
-      ctx.fillRect(-tileSize * 0.16, -tileSize * 0.3, tileSize * 0.32, tileSize * 0.58);
-      ctx.strokeStyle = '#c9cbd0';
-      ctx.lineWidth = tileSize * 0.035;
-      ctx.beginPath();
-      ctx.moveTo(0, -tileSize * 0.15);
-      ctx.quadraticCurveTo(tileSize * 0.22, -tileSize * 0.02, tileSize * 0.27, tileSize * 0.18);
-      ctx.stroke();
-    } else if (id.includes('shield')) {
-      ctx.fillStyle = '#272d35';
-      ctx.strokeStyle = '#ff6a1f';
-      ctx.lineWidth = tileSize * 0.035;
-      ctx.beginPath();
-      ctx.moveTo(0, -tileSize * 0.26);
-      ctx.lineTo(tileSize * 0.22, -tileSize * 0.13);
-      ctx.lineTo(tileSize * 0.15, tileSize * 0.25);
-      ctx.lineTo(0, tileSize * 0.35);
-      ctx.lineTo(-tileSize * 0.15, tileSize * 0.25);
-      ctx.lineTo(-tileSize * 0.22, -tileSize * 0.13);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    } else if (id.includes('sluice')) {
-      ctx.strokeStyle = '#b28b55';
-      ctx.lineWidth = tileSize * 0.07;
-      ctx.beginPath();
-      ctx.arc(0, 0, tileSize * 0.25, 0, Math.PI * 2);
-      for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
-        ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(angle) * tileSize * 0.28, Math.sin(angle) * tileSize * 0.28);
-      }
-      ctx.stroke();
-    } else if (id.includes('bell')) {
-      ctx.fillStyle = '#b99954';
-      ctx.beginPath();
-      ctx.moveTo(-tileSize * 0.18, tileSize * 0.18);
-      ctx.quadraticCurveTo(-tileSize * 0.12, -tileSize * 0.22, 0, -tileSize * 0.25);
-      ctx.quadraticCurveTo(tileSize * 0.12, -tileSize * 0.22, tileSize * 0.18, tileSize * 0.18);
-      ctx.closePath();
-      ctx.fill();
-    } else if (id.includes('journal') || id.includes('ledger') || id.includes('order')) {
-      ctx.fillStyle = id.includes('journal') ? '#53624f' : '#766b55';
-      ctx.fillRect(-tileSize * 0.24, -tileSize * 0.17, tileSize * 0.48, tileSize * 0.34);
-      ctx.strokeStyle = '#d5a44e';
-      ctx.lineWidth = tileSize * 0.025;
-      ctx.strokeRect(-tileSize * 0.24, -tileSize * 0.17, tileSize * 0.48, tileSize * 0.34);
-    } else if (id.includes('clasp')) {
-      ctx.strokeStyle = '#ffc247';
-      ctx.lineWidth = tileSize * 0.045;
-      ctx.beginPath();
-      ctx.arc(0, 0, tileSize * 0.18, 0, Math.PI * 2);
-      ctx.moveTo(-tileSize * 0.12, tileSize * 0.14);
-      ctx.lineTo(tileSize * 0.18, -tileSize * 0.18);
-      ctx.stroke();
-    } else if (id.includes('starling')) {
-      ctx.fillStyle = '#6b4a32';
-      ctx.beginPath();
-      ctx.ellipse(0, tileSize * 0.08, tileSize * 0.32, tileSize * 0.15, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#c39a55';
-      ctx.lineWidth = tileSize * 0.035;
-      ctx.beginPath();
-      ctx.ellipse(0, -tileSize * 0.18, tileSize * 0.35, tileSize * 0.17, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (id.includes('anchor')) {
-      ctx.strokeStyle = '#a9b0b8';
-      ctx.lineWidth = tileSize * 0.07;
-      ctx.beginPath();
-      ctx.moveTo(0, -tileSize * 0.28);
-      ctx.lineTo(0, tileSize * 0.2);
-      ctx.quadraticCurveTo(-tileSize * 0.25, tileSize * 0.3, -tileSize * 0.3, tileSize * 0.08);
-      ctx.moveTo(0, tileSize * 0.2);
-      ctx.quadraticCurveTo(tileSize * 0.25, tileSize * 0.3, tileSize * 0.3, tileSize * 0.08);
-      ctx.stroke();
-    } else if (id.includes('groove') || id.includes('circle') || id.includes('site')) {
-      ctx.strokeStyle = currentMap.id === 'frostcrown' ? '#6fe5ef' : '#ffc247';
-      ctx.lineWidth = tileSize * 0.04;
-      ctx.beginPath();
-      ctx.arc(0, 0, tileSize * 0.3, 0, Math.PI * 2);
-      ctx.stroke();
-      for (let angle = 0; angle < Math.PI * 2; angle += (Math.PI * 2) / 7) {
-        ctx.beginPath();
-        ctx.moveTo(Math.cos(angle) * tileSize * 0.2, Math.sin(angle) * tileSize * 0.2);
-        ctx.lineTo(Math.cos(angle) * tileSize * 0.31, Math.sin(angle) * tileSize * 0.31);
-        ctx.stroke();
-      }
-    } else if (id.includes('stone')) {
-      ctx.fillStyle = '#596057';
-      ctx.beginPath();
-      ctx.moveTo(-tileSize * 0.22, tileSize * 0.28);
-      ctx.lineTo(-tileSize * 0.16, -tileSize * 0.28);
-      ctx.lineTo(tileSize * 0.12, -tileSize * 0.36);
-      ctx.lineTo(tileSize * 0.24, tileSize * 0.28);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = '#ffc247';
-      ctx.lineWidth = tileSize * 0.025;
-      ctx.beginPath();
-      ctx.arc(0, -tileSize * 0.04, tileSize * 0.1, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  function drawInteractionMarker(item, tileSize) {
-    const completed = state.completedInteractions.includes(item.id);
-    if (completed && !item.repeatSceneId) return;
-    const point = getItemCenter(item);
-    const x = point.x * tileSize - camera.x;
-    const y = point.y * tileSize - camera.y - tileSize * 0.48;
-    const near = nearestInteraction?.id === item.id;
-    const pulse = settings.decorativeMotion ? Math.sin(animationTime * 3.2 + hash(item.x, item.y)) * 0.08 : 0;
-    const size = tileSize * (near ? 0.13 : 0.1) * (1 + pulse);
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(Math.PI / 4);
-    ctx.fillStyle = near ? '#ffd36f' : completed ? 'rgba(255,194,71,0.42)' : '#ffc247';
-    ctx.shadowColor = '#ffc247';
-    ctx.shadowBlur = near ? tileSize * 0.35 : tileSize * 0.16;
-    ctx.fillRect(-size, -size, size * 2, size * 2);
-    ctx.restore();
-  }
-
-  function drawNpc(npc, tileSize) {
-    const center = getItemCenter(npc);
-    drawCharacterSprite(characters[npc.characterId], center.x, center.y, tileSize, 'down', false);
-  }
-
-  function drawPlayer(tileSize) {
-    drawCharacterSprite(characters.aren, state.player.x, state.player.y, tileSize, state.player.facing, true);
-  }
-
-  function drawCharacterSprite(character, worldX, worldY, tileSize, facing, isPlayer) {
-    if (!character?.sprite) return;
-    const x = worldX * tileSize - camera.x;
-    const y = worldY * tileSize - camera.y;
-    const bob = isPlayer && playerMovedThisFrame && settings.decorativeMotion ? Math.sin(animationTime * 13) * tileSize * 0.025 : 0;
-    const scale = isPlayer ? 1 : 0.94;
-    ctx.save();
-    ctx.translate(x, y + bob);
-    ctx.scale(scale, scale);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
-    ctx.beginPath();
-    ctx.ellipse(0, tileSize * 0.3, tileSize * 0.24, tileSize * 0.1, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    const width = character.sprite.shape === 'broad' ? tileSize * 0.34 : tileSize * 0.28;
-    ctx.fillStyle = character.sprite.boots;
-    ctx.fillRect(-width * 0.72, tileSize * 0.08, width * 0.48, tileSize * 0.27);
-    ctx.fillRect(width * 0.24, tileSize * 0.08, width * 0.48, tileSize * 0.27);
-    ctx.fillStyle = character.sprite.body;
-    ctx.beginPath();
-    ctx.roundRect(-width, -tileSize * 0.23, width * 2, tileSize * 0.42, tileSize * 0.07);
-    ctx.fill();
-
-    if (character.sprite.shape === 'cloak' || character.sprite.shape === 'cape') {
-      ctx.fillStyle = character.sprite.shape === 'cloak' ? '#b8bec0' : '#48242d';
-      ctx.beginPath();
-      ctx.moveTo(-width * 0.9, -tileSize * 0.16);
-      ctx.lineTo(-width * 1.35, tileSize * 0.23);
-      ctx.lineTo(width * 0.3, tileSize * 0.2);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    ctx.fillStyle = character.sprite.skin;
-    ctx.beginPath();
-    ctx.arc(0, -tileSize * 0.36, tileSize * 0.17, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = character.sprite.hair;
-    ctx.beginPath();
-    ctx.arc(0, -tileSize * 0.4, tileSize * 0.185, Math.PI, Math.PI * 2);
-    ctx.lineTo(tileSize * 0.15, -tileSize * 0.34);
-    ctx.lineTo(-tileSize * 0.16, -tileSize * 0.32);
-    ctx.closePath();
-    ctx.fill();
-
-    if (character.sprite.shape === 'scarf') {
-      ctx.fillStyle = character.sprite.detail;
-      ctx.fillRect(-width * 0.88, -tileSize * 0.24, width * 1.76, tileSize * 0.07);
-    } else if (character.sprite.shape === 'goggles') {
-      ctx.strokeStyle = '#ffc247';
-      ctx.lineWidth = tileSize * 0.035;
-      ctx.beginPath();
-      ctx.arc(-tileSize * 0.07, -tileSize * 0.47, tileSize * 0.055, 0, Math.PI * 2);
-      ctx.arc(tileSize * 0.07, -tileSize * 0.47, tileSize * 0.055, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (character.sprite.shape === 'cord') {
-      ctx.strokeStyle = character.sprite.detail;
-      ctx.lineWidth = tileSize * 0.04;
-      ctx.beginPath();
-      ctx.moveTo(-width * 0.6, -tileSize * 0.2);
-      ctx.lineTo(width * 0.3, tileSize * 0.07);
-      ctx.stroke();
-    } else if (character.sprite.shape === 'lantern') {
-      ctx.fillStyle = '#ffc247';
-      ctx.fillRect(width * 0.9, -tileSize * 0.03, tileSize * 0.11, tileSize * 0.14);
-    }
-
-    if (facing === 'left' || facing === 'right') {
-      ctx.fillStyle = character.sprite.skin;
-      const eyeX = facing === 'left' ? -tileSize * 0.11 : tileSize * 0.11;
-      ctx.beginPath();
-      ctx.arc(eyeX, -tileSize * 0.38, tileSize * 0.018, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (isPlayer) {
-      ctx.strokeStyle = 'rgba(255, 194, 71, 0.72)';
-      ctx.lineWidth = Math.max(1, tileSize * 0.025);
-      ctx.beginPath();
-      ctx.ellipse(0, tileSize * 0.31, tileSize * 0.28, tileSize * 0.12, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.restore();
   }
 
   function bindEvents() {

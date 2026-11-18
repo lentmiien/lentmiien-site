@@ -2,12 +2,14 @@
 
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
 
 const repositoryRoot = path.resolve(__dirname, '../..');
 const gameRoot = path.join(repositoryRoot, 'games/lentmanc_game');
 const readGameFile = (relativePath) => fs.readFileSync(path.join(gameRoot, relativePath), 'utf8');
 const characters = require(path.join(gameRoot, 'js/characters'));
 const mapData = require(path.join(gameRoot, 'js/maps'));
+const mapArt = require(path.join(gameRoot, 'js/mapArt'));
 const story = require(path.join(gameRoot, 'js/story'));
 const audioManifest = require(path.join(gameRoot, 'assets/audio/en/audio-manifest.json'));
 
@@ -571,8 +573,57 @@ describe('The great adventure standalone RPG', () => {
       });
   });
 
+  test('resolves all seven regions and their visible objects inside the shipped atlases', async () => {
+    const [terrain, sprites] = await Promise.all(
+      [mapArt.terrain, mapArt.sprites].map(file => sharp(path.join(gameRoot, file)).metadata()),
+    );
+    expect(terrain.format).toBe('webp');
+    expect(sprites).toMatchObject({ format: 'webp', hasAlpha: true });
+    expect(terrain.width % mapArt.swatchSize).toBe(0);
+    expect(terrain.height % mapArt.swatchSize).toBe(0);
+    const cellCount = terrain.width * terrain.height / (mapArt.swatchSize ** 2);
+    const indices = Object.values(mapArt.materials).map(([index]) => index).sort((a, b) => a - b);
+    expect(indices).toEqual(Array.from({ length: cellCount }, (_, n) => n));
+    for (const [x, y, width, height] of Object.values(mapArt.frames)) {
+      expect(Math.min(x, y)).toBeGreaterThanOrEqual(0);
+      expect(Math.min(width, height)).toBeGreaterThan(0);
+      expect(x + width).toBeLessThanOrEqual(sprites.width);
+      expect(y + height).toBeLessThanOrEqual(sprites.height);
+    }
+
+    expect(Object.keys(mapArt.regions).sort()).toEqual([...mapData.mapOrder].sort());
+    const frames = new Set(['arenUp', 'arenDown', 'arenSide']);
+    for (const map of Object.values(mapData.maps)) {
+      const region = mapArt.regions[map.id];
+      [region.ground, region.edge, region.path, region.water].filter(Boolean)
+        .forEach(material => expect(mapArt.materials).toHaveProperty(material));
+      region.border?.forEach(name => frames.add(name));
+      region.details.forEach(([name]) => frames.add(name));
+      for (const [origin, frame] of Object.entries(region.houses || {})) {
+        const [x, y] = origin.split(',').map(Number);
+        expect(map.tiles[y][x]).toBe('H');
+        frames.add(frame);
+      }
+      map.npcs.forEach(npc => frames.add(npc.characterId));
+      for (const item of map.interactions) {
+        if (item.type === 'site') continue;
+        expect(item.artHeight).toBeGreaterThan(0);
+        frames.add(item.art);
+      }
+    }
+    frames.forEach(name => expect(mapArt.frames).toHaveProperty(name));
+  });
+
+  test('removes each harvested mushroom patch from both the map and available interactions', () => {
+    const patches = mapData.maps.birchwood.interactions.filter(item => item.id.startsWith('mushroom_'));
+    expect(new Set(patches.map(item => item.art)).size).toBe(3);
+    patches.forEach(item => expect(item.when).toEqual({ not: { interaction: item.id } }));
+  });
+
   test('keeps all runtime image references local, present, and non-empty', () => {
     const referencedImages = new Set([
+      mapArt.terrain,
+      mapArt.sprites,
       ...story.assets.initial,
       ...story.assets.deferred,
       ...Object.values(story.scenes).map((scene) => scene.image).filter(Boolean),
@@ -598,6 +649,7 @@ describe('The great adventure standalone RPG', () => {
 
     const imageManifest = readGameFile('assets/images/GENERATED-ASSETS.md');
     const imageDirectories = [
+      'assets/images/exploration',
       'assets/images/characters',
       'assets/images/portraits',
       'assets/images/environments',
@@ -662,6 +714,8 @@ describe('The great adventure standalone RPG', () => {
       'css/styles.css',
       'js/characters.js',
       'js/maps.js',
+      'js/mapArt.js',
+      'js/mapRenderer.js',
       'js/story.js',
       'js/audio.js',
       'js/game.js',

@@ -189,7 +189,7 @@ The archive is intentionally complete rather than route-gated. Both finger villa
 
 ## Visual direction
 
-Character and scene artwork uses a coherent anime-inspired painted-2D style: clean expressive faces, restrained linework, textured fantasy fabrics, cinematic rim light, and slightly simplified shapes that remain readable at small sizes. Exploration maps use deterministic canvas tiles with the same graphite shadows, ember firelight, amber magic, desaturated forest greens, and Veyran cyan accents. The world chart uses a generated text-free painted map beneath deterministic HTML labels and SVG routes, keeping geography atmospheric while all critical information stays precise and accessible.
+Character and scene artwork uses a coherent anime-inspired painted-2D style: clean expressive faces, restrained linework, textured fantasy fabrics, cinematic rim light, and slightly simplified shapes that remain readable at small sizes. Exploration maps layer painted terrain, scenery and directional sprites over the collision grid. Trails blend into the surrounding ground, and buildings and trees cast shadows and overlap travelers according to their position. The world chart uses a generated text-free painted map beneath deterministic HTML labels and SVG routes, keeping geography atmospheric while all critical information stays precise and accessible.
 
 The page imports `/css/color-theme.css`. Graphite is the structural base, Ember marks primary actions, Golden Amber marks focus, links, crystal light, and highlights, and semantic Jade/Vermilion mark success/danger. Subject colors never replace the shared UI hierarchy.
 

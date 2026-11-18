@@ -41,7 +41,8 @@ All menu and dialogue controls use semantic HTML and are keyboard accessible. Se
 
 - `index.html` — accessible standalone shell and all menus.
 - `css/styles.css` — responsive presentation and accessibility states.
-- `js/game.js` — exploration renderer, scene interpreter, world-map travel flow, state, save, input, and UI.
+- `js/game.js` — camera, movement, scene interpreter, world-map travel, state, saves, input, and UI.
+- `js/mapArt.js` and `js/mapRenderer.js` — regional artwork, atlas coordinates, terrain blending, and depth-sorted scenery.
 - `js/story.js` — data-driven scenes, choices, encounters, and endings.
 - `js/maps.js` — tile maps, collision, spawns, NPCs, world-chart coordinates, travel legs, and interaction points.
 - `js/characters.js` — recurring-character presentation and voice assignments.
@@ -57,7 +58,7 @@ The original outline supplies the two dimensions, Hand-shaped continent, seven c
 
 The ending-only **People & places** archive is also original to this adaptation. It draws stable names, portraits, roles, and map metadata from the existing data modules, while its longer character arcs and location notes remain in `js/story.js`. It does not add save-schema fields, so older completed v1 saves can open it immediately.
 
-Artwork was generated locally with OpenAI image generation and then reviewed, corrected, cropped, and optimized for the game. Exploration tiles and sprites are deterministic canvas art so collision and silhouettes remain readable. Narrator and protagonist voice clips were synthesized locally with Piper and converted locally with FFmpeg. Generated-media disclosures and source notes are also available in the in-game Credits screen.
+Artwork was generated locally with OpenAI image generation and then reviewed, corrected, cropped, and optimized for the game. Exploration combines painted Asterra terrain, landmarks, and character sprites with selected materials and props from Lumenwild. Two local WebP atlases supply all seven maps. Narrator and protagonist voice clips were synthesized locally with Piper and converted locally with FFmpeg. Generated-media disclosures and source notes are also available in the in-game Credits screen.
 
 ## Validation
 

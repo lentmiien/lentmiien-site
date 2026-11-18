@@ -197,6 +197,9 @@
       interactions: [
         {
           id: 'mushroom_coppercap',
+          when: { not: { interaction: 'mushroom_coppercap' } },
+          art: 'coppercaps',
+          artHeight: 0.55,
           type: 'object',
           x: 4,
           y: 3,
@@ -205,6 +208,9 @@
         },
         {
           id: 'mushroom_moonbell',
+          when: { not: { interaction: 'mushroom_moonbell' } },
+          art: 'moonbells',
+          artHeight: 0.57,
           type: 'object',
           x: 10,
           y: 5,
@@ -213,6 +219,9 @@
         },
         {
           id: 'mushroom_foxear',
+          when: { not: { interaction: 'mushroom_foxear' } },
+          art: 'foxears',
+          artHeight: 0.52,
           type: 'object',
           x: 17,
           y: 8,
@@ -221,6 +230,8 @@
         },
         {
           id: 'weathered_gate_stone',
+          art: 'gateStones',
+          artHeight: 1.08,
           type: 'object',
           x: 19,
           y: 2,
@@ -230,6 +241,8 @@
         },
         {
           id: 'ridge_trail',
+          art: 'sign',
+          artHeight: 1.02,
           type: 'exit',
           x: 11,
           y: 12,
@@ -312,6 +325,8 @@
       interactions: [
         {
           id: 'willowmere_memorial',
+          art: 'memorial',
+          artHeight: 1.05,
           type: 'object',
           x: 8,
           y: 6,
@@ -321,6 +336,8 @@
         },
         {
           id: 'royal_shield',
+          art: 'shield',
+          artHeight: 0.65,
           type: 'object',
           x: 8,
           y: 8,
@@ -402,6 +419,8 @@
       interactions: [
         {
           id: 'greenwake_sluice',
+          art: 'gear',
+          artHeight: 0.85,
           type: 'object',
           x: 14,
           y: 7,
@@ -411,6 +430,8 @@
         },
         {
           id: 'reed_bells',
+          art: 'bell',
+          artHeight: 1.12,
           type: 'object',
           x: 20,
           y: 2,
@@ -476,6 +497,8 @@
       interactions: [
         {
           id: 'ashfinger_sluice',
+          art: 'gear',
+          artHeight: 0.85,
           type: 'object',
           x: 6,
           y: 5,
@@ -486,6 +509,8 @@
         },
         {
           id: 'cracked_army_order',
+          art: 'order',
+          artHeight: 0.48,
           type: 'object',
           x: 9,
           y: 10,
@@ -495,6 +520,8 @@
         },
         {
           id: 'ashfinger_late_site',
+          art: 'grooves',
+          artHeight: 0.55,
           type: 'object',
           x: 20,
           y: 4,
@@ -528,17 +555,17 @@
       },
       tiles: [
         '########################',
-        '#....V....##....V......#',
-        '#..::::...##...::::....#',
-        '#..:..:...##...:..:....#',
+        '#....V....L#....V......#',
+        '#..::::...LL...::::....#',
+        '#..:..:...#L...:..:....#',
         '#..:..::::==::::..:....#',
         '#..:.....L==L.....:....#',
         '#..VV....L==L....VV....#',
         '#..:.....L==L.....:....#',
         '#..:..::::==::::..:....#',
-        '#..::::...##...::::....#',
-        '#....V....##....V......#',
-        '#.........##...........#',
+        '#..::::...LL...::::....#',
+        '#....V....#L....V......#',
+        '#.........#L...........#',
         '#......................#',
         '########################',
       ],
@@ -560,7 +587,7 @@
       interactions: [
         {
           id: 'steam_vent_pattern',
-          type: 'object',
+          type: 'site',
           x: 4,
           y: 6,
           label: 'Map the steam vent rhythm',
@@ -569,6 +596,8 @@
         },
         {
           id: 'scorched_locket_clasp',
+          art: 'clasp',
+          artHeight: 0.48,
           type: 'object',
           x: 16,
           y: 10,
@@ -578,6 +607,8 @@
         },
         {
           id: 'cinder_standoff_site',
+          art: 'grooves',
+          artHeight: 0.65,
           type: 'object',
           x: 18,
           y: 4,
@@ -666,6 +697,8 @@
       interactions: [
         {
           id: 'elara_journal',
+          art: 'journal',
+          artHeight: 0.57,
           type: 'object',
           x: 3,
           y: 3,
@@ -675,6 +708,8 @@
         },
         {
           id: 'gate_ledger',
+          art: 'ledger',
+          artHeight: 0.57,
           type: 'object',
           x: 16,
           y: 3,
@@ -684,6 +719,8 @@
         },
         {
           id: 'starling_cradle',
+          art: 'starling',
+          artHeight: 1.72,
           type: 'object',
           x: 5,
           y: 9,
@@ -757,6 +794,8 @@
       interactions: [
         {
           id: 'starling_anchor',
+          art: 'rope',
+          artHeight: 0.72,
           type: 'object',
           x: 5,
           y: 10,
@@ -766,6 +805,8 @@
         },
         {
           id: 'seven_grooves',
+          art: 'grooves',
+          artHeight: 0.64,
           type: 'object',
           x: 12,
           y: 7,
@@ -775,7 +816,7 @@
         },
         {
           id: 'final_circle',
-          type: 'object',
+          type: 'site',
           x: 11,
           y: 6,
           label: 'Enter the final circle',

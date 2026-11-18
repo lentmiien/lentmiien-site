@@ -2,7 +2,7 @@
 
 ## Shared art rules
 
-All recurring characters belong to one anime-inspired painted-2D production style: confident clean linework, soft cel-shaded faces, lightly textured cloth and leather, realistic material highlights, readable silhouettes, and cinematic but restrained lighting. Proportions are grounded rather than super-deformed in portraits and illustrations; exploration sprites simplify each silhouette to roughly two heads tall.
+All recurring characters belong to one anime-inspired painted-2D production style: confident clean linework, soft cel-shaded faces, lightly textured cloth and leather, realistic material highlights, readable silhouettes, and cinematic but restrained lighting. Proportions are grounded rather than super-deformed in portraits and illustrations; exploration sprites simplify each silhouette to roughly three heads tall.
 
 No generated image may contain captions, labels, signatures, watermarks, logos, pseudo-writing, photoreal faces, modern objects, guns, excessive armor ornament, or costume redesigns. Graphite shadows, Ember practical light, Golden Amber crystal light, forest green, and Veyran cyan form the shared palette.
 
