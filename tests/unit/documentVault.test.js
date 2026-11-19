@@ -98,6 +98,17 @@ test('classifies only validated structured output and accepts zero or unknown re
   expect(reviewFields({ ...valid, decision: 'dispose' }).physical).toEqual({ decision: 'dispose' });
 });
 
+test('the Invoice switch owns the reserved tag and requires a numeric total, including zero', () => {
+  const fields = { ...receipt, decision: 'dispose', tags: 'rail, INVOICE, Invoice, invoice copy', totalAmount: '' };
+  expect(reviewFields(fields)).toMatchObject({ tags: ['rail', 'invoice copy'], totalAmount: null });
+  expect(() => reviewFields({ ...fields, invoice: 'on' })).toThrow('receipt total');
+  expect(() => reviewFields({ ...fields, invoice: 'on', totalAmount: 'NaN' })).toThrow();
+  expect(reviewFields({ ...fields, invoice: 'on', totalAmount: '0' })).toMatchObject({
+    tags: ['rail', 'invoice copy', 'invoice'], totalAmount: 0,
+  });
+  expect(reviewFields({ ...fields, totalAmount: '500' })).toMatchObject({ tags: ['rail', 'invoice copy'], totalAmount: 500 });
+});
+
 test('accepts one validated object inside a fence or explanatory text', () => {
   const page = { ...receipt, englishText: 'Quoted "name", {code}, [value]\nnext line' };
   const content = 'Here is the result:\n```json\n' + JSON.stringify(page) + '\n```\nEnd.';

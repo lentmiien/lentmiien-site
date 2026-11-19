@@ -11,7 +11,7 @@ const { READ, INTAKE, REVIEW, RESUME, BUNDLES, MAX_BATCH, MAX_FILE, MAX_PAGES, P
 const repo = require('../services/documentVault/repository');
 const queue = require('../services/documentVault/worker');
 const workflow = require('../services/documentVault/workflow');
-const { reviewFields } = require('../services/documentVault/content');
+const { reviewFields, isInvoiceTag } = require('../services/documentVault/content');
 
 const base = '/document-vault';
 const mutationForm = express.urlencoded({ extended: false, limit: '420kb', parameterLimit: 18 });
@@ -108,7 +108,7 @@ function createRouter({ repository = repo, queueService = queue, roleModel = Rol
   });
   router.get('/pages/:id', async (req, res) => {
     const detail = await repository.detail(req.params.id, req.user._id, res.locals.review);
-    res.render('document_vault/page', { ...detail, section: detail.filed ? 'archive' : detail.page.state === 'review' ? 'review' : 'queue' });
+    res.render('document_vault/page', { ...detail, isInvoiceTag, section: detail.filed ? 'archive' : detail.page.state === 'review' ? 'review' : 'queue' });
   });
   router.get('/pages/:id/image', async (req, res) => {
     const scan = await repository.image(req.params.id, req.user._id);
@@ -123,7 +123,7 @@ function createRouter({ repository = repo, queueService = queue, roleModel = Rol
     return repository.mutate(repository.pageScope(id, actor, true), group => change(group, group.pages.id(id), actor));
   }
   router.post('/pages/:id/review', mutationForm, csrf.requireToken, async (req, res) => {
-    allowFields(req.body, ['revision', 'title', 'englishText', 'tags', 'description', 'documentDate', 'totalAmount', 'currency', 'decision', 'yearLabel', 'folderId', 'groupLabel', 'groupDescription', 'groupRevision']);
+    allowFields(req.body, ['revision', 'title', 'englishText', 'tags', 'invoice', 'description', 'documentDate', 'totalAmount', 'currency', 'decision', 'yearLabel', 'folderId', 'groupLabel', 'groupDescription', 'groupRevision']);
     const fields = reviewFields(req.body);
     const summaryEdit = req.body.groupDescription
       ? { text: req.body.groupDescription, revision: integer(req.body.groupRevision) } : null;

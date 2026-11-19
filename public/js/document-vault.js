@@ -58,6 +58,21 @@
     });
   }
 
+  const invoice = document.querySelector('#invoice');
+  if (invoice) {
+    const total = document.querySelector('#total');
+    const warning = document.querySelector('#invoice-warning');
+    function displayInvoiceState() {
+      total.required = invoice.checked;
+      total.placeholder = invoice.checked ? 'Required' : 'Optional';
+      warning.hidden = invoice.checked === (invoice.dataset.ocrMatch === 'true');
+      if (warning.hidden) invoice.removeAttribute('aria-describedby');
+      else invoice.setAttribute('aria-describedby', warning.id);
+    }
+    invoice.addEventListener('change', displayInvoiceState);
+    displayInvoiceState();
+  }
+
   const decision = document.querySelector('#decision');
   if (decision) {
     const location = document.querySelector('#storage-location');

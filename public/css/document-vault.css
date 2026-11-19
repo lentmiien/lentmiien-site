@@ -49,6 +49,13 @@ label, legend { color: var(--text-secondary); }
 .fields { display: grid; gap: .32rem; align-content: start; margin-bottom: 1rem; }
 .fields label, legend { font-size: .91rem; font-weight: 650; }
 .field-pair { display: grid; grid-template-columns: 1.4fr 1fr; gap: 1rem; }
+.tags-and-invoice { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .75rem; }
+.invoice-switch { display: flex; align-items: center; gap: .4rem; cursor: pointer; }
+.invoice-switch input[type=checkbox] { appearance: none; width: 2.2rem; height: 1.3rem; margin: 0; padding: .12rem; border: 1px solid var(--divider); border-radius: 1rem; background: var(--surface-3); cursor: pointer; }
+.invoice-switch input::before { content: ''; display: block; width: .9rem; height: .9rem; border-radius: 50%; background: var(--text); }
+.invoice-switch input:checked { background: var(--brand); }
+.invoice-switch input:checked::before { transform: translateX(.9rem); background: var(--text-inverse); }
+#invoice-warning { color: var(--warning); }
 .rule { height: 1px; background: var(--divider); margin: 1.35rem 0; }
 .upload-form { max-width: 48rem; }
 .viewers { padding: 0; margin: 1.5rem 0; border: 0; }

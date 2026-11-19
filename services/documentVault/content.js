@@ -116,13 +116,23 @@ const physicalSchema = z.discriminatedUnion('decision', [
   z.strictObject({ decision: z.literal('dispose') }),
   z.strictObject({ decision: z.literal('keep'), yearLabel: line(32), folderId: line(80), groupLabel: line(80) }),
 ]);
+const isInvoiceTag = tag => typeof tag === 'string' && tag.trim().toLowerCase() === 'invoice';
+
 function reviewFields(body) {
   const optional = value => value === '' || value === undefined ? null : value;
   const amount = optional(body.totalAmount);
   const currency = optional(body.currency);
+  if (body.invoice !== undefined && body.invoice !== 'on') throw new VaultError(422, 'Invalid Invoice switch value.');
+  const invoice = body.invoice === 'on';
+  if (invoice && amount === null) throw new VaultError(422, 'Enter a receipt total for this invoice.');
+  let tags = typeof body.tags === 'string' ? body.tags.split(',').map(t => t.trim()).filter(Boolean) : body.tags;
+  if (Array.isArray(tags)) {
+    tags = tags.filter(tag => !isInvoiceTag(tag));
+    if (invoice) tags.push('invoice');
+  }
   const result = pageSchema.safeParse({
     englishText: body.englishText, documentDate: optional(body.documentDate), title: body.title,
-    tags: typeof body.tags === 'string' ? body.tags.split(',').map(t => t.trim()).filter(Boolean) : body.tags,
+    tags,
     description: body.description, currency: typeof currency === 'string' ? currency.toUpperCase() : currency,
     totalAmount: typeof amount === 'string' && /^-?\d+(\.\d+)?$/.test(amount) ? Number(amount) : amount,
   });
@@ -134,4 +144,4 @@ function reviewFields(body) {
   return { ...receiptCurrency(result.data), physical: location.data };
 }
 
-module.exports = { pageContext, pagePrompt, groupContext, groupPrompt, outputFormats, VaultReplyError, parseOutput, reviewFields };
+module.exports = { pageContext, pagePrompt, groupContext, groupPrompt, outputFormats, VaultReplyError, parseOutput, reviewFields, isInvoiceTag };

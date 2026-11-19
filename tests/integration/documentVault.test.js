@@ -113,6 +113,42 @@ suite('Document vault with standalone MongoDB', () => {
       ...fields, tags: tags.join(', '), decision: 'dispose', revision: page.revision, ...changes,
     }));
   }
+  test.each([
+    ['Tax INVOICE', true, false],
+    ['店名：領収書', false, true],
+    ['Admission', true, true],
+  ])('reviews invoice tags against original OCR (%s)', async (ocrText, tagged, mismatch) => {
+    const group = await Group.create({
+      state: 'ready', ownerId: users.owner._id, uploaderId: users.clerk._id, summaryState: 'ready',
+      pages: [{ ...answer, filename: 'scan.png', state: 'review', ocrText, tags: tagged ? ['museum', 'Invoice'] : ['museum'] }],
+    });
+    const page = group.pages[0];
+    const html = await (await request('clerk', '/pages/' + page._id)).text();
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    try {
+      dom.window.eval(require('fs').readFileSync(path.resolve(__dirname, '../../public/js/document-vault.js'), 'utf8'));
+      const doc = dom.window.document;
+      const toggle = doc.querySelector('#invoice');
+      const total = doc.querySelector('#total');
+      const warning = doc.querySelector('#invoice-warning');
+      expect(doc.querySelector('#tags').value).toBe('museum');
+      expect(toggle.checked).toBe(tagged);
+      expect(total.required).toBe(tagged);
+      expect(warning.hidden).toBe(!mismatch);
+      toggle.click();
+      expect(total.required).toBe(!tagged);
+      expect(warning.hidden).toBe(mismatch);
+      expect(total.value).toBe('500');
+    } finally { dom.window.close(); }
+    expect((await filePage(page, { invoice: 'on', totalAmount: '' })).status).toBe(422);
+    // Both OCR disagreement directions are advisory at save time.
+    const invoice = ocrText === 'Admission';
+    expect((await filePage(page, { tags: 'museum', ...(invoice ? { invoice: 'on' } : {}) })).status).toBe(303);
+    const saved = (await Group.findById(group._id)).pages[0];
+    expect(saved.tags).toEqual(invoice ? ['museum', 'invoice'] : ['museum']);
+    expect(saved.totalAmount).toBe(500);
+  });
   test('runs OCR, English page and ordered group jobs, files papers independently and restricts archive, source and sibling access', async () => {
     let group = await upload(2);
     const [first, second] = group.pages.map(p => String(p._id));

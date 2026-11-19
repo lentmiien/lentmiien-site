@@ -46,6 +46,9 @@ block content
         pre= page.ocrText == null ? 'OCR has not finished.' : page.ocrText
     section.panel.metadata
       if editing
+        - const tags = page.tags || []
+        - const invoice = tags.some(isInvoiceTag)
+        - const invoiceInOcr = /invoice|領収書/i.test(page.ocrText || '')
         h2 Review this page
         form#page-review(method='post', action=target + '/review')
           input(type='hidden', name='_csrf', value=csrfToken)
@@ -58,7 +61,12 @@ block content
             input#date(type='date', name='documentDate', value=page.documentDate)
           .fields
             label(for='tags') Tags
-            input#tags(type='text', name='tags', value=(page.tags || []).join(', '), maxlength='1000', placeholder='Comma-separated tags')
+            .tags-and-invoice
+              input#tags(type='text', name='tags', value=tags.filter(tag => !isInvoiceTag(tag)).join(', '), maxlength='1000', placeholder='Comma-separated tags')
+              label.invoice-switch
+                input#invoice(type='checkbox', role='switch', name='invoice', checked=invoice, data-ocr-match=String(invoiceInOcr), aria-describedby=invoice !== invoiceInOcr ? 'invoice-warning' : null)
+                | Invoice
+            small#invoice-warning(role='status', hidden=invoice === invoiceInOcr)= invoiceInOcr ? 'OCR contains “invoice” or “領収書”. Check whether this page should be tagged Invoice.' : 'OCR contains neither “invoice” nor “領収書”. Check that the Invoice tag fits this page.'
           .fields
             label(for='description') Page description
             textarea#description(name='description', rows='3', required, maxlength='2000')= page.description
@@ -68,7 +76,7 @@ block content
           .field-pair
             .fields
               label(for='total') Receipt total
-              input#total(type='number', name='totalAmount', step='any', value=page.totalAmount == null ? '' : page.totalAmount, placeholder='Optional')
+              input#total(type='number', name='totalAmount', step='any', value=page.totalAmount == null ? '' : page.totalAmount)
             .fields
               label(for='currency') Currency
               input#currency(type='text', name='currency', value=page.currency, maxlength='3', placeholder='e.g. JPY')
