@@ -116,6 +116,10 @@ suite('Document vault with standalone MongoDB', () => {
   test.each([
     ['Tax INVOICE', true, false],
     ['店名：領収書', false, true],
+    ['領収証', false, true],
+    ['領  収  証', false, true],
+    ['領\u3000収\n書', true, false],
+    ['領 収 金額', false, false],
     ['Admission', true, true],
   ])('reviews invoice tags against original OCR (%s)', async (ocrText, tagged, mismatch) => {
     const group = await Group.create({
