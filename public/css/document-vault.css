@@ -74,6 +74,9 @@ label, legend { color: var(--text-secondary); }
 .banner form { margin-top: .7rem; }
 .search { display: flex; gap: .65rem; align-items: center; margin: 1.2rem 0; }
 .search input { background: var(--surface-1); }
+.archive-search { margin-bottom: 1.2rem; }
+.archive-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .8rem; }
+.archive-filters, .location-edit { margin-top: .8rem; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; text-align: left; }
 th, td { padding: .85rem 1rem; vertical-align: top; }

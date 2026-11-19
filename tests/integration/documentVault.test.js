@@ -212,6 +212,67 @@ suite('Document vault with standalone MongoDB', () => {
     expect((await request('viewer', '/pages/' + second + '/redo', new URLSearchParams({ mode: 'both', revision: '1' }))).status).toBe(404);
     expect(await (await request('viewer', '/?q=Reviewed')).text()).toContain('Reviewed receipt');
   });
+  test('corrects one filed storage location and enforces scope, revision and page state', async () => {
+    const physical = { decision: 'keep', yearLabel: '2025', folderId: 'F.1', groupLabel: 'Old' };
+    const seed = { ...answer, filename: 'scan.png', state: 'stored', filedAt: new Date(), physical };
+    const group = await Group.create({ ownerId: users.owner._id, uploaderId: users.clerk._id, viewerIds: [users.viewer._id],
+      state: 'ready', pages: [seed, { ...seed, physical: { decision: 'dispose' } }, { ...seed, state: 'review', filedAt: null }] });
+    const [page, disposed, pending] = group.pages;
+    const path = '/pages/' + page._id;
+    const body = new URLSearchParams({ revision: '0', yearLabel: '2025', folderId: 'F.1', groupLabel: 'Corrected' });
+    expect(await (await request('owner', path)).text()).toContain('Edit storage location');
+    expect(await (await request('viewer', path)).text()).not.toContain('Edit storage location');
+    for (const actor of ['viewer', 'clerk', 'admin']) expect((await request(actor, path + '/location', body)).status).toBe(404);
+    expect((await request('owner', path + '/location', body, false)).status).toBe(403);
+    for (const other of [disposed, pending]) expect((await request('owner', '/pages/' + other._id + '/location', body)).status).toBe(409);
+    const blank = new URLSearchParams(body);
+    blank.set('groupLabel', ' ');
+    expect((await request('owner', path + '/location', blank)).status).toBe(422);
+    expect((await request('owner', path + '/location', body)).status).toBe(303);
+    expect((await request('owner', path + '/location', body)).status).toBe(409);
+    const saved = await Group.findById(group._id);
+    expect(saved.pages[0]).toMatchObject({ state: 'stored', filedAt: page.filedAt, revision: 1, physical: { ...physical, groupLabel: 'Corrected' } });
+    expect(saved.jobs).toHaveLength(0);
+    expect(saved.pages[2].physical.groupLabel).toBe('Old');
+    expect((await repo.list('archive', users.viewer._id, { filters: { groupLabel: 'corrected' } })).rows.map(p => p._id)).toEqual([page._id]);
+    expect((await repo.list('archive', users.viewer._id, { filters: { groupLabel: 'Old' } })).rows).toEqual([]);
+  });
+
+  test('combines inclusive page date bounds and independent exact location filters across archive pages', async () => {
+    const physical = { decision: 'keep', yearLabel: 'FY26', folderId: 'F.1', groupLabel: 'Tax & fees' };
+    const seed = { ...answer, title: 'Target receipt', filename: 'scan.png', state: 'stored', documentDate: '2026-08-14', physical };
+    const group = { ownerId: users.owner._id, uploaderId: users.owner._id, viewerIds: [users.viewer._id], state: 'ready' };
+    for (let i = 0; i < 3; i++) await Group.create({ ...group, pages: Array.from({ length: 9 }, () => seed) });
+    await Group.create({ ...group, pages: [
+      { ...seed, title: 'Later receipt', documentDate: '2026-08-15', physical: { ...physical, folderId: 'FX1' } },
+      { ...seed, title: 'Undated receipt', documentDate: null, physical: { decision: 'dispose' } },
+    ] });
+    const query = new URLSearchParams({ q: 'receipt', dateFrom: '2026-08-14', dateTo: '2026-08-14',
+      yearLabel: 'fy26', folderId: 'F.1', groupLabel: 'Tax & fees' });
+    const html = await (await request('viewer', '/?' + query)).text();
+    const dom = new (require('jsdom').JSDOM)(html);
+    try {
+      const next = dom.window.document.querySelector('.pager a').getAttribute('href');
+      const params = new URL(next, 'http://localhost').searchParams;
+      for (const [key, value] of query) expect(params.get(key)).toBe(value);
+      const more = await (await request('viewer', '/?' + params)).text();
+      expect(more.match(/class="doc-link"/g)).toHaveLength(3);
+      expect(more).not.toContain('Later receipt');
+    } finally { dom.window.close(); }
+    for (const filters of ['dateFrom=2026-08-15', 'folderId=fx1']) {
+      const results = await (await request('viewer', '/?' + filters)).text();
+      expect(results).toContain('Later receipt');
+      expect(results).not.toContain('Target receipt');
+    }
+    const endOnly = await (await request('viewer', '/?dateTo=2026-08-14')).text();
+    expect(endOnly).toContain('Target receipt');
+    expect(endOnly).not.toContain('Undated receipt');
+    expect(await (await request('admin', '/?' + query)).text()).toContain('No matching pages');
+    for (const malformed of ['dateFrom=2026-02-31', 'dateFrom=2026-09-01&dateTo=2026-08-31', 'folderId=x&folderId=y']) {
+      expect((await request('viewer', '/?' + malformed)).status).toBe(422);
+    }
+  });
+
   test('retrying the same upload is idempotent and a different manifest requires a fresh form', async () => {
     const form = batch(1);
     expect((await request('clerk', '/upload', form)).status).toBe(201);

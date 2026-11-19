@@ -1,10 +1,14 @@
 extends ../document_vault_layout
 
 block content
+  include storage_fields
   - const archive = section === 'archive'
   - const reviewing = section === 'review'
   - const here = base + (archive ? '/' : '/' + section)
-  - const linkAt = value => here + '?offset=' + value + (q ? '&q=' + encodeURIComponent(q) : '')
+  - const hasFilters = Object.keys(filters).length > 0
+  - const searching = q || hasFilters
+  - const params = Object.entries({ q, ...filters }).filter(([, v]) => v).map(([k, v]) => '&' + k + '=' + encodeURIComponent(v)).join('')
+  - const linkAt = value => here + '?offset=' + value + params
   div(data-live-list=archive ? null : 'true')
     header.section-head
       .heading-row
@@ -32,12 +36,23 @@ block content
         else
           p An operator with queue access can resume processing.
     if archive
-      form.search(method='get', action=here, role='search')
-        label.sr-only(for='vault-search') Search filed pages
-        input#vault-search(type='search', name='q', value=q, maxlength='160', placeholder='Search text, dates, tags, totals or locations')
-        button.secondary(type='submit') Search
-        if q
-          a(href=here) Clear
+      form.archive-search(method='get', action=here, role='search')
+        .search
+          label.sr-only(for='vault-search') Search filed pages
+          input#vault-search(type='search', name='q', value=q, maxlength='160', placeholder='Search text, dates, tags, totals or locations')
+          button.secondary(type='submit') Search
+          if searching
+            a(href=here) Clear
+        details(open=hasFilters)
+          summary Date and storage filters
+          .archive-filters
+            .fields
+              label(for='dateFrom') Document date from
+              input#dateFrom(type='date', name='dateFrom', value=filters.dateFrom)
+            .fields
+              label(for='dateTo') Document date through
+              input#dateTo(type='date', name='dateTo', value=filters.dateTo)
+            +storageFields(filters, false)
     if rows.length
       .table-wrap
         table
@@ -77,7 +92,7 @@ block content
             a(href=linkAt(offset + pageSize)) Next
     else
       section.empty
-        h2= archive ? (q ? 'No matching pages' : 'No filed documents yet') : reviewing ? 'No pages awaiting review' : 'The work queue is clear'
-        p= archive ? (q ? 'Try another word, date or tag.' : 'Pages appear here after processing and review.') : reviewing ? 'Pages appear here after OCR and English classification.' : 'You can upload another batch or open the review queue.'
+        h2= archive ? (searching ? 'No matching pages' : 'No filed documents yet') : reviewing ? 'No pages awaiting review' : 'The work queue is clear'
+        p= archive ? (searching ? 'Try a different search or adjust the filters.' : 'Pages appear here after processing and review.') : reviewing ? 'Pages appear here after OCR and English classification.' : 'You can upload another batch or open the review queue.'
         if offset
           a(href=linkAt(0)) First page

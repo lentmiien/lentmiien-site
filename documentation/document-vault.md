@@ -4,6 +4,8 @@ The logged-in tool at `/document-vault/` files one scan per page. Upload a batch
 
 ## Security and operation
 
+In the archive, **Date and storage filters** can combine a text search with an inclusive document date range and any combination of year label, folder ID and group label. Each location field matches a whole label, ignoring case. On a filed page kept in storage, the owner with review access can use **Edit storage location** to correct its labels. Saving checks the page revision and takes effect immediately in search.
+
 - Data is sensitive. Admin, family and user accounts receive `vault.documents.read`, `vault.documents.intake` (including assigning an existing owner and selecting viewers), and `vault.documents.review`. Only admins receive `vault.queue.resume` by default. The usual explicit account/group grants also apply.
 - Scope is the batch's immutable account IDs. The owner and uploader handle intake. Filed pages are readable by the owner and named viewers. An uploader filing for someone else needs to be named as a viewer for ongoing access. Only the owner can redo a filed page. Administrators have no document override.
 - Passport and the shared session CSRF check protect browser mutations. Private, no-store responses use local scripts and styles and escaped text. The vault has no public, webhook, socket or machine API.

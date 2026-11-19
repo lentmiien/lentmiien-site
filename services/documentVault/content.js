@@ -112,10 +112,28 @@ function parseOutput(kind, response) {
   return kind === 'group' ? result.data : receiptCurrency(result.data);
 }
 
+const locationFields = { yearLabel: line(32), folderId: line(80), groupLabel: line(80) };
 const physicalSchema = z.discriminatedUnion('decision', [
   z.strictObject({ decision: z.literal('dispose') }),
-  z.strictObject({ decision: z.literal('keep'), yearLabel: line(32), folderId: line(80), groupLabel: line(80) }),
+  z.strictObject({ decision: z.literal('keep'), ...locationFields }),
 ]);
+function physicalLocation(body) {
+  const location = physicalSchema.safeParse(body.decision === 'dispose' ? { decision: 'dispose' } : {
+    decision: body.decision, yearLabel: body.yearLabel, folderId: body.folderId, groupLabel: body.groupLabel,
+  });
+  if (!location.success) throw new VaultError(422, 'Choose disposal or enter a year label, folder ID and group label for this page.');
+  return location.data;
+}
+
+const filterSchema = z.object({ dateFrom: z.iso.date(), dateTo: z.iso.date(), ...locationFields }).partial();
+function archiveFilters(query) {
+  const active = Object.entries(query).filter(([, value]) => typeof value !== 'string' || value.trim());
+  const result = filterSchema.safeParse(Object.fromEntries(active));
+  if (!result.success) throw new VaultError(422, 'Enter valid dates and storage labels for the archive filters.');
+  const { dateFrom, dateTo } = result.data;
+  if (dateFrom && dateTo && dateFrom > dateTo) throw new VaultError(422, 'The start date must be on or before the end date.');
+  return result.data;
+}
 const isInvoiceTag = tag => typeof tag === 'string' && tag.trim().toLowerCase() === 'invoice';
 
 function reviewFields(body) {
@@ -137,11 +155,7 @@ function reviewFields(body) {
     totalAmount: typeof amount === 'string' && /^-?\d+(\.\d+)?$/.test(amount) ? Number(amount) : amount,
   });
   if (!result.success) throw new VaultError(422, 'Check the transcript, date, title, tags, description, receipt total and currency.');
-  const location = physicalSchema.safeParse(body.decision === 'dispose' ? { decision: 'dispose' } : {
-    decision: body.decision, yearLabel: body.yearLabel, folderId: body.folderId, groupLabel: body.groupLabel,
-  });
-  if (!location.success) throw new VaultError(422, 'Choose disposal or enter a year label, folder ID and group label for this page.');
-  return { ...receiptCurrency(result.data), physical: location.data };
+  return { ...receiptCurrency(result.data), physical: physicalLocation(body) };
 }
 
-module.exports = { pageContext, pagePrompt, groupContext, groupPrompt, outputFormats, VaultReplyError, parseOutput, reviewFields, isInvoiceTag };
+module.exports = { pageContext, pagePrompt, groupContext, groupPrompt, outputFormats, VaultReplyError, parseOutput, reviewFields, isInvoiceTag, physicalLocation, archiveFilters };

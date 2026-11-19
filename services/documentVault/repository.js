@@ -109,11 +109,12 @@ async function upload(actorId, ownerId, viewers, files, uploadKey) {
   return String(group.pages[0]._id);
 }
 
-async function list(section, userId, { q = '', offset = 0 } = {}) {
+async function list(section, userId, { q = '', offset = 0, filters = {} } = {}) {
   const principal = new Types.ObjectId(String(userId));
   const archive = section === 'archive';
   const scope = archive ? readerScope(principal) : operatorScope(principal);
   const pipeline = [{ $match: { state: 'ready', ...scope } }];
+  const options = { maxTimeMS: 5000 };
   if (section === 'queue') {
     // One row represents the group job. Link it through a page the operator
     // can still manage, even after some of the other pages have been filed.
@@ -134,6 +135,23 @@ async function list(section, userId, { q = '', offset = 0 } = {}) {
   } else {
     pipeline.push({ $match: { 'pages.state': archive ? 'stored' : 'review' } });
   }
+  if (archive) {
+    const match = {};
+    if (filters.dateFrom || filters.dateTo) {
+      const date = { $type: 'string' };
+      if (filters.dateFrom) date.$gte = filters.dateFrom;
+      if (filters.dateTo) date.$lte = filters.dateTo;
+      match['pages.documentDate'] = date;
+    }
+    for (const key of ['yearLabel', 'folderId', 'groupLabel']) {
+      if (filters[key]) {
+        match['pages.physical.decision'] = 'keep';
+        match['pages.physical.' + key] = filters[key];
+        options.collation = { locale: 'en', strength: 2 };
+      }
+    }
+    if (Object.keys(match).length) pipeline.push({ $match: match });
+  }
   if (archive && q) {
     const literal = new RegExp(RegExp.escape(q), 'i');
     const strings = ['pages.title', 'pages.description', 'description', 'pages.tags', 'pages.englishText', 'pages.ocrText',
@@ -147,7 +165,7 @@ async function list(section, userId, { q = '', offset = 0 } = {}) {
     { $project: { _id: '$pages._id', groupId: '$_id', position: 1, title: '$pages.title', filename: '$pages.filename', date: '$pages.documentDate',
       description: '$pages.description', tags: '$pages.tags', state: stateProjection, issue: '$pages.issue', failedStage: '$pages.failedStage',
       summaryState: 1, totalAmount: '$pages.totalAmount', currency: '$pages.currency', physical: '$pages.physical' } },
-  ]).option({ maxTimeMS: 5000 });
+  ]).option(options);
   return { rows: rows.slice(0, PAGE_SIZE), more: rows.length > PAGE_SIZE };
 }
 

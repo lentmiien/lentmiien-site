@@ -1,6 +1,7 @@
 extends ../document_vault_layout
 
 block content
+  include storage_fields
   mixin failedReply(label, reply)
     if reply
       -
@@ -88,10 +89,7 @@ block content
               option(value='keep', selected=paper.decision === 'keep') Keep in storage
               option(value='dispose', selected=paper.decision === 'dispose') Dispose of paper copy
           #storage-location
-            each field in [{key:'yearLabel', label:'Year label', max:32}, {key:'folderId', label:'Folder ID', max:80}, {key:'groupLabel', label:'Group label', max:80}]
-              .fields
-                label(for=field.key)= field.label
-                input(type='text', id=field.key, name=field.key, maxlength=field.max, value=paper[field.key])
+            +storageFields(paper, false)
           button.primary(type='submit') Save review and continue
       else
         h2 Page details
@@ -112,6 +110,14 @@ block content
           if paper.decision
             dt Physical copy
             dd= paper.decision === 'dispose' ? 'For disposal' : [paper.yearLabel, paper.folderId, paper.groupLabel].join(' / ')
+        if filed && manage && review && paper.decision === 'keep'
+          details.source
+            summary Edit storage location
+            form.location-edit(method='post', action=target + '/location')
+              input(type='hidden', name='_csrf', value=csrfToken)
+              input(type='hidden', name='revision', value=page.revision)
+              +storageFields(paper, true)
+              button.secondary(type='submit') Save location
         if page.description
           h3 Page description
           p= page.description

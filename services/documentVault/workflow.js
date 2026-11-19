@@ -67,6 +67,12 @@ function reviewPage(group, page, actorId, revision, fields, summaryEdit) {
   } else if (changed) refreshSummary(group, actorId);
   else if (group.summaryState === 'ready') filePage(page);
 }
+function editLocation(page, revision, physical) {
+  checkRevision(page.revision, revision);
+  if (!isFiled(page) || page.physical?.decision !== 'keep') throw new VaultError(409, 'Only a filed page kept in storage has a location to edit.');
+  page.set({ physical });
+  page.revision++;
+}
 function redoPage(group, page, actorId, revision, mode) {
   checkRevision(page.revision, revision);
   if (!['review', 'approved', 'stored', 'failed'].includes(page.state)) throw new VaultError(409, 'This page is already queued.');
@@ -126,4 +132,4 @@ function finishJob(group, id, outcome, result) {
   syncNextJob(group);
 }
 
-module.exports = { isFiled, isOperator, canManage, canRead, enqueue, syncNextJob, reviewPage, redoPage, redoGroup, finishJob };
+module.exports = { isFiled, isOperator, canManage, canRead, enqueue, syncNextJob, reviewPage, editLocation, redoPage, redoGroup, finishJob };

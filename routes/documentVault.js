@@ -11,7 +11,7 @@ const { READ, INTAKE, REVIEW, RESUME, BUNDLES, MAX_BATCH, MAX_FILE, MAX_PAGES, P
 const repo = require('../services/documentVault/repository');
 const queue = require('../services/documentVault/worker');
 const workflow = require('../services/documentVault/workflow');
-const { reviewFields, isInvoiceTag } = require('../services/documentVault/content');
+const { reviewFields, isInvoiceTag, physicalLocation, archiveFilters } = require('../services/documentVault/content');
 
 const base = '/document-vault';
 const mutationForm = express.urlencoded({ extended: false, limit: '420kb', parameterLimit: 18 });
@@ -42,6 +42,7 @@ const noticeText = {
   queued: 'Added to the work queue.',
   filed: 'Review saved.',
   resumed: 'Processing resumed.',
+  location: 'Storage location updated.',
 };
 
 function createRouter({ repository = repo, queueService = queue, roleModel = Role } = {}) {
@@ -68,11 +69,12 @@ function createRouter({ repository = repo, queueService = queue, roleModel = Rol
       const q = req.query.q ?? '';
       const offset = integer(req.query.offset ?? '0');
       if (offset > 100000 || typeof q !== 'string' || q.length > 160) throw new VaultError(422, 'Use a shorter search or a valid page number.');
+      const filters = section === 'archive' ? archiveFilters(req.query) : {};
       const [data, status] = await Promise.all([
-        repository.list(section, req.user._id, { q: q.trim(), offset }),
+        repository.list(section, req.user._id, { q: q.trim(), offset, filters }),
         section === 'queue' ? queueService.state() : null,
       ]);
-      return res.render('document_vault/list', { section, q, offset, pageSize: PAGE_SIZE, ...data,
+      return res.render('document_vault/list', { section, q, filters, offset, pageSize: PAGE_SIZE, ...data,
         pauseReason: status?.pauseReason, queueVersion: status?.version, activeGroup: String(status?.active?.groupId || ''),
         activePage: String(status?.active?.pageId || ''), activeKind: status?.active?.kind,
       });
@@ -129,6 +131,12 @@ function createRouter({ repository = repo, queueService = queue, roleModel = Rol
       ? { text: req.body.groupDescription, revision: integer(req.body.groupRevision) } : null;
     await changePage(req, (group, page, actor) => workflow.reviewPage(group, page, actor, integer(req.body.revision), fields, summaryEdit));
     res.redirect(303, base + '/review/next?notice=filed');
+  });
+  router.post('/pages/:id/location', mutationForm, csrf.requireToken, async (req, res) => {
+    allowFields(req.body, ['revision', 'yearLabel', 'folderId', 'groupLabel']);
+    const physical = physicalLocation({ ...req.body, decision: 'keep' });
+    await changePage(req, (_group, page) => workflow.editLocation(page, integer(req.body.revision), physical));
+    res.redirect(303, base + '/pages/' + req.params.id + '?notice=location');
   });
   router.post('/pages/:id/redo', smallForm, csrf.requireToken, async (req, res) => {
     allowFields(req.body, ['revision', 'mode']);

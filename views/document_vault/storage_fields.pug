@@ -1,0 +1,5 @@
+mixin storageFields(values, required)
+  each field in [{key:'yearLabel', label:'Year label', max:32}, {key:'folderId', label:'Folder ID', max:80}, {key:'groupLabel', label:'Group label', max:80}]
+    .fields
+      label(for=field.key)= field.label
+      input(type='text', id=field.key, name=field.key, maxlength=field.max, value=values[field.key], required=required)
