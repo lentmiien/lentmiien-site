@@ -13,6 +13,7 @@ const answer = {
   englishText: 'Admission, 500 yen.', tags: ['museum', 'receipt'], documentDate: '2026-08-14', totalAmount: 500, currency: 'JPY',
 };
 const session = { csrfToken: 'x'.repeat(43) };
+const invalidReply = '<script>private_fixture_reply</script>';
 function listen(app) {
   return new Promise(resolve => {
     const server = app.listen(0, '127.0.0.1', () => resolve(server));
@@ -44,7 +45,7 @@ suite('Document vault with standalone MongoDB', () => {
       const isGroup = !req.body.messages[1].images;
       calls.push({ kind: isGroup ? 'group' : 'chat', body: req.body });
       const result = isGroup ? { description: 'Museum admission documents.' } : answer;
-      res.json({ message: { role: 'assistant', content: responseMode === 'fail' ? 'invalid' : JSON.stringify(result) } });
+      res.json({ message: { role: 'assistant', content: responseMode === 'fail' ? invalidReply : JSON.stringify(result) } });
     });
     gateway = await listen(api);
     process.env.OCR_API_BASE_URL = urlOf(gateway);
@@ -121,6 +122,10 @@ suite('Document vault with standalone MongoDB', () => {
     expect(calls.map(c => c.kind)).toEqual(['ocr', 'ocr', 'chat']);
     expect(calls[0].body).toMatchObject({ model: 'hunyuanocr', max_new_tokens: '2048' });
     expect(calls[2].body.model).toBe('qwen3.8:27b');
+    const pageFormat = calls[2].body.format;
+    expect(pageFormat).toMatchObject({ type: 'object', additionalProperties: false });
+    expect(pageFormat.required.toSorted()).toEqual(Object.keys(answer).toSorted());
+    expect(calls[2].body.response_format).toEqual({ type: 'json_schema', json_schema: { name: 'vault_page', strict: true, schema: pageFormat } });
     const [context, prompt] = calls[2].body.messages;
     expect(context.content).toContain('English');
     expect(prompt.content).toContain('入場料');
@@ -133,6 +138,9 @@ suite('Document vault with standalone MongoDB', () => {
     await worker.runOne();
     await worker.runOne();
     expect(calls.slice(3).map(c => [c.kind, c.body.model])).toEqual([['chat', 'alternate:12b'], ['group', 'alternate:12b']]);
+    expect(calls[4].body.format).toEqual({ type: 'object', properties: { description: { type: 'string' } },
+      required: ['description'], additionalProperties: false });
+    expect(calls[4].body.response_format.json_schema).toEqual({ name: 'vault_group', strict: true, schema: calls[4].body.format });
     expect(calls[4].body.messages[1].content).toContain(JSON.stringify([{ page: 1, description: answer.description }, { page: 2, description: answer.description }]));
     group = await Group.findById(group._id);
     expect(group.jobs).toHaveLength(0);
@@ -201,7 +209,16 @@ suite('Document vault with standalone MongoDB', () => {
   });
   test('three failures within five attempts pause both providers until verified resume; redo uses saved OCR', async () => {
     const group = await upload(4);
-    for (const mode of ['ok', 'fail', 'ok', 'fail', 'fail']) { responseMode = mode; await worker.runOne(); }
+    const warning = jest.spyOn(require('../../utils/logger'), 'warning');
+    try {
+      for (const mode of ['ok', 'fail', 'ok', 'fail', 'fail']) { responseMode = mode; await worker.runOne(); }
+      expect(warning).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+        metadata: expect.objectContaining({ kind: 'chat', reason: 'invalid_json' }),
+      }));
+      expect(JSON.stringify(warning.mock.calls)).not.toContain('private_fixture_reply');
+    } finally {
+      warning.mockRestore();
+    }
     const paused = await library.state();
     expect(paused).toMatchObject({ recent: ['ok', 'error', 'ok', 'error', 'error'], pauseReason: 'generation' });
     await worker.runOne();
@@ -213,11 +230,19 @@ suite('Document vault with standalone MongoDB', () => {
     expect((await library.state()).recent).toEqual([]);
     const page = (await Group.findById(group._id)).pages[0];
     expect(page.failedStage).toBe('chat');
+    expect(page.failedReply).toMatchObject({ raw: invalidReply, reason: 'invalid_json' });
+    const detail = await (await request('owner', '/pages/' + page._id)).text();
+    expect(detail).toContain('&lt;script&gt;private_fixture_reply&lt;/script&gt;');
+    expect(detail).not.toContain(invalidReply);
+    expect((await repo.detail(String(page._id), users.owner._id, false)).page.failedReply).toBeUndefined();
+    expect((await request('viewer', '/pages/' + page._id)).status).toBe(404);
     expect((await request('owner', '/pages/' + page._id + '/redo', new URLSearchParams({ revision: page.revision, mode: 'chat' }))).status).toBe(303);
+    expect((await Group.findById(group._id)).pages[0].failedReply.raw).toBe(invalidReply);
     responseMode = 'ok';
     await worker.runOne();
     await worker.runOne();
     expect(calls.slice(-2).map(c => c.kind)).toEqual(['chat', 'chat']);
+    expect((await Group.findById(group._id)).pages[0].failedReply).toBeUndefined();
   });
   test('a failed group job has one queue item and retries only the ordered summary', async () => {
     let group = await upload(2);
@@ -229,12 +254,24 @@ suite('Document vault with standalone MongoDB', () => {
     await worker.runOne();
     group = await Group.findById(group._id);
     expect(group.summaryState).toBe('failed');
+    expect(group.failedSummaryReply).toMatchObject({ raw: invalidReply, reason: 'invalid_json' });
+    expect(await (await request('owner', '/pages/' + group.pages[0]._id)).text()).toContain('private_fixture_reply');
     expect((await request('owner', '/pages/' + group.pages[0]._id + '/redo-group',
       new URLSearchParams({ revision: group.descriptionRevision }))).status).toBe(303);
     responseMode = 'ok';
     await worker.runOne();
     expect(calls.map(c => c.kind)).toEqual(['ocr', 'ocr', 'chat', 'chat', 'group', 'group']);
-    expect((await Group.findById(group._id)).summaryState).toBe('ready');
+    group = await Group.findById(group._id);
+    expect(group.summaryState).toBe('ready');
+    expect(group.failedSummaryReply).toBeUndefined();
+    // A failed summary redo can coexist with a filed page visible to a viewer.
+    expect((await filePage(group.pages[0])).status).toBe(303);
+    expect((await request('owner', '/pages/' + group.pages[0]._id + '/redo-group',
+      new URLSearchParams({ revision: group.descriptionRevision }))).status).toBe(303);
+    responseMode = 'fail';
+    await worker.runOne();
+    expect(await (await request('viewer', '/pages/' + group.pages[0]._id)).text()).not.toContain('private_fixture_reply');
+    expect(await (await request('clerk', '/pages/' + group.pages[1]._id)).text()).not.toContain('private_fixture_reply');
   });
   test('rejects foreign, anonymous, forged, malformed and partially invalid batches; delayed jobs recheck the principal', async () => {
     expect((await request(null, '/')).status).toBe(401);

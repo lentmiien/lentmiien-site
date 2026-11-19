@@ -107,7 +107,7 @@ function createRouter({ repository = repo, queueService = queue, roleModel = Rol
     }
   });
   router.get('/pages/:id', async (req, res) => {
-    const detail = await repository.detail(req.params.id, req.user._id);
+    const detail = await repository.detail(req.params.id, req.user._id, res.locals.review);
     res.render('document_vault/page', { ...detail, section: detail.filed ? 'archive' : detail.page.state === 'review' ? 'review' : 'queue' });
   });
   router.get('/pages/:id/image', async (req, res) => {

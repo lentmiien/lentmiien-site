@@ -2078,6 +2078,12 @@ const chat = async (conversation, messages, model, options = {}) => {
     // The caller owns the transient job and persists the result. Keep private
     // documents out of Chat5 history, callbacks and API debug records.
     options.signal?.throwIfAborted();
+    if (options.structuredOutput) {
+      // /llm/chat forwards format to Ollama and prefers response_format
+      // for OpenAI-compatible providers behind the same gateway.
+      payload.format = options.structuredOutput.schema;
+      payload.response_format = { type: 'json_schema', json_schema: options.structuredOutput };
+    }
     const response = await httpClient.post(CHAT_ENDPOINT, { ...payload, stream: false, think: false }, {
       signal: options.signal, timeout: 1200000, maxRedirects: 0,
       maxContentLength: 1024 * 1024, maxBodyLength: 16 * 1024 * 1024,

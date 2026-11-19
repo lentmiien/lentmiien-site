@@ -1,6 +1,26 @@
 extends ../document_vault_layout
 
 block content
+  mixin failedReply(label, reply)
+    if reply
+      -
+        const messages = {
+          empty_reply: 'Chat5 returned no answer text.',
+          invalid_json: 'The reply could not be read as a single JSON object.',
+          invalid_fenced_json: 'The Markdown block contained invalid JSON.',
+          schema_mismatch: 'The JSON did not match the required document fields.',
+          token_limit: 'Chat5 reached its output token limit.',
+          reply_too_long: 'The reply exceeded the vault’s length limit.',
+          unexpected_content: 'Chat5 returned an unexpected message format.',
+          unexpected_tool_call: 'Chat5 returned a tool call.',
+        }
+      details.source
+        summary= label
+        p= messages[reply.reason]
+        if reply.raw
+          pre= reply.raw
+        if reply.clipped
+          p.hint Only the first 131,072 characters of this reply were saved.
   - const target = base + '/pages/' + page._id
   - const editing = manage && review && page.state === 'review'
   - const paper = page.physical || {}
@@ -118,9 +138,11 @@ block content
         h3 Access
         p Owner · #{ownerName}
         p= viewers.length ? 'Viewers · ' + viewers.join(', ') : 'Only the owner can view filed pages.'
-    if manage && review && (['review','failed','approved','stored'].includes(page.state) || summaryState === 'failed')
+    if manage && review && (['review','failed','approved','stored'].includes(page.state) || summaryState === 'failed' || page.failedReply || failedSummaryReply)
       section#retry.panel
         h2 Processing controls
+        +failedReply('Last failed page classification reply', page.failedReply)
+        +failedReply('Last failed group description reply', failedSummaryReply)
         if ['review','failed','approved','stored'].includes(page.state)
           form(method='post', action=target + '/redo')
             input(type='hidden', name='_csrf', value=csrfToken)

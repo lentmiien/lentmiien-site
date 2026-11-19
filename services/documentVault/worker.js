@@ -7,6 +7,7 @@ const { READ, REVIEW, INTAKE, BUNDLES, sameId, VaultError } = require('./policy'
 const { finishJob, isOperator } = require('./workflow');
 const { mutate, cleanInterruptedUploads } = require('./repository');
 const providers = require('./providers');
+const { VaultReplyError } = require('./content');
 
 const SLOT = 'document-vault';
 const DEADLINE = 20 * 60 * 1000;
@@ -134,9 +135,15 @@ class VaultWorker {
       const uncertain = signal.aborted || [408, 504].includes(error.response?.status)
         || ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'ERR_CANCELED', 'EPIPE'].includes(error.code);
       outcome = uncertain ? 'interrupted' : 'generation';
-      logger.warning('Document vault generation failed; check service availability and retry the affected stage', meta(job.kind, {
-        jobId, outcome, status: error.response?.status || null, errorName: error.name,
-      }));
+      if (error instanceof VaultReplyError) {
+        result = error.reply;
+        logger.warning('Document vault could not validate the Chat5 reply; inspect the saved reply in processing controls',
+          meta(job.kind, { jobId, outcome, reason: result.reason }));
+      } else {
+        logger.warning('Document vault generation failed; check service availability and retry the affected stage', meta(job.kind, {
+          jobId, outcome, status: error.response?.status || null, errorName: error.name,
+        }));
+      }
     }
     await persist(claim, outcome, result);
   }

@@ -20,6 +20,7 @@ function filePage(page) {
 }
 function publishSummary(group, description) {
   group.description = description;
+  group.failedSummaryReply = undefined;
   group.summaryState = 'ready';
   for (const page of group.pages) {
     if (page.state === 'approved') filePage(page);
@@ -96,10 +97,12 @@ function finishJob(group, id, outcome, result) {
         page.state = 'failed';
         page.failedStage = job.kind;
         page.issue = outcome;
+        if (job.kind === 'chat' && result) page.failedReply = result;
         page.revision++;
       } else {
         group.summaryState = 'failed';
         group.summaryIssue = outcome;
+        if (result) group.failedSummaryReply = result;
       }
     } else if (job.kind === 'group') {
       publishSummary(group, result.description);
@@ -111,6 +114,7 @@ function finishJob(group, id, outcome, result) {
         if (job.thenClassify) enqueue(group, 'chat', job.actorId, page._id, false, job.authority);
       } else {
         page.set(result);
+        page.failedReply = undefined;
         page.state = 'review';
       }
       if (page.state === 'review') refreshSummary(group, job.actorId, job.authority);

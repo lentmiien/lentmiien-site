@@ -98,6 +98,44 @@ test('classifies only validated structured output and accepts zero or unknown re
   expect(reviewFields({ ...valid, decision: 'dispose' }).physical).toEqual({ decision: 'dispose' });
 });
 
+test('accepts one validated object inside a fence or explanatory text', () => {
+  const page = { ...receipt, englishText: 'Quoted "name", {code}, [value]\nnext line' };
+  const content = 'Here is the result:\n```json\n' + JSON.stringify(page) + '\n```\nEnd.';
+  expect(parseOutput('chat', { choices: [{ message: { content } }] })).toEqual(page);
+  const summary = 'The summary is {"description":"Rail ticket."} as requested.';
+  expect(parseOutput('group', { choices: [{ message: { content: summary } }] })).toEqual({ description: 'Rail ticket.' });
+});
+
+test.each([
+  ['  ', 'empty_reply'],
+  ['```json\n{"description":oops}\n```', 'invalid_fenced_json'],
+  [String.raw`{"description":"bad\q"}`, 'invalid_json'],
+  ['{"description":"one"} {"description":"two"}', 'invalid_json'],
+  ['[{"description":"not an object"}]', 'schema_mismatch'],
+  ['[{"description":"unfinished array"}', 'invalid_json'],
+  ['{"title":"private"}', 'schema_mismatch'],
+])('keeps the exact failed reply and a content-free reason (%#)', (content, reason) => {
+  expect(() => parseOutput('group', { choices: [{ message: { content } }] })).toThrow(
+    expect.objectContaining({ message: reason, reply: { reason, raw: content, clipped: false } }));
+});
+
+test('preserves unexpected and truncated messages and bounds retained text', () => {
+  for (const [message, finish_reason, reason] of [
+    [{ content: '{"description":"partial"}' }, 'length', 'token_limit'],
+    [{ content: '', thinking: 'No final answer' }, 'stop', 'empty_reply'],
+    [{ content: [{ text: 'unexpected' }] }, 'stop', 'unexpected_content'],
+    [{ content: '', tool_calls: [{}] }, 'stop', 'unexpected_tool_call'],
+  ]) {
+    expect(() => parseOutput('group', { choices: [{ message, finish_reason }] })).toThrow(expect.objectContaining({
+      reply: { reason, raw: typeof message.content === 'string' && Object.keys(message).length === 1 ? message.content : JSON.stringify(message), clipped: false },
+    }));
+  }
+  const content = 'x'.repeat(150000);
+  expect(() => parseOutput('chat', { choices: [{ message: { content } }] })).toThrow(expect.objectContaining({
+    reply: { reason: 'reply_too_long', clipped: true, raw: content.slice(0, 128 * 1024) },
+  }));
+});
+
 test('upload decoder checks the format, declared type, size and content of every page', async () => {
   const png = await sharp({ create: { width: 4, height: 5, channels: 3, background: 'white' } }).png().toBuffer();
   const file = { buffer: png, originalname: 'page.png', mimetype: 'image/png' };

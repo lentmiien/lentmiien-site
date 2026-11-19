@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 
 const { Schema } = mongoose;
 const id = Schema.Types.ObjectId;
+const failedReply = new Schema({
+  reason: { type: String, required: true },
+  raw: String,
+  clipped: Boolean,
+}, { _id: false });
 const page = new Schema({
   filename: { type: String, required: true },
   state: { type: String, enum: ['ocr', 'chat', 'review', 'approved', 'stored', 'failed'], default: 'ocr' },
@@ -22,6 +27,7 @@ const page = new Schema({
     groupLabel: String,
   },
   failedStage: String,
+  failedReply,
   issue: String,
 });
 const job = new Schema({
@@ -46,6 +52,7 @@ const group = new Schema({
   descriptionRevision: { type: Number, default: 0 },
   summaryState: { type: String, enum: ['waiting', 'queued', 'ready', 'failed'], default: 'waiting' },
   summaryIssue: String,
+  failedSummaryReply: failedReply,
   lastJob: { jobId: id, outcome: String },
 }, { timestamps: true, optimisticConcurrency: true });
 group.index({ uploaderId: 1, uploadKey: 1 }, { unique: true, partialFilterExpression: { uploadKey: { $type: 'string' } } });

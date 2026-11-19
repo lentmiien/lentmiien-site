@@ -151,17 +151,19 @@ async function list(section, userId, { q = '', offset = 0 } = {}) {
   return { rows: rows.slice(0, PAGE_SIZE), more: rows.length > PAGE_SIZE };
 }
 
-async function detail(pageId, userId) {
+async function detail(pageId, userId, review = false) {
   const group = await Group.findOne(pageScope(pageId, userId)).lean();
   if (!group) throw missing();
   const page = group.pages.find(p => sameId(p._id, pageId));
   const manage = canManage(group, page, userId);
+  if (!manage || !review) delete page.failedReply;
   const accounts = await User.find({ _id: { $in: manage ? [group.ownerId, ...group.viewerIds] : [group.ownerId] } }).select('_id name').lean();
   const name = id => accounts.find(u => sameId(u._id, id))?.name || 'Unavailable account';
   return {
     page, manage, filed: isFiled(page), ownerName: name(group.ownerId),
     viewers: manage ? group.viewerIds.map(name) : [],
     summary: group.description, summaryState: group.summaryState, summaryIssue: group.summaryIssue,
+    failedSummaryReply: manage && review && group.pages.every(p => canRead(group, p, userId)) ? group.failedSummaryReply : undefined,
     descriptionRevision: group.descriptionRevision, pageCount: group.pages.length,
     position: group.pages.indexOf(page) + 1,
     siblings: group.pages.flatMap((p, index) => canRead(group, p, userId) ? [
