@@ -7,7 +7,7 @@ beforeAll(async () => { ({ JSDOM } = await import('jsdom')); });
 afterEach(() => dom?.window.close());
 
 function fixture() {
-  const names = ['account_dbs', 'transaction_dbs', 'accounting_write_locks', 'ordinary_entries', 'commonsdiaries'];
+  const names = ['account_dbs', 'transaction_dbs', 'accounting_write_locks', 'ordinary_entries', ...require('../../utils/privateDatabaseCollections').PRIVATE_DATABASE_COLLECTIONS];
   const records = [{ _id: 'ledger', note: 'synthetic' }];
   const deleteOne = jest.fn(async () => ({ deletedCount: 1 }));
   const cursor = { sort: () => cursor, limit: () => cursor, toArray: async () => records };
@@ -75,13 +75,13 @@ test.each(['account_dbs', 'transaction_dbs', 'accounting_write_locks', 'ordinary
 });
 
 
-test('private Commons diary is absent from generic admin list and direct read/delete are denied', async () => {
+test.each(['commonsdiaries', 'documentvaultgroups', 'documentvaultscans', 'documentvaultqueues'])('private collection %s is absent from generic admin list and direct read/delete are denied', async collection => {
   const f = fixture();
   await f.controller.database_viewer_page({ query: {} }, f.res);
-  expect(f.res.render.mock.calls[0][1].collections).not.toContain('commonsdiaries');
-  await f.controller.database_viewer_data({ query: { collection: 'commonsdiaries' } }, f.res);
+  expect(f.res.render.mock.calls[0][1].collections).not.toContain(collection);
+  await f.controller.database_viewer_data({ query: { collection } }, f.res);
   expect(f.res.status).toHaveBeenLastCalledWith(403);
-  await f.controller.database_viewer_delete({ body: { collection: 'commonsdiaries', id: '1'.repeat(24) } }, f.res);
+  await f.controller.database_viewer_delete({ body: { collection, id: '1'.repeat(24) } }, f.res);
   expect(f.res.status).toHaveBeenLastCalledWith(403);
   expect(f.db.collection).not.toHaveBeenCalled();
 });

@@ -2033,7 +2033,7 @@ const retrieveChatJob = async (jobId) => {
   }
 };
 
-const chat = async (conversation, messages, model) => {
+const chat = async (conversation, messages, model, options = {}) => {
   if (!model || typeof model.api_model !== 'string' || model.api_model.length === 0) {
     throw new Error('Model information is required for Ollama chat requests');
   }
@@ -2044,6 +2044,7 @@ const chat = async (conversation, messages, model) => {
   }
 
   if (getSelectedToolManagerToolNames(conversation).length > 0) {
+    if (options.privateRequest) throw new Error('Tools are disabled for private chat jobs.');
     return chatWithThinkingAndTools(conversation, messages, model);
   }
 
@@ -2073,6 +2074,16 @@ const chat = async (conversation, messages, model) => {
   };
   Object.assign(payload, buildChatPayloadOptions(conversation));
 
+  if (options.privateRequest) {
+    // The caller owns the transient job and persists the result. Keep private
+    // documents out of Chat5 history, callbacks and API debug records.
+    options.signal?.throwIfAborted();
+    const response = await httpClient.post(CHAT_ENDPOINT, { ...payload, stream: false, think: false }, {
+      signal: options.signal, timeout: 1200000, maxRedirects: 0,
+      maxContentLength: 1024 * 1024, maxBodyLength: 16 * 1024 * 1024,
+    });
+    return normalizeChatResponse(response.data);
+  }
   return postChatPayload(payload, 'chat');
 };
 

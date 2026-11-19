@@ -1,8 +1,11 @@
+const DEFAULT_VAULT_CHAT_MODEL = 'qwen3.8:27b';
+
 const APP_SETTING_KEYS = Object.freeze({
   CHAT5_TITLE_MODEL: 'chat5.ai.title_model',
   CHAT5_SUMMARY_MODEL: 'chat5.ai.summary_model',
   CHAT5_BATCH_DEFAULT_MODEL: 'chat5.batch.default_model',
   CHAT5_BATCH_SUMMARY_MODEL: 'chat5.batch.summary_model',
+  VAULT_CHAT_MODEL: 'document_vault.chat5.model',
   CODEX_LOCAL_MODELS: 'codex.local_models',
   CODEX_LOG_REVIEW_LAST_RUN_AT: 'codex_log_review.last_run_at',
 });
@@ -29,6 +32,11 @@ const DEFAULT_APP_SETTINGS = Object.freeze([
     description: 'Preferred OpenAI batch-capable model used for automatic Chat5 conversation summaries.',
   }),
   Object.freeze({
+    key: APP_SETTING_KEYS.VAULT_CHAT_MODEL,
+    value: DEFAULT_VAULT_CHAT_MODEL,
+    description: 'Local Chat5 vision model for Document vault page transcription, classification and group descriptions. Applies to the next job.',
+  }),
+  Object.freeze({
     key: APP_SETTING_KEYS.CODEX_LOCAL_MODELS,
     value: 'qwen3.6:27b',
     description: 'Comma-separated Ollama models offered by the Codex tool. Changes take effect on the next page load or request.',
@@ -41,6 +49,7 @@ const DEFAULT_APP_SETTINGS = Object.freeze([
 ]);
 
 module.exports = {
+  DEFAULT_VAULT_CHAT_MODEL,
   APP_SETTING_KEYS,
   DEFAULT_APP_SETTINGS,
 };

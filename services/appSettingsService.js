@@ -75,10 +75,11 @@ class AppSettingsService {
     return this.settingsModel.findById(id).lean();
   }
 
-  async getValue(key) {
+  async getValue(key, defaultValue) {
     const normalizedKey = normalizeKey(key);
     const setting = await this.settingsModel.findOne({ key: normalizedKey }).lean();
     if (!setting) {
+      if (defaultValue !== undefined) return normalizeValue(defaultValue);
       throw new AppSettingsError(
         `Required app setting "${normalizedKey}" is missing. Configure it at /admin/app-settings.`,
         500

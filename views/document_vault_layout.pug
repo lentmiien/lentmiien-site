@@ -1,0 +1,25 @@
+doctype html
+html(lang='en')
+  head
+    meta(charset='utf-8')
+    meta(name='viewport', content='width=device-width, initial-scale=1')
+    meta(name='robots', content='noindex,nofollow')
+    title Document vault
+    link(rel='stylesheet', href='/css/color-theme.css')
+    link(rel='stylesheet', href='/css/document-vault.css')
+    include includes/navigation_assets
+    script(src='/js/document-vault.js', defer)
+  body
+    include includes/navigation
+    main.vault-main
+      header.vault-header
+        a.vault-name(href=base + '/')
+          span.drawer-icon(aria-hidden='true')
+          | Document vault
+        nav.tabs(aria-label='Document vault')
+          each tab in [{key:'archive', text:'Archive', href:'/', show:true}, {key:'upload', text:'Upload', href:'/upload', show:intake}, {key:'queue', text:'Work queue', href:'/queue', show:review}, {key:'review', text:'Review', href:'/review', show:review}]
+            if tab.show
+              a(href=base + tab.href, aria-current=tab.key === section ? 'page' : null)= tab.text
+      if notice
+        p.banner.success(role='status')= notice
+      block content

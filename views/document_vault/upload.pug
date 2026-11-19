@@ -1,0 +1,31 @@
+extends ../document_vault_layout
+
+block content
+  header.section-head
+    h1 Upload scans
+    p Choose one image per page. Files in the same upload stay together.
+  form#vault-upload.panel.upload-form(method='post', action=base + '/upload', enctype='multipart/form-data', data-csrf=csrfToken)
+    input(type='hidden', name='uploadKey', value=uploadKey)
+    .fields
+      label(for='scans') Page scans
+      input#scans(type='file', name='scans', accept='.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp', multiple, required, aria-describedby='file-help')
+      small#file-help JPEG, PNG or WebP · Up to 12 pages · 8 MiB per page · 32 MiB per upload
+      ol#page-order.file-order(aria-label='Page order')
+    .rule
+    .fields
+      label(for='owner') Document owner
+      select#owner(name='ownerId', required)
+        each account in accounts
+          option(value=String(account._id), selected=String(account._id) === userId)= account.name
+    fieldset.viewers
+      legend Allow viewing after filing
+      p.hint The owner always has access. If you file for someone else, select yourself to keep viewing access.
+      .check-list
+        each account in accounts
+          label
+            input(type='checkbox', name='viewerIds', value=String(account._id))
+            span= account.name
+    .form-actions
+      button.primary(type='submit') Add to work queue
+      span#upload-status(role='status', aria-live='polite')
+    noscript JavaScript is required to submit this private upload.

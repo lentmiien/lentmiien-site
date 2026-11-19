@@ -1,0 +1,140 @@
+extends ../document_vault_layout
+
+block content
+  - const target = base + '/pages/' + page._id
+  - const editing = manage && review && page.state === 'review'
+  - const paper = page.physical || {}
+  - const issueText = issue => ({generation:'The service failed or returned an incomplete response.', interrupted:'The generation was interrupted.', access:'The account that requested the job no longer has access.', media:'The archived scan could not be found.'}[issue])
+  header.section-head
+    p.page-count Page #{position} of #{pageCount}
+    h1= page.title || page.filename
+    p= filed ? 'Filed document' : stateLabel(Object.assign({}, page, {summaryState}))
+  if page.issue || summaryIssue
+    .banner.warn(role='status')
+      p= issueText(page.issue || summaryIssue)
+      if manage && review
+        a(href='#retry') Open processing controls
+  .document-layout
+    section.panel.scan-panel(aria-label='Original scan')
+      .panel-header
+        h2 Scan
+        a(href=target + '/image', target='_blank', rel='noreferrer') Open full size
+      .scan-frame
+        img(src=target + '/image', alt='Scanned page ' + position)
+      details.source
+        summary Original OCR text
+        pre= page.ocrText == null ? 'OCR has not finished.' : page.ocrText
+    section.panel.metadata
+      if editing
+        h2 Review this page
+        form#page-review(method='post', action=target + '/review')
+          input(type='hidden', name='_csrf', value=csrfToken)
+          input(type='hidden', name='revision', value=page.revision)
+          .fields
+            label(for='title') Document title
+            input#title(type='text', name='title', value=page.title, required, maxlength='200')
+          .fields
+            label(for='date') Document date
+            input#date(type='date', name='documentDate', value=page.documentDate)
+          .fields
+            label(for='tags') Tags
+            input#tags(type='text', name='tags', value=(page.tags || []).join(', '), maxlength='1000', placeholder='Comma-separated tags')
+          .fields
+            label(for='description') Page description
+            textarea#description(name='description', rows='3', required, maxlength='2000')= page.description
+          .fields
+            label(for='transcript') English transcript
+            textarea#transcript(name='englishText', rows='7', maxlength='32000', required)= page.englishText
+          .field-pair
+            .fields
+              label(for='total') Receipt total
+              input#total(type='number', name='totalAmount', step='any', value=page.totalAmount == null ? '' : page.totalAmount, placeholder='Optional')
+            .fields
+              label(for='currency') Currency
+              input#currency(type='text', name='currency', value=page.currency, maxlength='3', placeholder='e.g. JPY')
+          .rule
+          .fields
+            label(for='decision') Physical copy
+            select#decision(name='decision', required)
+              option(value='') Choose a disposition
+              option(value='keep', selected=paper.decision === 'keep') Keep in storage
+              option(value='dispose', selected=paper.decision === 'dispose') Dispose of paper copy
+          #storage-location
+            each field in [{key:'yearLabel', label:'Year label', max:32}, {key:'folderId', label:'Folder ID', max:80}, {key:'groupLabel', label:'Group label', max:80}]
+              .fields
+                label(for=field.key)= field.label
+                input(type='text', id=field.key, name=field.key, maxlength=field.max, value=paper[field.key])
+          button.primary(type='submit') Save review and continue
+      else
+        h2 Page details
+        dl.facts
+          dt Owner
+          dd= ownerName
+          if page.documentDate
+            dt Document date
+            dd= page.documentDate
+          if page.tags && page.tags.length
+            dt Tags
+            dd.tag-list
+              each tag in page.tags
+                a(href=base + '/?q=' + encodeURIComponent(tag))= tag
+          if page.totalAmount != null
+            dt Receipt total
+            dd= [page.totalAmount, page.currency].filter(v => v != null).join(' ')
+          if paper.decision
+            dt Physical copy
+            dd= paper.decision === 'dispose' ? 'For disposal' : [paper.yearLabel, paper.folderId, paper.groupLabel].join(' / ')
+        if page.description
+          h3 Page description
+          p= page.description
+        if page.englishText
+          h3 English transcript
+          pre= page.englishText
+        if !page.description
+          p.hint Page details will appear after classification.
+  .lower-layout
+    section.panel
+      h2 Document group
+      if summary
+        p= summary
+      else
+        p.hint= summaryState === 'failed' ? 'Group description failed.' : 'The group description is pending.'
+      if editing && pageCount > 1 && summaryState === 'ready'
+        details.group-correction
+          summary Correct the group description
+          input(type='hidden', name='groupRevision', form='page-review', value=descriptionRevision)
+          .fields
+            label(for='group-correction') Revised English description
+            textarea#group-correction(name='groupDescription', form='page-review', rows='3', maxlength='3000', placeholder='Optional correction, saved with this review')
+      if pageCount > 1
+        ol.siblings(aria-label='Pages in this group')
+          each sibling in siblings
+            li(value=sibling.number)
+              if sibling.current
+                strong(aria-current='page')= sibling.title
+              else
+                a(href=base + '/pages/' + sibling.id)= sibling.title
+      if manage
+        h3 Access
+        p Owner · #{ownerName}
+        p= viewers.length ? 'Viewers · ' + viewers.join(', ') : 'Only the owner can view filed pages.'
+    if manage && review && (['review','failed','approved','stored'].includes(page.state) || summaryState === 'failed')
+      section#retry.panel
+        h2 Processing controls
+        if ['review','failed','approved','stored'].includes(page.state)
+          form(method='post', action=target + '/redo')
+            input(type='hidden', name='_csrf', value=csrfToken)
+            input(type='hidden', name='revision', value=page.revision)
+            .fields
+              label(for='redo-mode') Redo for this page
+              select#redo-mode(name='mode')
+                option(value='both') OCR and English classification
+                option(value='ocr')= page.description ? 'OCR only' : 'OCR, then first classification'
+                if page.ocrText != null
+                  option(value='chat', selected=page.failedStage === 'chat') English classification only
+            button.secondary(type='submit') Return page to queue
+        if pageCount > 1 && ['ready','failed'].includes(summaryState)
+          form.group-redo(method='post', action=target + '/redo-group')
+            input(type='hidden', name='_csrf', value=csrfToken)
+            input(type='hidden', name='revision', value=descriptionRevision)
+            button.secondary(type='submit') Redo group description

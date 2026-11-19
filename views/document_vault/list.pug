@@ -1,0 +1,83 @@
+extends ../document_vault_layout
+
+block content
+  - const archive = section === 'archive'
+  - const reviewing = section === 'review'
+  - const here = base + (archive ? '/' : '/' + section)
+  - const linkAt = value => here + '?offset=' + value + (q ? '&q=' + encodeURIComponent(q) : '')
+  div(data-live-list=archive ? null : 'true')
+    header.section-head
+      .heading-row
+        h1= archive ? 'Document archive' : reviewing ? 'Review queue' : 'Work queue'
+        if archive && intake
+          a.action.primary(href=base + '/upload') Upload scans
+        else if reviewing && rows.length
+          a.action.primary(href=base + '/review/next') Review next page
+        else if !archive
+          a.action.secondary(href=linkAt(offset)) Refresh
+      if !archive
+        p= reviewing ? 'Compare each page with its scan and decide where to keep the paper copy.' : 'OCR, page classification and group descriptions run one at a time.'
+    if pauseReason
+      section.banner.warn(aria-label='Queue paused')
+        h2 Queue paused
+        p= pauseReason === 'generation' ? 'Three recent generations failed. Check the OCR workspace and local Chat5 service before resuming.' : 'A generation was interrupted. Verify that OCR and Chat5 are idle and available before resuming.'
+        if resume
+          form(method='post', action=base + '/queue/resume')
+            input(type='hidden', name='_csrf', value=csrfToken)
+            input(type='hidden', name='version', value=queueVersion)
+            label.inline-check
+              input(type='checkbox', name='verified', value='yes', required)
+              | I verified both services.
+            button.secondary(type='submit') Resume queue
+        else
+          p An operator with queue access can resume processing.
+    if archive
+      form.search(method='get', action=here, role='search')
+        label.sr-only(for='vault-search') Search filed pages
+        input#vault-search(type='search', name='q', value=q, maxlength='160', placeholder='Search text, dates, tags, totals or locations')
+        button.secondary(type='submit') Search
+        if q
+          a(href=here) Clear
+    if rows.length
+      .table-wrap
+        table
+          thead
+            tr
+              th(scope='col') Document
+              th(scope='col')= archive ? 'Document date' : 'Stage'
+              th(scope='col')= archive ? 'Paper copy' : 'Page'
+          tbody
+            each row in rows
+              - const active = activePage === String(row._id) || (activeKind === 'group' && activeGroup === String(row.groupId))
+              - const stage = active ? ({ocr:'Running OCR', chat:'Classifying page', group:'Describing group'}[activeKind]) : stateLabel(row)
+              tr
+                td
+                  a.doc-link(href=base + '/pages/' + row._id)= row.title || row.filename
+                  if archive && row.description
+                    .excerpt= row.description
+                  else if row.title
+                    small= row.filename
+                td
+                  if archive
+                    span= row.date || 'Undated'
+                  else
+                    span.stage(class=active ? 'running' : stage.includes('failed') ? 'failed' : '')= reviewing ? 'Ready for review' : stage
+                td
+                  if archive
+                    - const paper = row.physical || {}
+                    span= paper.decision === 'dispose' ? 'For disposal' : [paper.yearLabel, paper.folderId, paper.groupLabel].filter(Boolean).join(' / ')
+                  else
+                    span= row.state === 'group' ? 'Whole group' : Number(row.position) + 1
+      if offset > 0 || more
+        nav.pager(aria-label='Results pages')
+          if offset > 0
+            a(href=linkAt(Math.max(0, offset - pageSize))) Previous
+          span= (offset + 1) + '–' + (offset + rows.length)
+          if more
+            a(href=linkAt(offset + pageSize)) Next
+    else
+      section.empty
+        h2= archive ? (q ? 'No matching pages' : 'No filed documents yet') : reviewing ? 'No pages awaiting review' : 'The work queue is clear'
+        p= archive ? (q ? 'Try another word, date or tag.' : 'Pages appear here after processing and review.') : reviewing ? 'Pages appear here after OCR and English classification.' : 'You can upload another batch or open the review queue.'
+        if offset
+          a(href=linkAt(0)) First page
