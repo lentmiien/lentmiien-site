@@ -29,10 +29,24 @@ test('duplicates, expired dates and incompatible cards remain visible without se
   expect((await auditGptImageModelCards(f)).issues[0].reasons).toEqual([
     'duplicate_cards', 'incompatible_modalities', 'deprecated_selectable_model', 'invalid_deprecation_date',
   ]);
+  expect(f.log.warning.mock.calls[0][1].metadata.issues[0].mismatches).toEqual(['in_modalities:missing_image']);
   expect(JSON.stringify(f.log.warning.mock.calls)).not.toContain('PRIVATE');
 });
 
 test('database failure is not reported as a clean audit', async () => {
   const f = fixture(); f.query.lean.mockRejectedValue(new Error('unavailable'));
   await expect(auditGptImageModelCards(f)).rejects.toThrow('unavailable');
+});
+
+
+test('audit identifies only the failed contract fields on both Studio cards', async () => {
+  const f = fixture();
+  for (const card of f.cards.filter(card => card.api_model.startsWith('gpt-image-2.5'))) {
+    Object.assign(card, { model_type: 'chat', in_modalities: ['image'], out_modalities: ['text'] });
+  }
+  const { issues } = await auditGptImageModelCards(f);
+  expect(issues).toHaveLength(2);
+  for (const issue of issues) {
+    expect(issue.mismatches).toEqual(['model_type:expected_image', 'in_modalities:missing_text', 'out_modalities:missing_image']);
+  }
 });

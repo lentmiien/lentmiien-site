@@ -1,46 +1,67 @@
 const STOPPED_STATES = new Set(['created', 'exited', 'dead', 'stopped', 'down', 'missing', 'not_found']);
 const ACTIVE_STATES = new Set(['running', 'up', 'healthy', 'paused', 'restarting', 'removing', 'starting', 'stopping']);
+const CATALOG_KEYS = ['containers', 'managed_containers', 'managedContainers', 'services', 'items', 'data', 'container'];
 
-function stoppedState(state, running) {
-  if (running === true || running === 'true') return false;
+function stoppedState(entry) {
+  const running = entry.running ?? entry.is_running ?? entry.isRunning;
+  if (running === true || running === 'true' || running === 1 || running === '1') return false;
+  const reportsStopped = running === false || running === 'false' || running === 0 || running === '0';
+  if (running != null && !reportsStopped) return null;
+  const state = entry.state ?? entry.container_state ?? entry.containerState ?? entry.status;
   if (typeof state === 'string') {
     const normalized = state.trim().toLowerCase();
     if (STOPPED_STATES.has(normalized)) return true;
     if (ACTIVE_STATES.has(normalized)) return false;
     return null;
   }
-  return running === false || running === 'false' ? true : null;
+  return state == null && reportsStopped ? true : null;
 }
 
-// /containers is also consumed by the Gateway dashboard. Accept its list and
-// keyed-map forms, but never treat missing/unknown ComfyUI state as stopped.
-function isComfyUiStopped(payload) {
+// Count catalog entries and wrappers. Descriptive fields (ports, aliases, health
+// URLs, defaults) are neither additional containers nor lifecycle observations.
+function inspectComfyUiState(payload) {
   const matches = [];
   let visited = 0;
-  let truncated = false;
-  function visit(value, key = '', depth = 0) {
-    if (depth > 5 || ++visited > 1000) { truncated = true; return; }
-    if (typeof value === 'string' && key.toLowerCase() === 'comfyui') {
-      matches.push(stoppedState(value));
+  let failure = null;
+  function visit(value, key = '', depth = 0, catalog = true) {
+    if (failure) return;
+    if (depth > 5 || ++visited > 1000) { failure = 'catalog_limit'; return; }
+    const identities = [key, value?.id, value?.container_id, value?.containerId, value?.key,
+      value?.name, value?.container_name, value?.containerName, value?.service, value?.compose_service];
+    if (identities.some(id => typeof id === 'string' && id.trim().toLowerCase() === 'comfyui')
+      || (value?.gateway_prefix ?? value?.gatewayPrefix) === '/comfy') {
+      if (value?.docker_available != null && value.docker_available !== true) { failure = 'inspection_unavailable'; return; }
+      matches.push(stoppedState(typeof value === 'string' ? { state: value } : value || {}));
+      return;
+    }
+    if (!catalog) {
+      // An unidentified list element may conceal another observation of this
+      // service. A named sibling's metadata need not be traversed.
+      if (/^\d+$/.test(key) && !identities.slice(1).some(id => typeof id === 'string')
+        && typeof value?.gateway_prefix !== 'string' && typeof value?.gatewayPrefix !== 'string') failure = 'invalid_catalog';
       return;
     }
     if (!value || typeof value !== 'object') return;
-    const identities = [key, value.id, value.container_id, value.name, value.container_name,
-      value.service, value.compose_service].filter(entry => typeof entry === 'string');
-    if (identities.some(entry => entry.toLowerCase() === 'comfyui') || value.gateway_prefix === '/comfy') {
-      const state = value.state ?? value.container_state ?? value.status;
-      const running = value.running ?? value.is_running;
-      matches.push(stoppedState(state, running));
+    if (value.docker_available != null && value.docker_available !== true) { failure = 'inspection_unavailable'; return; }
+    const wrappers = CATALOG_KEYS.filter(name => Object.hasOwn(value, name));
+    if (wrappers.length) {
+      for (const name of wrappers) visit(value[name], name, depth + 1);
       return;
     }
+    // The dashboard also accepts bare arrays and maps keyed by service.
+    // Only inspect their immediate entries. A nested default or health block
+    // cannot supply a current container observation.
     const entries = Object.entries(value);
-    if (entries.length > 500) truncated = true;
-    for (const [childKey, child] of entries.slice(0, 500)) {
-      visit(child, childKey, depth + 1);
-    }
+    if (entries.length > 500) { failure = 'catalog_limit'; return; }
+    for (const [childKey, child] of entries) visit(child, childKey, depth + 1, false);
   }
   visit(payload);
-  return matches.length && !truncated && !matches.includes(null) ? matches.every(Boolean) : null;
+  const reason = failure || (!matches.length ? 'container_missing' : matches.includes(null) ? 'unknown_state' : null);
+  return { stopped: reason ? null : matches.every(Boolean), reason };
 }
 
-module.exports = { isComfyUiStopped };
+function isComfyUiStopped(payload) {
+  return inspectComfyUiState(payload).stopped;
+}
+
+module.exports = { inspectComfyUiState, isComfyUiStopped };

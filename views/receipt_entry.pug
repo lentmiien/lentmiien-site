@@ -60,6 +60,7 @@ block content
       h2 Create entry
       p.section-subtitle Choose a destination ledger, confirm the pre-filled fields, and submit. The tab will close after a successful save.
       form.js-receipt-entry-form(action=`/receipt/add-entry/${receipt._id.toString()}`, method="post", autocomplete="off")
+        input(type='hidden', name='_csrf', value=csrfToken)
         input(type="hidden", name="entryType", value=entryMode || 'budget')
         .form-grid
           .form-field

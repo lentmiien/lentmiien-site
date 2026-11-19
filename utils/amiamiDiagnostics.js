@@ -95,7 +95,11 @@ class AmiAmiRequestError extends Error {
   toJSON() {
     return {
       code: this.code, phase: this.phase, target: this.target, itemCode: this.itemCode,
-      status: this.status, headers: this.headers, attempts: this.attempts,
+      status: this.status, attempts: this.attempts,
+      // Keep shared logger redaction of header bags intact. Only these four
+      // parsed observations have a place in the operational diagnostic.
+      contentType: this.headers['content-type'], cfMitigated: this.headers['cf-mitigated'],
+      cfRay: this.headers['cf-ray'], retryAfter: this.headers['retry-after'],
       elapsedMs: this.elapsedMs, retryable: this.retryable, message: this.message,
     };
   }

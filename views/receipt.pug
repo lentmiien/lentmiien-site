@@ -6,12 +6,20 @@ block content
     p.page-intro Collect, review, and act on purchase receipts in one minimal workspace.
     if error
       .alert.alert-danger(role='alert')= error
+    if failures && failures.length
+      .alert.alert-warning(role='alert')
+        ul
+          each failure in failures
+            li File #{failure.index + 1} (#{failure.field}) — #{failure.message}
     p
       a.btn.btn-outline-secondary.btn-sm(href='/receipt/mappings') Manage mapping rules
     section.section-card.upload-card
       h2 Upload a receipt
       p.section-subtitle Supported formats: JPEG, PNG, WebP, AVIF, GIF, SVG, TIFF.
       form(action='/receipt/upload_receipt', method='post', enctype='multipart/form-data')
+        input(type='hidden', name='_csrf', value=csrfToken)
+        label(for='purchase_date') Purchase date (optional for a single scan)
+        input#purchase_date.form-control(type='date', name='purchase_date')
         label(for='imgs') Select receipt image files
         .input-group
           input#imgs.form-control(type='file', name='imgs', multiple)

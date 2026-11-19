@@ -7,8 +7,8 @@ jest.mock('../../models/ai_model_card', () => ({
 
 const mockReceipt = {
   find: jest.fn(),
-  findById: jest.fn(),
-  findByIdAndDelete: jest.fn(),
+  findOne: jest.fn(),
+  deleteOne: jest.fn(),
 };
 
 const mockReceiptMappingRule = {
@@ -18,32 +18,7 @@ const mockReceiptMappingRule = {
 };
 
 const toObjectId = (value) => ({ toString: () => value });
-jest.mock('openai', () => jest.fn().mockImplementation(() => ({
-  chat: {
-    completions: {
-      create: jest.fn(),
-    },
-  },
-})), { virtual: true });
-
-jest.mock('openai/helpers/zod', () => ({
-  zodResponseFormat: jest.fn(),
-}), { virtual: true });
-
-jest.mock('zod', () => ({
-  z: {
-    object: jest.fn(() => ({})),
-    string: jest.fn(() => ({})),
-    number: jest.fn(() => ({})),
-    enum: jest.fn(() => ({})),
-  },
-}), { virtual: true });
-
-jest.mock('../../services/messageService', () => jest.fn().mockImplementation(() => ({})));
-jest.mock('../../services/conversationService', () => jest.fn().mockImplementation(() => ({
-  loadProcessNewImageToBase64: jest.fn(),
-})));
-jest.mock('../../services/knowledgeService', () => jest.fn().mockImplementation(() => ({})));
+jest.mock('../../services/receiptUploadService', () => ({}));
 jest.mock('../../services/budgetService', () => ({
   getReferenceLists: jest.fn(),
   getReceiptEntrySuggestions: jest.fn(),
@@ -81,7 +56,7 @@ describe('receiptcontroller history filters', () => {
     mockReceipt.find.mockReturnValue({ sort });
     const res = { render: jest.fn() };
 
-    await controller.receipt_history({ query: { history: '2025-12' } }, res);
+    await controller.receipt_history({ user: { _id: '507f1f77bcf86cd799439012' }, query: { history: '2025-12' } }, res);
 
     const query = mockReceipt.find.mock.calls[0][0];
     expect(query.date.$gte.toISOString()).toBe('2025-12-01T00:00:00.000Z');
@@ -98,11 +73,12 @@ describe('receiptcontroller history filters', () => {
     const receipt = {
       save: jest.fn().mockResolvedValue(),
     };
-    mockReceipt.findById.mockResolvedValue(receipt);
+    mockReceipt.findOne.mockResolvedValue(receipt);
     const res = { redirect: jest.fn() };
 
     await controller.correct_receipt({
-      params: { id: 'abc123' },
+      user: { _id: '507f1f77bcf86cd799439012' },
+      params: { id: '507f1f77bcf86cd799439011' },
       query: { history: '2025-12' },
       body: {
         date: '2025-12-05',
@@ -319,7 +295,7 @@ describe('receiptcontroller receipt entry form', () => {
     const sortRules = jest.fn().mockResolvedValue([rule]);
     const res = { render: jest.fn() };
 
-    mockReceipt.findById.mockResolvedValue(receipt);
+    mockReceipt.findOne.mockResolvedValue(receipt);
     mockReceiptMappingRule.find.mockReturnValue({ sort: sortRules });
     BudgetService.getReferenceLists.mockResolvedValue({
       accounts: [{ _id: toObjectId('cash-wallet'), name: 'Travel cash wallet' }],
@@ -329,7 +305,7 @@ describe('receiptcontroller receipt entry form', () => {
     });
     CreditCardService.listCards.mockResolvedValue([{ id: 'card-1', name: 'Visa' }]);
 
-    await controller.receipt_entry_form({ params: { id: 'receipt-1' }, query: {} }, res);
+    await controller.receipt_entry_form({ user: { _id: '507f1f77bcf86cd799439012' }, params: { id: '507f1f77bcf86cd799439011' }, query: {} }, res);
 
     expect(sortRules).toHaveBeenCalledWith({ priority: -1, updatedAt: -1 });
     expect(res.render).toHaveBeenCalledWith('receipt_entry', expect.objectContaining({
@@ -391,7 +367,7 @@ describe('receiptcontroller receipt entry form', () => {
     const sortRules = jest.fn().mockResolvedValue([legacyRule]);
     const res = { render: jest.fn() };
 
-    mockReceipt.findById.mockResolvedValue(receipt);
+    mockReceipt.findOne.mockResolvedValue(receipt);
     mockReceiptMappingRule.find.mockReturnValue({ sort: sortRules });
     BudgetService.getReferenceLists.mockResolvedValue({
       accounts: [],
@@ -401,7 +377,7 @@ describe('receiptcontroller receipt entry form', () => {
     });
     CreditCardService.listCards.mockResolvedValue([{ id: 'card-legacy', name: 'Visa' }]);
 
-    await controller.receipt_entry_form({ params: { id: 'receipt-legacy' }, query: {} }, res);
+    await controller.receipt_entry_form({ user: { _id: '507f1f77bcf86cd799439012' }, params: { id: '507f1f77bcf86cd799439011' }, query: {} }, res);
 
     expect(res.render).toHaveBeenCalledWith('receipt_entry', expect.objectContaining({
       entryMode: 'credit',

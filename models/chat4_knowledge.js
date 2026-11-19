@@ -12,7 +12,13 @@ const Chat4_knowledge = new mongoose.Schema({
   category: { type: String, required: true, max: 100 },
   tags: [{ type: String, max: 100 }],
   images: [{ type: String, max: 100 }],
+  pendingEmbeddingRevision: String,
+  pendingEmbeddingModes: { type: [String], enum: ['default', 'high_quality'], default: undefined },
   user_id: { type: String, required: true, max: 100 },
+});
+
+Chat4_knowledge.index({ updatedDate: 1 }, {
+  name: 'pending_knowledge_indexing', partialFilterExpression: { 'pendingEmbeddingModes.0': { $exists: true } },
 });
 
 module.exports = mongoose.model('chat4_knowledge', Chat4_knowledge);

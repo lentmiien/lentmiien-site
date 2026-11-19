@@ -355,6 +355,30 @@ describe('CodexLocalRunner', () => {
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
     });
 
+    (process.platform === 'linux' ? test : test.skip)('a closed transport with surviving process-group members cannot prove batch termination', async () => {
+      const previous = process.env.LOCAL_AI_BATCH_ENABLED;
+      process.env.LOCAL_AI_BATCH_ENABLED = 'true';
+      const child = createFakeChild();
+      const probe = jest.spyOn(process, 'kill').mockImplementation(() => true);
+      try {
+        spawn.mockReturnValue(child);
+        const runner = new CodexLocalRunner({ binaryPath: 'codex-test', profileLoader: async () => ({}), timeoutMs: 60000 });
+        const input = createRunInput({ turn: { modelProvider: 'ollama' } });
+        const { resultPromise } = await startAppServerTurn(runner, child, input);
+        expect(spawn.mock.calls[0][2].detached).toBe(true);
+        jest.useFakeTimers();
+        child.emit('close', 0, null);
+        await jest.advanceTimersByTimeAsync(6000);
+        expect(probe).toHaveBeenCalledWith(-child.pid, 0);
+        expect((await resultPromise).batchTerminationProven).toBe(false);
+      } finally {
+        jest.useRealTimers();
+        probe.mockRestore();
+        if (previous === undefined) delete process.env.LOCAL_AI_BATCH_ENABLED;
+        else process.env.LOCAL_AI_BATCH_ENABLED = previous;
+      }
+    });
+
     test('loads an Ollama profile into thread/start with its custom provider', async () => {
       const child = createFakeChild();
       spawn.mockReturnValue(child);

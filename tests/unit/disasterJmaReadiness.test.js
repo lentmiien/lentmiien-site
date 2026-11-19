@@ -236,6 +236,9 @@ test('feed failures log transitions and hourly summaries while every poll remain
 
 test('fresh HTTP retrieval cannot certify stale content; cache diagnostics omit arbitrary headers', async () => {
   const h = harness();
+  const local = entry();
+  h.add(local);
+  h.feeds({ 'extra_l.xml': [local] });
   h.responses.set(base + 'extra.xml', atom([], new Date(+now - 2 * 3600000)));
   h.service.fetchText = DisasterIngestionService.prototype.fetchText;
   h.service.http = { get: jest.fn(async url => ({ data: h.responses.get(url), status: 200, headers: {
@@ -244,13 +247,15 @@ test('fresh HTTP retrieval cannot certify stale content; cache diagnostics omit 
     'set-cookie': 'PRIVATE cookie', etag: 'PRIVATE opaque tag', location: 'https://PRIVATE.invalid',
   } })) };
   expect((await h.poll()).counters.warningReady).toBe(false);
+  expect(h.warnings()).toMatchObject({ label: 'Local warning status unavailable', active: [] });
   const diagnostic = h.logger.warning.mock.calls[0][1].metadata;
   expect(diagnostic).toMatchObject({ reason: 'stale_timestamp', feedUpdatedAt: new Date(+now - 2 * 3600000).toISOString(),
-    transport: { httpStatus: 200, retrievedAt: now.toISOString(), httpDate: now.toISOString(),
+    transport: { httpStatus: 200, retrievedAt: now.toISOString(), httpDate: now.toISOString(), lastModified: new Date(+now - 2 * 3600000).toISOString(),
       ageSeconds: 3600, maxAgeSeconds: 60, sharedMaxAgeSeconds: 120, cacheStatus: 'HIT' } });
   expect(JSON.stringify(h.logger.warning.mock.calls)).not.toContain('PRIVATE');
   h.responses.set(base + 'extra.xml', atom([]));
   expect((await h.poll()).counters.warningReady).toBe(true);
+  expect(h.warnings().state).toBe('active');
   expect(h.logger.notice).toHaveBeenCalledWith('JMA disaster feed polling recovered', expect.objectContaining({
     metadata: expect.objectContaining({ feedUpdatedAt: now.toISOString(), transport: expect.objectContaining({ ageSeconds: 3600 }) }),
   }));

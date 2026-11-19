@@ -9,6 +9,9 @@ block content
       h2 Upload another receipt
       p.section-subtitle Supported formats: JPEG, PNG, WebP, AVIF, GIF, SVG, TIFF.
       form(action="/receipt/upload_receipt", method="post", enctype="multipart/form-data")
+        input(type='hidden', name='_csrf', value=csrfToken)
+        label(for='purchase_date') Purchase date (optional for a single scan)
+        input#purchase_date.form-control(type='date', name='purchase_date')
         label(for="imgs") Select receipt image files
         .input-group
           input#imgs.form-control(type="file", name="imgs", multiple)
@@ -23,10 +26,11 @@ block content
       .view-panels
         .view-panel.active(data-panel="image")
           figure.receipt-image-frame
-            img.receipt-image(src=`/img/${receipt.file}`, alt="Receipt preview")
+            img.receipt-image(src=`/receipt/scan/${receipt._id}`, alt="Receipt preview")
             figcaption Zoom with your browser to inspect the fine print.
         .view-panel(data-panel="form")
           form.receipt-form(action=`/receipt/correct_receipt/${receipt._id.toString()}${historySuffix}`, method="post")
+            input(type='hidden', name='_csrf', value=csrfToken)
             input(type='hidden', name='history', value=returnHistory || 'last30')
             .form-grid
               .form-field
@@ -50,7 +54,9 @@ block content
             .form-actions
               input.btn.btn-success(type="submit", value="Update receipt")
           a.btn.btn-secondary(href=`/receipt/add-entry/${receipt._id.toString()}`, target="_blank", rel="noopener") Add to ledger
-          a.btn.btn-danger(href=`/receipt/delete_receipt/${receipt._id.toString()}${historySuffix}`) Delete
+          form(action=`/receipt/delete_receipt/${receipt._id}${historySuffix}`, method='post')
+            input(type='hidden', name='_csrf', value=csrfToken)
+            button.btn.btn-danger(type='submit') Delete
     if test_data
       section.section-card.debug-card
         h2 Debug data

@@ -12,18 +12,29 @@ async function auditGptImageModelCards({ model = require('../models/ai_model_car
   for (const id of ids) {
     const matches = cards.filter(card => card.api_model === id);
     const reasons = new Set();
+    const mismatches = new Set();
     if (!matches.length) reasons.add('missing_card');
     if (matches.length > 1) reasons.add('duplicate_cards');
     for (const card of matches) {
-      if (card.model_type !== 'image' || !['text', 'image'].every(value => card.in_modalities?.includes(value))
-        || !card.out_modalities?.includes('image')) reasons.add('incompatible_modalities');
+      if (card.model_type !== 'image') mismatches.add('model_type:expected_image');
+      for (const input of ['text', 'image']) {
+        if (!Array.isArray(card.in_modalities) || !card.in_modalities.includes(input)) {
+          mismatches.add('in_modalities:missing_' + input);
+        }
+      }
+      if (!Array.isArray(card.out_modalities) || !card.out_modalities.includes('image')) {
+        mismatches.add('out_modalities:missing_image');
+      }
+      if (mismatches.size) reasons.add('incompatible_modalities');
       if (card.deprecation_date != null) {
         const date = toDateOnlyString(card.deprecation_date);
         if (!date) reasons.add('invalid_deprecation_date');
         else if (date <= toLocalDateOnlyString(now)) reasons.add('deprecated_selectable_model');
       }
     }
-    if (reasons.size) issues.push({ model: id, reasons: [...reasons] });
+    if (reasons.size) issues.push({
+      model: id, reasons: [...reasons], ...(mismatches.size ? { mismatches: [...mismatches] } : {}),
+    });
   }
   const truncated = cards.length > 100;
   if (issues.length || truncated) log.warning('GPT Image model-card configuration needs review before deployment', {

@@ -47,6 +47,7 @@ const EmbeddingQueueJobSchema = new Schema({
 });
 
 EmbeddingQueueJobSchema.index({ status: 1, operation: 1, nextAttemptAt: 1, queuedAt: 1 });
+EmbeddingQueueJobSchema.index({ operation: 1, status: 1, queuedAt: 1 });
 EmbeddingQueueJobSchema.index({ status: 1, leaseExpiresAt: 1 });
 EmbeddingQueueJobSchema.index({
   'source.collectionName': 1,

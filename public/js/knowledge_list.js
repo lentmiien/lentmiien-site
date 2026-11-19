@@ -169,8 +169,8 @@
       if (embedButton.disabled) return;
 
       embedButton.disabled = true;
-      embedButton.textContent = 'Embedding...';
-      updateEmbedStatus(embedStatus, 'Embedding all knowledge entries...', null);
+      embedButton.textContent = 'Queuing...';
+      updateEmbedStatus(embedStatus, 'Queuing knowledge entries for indexing...', null);
 
       try {
         const response = await fetch('/chat4/knowledge/embed-all', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
@@ -181,10 +181,10 @@
         }
 
         const total = result.totalCount ?? 0;
-        const embedded = result.embeddedCount ?? 0;
+        const queued = result.queuedCount ?? 0;
         const failed = result.failedCount ?? 0;
         const failureNote = failed ? ` (${failed} failed)` : '';
-        updateEmbedStatus(embedStatus, `Embedded ${embedded}/${total} entries${failureNote}.`, failed ? 'is-warning' : 'is-success');
+        updateEmbedStatus(embedStatus, `Queued ${queued}/${total} entries${failureNote}.`, failed ? 'is-warning' : 'is-success');
       } catch (error) {
         updateEmbedStatus(embedStatus, error.message || 'Failed to embed knowledge entries.', 'is-error');
       } finally {

@@ -1,6 +1,7 @@
 const { createHash, randomUUID } = require('crypto');
 
 const {
+  Chat4KnowledgeModel,
   Chat5Model,
   Conversation5Model,
   EmbeddingQueueJob,
@@ -11,7 +12,7 @@ const {
   VectorEmbeddingHighQuality,
 } = require('../database');
 const { normalizeAiGatewayReservation } = require('../utils/aiGatewayReservation');
-const { isComfyUiStopped } = require('../utils/comfyUiState');
+const { inspectComfyUiState } = require('../utils/comfyUiState');
 const logger = require('../utils/logger');
 const { errorDiagnostics } = require('../utils/errorDiagnostics');
 const EmbeddingApiService = require('./embeddingApiService');
@@ -123,10 +124,30 @@ function wantsGoodImageHighQuality(image) {
   return image.rating_label === 'great' || image.rating_value === 4;
 }
 
+class GpuProbeError extends Error {
+  constructor(reason, message) {
+    super(message);
+    this.reason = reason;
+  }
+}
+
+function knowledgeText(entry) {
+  const tags = Array.isArray(entry.tags) ? entry.tags.join(', ') : '';
+  return [entry.title, entry.contentMarkdown, entry.category, tags].filter(Boolean).join('\n\n').trim();
+}
+
+function knowledgeSource(entry) {
+  return {
+    collectionName: 'knowledge', documentId: String(entry._id), contentType: 'knowledge_entry',
+    parentCollection: 'conversation', parentId: entry.originConversationId || null,
+  };
+}
+
 class EmbeddingQueueService {
   constructor({
     jobModel = EmbeddingQueueJob,
     chatModel = Chat5Model,
+    knowledgeModel = Chat4KnowledgeModel,
     conversationModel = Conversation5Model,
     messageInboxModel = MessageInboxEntry,
     goodImageModel = GoodImage,
@@ -172,6 +193,7 @@ class EmbeddingQueueService {
   } = {}) {
     this.jobModel = jobModel;
     this.chatModel = chatModel;
+    this.knowledgeModel = knowledgeModel;
     this.conversationModel = conversationModel;
     this.messageInboxModel = messageInboxModel;
     this.goodImageModel = goodImageModel;
@@ -213,8 +235,9 @@ class EmbeddingQueueService {
     this.timerDueAt = 0;
     this.runPromise = null;
     this.pausedReservation = null;
-    this.reservationCheckFailed = false;
+    this.failedGpuChecks = new Map();
     this.lastSourceReconcileAt = 0;
+    this.hadPendingUpserts = false;
   }
 
   normalizeOptions(options = {}, mode = 'default') {
@@ -362,7 +385,9 @@ class EmbeddingQueueService {
         };
       }
       const updated = await resolveQuery(this.jobModel.findOneAndUpdate(
-        { _id: jobId, revision: existing.revision },
+        // A worker can finish or replace the lease without changing the
+        // revision. Preserve a claim only if it is still the one observed.
+        { _id: jobId, revision: existing.revision, status: existing.status, claimToken: existing.claimToken ?? null },
         update,
         { new: true },
       ));
@@ -484,14 +509,19 @@ class EmbeddingQueueService {
         error.status = response.status;
         throw error;
       }
+      if (!response.body) throw new GpuProbeError('invalid_json', 'Empty Gateway response.');
       const chunks = [];
       let bytes = 0;
       for await (const chunk of response.body) {
         bytes += chunk.byteLength;
-        if (bytes > 256 * 1024) throw new Error('AI Gateway state response exceeded its size limit.');
+        if (bytes > 256 * 1024) throw new GpuProbeError('response_too_large', 'AI Gateway state response exceeded its size limit.');
         chunks.push(Buffer.from(chunk));
       }
-      return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      try {
+        return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      } catch {
+        throw new GpuProbeError('invalid_json', 'Invalid Gateway JSON.');
+      }
     } finally {
       clearTimeout(timer);
       controller.abort();
@@ -501,27 +531,29 @@ class EmbeddingQueueService {
   async isGpuBusy() {
     let check = 'reservation';
     const recovered = (busy) => {
-      if (this.reservationCheckFailed) {
+      if (this.failedGpuChecks.delete(check)) {
         this.logger.notice('Embedding queue GPU availability checks recovered', {
           category: 'embedding_queue', metadata: { check, busy },
         });
       }
-      this.reservationCheckFailed = false;
     };
     try {
       if (require('../middleware/databaseReadiness').isDatabaseReady()) {
         check = 'batch_session';
         const session = await require('../models/local_ai').Session.findOne({ activeSlot: 1 }).select('state remote').lean();
-        if (session?.remote && session.state !== 'released') return true;
+        const busy = Boolean(session?.remote && session.state !== 'released');
+        recovered(busy);
+        if (busy) return true;
       }
+      check = 'reservation';
       const rawReservation = await this.getReservation();
       const reservation = normalizeAiGatewayReservation(rawReservation);
-      if (typeof reservation?.active !== 'boolean') throw new Error('AI Gateway reservation state is unknown.');
+      if (typeof reservation?.active !== 'boolean') throw new GpuProbeError('unknown_state', 'Unknown reservation state.');
       const busy = reservation?.active === true
         || reservation?.dispatchPaused === true
         || Number(reservation?.blockedQueueDepth || 0) > 0;
+      recovered(busy);
       if (busy) {
-        recovered(true);
         const reservationKey = reservation?.id || reservation?.service || 'active';
         if (this.pausedReservation !== reservationKey) {
           this.pausedReservation = reservationKey;
@@ -537,8 +569,8 @@ class EmbeddingQueueService {
         return true;
       }
       check = 'comfyui_container';
-      const comfyStopped = isComfyUiStopped(await this.getContainers());
-      if (comfyStopped === null) throw new Error('ComfyUI container state is unknown.');
+      const { stopped: comfyStopped, reason } = inspectComfyUiState(await this.getContainers());
+      if (reason) throw new GpuProbeError(reason, 'ComfyUI inspection failed.');
       recovered(!comfyStopped);
       if (!comfyStopped) {
         if (this.pausedReservation !== 'comfyui_loaded') {
@@ -557,12 +589,15 @@ class EmbeddingQueueService {
       }
       return false;
     } catch (error) {
-      if (!this.reservationCheckFailed) {
+      const diagnostic = errorDiagnostics(error);
+      const reason = error instanceof GpuProbeError ? error.reason : (check === 'batch_session' ? 'session_lookup_failed'
+        : diagnostic.status ? 'http_status' : 'transport');
+      if (this.failedGpuChecks.get(check) !== reason) {
         this.logger.warning('Embedding queue deferred because GPU availability could not be verified', {
           category: 'embedding_queue',
-          metadata: { check, ...errorDiagnostics(error) },
+          metadata: { check, reason, ...diagnostic },
         });
-        this.reservationCheckFailed = true;
+        this.failedGpuChecks.set(check, reason);
       }
       return true;
     }
@@ -666,7 +701,16 @@ class EmbeddingQueueService {
     if (now.getTime() - this.lastSourceReconcileAt < this.sourceReconcileIntervalMs) return;
     this.lastSourceReconcileAt = now.getTime();
     try {
-      await this.reconcilePendingSources(now);
+      const counts = await this.reconcilePendingSources(now);
+      const oldest = await this.jobModel.findOne({ operation: 'upsert', status: 'pending' }, { queuedAt: 1 })
+        .sort({ queuedAt: 1 }).maxTimeMS(5000).lean();
+      if (oldest || this.hadPendingUpserts || Object.values(counts).some(Boolean)) {
+        this.logger.debug('Reconciled embedding source intents', {
+          category: 'embedding_queue', metadata: { ...counts,
+            oldestPendingUpsertAgeMs: oldest ? Math.max(0, now - oldest.queuedAt) : null },
+        });
+      }
+      this.hadPendingUpserts = Boolean(oldest);
     } catch (error) {
       this.logger.error('Failed to reconcile pending embedding source intents', {
         category: 'embedding_queue',
@@ -802,6 +846,27 @@ class EmbeddingQueueService {
       counts.queued += await this.enqueueGoodImage(image);
     }
     return counts;
+  }
+
+  async enqueueKnowledge(entry, { force = false } = {}) {
+    const modes = force ? [...SEARCH_MODES] : entry.pendingEmbeddingModes || [];
+    const source = knowledgeSource(entry);
+    const text = knowledgeText(entry);
+    for (const mode of modes) {
+      await this.enqueue(text, {}, [source], { mode, force });
+      // A crash between these writes replays the same deterministic job. An
+      // older reconciliation must never clear the request from a newer edit.
+      await this.knowledgeModel.updateOne({
+        _id: entry._id, pendingEmbeddingRevision: entry.pendingEmbeddingRevision ?? null,
+      }, { $pull: { pendingEmbeddingModes: mode } });
+    }
+    return modes.length;
+  }
+
+  async enqueueKnowledgeDeletion(entry) {
+    for (const mode of SEARCH_MODES) {
+      await this.enqueueDelete(knowledgeSource(entry), { mode, verifySourceState: false });
+    }
   }
 
   async reconcilePendingSources(now = this.now()) {
@@ -1010,17 +1075,18 @@ class EmbeddingQueueService {
       }
     }
 
+    if (this.knowledgeModel) {
+      const entries = await this.findLimited(this.knowledgeModel, {
+        'pendingEmbeddingModes.0': { $exists: true },
+      }, { updatedDate: 1 });
+      for (const entry of entries) queued += await this.enqueueKnowledge(entry);
+    }
+
     const images = await this.reconcileGoodImages();
     queued += images.queued;
     markedCompleted += images.markedCompleted;
     markedFailed += images.markedFailed;
 
-    if (queued || markedCompleted || markedDisabled || markedFailed) {
-      this.logger.debug('Reconciled embedding source intents', {
-        category: 'embedding_queue',
-        metadata: { queued, markedCompleted, markedDisabled, markedFailed },
-      });
-    }
     return { queued, markedCompleted, markedDisabled, markedFailed };
   }
 
@@ -1089,6 +1155,11 @@ class EmbeddingQueueService {
 
   async resolveStoredSource(job) {
     const source = job.source || {};
+    if (source.collectionName === 'knowledge') {
+      const entry = await resolveQuery(this.knowledgeModel.findById(source.documentId), { lean: true });
+      const text = entry ? this.normalizeSourceText(knowledgeText(entry)) : '';
+      return { exists: Boolean(entry), enabled: Boolean(text), text };
+    }
     if (source.collectionName === GOOD_IMAGE_COLLECTION) {
       const image = await resolveQuery(this.goodImageModel.findById(source.documentId), { lean: true });
       if (!image) return { exists: false, enabled: false, text: '' };
@@ -1411,7 +1482,8 @@ class EmbeddingQueueService {
 
   async failClaim(job, error) {
     const retryable = isRetryableEmbeddingError(error);
-    const message = safeErrorMessage(error);
+    const message = job.source?.collectionName === 'knowledge'
+      ? 'Knowledge indexing attempt failed.' : safeErrorMessage(error);
     const now = this.now();
     const nextAttemptAt = retryable
       ? new Date(now.getTime() + this.retryDelayForAttempt(job.attempts || 1))

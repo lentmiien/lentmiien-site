@@ -244,8 +244,14 @@ describe('amiamiItemFallbackService', () => {
     const result = await f.service.attemptMissingItemScrape('FIGURE-400');
     expect(result.status).toBe('failed');
     expect(serviceLogger.warning.mock.calls[0][1].metadata.diagnostic).toMatchObject({
-      code: 'AMIAMI_HTTP', status: 400, attempts: 1, retryable: false, headers: { 'content-type': 'application/json' },
+      code: 'AMIAMI_HTTP', status: 400, attempts: 1, retryable: false, contentType: 'application/json',
     });
+    const output = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await jest.requireActual('../../utils/logger').warning(...serviceLogger.warning.mock.calls[0]);
+      expect(JSON.stringify(output.mock.calls)).toContain('application/json');
+      expect(JSON.stringify(output.mock.calls)).not.toContain('PRIVATE');
+    } finally { output.mockRestore(); }
     expect(JSON.stringify([result, serviceLogger.warning.mock.calls])).not.toContain('PRIVATE');
     expect(fetchDetail).toHaveBeenCalledTimes(1);
   });

@@ -1612,7 +1612,7 @@ block script
         for (const file of sendableFiles) {
           try {
             const blob = await dataUrlFromPath(file.result.imagePath);
-            const filename = file.originalname || `ocr-receipt-${appended + 1}.jpg`;
+            const filename = `ocr-receipt-${appended + 1}.jpg`; // OCR previews are encoded as JPEG.
             formData.append('imgs', blob, filename);
             formData.append('layout_texts', file.result.layoutText || '');
             appended += 1;
@@ -1634,21 +1634,16 @@ block script
           const response = await fetch(RECEIPT_ENDPOINT, {
             method: 'POST',
             body: formData,
-            headers: { Accept: 'application/json' },
+            headers: { Accept: 'application/json', 'X-CSRF-Token': window.__OCR_CSRF__ },
           });
           const payload = await response.json();
-          if (!response.ok) {
-            throw new Error(payload.error || 'Failed to send receipts.');
-          }
+          const failures = Array.isArray(payload.failures) ? payload.failures : [];
+          if (!response.ok && !failures.length) throw new Error(payload.error || 'Failed to send receipts.');
           const receipts = normalizeReceiptList(payload.receipts);
-          if (jobId) {
-            state.receiptsByJob[jobId] = receipts;
-            renderJobDetails();
-          }
-          const savedDetails = receipts.length
-            ? ` Saved ${receipts.length} ${receipts.length === 1 ? 'receipt' : 'receipts'}.`
-            : '';
-          setFeedback(`Sent ${appended} ${appended === 1 ? 'receipt' : 'receipts'} to the inbox.${savedDetails}`, 'success');
+          state.receiptsByJob[jobId] = receipts;
+          renderJobDetails();
+          const issues = failures.map(f => `File ${f.index + 1}: ${f.message}`).join(' ');
+          setFeedback(`Saved ${receipts.length} of ${appended} receipts. ${issues}`.trim(), failures.length ? 'error' : 'success');
         } catch (error) {
           setFeedback(error.message || 'Failed to send receipts.', 'error');
         } finally {

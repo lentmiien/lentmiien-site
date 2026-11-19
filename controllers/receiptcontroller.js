@@ -1,27 +1,9 @@
-const { assertOpenAIModelActive } = require('../utils/openaiModelDeprecation');
-const OpenAI = require('openai');
-const { zodResponseFormat } = require('openai/helpers/zod');
-const { z } = require('zod');
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const BusinessInfo = z.object({
-  name: z.string(),
-  address: z.string(),
-});
-const ReciptDetails = z.object({
-  date: z.string(),
-  time: z.string(),
-  total_amount: z.number(),
-  payment_method: z.enum(["credit card", "cash"]),
-  business_info: BusinessInfo,
-});
-
-const MessageService = require('../services/messageService');
-const ConversationService = require('../services/conversationService');
-const KnowledgeService = require('../services/knowledgeService');
+const { isObjectIdOrHexString } = require('mongoose');
+const logger = require('../utils/logger');
+const { readLegacyScan } = require('../services/legacyReceiptScan');
+const { parseOptionalDateOnly } = require('../utils/dateOnly');
+const { errorDiagnostics } = require('../utils/errorDiagnostics');
+const { saveReceiptFile, ReceiptFileError } = require('../services/receiptUploadService');
 const BudgetService = require('../services/budgetService');
 const CreditCardService = require('../services/creditCardService');
 const {
@@ -30,12 +12,18 @@ const {
   resolveReceiptHistorySelection,
   buildReceiptHistoryReturnUrl,
 } = require('../utils/receiptHistory');
-const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, Receipt, ReceiptMappingRule } = require('../database');
+const { Receipt, ReceiptMappingRule } = require('../database');
 
-// Instantiate the services
-const messageService = new MessageService(Chat4Model, FileMetaModel);
-const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
-const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
+// Existing unowned records belong to the shared legacy ledger. New receipts
+// belong to their uploader, including when two operators submit the same scan.
+function receiptScope(req) {
+  return { $or: [{ ownerId: req.user._id }, { ownerId: null }] };
+}
+
+function findReceipt(req) {
+  if (!isObjectIdOrHexString(req.params.id)) return null;
+  return Receipt.findOne({ _id: req.params.id, ...receiptScope(req) });
+}
 
 const normalizeLayoutTexts = (input, count) => {
   if (!count) return [];
@@ -59,6 +47,7 @@ const formatReceiptForJson = (receipt) => {
     business_address: receipt.business_address,
     layout_text: receipt.layout_text,
     file: receipt.file,
+    image_url: id ? `/receipt/scan/${id}` : null,
     view_url: id ? `/receipt/view_receipt/${id}` : null,
   };
 };
@@ -335,9 +324,9 @@ const renderMappingRulesPage = async (res, options = {}) => {
   });
 };
 
-const fetchReceiptHistoryState = async (requestedHistory) => {
-  const historyState = getReceiptHistoryConfig(requestedHistory);
-  const receipts = await Receipt.find(historyState.query).sort('-date');
+const fetchReceiptHistoryState = async (req) => {
+  const historyState = getReceiptHistoryConfig(req.query.history);
+  const receipts = await Receipt.find({ ...historyState.query, ...receiptScope(req) }).sort('-date');
   return {
     ...historyState,
     receipts,
@@ -346,7 +335,7 @@ const fetchReceiptHistoryState = async (requestedHistory) => {
 
 exports.receipt = async (req, res, next) => {
   try {
-    const historyState = await fetchReceiptHistoryState(req.query.history);
+    const historyState = await fetchReceiptHistoryState(req);
     res.render('receipt', historyState);
   } catch (error) {
     if (typeof next === 'function') return next(error);
@@ -356,7 +345,7 @@ exports.receipt = async (req, res, next) => {
 
 exports.receipt_history = async (req, res, next) => {
   try {
-    const historyState = await fetchReceiptHistoryState(req.query.history);
+    const historyState = await fetchReceiptHistoryState(req);
     res.render('receipt_history_partial', historyState);
   } catch (error) {
     if (typeof next === 'function') return next(error);
@@ -444,7 +433,7 @@ exports.delete_mapping_rule = async (req, res, next) => {
 
 exports.receipt_entry_form = async (req, res, next) => {
   try {
-    const receipt = await Receipt.findById(req.params.id);
+    const receipt = await findReceipt(req);
     if (!receipt) {
       return res.status(404).render('receipt_entry_result', { ok: false, error: 'Receipt not found.' });
     }
@@ -506,90 +495,70 @@ exports.receipt_entry_form = async (req, res, next) => {
 };
 
 exports.upload_receipt = async (req, res) => {
-  // Context and Prompt
-  const context = `You are about to use OpenAI's vision model to process receipts, primarily in Japanese. Your task is to accurately extract specific pieces of information from each receipt and present them in a consistent JSON format. The information you need to extract includes:\n\n1. Date of the purchase.\n2. Time of the purchase.\n3. Total purchase amount.\n4. Payment method (e.g., credit card, cash).\n5. Information identifying the business where the purchase was made (e.g., business name, address).\n\nPlease ensure that the output JSON format remains consistent across different receipts.\n\nHere is the JSON template you should use for the output:\n\n{\n  "date": "YYYY-MM-DD",\n  "time": "HH:MM",\n  "total_amount": "X,XXX.XX",\n  "payment_method": "credit card/cash",\n  "business_info": {\n    "name": "Business Name",\n    "address": "Business Address"\n  }\n}`;
-  const prompt = `Please extract the following details from the receipt provided:\n1. Date of the purchase.\n2. Time of the purchase.\n3. Total purchase amount.\n4. Payment method (e.g., credit card, cash).\n5. Information identifying the business where the purchase was made (e.g., business name, address).\n\nAssume most receipts will be in Japanese. The output should be structured in the given JSON format.\n\nExample JSON output:\n\n{\n  "date": "YYYY-MM-DD",\n  "time": "HH:MM",\n  "total_amount": "X,XXX.XX",\n  "payment_method": "credit card/cash",\n  "business_info": {\n    "name": "Business Name",\n    "address": "Business Address"\n  }\n}\n\nMake sure to follow this template strictly for consistent results.`;
-
-  const added_array = [];
+  const files = req.files || [];
+  const receipts = [];
   const raw_data = [];
-  const layoutTexts = normalizeLayoutTexts(req.body.layout_texts, req.files?.length || 0);
-  const defaultHistoryState = getReceiptHistoryConfig(DEFAULT_HISTORY_VALUE);
-
-  if (!req.files || !req.files.length) {
+  const failures = [];
+  let status = 200;
+  const layoutTexts = normalizeLayoutTexts(req.body.layout_texts, files.length);
+  const dateOverride = req.body.purchase_date;
+  function respond(statusCode, error) {
     if (req.accepts(['html', 'json']) === 'json') {
-      return res.status(400).json({ error: 'Please upload at least one receipt image.' });
+      return res.status(statusCode).json({ receipts: receipts.map(formatReceiptForJson), raw_data, failures, error });
     }
-    return res.status(400).render('receipt', {
-      ...defaultHistoryState,
-      receipts: added_array,
-      raw_data,
-      error: 'Please upload at least one receipt image.',
+    return res.status(statusCode).render('receipt', {
+      ...getReceiptHistoryConfig(DEFAULT_HISTORY_VALUE), receipts, raw_data, failures, error,
     });
   }
-
-  for (let i = 0; i < req.files.length; i++) {
-    const layout_text = (layoutTexts[i] || '').trim();
-    const { new_filename, b64_img } = await conversationService.loadProcessNewImageToBase64(req.files[i].destination + req.files[i].filename);
-    await assertOpenAIModelActive('gpt-6-luna', 'chat.completions.create');
-    const response = await openai.chat.completions.create({
-      model: "gpt-6-luna",
-      messages: [
-        { role: "system", content: context },
-        { role: "user", content: [
-          {
-            type: "image_url",
-            image_url: {
-              url: `data:image/jpeg;base64,${b64_img}`,
-              detail: 'high'
-            }
-          },
-          { type: 'text', text: prompt },
-          ...(layout_text ? [{ type: 'text', text: `OCR layout text:\n${layout_text}` }] : []),
-        ]},
-      ],
-      response_format: zodResponseFormat(ReciptDetails, "recipt_details"),
-    });
-    const recipt_details = JSON.parse(response.choices[0].message.content);
-
-    const newReceipt = new Receipt({
-      date: new Date(recipt_details.date),
-      amount: recipt_details.total_amount,
-      method: recipt_details.payment_method,
-      business_name: recipt_details.business_info.name,
-      business_address: recipt_details.business_info.address,
-      layout_text,
-      file: new_filename,
-    });
-    await newReceipt.save();
-
-    raw_data.push({
-      date: recipt_details.date,
-      time: recipt_details.time,
-      total_amount: recipt_details.total_amount,
-      payment_method: recipt_details.payment_method,
-      business_info: {
-        name: recipt_details.business_info.name,
-        address: recipt_details.business_info.address,
-      },
-      layout_text,
-    });
-    added_array.push(newReceipt);
+  if (!files.length) return respond(400, 'Please upload at least one receipt image.');
+  if (dateOverride && (typeof dateOverride !== 'string' || files.length !== 1)) {
+    return respond(400, 'Upload one file at a time when supplying its purchase date.');
   }
-
-  if (req.accepts(['html', 'json']) === 'json') {
-    return res.json({ receipts: added_array.map(formatReceiptForJson), raw_data });
+  for (const [index, file] of files.entries()) {
+    try {
+      const receipt = await saveReceiptFile({
+        Receipt, ownerId: req.user._id, file, layoutText: layoutTexts[index].trim(), dateOverride,
+      });
+      receipts.push(receipt);
+      raw_data.push({
+        date: receipt.date.toISOString().slice(0, 10), time: receipt.time,
+        total_amount: receipt.amount, payment_method: receipt.method, layout_text: receipt.layout_text,
+        business_info: { name: receipt.business_name, address: receipt.business_address },
+      });
+    } catch (cause) {
+      const known = cause instanceof ReceiptFileError;
+      const field = known ? cause.field : 'storage';
+      const kind = known ? cause.kind : 'save_failed';
+      if (!known) logger.error('Receipt persistence failed', { category: 'receipt', metadata: errorDiagnostics(cause) });
+      else if (cause.status === 422) logger.warning('Receipt file failed validation', { category: 'receipt', metadata: { field, kind } });
+      status = Math.max(status, known ? cause.status : 503);
+      failures.push({ index, field, kind, message: known ? cause.message : 'Could not confirm the save. Retry this file.' });
+    }
   }
+  return respond(receipts.length && failures.length ? 207 : status);
+};
 
-  res.render('receipt', {
-    ...defaultHistoryState,
-    receipts: added_array,
-    raw_data,
-  });
+exports.receipt_scan = async (req, res) => {
+  const query = findReceipt(req);
+  if (!query) return res.sendStatus(404);
+  const receipt = await query.select('file +scanJpeg');
+  if (!receipt) return res.sendStatus(404);
+  let jpeg = receipt.scanJpeg;
+  if (!jpeg && receipt.file) {
+    try {
+      jpeg = await readLegacyScan(receipt.file);
+    } catch (error) {
+      logger.warning('Stored legacy receipt scan could not be read', { category: 'receipt', metadata: errorDiagnostics(error) });
+    }
+  }
+  if (!jpeg) return res.sendStatus(404);
+  res.set({ 'Content-Type': 'image/jpeg', 'Content-Disposition': 'inline; filename="receipt.jpg"', 'X-Content-Type-Options': 'nosniff' });
+  return res.send(jpeg);
 };
 
 exports.submit_receipt_entry = async (req, res, next) => {
   try {
-    const receipt = await Receipt.findById(req.params.id);
+    const receipt = await findReceipt(req);
     if (!receipt) {
       const message = 'Receipt not found.';
       if (req.accepts(['html', 'json']) === 'json') {
@@ -623,16 +592,24 @@ exports.submit_receipt_entry = async (req, res, next) => {
 };
 
 exports.view_receipt = async (req, res) => {
-  const receipt = await Receipt.findById(req.params.id);
+  const receipt = await findReceipt(req);
+  if (!receipt) return res.sendStatus(404);
   const returnHistory = resolveReceiptHistorySelection(req.query.history);
   res.render('upload_receipt', { receipt, returnHistory });
 };
 
 exports.correct_receipt = async (req, res) => {
-  const receipt = await Receipt.findById(req.params.id);
+  const receipt = await findReceipt(req);
 
-  receipt.date = new Date(req.body.date);
-  receipt.amount = parseInt(req.body.amount);
+  if (!receipt) return res.sendStatus(404);
+  let date;
+  try { date = parseOptionalDateOnly(req.body.date); } catch { /* Invalid calendar date. */ }
+  const amount = typeof req.body.amount === 'string' && req.body.amount.trim() ? Number(req.body.amount) : NaN;
+  if (!date || !Number.isFinite(amount) || typeof req.body.method !== 'string' || !req.body.method.trim()) {
+    return res.status(422).send('Enter a valid purchase date, amount and payment method.');
+  }
+  receipt.date = date;
+  receipt.amount = amount;
   receipt.method = req.body.method;
   receipt.business_name = req.body.business_name;
   receipt.business_address = req.body.business_address;
@@ -643,7 +620,9 @@ exports.correct_receipt = async (req, res) => {
 };
 
 exports.delete_receipt = async (req, res) => {
-  await Receipt.findByIdAndDelete(req.params.id);
+  if (!isObjectIdOrHexString(req.params.id)) return res.sendStatus(404);
+  const result = await Receipt.deleteOne({ _id: req.params.id, ...receiptScope(req) });
+  if (!result.deletedCount) return res.sendStatus(404);
   res.redirect(buildReceiptHistoryReturnUrl(req.query.history));
 };
 

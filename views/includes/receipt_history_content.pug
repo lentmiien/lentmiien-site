@@ -30,7 +30,9 @@
                 .action-buttons
                   a.btn.btn-primary(href=`/receipt/view_receipt/${d._id.toString()}${historySuffix}`) View/Edit
                   a.btn.btn-secondary(href=`/receipt/add-entry/${d._id.toString()}`, target='_blank', rel='noopener') Add to ledger
-                  a.btn.btn-danger(href=`/receipt/delete_receipt/${d._id.toString()}${historySuffix}`) Delete
+                  form(action=`/receipt/delete_receipt/${d._id}${historySuffix}`, method='post')
+                    input(type='hidden', name='_csrf', value=csrfToken)
+                    button.btn.btn-danger(type='submit') Delete
   else
     .history-empty
       h3 Nothing here yet

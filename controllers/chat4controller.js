@@ -3,12 +3,12 @@ const { renderMarkdownSafe } = require('../utils/chat5Markdown');
 const sharp = require('sharp');// For getting image size
 const fs = require('fs').promises;
 const logger = require('../utils/logger');
+const { errorDiagnostics } = require('../utils/errorDiagnostics');
 
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const TemplateService = require('../services/templateService');
 const KnowledgeService = require('../services/knowledgeService');
-const EmbeddingApiService = require('../services/embeddingApiService');
 const AgentService = require('../services/agentService');
 const BatchService = require('../services/batchService');
 const {
@@ -27,8 +27,7 @@ const { whisper, GetOpenAIModels } = require('../utils/ChatGPT');
 
 // Instantiate the services
 const messageService = new MessageService(Chat4Model, FileMetaModel);
-const embeddingApiService = new EmbeddingApiService();
-const knowledgeService = new KnowledgeService(Chat4KnowledgeModel, embeddingApiService);
+const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
 const agentService = new AgentService(AgentModel, conversationService, messageService);
@@ -333,14 +332,14 @@ exports.embed_all_knowledge = async (req, res) => {
     res.json({
       ok: true,
       totalCount: summary.totalCount,
-      embeddedCount: summary.embeddedCount,
+      queuedCount: summary.queuedCount,
       failedCount: summary.failed.length,
       failed: summary.failed,
     });
   } catch (error) {
     logger.error('Failed to embed knowledge entries', {
       category: 'knowledge',
-      metadata: { user_id, message: error?.message || error },
+      metadata: errorDiagnostics(error),
     });
     res.status(500).json({ ok: false, error: 'Unable to embed knowledge entries right now.' });
   }

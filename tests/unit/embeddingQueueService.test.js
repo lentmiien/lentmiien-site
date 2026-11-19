@@ -275,9 +275,71 @@ describe('embedding GPU admission', () => {
     expect(await service.isGpuBusy()).toBe(busy);
     await service.isGpuBusy();
     expect(logger.notice.mock.calls.filter(([message]) => message.includes('availability checks recovered'))).toEqual([
-      ['Embedding queue GPU availability checks recovered', { category: 'embedding_queue', metadata: { check: busy ? 'reservation' : 'comfyui_container', busy } }],
+      ['Embedding queue GPU availability checks recovered', { category: 'embedding_queue', metadata: { check: 'reservation', busy } }],
     ]);
     expect(logger.warning).toHaveBeenCalledTimes(1);
+  });
+
+  test('a busy reservation never recovers a skipped container probe, including after a successful session lookup', async () => {
+    const readiness = jest.spyOn(require('../../middleware/databaseReadiness'), 'isDatabaseReady').mockReturnValue(true);
+    const session = jest.spyOn(require('../../models/local_ai').Session, 'findOne')
+      .mockReturnValue({ select: () => ({ lean: async () => null }) });
+    const logger = createLogger();
+    const reservation = jest.fn().mockResolvedValue({ active: false });
+    const containers = jest.fn().mockResolvedValue({ containers: [] });
+    const worker = new EmbeddingQueueService({ loggerImpl: logger, getReservation: reservation, getContainers: containers });
+    const recoveries = () => logger.notice.mock.calls.filter(([msg]) => msg.includes('checks recovered')).map(([, opts]) => opts.metadata);
+    try {
+      expect(await worker.isGpuBusy()).toBe(true);
+      expect(logger.warning.mock.calls.at(-1)[1].metadata).toMatchObject({ check: 'comfyui_container', reason: 'container_missing' });
+      reservation.mockRejectedValueOnce(new Error('private'));
+      expect(await worker.isGpuBusy()).toBe(true);
+      expect(logger.warning.mock.calls.at(-1)[1].metadata).toMatchObject({ check: 'reservation', reason: 'transport' });
+      reservation.mockResolvedValueOnce({ active: true });
+      expect(await worker.isGpuBusy()).toBe(true);
+      expect(containers).toHaveBeenCalledTimes(1);
+      expect(recoveries()).toEqual([{ check: 'reservation', busy: true }]);
+      expect(await worker.isGpuBusy()).toBe(true);
+      expect(logger.warning).toHaveBeenCalledTimes(2);
+      containers.mockResolvedValue({ containers: [{ id: 'comfyui', state: 'exited', running: false }] });
+      expect(await worker.isGpuBusy()).toBe(false);
+      expect(recoveries().at(-1)).toEqual({ check: 'comfyui_container', busy: false });
+    } finally {
+      readiness.mockRestore();
+      session.mockRestore();
+    }
+  });
+
+  test('uses only lifecycle entries in a real-sized Gateway catalog and fails closed on incomplete evidence', () => {
+    const { inspectComfyUiState } = require('../../utils/comfyUiState');
+    const fields = Object.fromEntries(Array.from({ length: 28 }, (_, i) => ['field_' + i, 'irrelevant']));
+    const catalog = { docker_available: true, containers: Array.from({ length: 40 },
+      (_, i) => ({ ...fields, id: 'service_' + i, state: 'running' })) };
+    catalog.containers.push({ id: 'comfyui', state: 'exited', running: false });
+    expect(inspectComfyUiState(catalog)).toEqual({ stopped: true, reason: null });
+    catalog.containers.push({ gatewayPrefix: '/comfy', isRunning: true });
+    expect(inspectComfyUiState(catalog).stopped).toBe(false);
+    expect(inspectComfyUiState({ docker_available: false, containers: catalog.containers })).toMatchObject({ stopped: null });
+    expect(inspectComfyUiState({ default_stopped: { comfyui: 'exited' } }).stopped).toBeNull();
+    expect(inspectComfyUiState({ containers: { comfyui: { state: 'inspection_error', running: false } } }))
+      .toEqual({ stopped: null, reason: 'unknown_state' });
+    expect(inspectComfyUiState({ containers: [{ id: 'comfyui', state: 'exited' }, ...Array(501)] }))
+      .toEqual({ stopped: null, reason: 'catalog_limit' });
+  });
+
+  test.each([
+    [new Response('PRIVATE MALFORMED JSON'), 'invalid_json'],
+    [new Response(null, { status: 403 }), 'http_status'],
+    [new Response('x'.repeat(256 * 1024 + 1)), 'response_too_large'],
+  ])('reports the bounded reason for an unreadable response', async (reply, reason) => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce(reply);
+    const logger = createLogger();
+    try {
+      const worker = new EmbeddingQueueService({ loggerImpl: logger, getReservation: async () => ({ active: false }) });
+      expect(await worker.isGpuBusy()).toBe(true);
+      expect(logger.warning.mock.calls[0][1].metadata).toMatchObject({ check: 'comfyui_container', reason });
+      expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('PRIVATE');
+    } finally { fetchSpy.mockRestore(); }
   });
 
   test('bounded state reads use the configured Gateway hosts and admin header only for container inspection', async () => {
@@ -680,6 +742,25 @@ describe('EmbeddingQueueService', () => {
     await expect(service.enqueue('Same text', {}, [source])).resolves.toBe(existing);
     expect(jobModel.create).not.toHaveBeenCalled();
     expect(jobModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('an edit racing a completed claim cannot strand the new revision in processing without a lease', async () => {
+    const old = createJob();
+    let current = { ...old };
+    const jobModel = {
+      findById: async () => ({ ...current }),
+      findOneAndUpdate: async (filter, update) => {
+        // Completion between the read and conditional write keeps the revision.
+        current.status = 'completed';
+        delete current.claimToken;
+        if (filter.status !== current.status || filter.claimToken != null) return null;
+        Object.assign(current, update.$set);
+        current.revision += update.$inc.revision;
+        return { ...current };
+      },
+    };
+    const worker = new EmbeddingQueueService({ jobModel, embeddingService: createEmbeddingService() });
+    expect(await worker.enqueue('Updated content', {}, [source])).toMatchObject({ status: 'pending', revision: 2 });
   });
 
   test('revises a hard-delete tombstone when a later edit needs source verification', async () => {
