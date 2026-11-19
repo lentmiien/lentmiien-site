@@ -118,7 +118,20 @@ function createRouter({ repository = repo, queueService = queue, roleModel = Rol
     res.send(scan.bytes);
   });
 
-  router.use('/pages/:id', requireCap(REVIEW), throttle(60));
+  const pageThrottle = throttle(60);
+  // A filed page's readers may correct its storage labels. Other page edits require review and management access.
+  router.post('/pages/:id/location', pageThrottle, mutationForm, csrf.requireToken, async (req, res) => {
+    allowFields(req.body, ['revision', 'yearLabel', 'folderId', 'groupLabel']);
+    const physical = physicalLocation({ ...req.body, decision: 'keep' });
+    const { id } = req.params;
+    const revision = integer(req.body.revision);
+    await repository.mutate(repository.pageScope(id, req.user._id), group => {
+      workflow.editLocation(group.pages.id(id), revision, physical);
+    });
+    res.redirect(303, base + '/pages/' + req.params.id + '?notice=location');
+  });
+
+  router.use('/pages/:id', requireCap(REVIEW), pageThrottle);
   async function changePage(req, change) {
     const { id } = req.params;
     const actor = req.user._id;
@@ -131,12 +144,6 @@ function createRouter({ repository = repo, queueService = queue, roleModel = Rol
       ? { text: req.body.groupDescription, revision: integer(req.body.groupRevision) } : null;
     await changePage(req, (group, page, actor) => workflow.reviewPage(group, page, actor, integer(req.body.revision), fields, summaryEdit));
     res.redirect(303, base + '/review/next?notice=filed');
-  });
-  router.post('/pages/:id/location', mutationForm, csrf.requireToken, async (req, res) => {
-    allowFields(req.body, ['revision', 'yearLabel', 'folderId', 'groupLabel']);
-    const physical = physicalLocation({ ...req.body, decision: 'keep' });
-    await changePage(req, (_group, page) => workflow.editLocation(page, integer(req.body.revision), physical));
-    res.redirect(303, base + '/pages/' + req.params.id + '?notice=location');
   });
   router.post('/pages/:id/redo', smallForm, csrf.requireToken, async (req, res) => {
     allowFields(req.body, ['revision', 'mode']);

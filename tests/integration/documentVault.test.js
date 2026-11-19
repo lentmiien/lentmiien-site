@@ -69,9 +69,10 @@ suite('Document vault with standalone MongoDB', () => {
     site = await listen(app);
     scan = await sharp({ create: { width: 16, height: 24, channels: 3, background: 'white' } }).png().toBuffer();
     users = {};
-    for (const [name, role] of Object.entries({ clerk: 'user', owner: 'family', viewer: 'user', admin: 'admin', denied: 'other' })) {
+    for (const [name, role] of Object.entries({ clerk: 'user', owner: 'family', viewer: 'user', reader: 'other', admin: 'admin', denied: 'other' })) {
       users[name] = await User.create({ name, type_user: role, email: name + '@example.invalid', hash_password: 'fixture' });
     }
+    await require('../../models/role').create({ name: 'reader', type: 'user', permissions: ['vault.documents.read'] });
     await Promise.all([Group.init(), Scan.init(), Queue.init()]);
   });
   beforeEach(async () => {
@@ -215,20 +216,25 @@ suite('Document vault with standalone MongoDB', () => {
   test('corrects one filed storage location and enforces scope, revision and page state', async () => {
     const physical = { decision: 'keep', yearLabel: '2025', folderId: 'F.1', groupLabel: 'Old' };
     const seed = { ...answer, filename: 'scan.png', state: 'stored', filedAt: new Date(), physical };
-    const group = await Group.create({ ownerId: users.owner._id, uploaderId: users.clerk._id, viewerIds: [users.viewer._id],
+    const group = await Group.create({ ownerId: users.owner._id, uploaderId: users.clerk._id, viewerIds: [users.viewer._id, users.reader._id],
       state: 'ready', pages: [seed, { ...seed, physical: { decision: 'dispose' } }, { ...seed, state: 'review', filedAt: null }] });
     const [page, disposed, pending] = group.pages;
     const path = '/pages/' + page._id;
     const body = new URLSearchParams({ revision: '0', yearLabel: '2025', folderId: 'F.1', groupLabel: 'Corrected' });
     expect(await (await request('owner', path)).text()).toContain('Edit storage location');
-    expect(await (await request('viewer', path)).text()).not.toContain('Edit storage location');
-    for (const actor of ['viewer', 'clerk', 'admin']) expect((await request(actor, path + '/location', body)).status).toBe(404);
-    expect((await request('owner', path + '/location', body, false)).status).toBe(403);
+    for (const actor of ['viewer', 'reader']) {
+      expect(await (await request(actor, path)).text()).toContain('Edit storage location');
+      expect((await request(actor, '/pages/' + pending._id + '/location', body)).status).toBe(404);
+      expect((await request(actor, '/pages/' + disposed._id + '/location', body)).status).toBe(409);
+    }
+    for (const actor of ['clerk', 'admin']) expect((await request(actor, path + '/location', body)).status).toBe(404);
+    expect((await request('reader', path + '/location', body, false)).status).toBe(403);
+    expect((await request('reader', path + '/redo', new URLSearchParams({ revision: '0', mode: 'chat' }))).status).toBe(403);
     for (const other of [disposed, pending]) expect((await request('owner', '/pages/' + other._id + '/location', body)).status).toBe(409);
     const blank = new URLSearchParams(body);
     blank.set('groupLabel', ' ');
     expect((await request('owner', path + '/location', blank)).status).toBe(422);
-    expect((await request('owner', path + '/location', body)).status).toBe(303);
+    expect((await request('reader', path + '/location', body)).status).toBe(303);
     expect((await request('owner', path + '/location', body)).status).toBe(409);
     const saved = await Group.findById(group._id);
     expect(saved.pages[0]).toMatchObject({ state: 'stored', filedAt: page.filedAt, revision: 1, physical: { ...physical, groupLabel: 'Corrected' } });
@@ -236,6 +242,9 @@ suite('Document vault with standalone MongoDB', () => {
     expect(saved.pages[2].physical.groupLabel).toBe('Old');
     expect((await repo.list('archive', users.viewer._id, { filters: { groupLabel: 'corrected' } })).rows.map(p => p._id)).toEqual([page._id]);
     expect((await repo.list('archive', users.viewer._id, { filters: { groupLabel: 'Old' } })).rows).toEqual([]);
+    body.set('revision', '1');
+    await Group.updateOne({ _id: group._id }, { $pull: { viewerIds: users.reader._id } });
+    expect((await request('reader', path + '/location', body)).status).toBe(404);
   });
 
   test('combines inclusive page date bounds and independent exact location filters across archive pages', async () => {

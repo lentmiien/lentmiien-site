@@ -110,7 +110,7 @@ block content
           if paper.decision
             dt Physical copy
             dd= paper.decision === 'dispose' ? 'For disposal' : [paper.yearLabel, paper.folderId, paper.groupLabel].join(' / ')
-        if filed && manage && review && paper.decision === 'keep'
+        if filed && paper.decision === 'keep'
           details.source
             summary Edit storage location
             form.location-edit(method='post', action=target + '/location')
