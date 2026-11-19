@@ -161,6 +161,10 @@ function journalPage() {
     ol.append(li);
   }
   left.append(ol);
+  right.append(el('h3', 'The Spectrum Shores'));
+  paragraph('Sail to the four outer islands for sculpture stone. Hold left click to gather the colored layers by hand, equip a stone from your pack, then right click a face to build. Each shore also has pigment seams for a driftwood pick, and a local creature that drops the same pigment.', right);
+  for (const i of D.islands.filter(i => i.shades)) paragraph(`${i.name} (${i.x}, ${i.z}) · ${i.colors.map(([shade]) => shade).join(', ')} · ${i.creature}`, right);
+  paragraph('For a seven-band arch, stack scarlet, tangerine, sunflower, emerald, cobalt, indigo and violet in nested curves. Mix all four pigments with clay at a kiln for a striped mosaic.', right);
   right.append(el('h3', 'Outer gardens'));
   paragraph('Your old shores and camp are unchanged. Sail west to Reedglass Haven (−665, −100), or east to Honeycomb Isle (660, 220). Mine their caves for jade and amber, gather bamboo, and build a renewable bamboo nursery. New crossings take roughly 25–45 seconds by raft from the nearest old shore.', right);
   for (const [id, stages] of Object.entries(D.projects)) {
@@ -171,7 +175,7 @@ function journalPage() {
   }
   right.append(el('h3', 'Notes washed ashore'));
   paragraph(`Cave collection: ${game.state.caveFinds.length} / ${D.islands.length} tidekeeper caches. Explore the deepest chamber on each island; each cache rewards you once.`, right);
-  paragraph('No rush. Only Honeycomb Isle has pebble mites: three barehanded hits or one staff hit shoos one. They stay on their island and cannot kill you. Hunger takes over two hours to empty and never kills you. Berries regrow; tools never break. Cold calls for a cloak, tea, or a warm home.', right);
+  paragraph('No rush. Honeycomb Isle and the four Spectrum Shores have gentle creatures: three barehanded hits or one staff hit shoo one. They stay on their island and cannot kill you. Hunger takes over two hours to empty and never kills you. Berries regrow; tools never break. Cold calls for a cloak, tea, or a warm home.', right);
   for (const id of game.state.secrets) {
     const index = D.islands.findIndex(i => i.id === id);
     right.append(el('h3', D.islands[index].landmark));
@@ -211,14 +215,22 @@ function packPage() {
       const split = el('div', undefined, 'split'),
         a = el('div'),
         b = el('div');
-      for (const [id, n] of Object.entries(s.inventory)) a.append(button(`Store ${n} ${D.items[id].name}`, () => {
-        game.transfer(k, id, n, true);
-        renderPanel();
-      }));
-      for (const [id, n] of Object.entries(s.harvests['chest:' + k] || {})) b.append(button(`Take ${n} ${D.items[id].name}`, () => {
-        game.transfer(k, id, n, false);
-        renderPanel();
-      }));
+      const chestRoom = 4000 - G.total(s.harvests['chest:' + k] || {});
+      for (const [id, owned] of Object.entries(s.inventory)) {
+        const n = Math.min(owned, chestRoom);
+        if (n > 0) a.append(button(`Store ${n} ${D.items[id].name}`, () => {
+          game.transfer(k, id, n, true);
+          renderPanel();
+        }));
+      }
+      const packRoom = D.C.pack - G.total(s.inventory);
+      for (const [id, stored] of Object.entries(s.harvests['chest:' + k] || {})) {
+        const n = Math.min(stored, packRoom, D.C.stack - (s.inventory[id] || 0));
+        if (n > 0) b.append(button(`Take ${n} ${D.items[id].name}`, () => {
+          game.transfer(k, id, n, false);
+          renderPanel();
+        }));
+      }
       split.append(a, b);
       content.append(split);
     }
@@ -334,7 +346,10 @@ function chartPage() {
   ctx.textAlign = 'center';
   for (const i of D.islands) {
     ctx.fillStyle = '#fff4dc';
-    ctx.fillText(i.name, map(i.x), map(i.z) + 40);
+    // Give the close-set original islands labels on opposite sides of the channel.
+    ctx.textAlign = ['forest', 'tropic'].includes(i.id) ? 'right' : ['dunes', 'frost'].includes(i.id) ? 'left' : 'center';
+    ctx.fillText(i.name, map(i.x), map(i.z) + (i.id === 'iris' ? -24 : 33));
+    ctx.textAlign = 'center';
     ctx.fillStyle = '#ffc247';
     ctx.fillText('✦', map(i.x + 12), map(i.z - 10));
   }
@@ -357,12 +372,12 @@ function chartPage() {
   ctx.fillStyle = '#ff6a1f';
   ctx.fillText('⌂', map(game.state.camp.x), map(game.state.camp.z));
   notes.append(el('h3', 'The sheltered sea'));
-  paragraph('The chart and live local map reflect mining and building. Global pixels cover 4 m; the local map shows individual blocks. North is up (−Z). White arrow: you. Ember house: camp. ▲ Safe cave entrances. ✦ Tidekeeper landmarks. Dashed rings: warning waters and the fatal outer boundary.', notes);
+  paragraph('The chart and live local map reflect mining and building. Global pixels cover 6 m; the local map shows individual blocks. North is up (−Z). White arrow: you. Ember house: camp. ▲ Safe cave entrances. ✦ Tidekeeper landmarks. Dashed rings: warning waters and the fatal outer boundary.', notes);
   for (const i of D.islands) {
     notes.append(el('strong', `${game.state.discoveries.includes(i.id) ? '✓' : '○'} ${i.name}`));
     paragraph(`${i.biome} · ${i.x}, ${i.z} · ${Math.round(Math.hypot(i.x - p.x, i.z - p.z))} m from you`, notes);
   }
-  paragraph('Original crossings take 10–25 seconds; new outer islands take 25–45 seconds by raft from their nearest old shore; exploring a whole island takes several minutes. Caves descend along walkable ramps into three branches. Follow the amber entrance mark.', notes);
+  paragraph('Allow 10–25 seconds for a short crossing. The Spectrum quarries are farther out. Measure a route on the chart and allow about seven seconds per 100 m by raft. Caves descend along walkable ramps into three branches. Follow the amber entrance mark.', notes);
 }
 function campPage() {
   const l = game.luxury();
@@ -539,14 +554,14 @@ function helpPage() {
   split.append(a, b);
   content.append(split);
   a.append(el('h3', 'Hands, feet, and a horizon'));
-  const controls = [['WASD', 'Walk / swim / sail. Mouse steers your view and vessel.'], ['Space / Shift', 'Jump or swim upward / walk faster. C dives while swimming.'], ['Hold left click', 'Mine the target, or bonk a nearby pebble mite. Picks are required for stone and ores.'], ['Right click', 'Place selected block; eat selected food; launch selected raft in water.'], ['E', 'Use bush, garden, fishing rod, bed, furniture, chest, tablet or vessel.'], ['1–8 / mouse wheel', 'Select hotbar slot. Assign any owned item through Pack.'], ['Tab / I / B / M / J', 'Field notes / pack / recipes / chart / journal.'], ['Esc', 'Release mouse and pause. Return to shore resumes and captures mouse.'], ['F', 'Eat selected food, or a sunberry if you have one.']];
+  const controls = [['WASD', 'Walk / swim / sail. Mouse steers your view and vessel.'], ['Space / Shift', 'Jump or swim upward / walk faster. C dives while swimming.'], ['Hold left click', 'Mine the target, or bonk a nearby island creature. Picks are required for stone and ores.'], ['Right click', 'Place selected block; eat selected food; launch selected raft in water.'], ['E', 'Use bush, garden, fishing rod, bed, furniture, chest, tablet or vessel.'], ['1–8 / mouse wheel', 'Select hotbar slot. Assign any owned item through Pack.'], ['Tab / I / B / M / J', 'Field notes / pack / recipes / chart / journal.'], ['Esc', 'Release mouse and pause. Return to shore resumes and captures mouse.'], ['F', 'Eat selected food, or a sunberry if you have one.']];
   for (const [key, action] of controls) {
     const p = el('p');
     p.append(el('strong', key + ' · '), document.createTextNode(action));
     a.append(p);
   }
   b.append(el('h3', 'A forgiving life'));
-  paragraph('No oxygen timer or tool durability. Honeycomb Isle alone has six weak pebble mites. Hold left click to shoo them: three hits barehanded, one with a bamboo staff or copper sabre. They rest five minutes after defeat and leave fossils and amber. They cannot leave their island or kill you. Hunger and cold can lower health to 25, never to death. Rest restores health. Farm beds grow roots or grain based on position; tend with a watering can to accelerate growth. Fishing brings a pearl every fourth catch. All timers pause in panels; there is no offline growth or starvation.', b);
+  paragraph('No oxygen timer or tool durability. Honeycomb and each of the four Spectrum Shores host six weak local creatures. Hold left click to shoo them: three hits barehanded, one with a bamboo staff or copper sabre. They rest five minutes after defeat and leave regional materials. They cannot leave their island or kill you. Hunger and cold can lower health to 25, never to death. Rest restores health. Farm beds grow roots or grain based on position; tend with a watering can to accelerate growth. Fishing brings a pearl every fourth catch. All timers pause in panels; there is no offline growth or starvation.', b);
   paragraph('Chests hold 4,000 items each. Campfire cooks fish; galley prepares full meals. Workstations must be placed within seven blocks. Inventory crafting is atomic: failed recipes consume nothing. There is no crafting grid; the recipe book is the full crafting system.', b);
   paragraph('At the far ocean boundary, warning text escalates before the final crossing. Crossing is terminal and cannot be paused or canceled. Its marker is written before crossing; if storage fails, the crossing is blocked with a message. Safe checkpoints remain recoverable.', b);
   paragraph('Designed for desktop keyboard and mouse. Panels adapt to small windows, but touch movement is not implemented. Use a local HTTP server; file:// module loading is unsupported.', b);
@@ -707,7 +722,7 @@ function hud(now) {
   $('boundary').hidden = radius < D.C.warning;
   $('boundary').textContent = radius > D.C.danger ? `DANGER · Turn toward the islands now. Fatal storm in ${Math.max(0, Math.ceil(D.C.border - radius))} m. Crossing ends this voyage.` : 'OUTER WATERS · Headwinds slow your sail. Turn toward the islands. Saves and camp return are disabled here.';
   const target = game.target(), actor = game.encounters.target();
-  $('targetLabel').textContent = actor ? `Pebble mite · ${s.expedition.creatures[actor.id].health}/3 · hold left click` : target ? D.blocks[target.id].name + (D.blocks[target.id].category || ['berryBush', 'relic'].includes(D.blocks[target.id].key) ? ' · E to use' : '') + (target && D.blocks[target.id].tier > 0 ? ' · pick required' : '') : game.fishing ? `Fishing · ${Math.ceil(game.fishing)}s` : '';
+  $('targetLabel').textContent = actor ? `${actor.species.name} · ${s.expedition.creatures[actor.id].health}/3 · hold left click` : target ? D.blocks[target.id].name + (D.blocks[target.id].category || ['berryBush', 'relic'].includes(D.blocks[target.id].key) ? ' · E to use' : '') + (target && D.blocks[target.id].tier > 0 ? ' · pick required' : '') : game.fishing ? `Fishing · ${Math.ceil(game.fishing)}s` : '';
   $('mining').hidden = game.mineProgress <= 0;
   $('mining').value = target ? game.mineProgress / D.blocks[target.id].hardness : 0;
   if (noticeSerial !== game.messageSerial) {

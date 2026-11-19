@@ -52,13 +52,13 @@ function put(g, id, x = -207, y = 14, z = 100) {
 function step(g, t, input = {}) {
   for (let j = 0; j < Math.ceil(t * 60); j++) g.step(input, 1 / 60);
 }
-test('catalog has 7 substantial unique biomes, 4 islets and 88 implemented recipes', () => {
-  assert.equal(D.islands.length, 7);
-  assert.equal(new Set(D.islands.map(i => i.biome)).size, 7);
+test('catalog has 11 substantial unique biomes, 4 islets and 105 implemented recipes', () => {
+  assert.equal(D.islands.length, 11);
+  assert.equal(new Set(D.islands.map(i => i.biome)).size, 11);
   assert.equal(D.islets.length, 4);
-  assert.equal(D.recipes.length, 88);
+  assert.equal(D.recipes.length, 105);
   assert(D.islands.every(i => i.rx >= 80 && i.rz >= 75));
-  assert.equal(new Set(D.recipes.map(r => r.id)).size, 88);
+  assert.equal(new Set(D.recipes.map(r => r.id)).size, 105);
 });
 test('same seed gives identical terrain and alternate seeds change relief', () => {
   const a = new W.World(12),
@@ -163,7 +163,7 @@ test('recipe graph reaches every output from actual natural resources without ga
   let tier = 0;
   for (let pass = 0; pass < 12; pass++) {
     for (const b of D.blocks) {
-      if (b.tier <= tier && b.tier !== 99 && ['stone', 'copperOre', 'ironOre', 'coalOre', 'crystalOre', 'basalt', 'bamboo', 'limestone', 'jadeOre', 'ochre', 'amberOre'].includes(b.key)) available.add(b.drop || b.key);
+      if (b.tier <= tier && b.tier !== 99 && ['stone', 'copperOre', 'ironOre', 'coalOre', 'crystalOre', 'basalt', 'bamboo', 'limestone', 'jadeOre', 'ochre', 'amberOre', ...D.islands.filter(i => i.shades).flatMap(i => [...i.shades, i.ore])].includes(b.key)) available.add(b.drop || b.key);
     }
     if (crafts.has('bambooPlanter')) available.add('bambooShoot');
     for (const [id, stages] of Object.entries(D.projects)) {
@@ -217,7 +217,7 @@ test('craft requires nearby station and discovery independently', () => {
   assert(!g.craft('tile'));
   assert(k);
 });
-test('all 88 recipes change inventory correctly when their requirements are met', () => {
+test('all 105 recipes change inventory correctly when their requirements are met', () => {
   for (const r of D.recipes) {
     const g = fixture();
     g.state.inventory = {
@@ -234,23 +234,23 @@ test('all 88 recipes change inventory correctly when their requirements are met'
 });
 test('inventory rejects overflow, negative, unknown and fractional deltas without mutation', () => {
   const inv = {
-    log: 999
+    log: C.stack
   };
   for (const delta of [{
     log: 1
   }, {
-    log: -1000
+    log: -C.stack - 1
   }, {
     noSuchItem: 1
   }, {
     log: .5
   }]) assert.equal(G.change(inv, delta), null);
   assert.deepEqual(inv, {
-    log: 999
+    log: C.stack
   });
   assert.equal(G.change({
-    log: 999,
-    stone: 800
+    log: C.stack,
+    stone: C.pack - C.stack - 1
   }, {
     dirt: 2
   }), null);
@@ -662,7 +662,7 @@ test('quota during primary write preserves both prior primary and valid backup',
   s.time = 10;
   assert(!saves.save(1, s).ok);
   assert.equal(saves.load(1).state.time, 5);
-  assert.equal(saves.load(1, true).state.time, 5);
+  assert.equal(saves.load(1, true).state.time, 0);
 });
 test('quota during backup write never replaces primary', () => {
   const mem = new Memory(),
@@ -851,14 +851,14 @@ test('visible warning waters slow vessels, allowing time to turn back before the
 });
 test('full packs do not consume unique treasure claims or falsely report successful fishing', () => {
   const g = fixture(), i = D.islands[0], x = i.x + 12, z = i.z - 10, y = W.column(x, z, g.state.seed).h + 1;
-  g.state.inventory = { log: 999, stone: 801 };
+  g.state.inventory = { log: C.stack, stone: C.pack - C.stack };
   Object.assign(g.state.player, { x: x + .5, y, z: z + 3 }); aim(g, x + .5, y + .5, z + .5);
   assert(!g.interact()); assert.equal(g.state.secrets.length, 0); assert.match(g.message, /Pack full/);
   const c = g.world.networks[0], [cx, cy, cz] = c.chamber;
   Object.assign(g.state.player, { x: cx + .5, y: cy + .01, z: cz + .5 }); aim(g, cx + .5, cy + .5, cz + 3.5);
   assert(!g.interact()); assert.equal(g.state.caveFinds.length, 0);
   Object.assign(g.state.player, { x: 0, y: 11.5, z: 0, yaw: 0, pitch: 0 });
-  g.state.inventory = { log: 999, stone: 800, rod: 1 }; g.state.hotbar[0] = 'rod';
+  g.state.inventory = { log: C.stack, stone: C.pack - C.stack - 1, rod: 1 }; g.state.hotbar[0] = 'rod';
   g.interact(); step(g, 6.1); assert.equal(g.state.stats.fish, 0); assert.equal(g.state.inventory.fish, undefined); assert.match(g.message, /Pack full/);
 });
 test('a 12,000-block estate survives bounded JSON storage and world reconstruction', () => {

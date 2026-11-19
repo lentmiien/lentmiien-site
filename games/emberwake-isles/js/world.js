@@ -35,6 +35,8 @@
     let h = 3 + Math.floor(noise(x / 35, z / 35, seed) * 3),
       island = null;
     for (const i of islands) {
+      // Shore noise extends a radius by at most six percent. Skip distant regions.
+      if (Math.abs(x - i.x) > i.rx * 1.061 || Math.abs(z - i.z) > i.rz * 1.061) continue;
       const dx = (x - i.x) / i.rx,
         dz = (z - i.z) / i.rz,
         r = Math.hypot(dx, dz);
@@ -56,6 +58,18 @@
       h,
       island
     };
+  }
+  function strataPattern(i, x, z, h, seed) {
+    let offset = x / 12;
+    if (i.strata === 'rings') offset = Math.hypot(x - i.x, z - i.z) / 8;
+    if (i.strata === 'folds') offset = z / 10;
+    if (i.strata === 'terraces') offset = h / 3;
+    return noise(x / 17, z / 17, seed) * 9 + offset;
+  }
+  function strataBlock(i, pattern, y, roll) {
+    if (roll % 43 === 0) return B[i.ore];
+    const n = i.shades.length, band = Math.floor(pattern + y / 3);
+    return B[i.shades[(band % n + n) % n]];
   }
   function caves(seed) {
     return islands.map(i => {
@@ -140,7 +154,14 @@
     mapColumn(x, z) {
       x = Math.floor(x); z = Math.floor(z);
       const k = `${x},${z}`;
-      if (!this.editedColumns.has(k)) return column(x, z, this.seed);
+      if (!this.editedColumns.has(k)) {
+        const surface = column(x, z, this.seed), { island, h } = surface;
+        if (island?.shades) {
+          const pattern = strataPattern(island, x, z, h, this.seed);
+          surface.color = blocks[strataBlock(island, pattern, h, hash(x + h * 5, z - h * 7, this.seed))].color;
+        }
+        return surface;
+      }
       if (this.mapSurfaces.has(k)) return this.mapSurfaces.get(k);
       const ck = this.chunkKey(x, z), resident = this.chunks.has(ck);
       const chunk = this.chunks.get(ck) || this.generate(Math.floor(x / 16), Math.floor(z / 16));
@@ -175,6 +196,8 @@
           } = column(x, z, this.seed),
           [lo, hi] = caveColumn(x, z, this.networks);
         const surface = h <= 14 ? B.sand : i?.id === 'dunes' ? B.sandstone : i?.id === 'frost' && h > 24 ? B.snow : i?.id === 'cinder' ? B.basalt : i?.surface ? B[i.surface] : B.grass;
+        // Broad contiguous veins run through the top twelve metres and exposed cliffs.
+        const pattern = i?.shades ? strataPattern(i, x, z, h, this.seed) : 0;
         for (let y = 0; y <= h; y++) {
           let id = y === 0 ? B.bedrock : y === h ? surface : y > h - 3 ? surface === B.sand || surface === B.sandstone ? B.sand : B.dirt : B.stone;
           const n = hash(x + y * 5, z - y * 7, this.seed);
@@ -183,6 +206,7 @@
           }
           if (i?.ore && y > 0 && y < h - 3 && n % 37 < 5) id = B[i.ore];
           if (y === h && h > 13 && h < 20 && n % 5 === 0) id = B.clay;
+          if (i?.shades && y > 0 && y > h - 12) id = strataBlock(i, pattern, y, n);
           if (y >= lo && y < hi) id = 0;
           arr[y * 256 + lz * 16 + lx] = id;
         }
@@ -263,6 +287,29 @@
           for (let dx = -3; dx <= 3; dx++) add(dx, 8, 0, B.snow);
           for (let dx = -1; dx <= 1; dx++) for (let dy = 4; dy < 7; dy++) add(dx, dy, 0, B.copperOre);
           add(0, 3, 0, B.ironOre);
+        }
+        if (i.shades) {
+          // Each tablet displays a local sculpture made from the five quarry stones.
+          for (let dx = -6; dx <= 6; dx++) for (let dy = 0; dy <= 10; dy++) {
+            let band;
+            switch (i.id) {
+              case 'poppy': band = Math.round(Math.hypot(dx, dy)) - 2; break;
+              case 'sundial': {
+                const radius = Math.round(Math.hypot(dx, dy - 5));
+                if (radius === 4 || radius === 5 || dx === dy - 5 && dy >= 5 && dy <= 8) band = (dy + 2) % 5;
+                break;
+              }
+              case 'fern': {
+                const leaf = Math.abs(dx) + Math.abs(dy - 5);
+                if (leaf <= 5 && (dx === 0 || leaf >= 3)) band = (5 + dx + dy) % 5;
+                break;
+              }
+              case 'iris':
+                if (Math.abs(dx) >= 4 || dy === 0 || dy >= 8) band = (dy + 1) % 5;
+                break;
+            }
+            if (band >= 0 && band < 5) add(dx, dy, 0, B[i.shades[band]]);
+          }
         }
         if (i.id === 'reed') {
           for (let dx = -4; dx <= 4; dx++) {

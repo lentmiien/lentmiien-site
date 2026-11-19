@@ -1,0 +1,85 @@
+{
+  "progression": {
+    "placed": [
+      -1119,
+      19,
+      -209
+    ],
+    "stats": {
+      "mined": 86,
+      "placed": 8,
+      "fish": 1,
+      "harvest": 1,
+      "sailed": 2067.100000000448
+    },
+    "discoveries": [
+      "tropic",
+      "forest",
+      "poppy"
+    ],
+    "saved": true
+  },
+  "errors": [],
+  "stats": [
+    {
+      "region": "poppy",
+      "chunks": 81,
+      "cached": 117,
+      "queued": 0,
+      "drawCalls": 64,
+      "triangles": 102610,
+      "geometries": 48,
+      "medianFrameMs": 65.19999998807907,
+      "p95FrameMs": 246.5,
+      "meanRenderMs": 17.17368421429082
+    },
+    {
+      "region": "sundial",
+      "chunks": 81,
+      "cached": 117,
+      "queued": 0,
+      "drawCalls": 66,
+      "triangles": 97368,
+      "geometries": 43,
+      "medianFrameMs": 65.5,
+      "p95FrameMs": 192.5,
+      "meanRenderMs": 12.78938053245038
+    },
+    {
+      "region": "fern",
+      "chunks": 81,
+      "cached": 117,
+      "queued": 0,
+      "drawCalls": 63,
+      "triangles": 100260,
+      "geometries": 83,
+      "medianFrameMs": 66.5,
+      "p95FrameMs": 180.69999998807907,
+      "meanRenderMs": 12.038922156759364
+    },
+    {
+      "region": "iris",
+      "chunks": 81,
+      "cached": 117,
+      "queued": 0,
+      "drawCalls": 103,
+      "triangles": 121506,
+      "geometries": 82,
+      "medianFrameMs": 73.10000002384186,
+      "p95FrameMs": 169,
+      "meanRenderMs": 9.91944444378217
+    },
+    {
+      "region": "rainbow",
+      "chunks": 81,
+      "cached": 117,
+      "queued": 0,
+      "drawCalls": 54,
+      "triangles": 98624,
+      "geometries": 80,
+      "medianFrameMs": 71.70000004768372,
+      "p95FrameMs": 166.5,
+      "meanRenderMs": 9.114444444245763
+    }
+  ]
+}

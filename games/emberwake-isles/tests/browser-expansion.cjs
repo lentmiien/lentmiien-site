@@ -24,13 +24,13 @@ const check = (name, value) => { assert(value, name); checks.push(name); console
     await page.locator('#continueGame').click(); await page.getByRole('button', { name: 'Load', exact: true }).click(); await ready();
     check('actual Load UI migrates v1 camp, inventory, crops and chest without deleting old save', await page.evaluate(raw => {
       const s = __test.game.state, old = JSON.parse(raw);
-      return s.version === 2 && JSON.stringify(s.inventory) === JSON.stringify(old.inventory) && s.crops['-207,14,100'].ready === 400 && s.harvests['chest:-209,15,100'].crystal === 8 && __test.game.world.get(0, 12, 0) === EWData.ids.marble && localStorage.getItem('emberwake.v1.1.save') === raw;
+      return s.version === EWData.C.version && JSON.stringify(s.inventory) === JSON.stringify(old.inventory) && s.crops['-207,14,100'].ready === 400 && s.harvests['chest:-209,15,100'].crystal === 8 && __test.game.world.get(0, 12, 0) === EWData.ids.marble && localStorage.getItem('emberwake.v1.1.save') === raw;
     }, legacy));
     await shot('expansion-migrated-journal');
     await page.getByRole('button', { name: 'Chart', exact: true }).click(); await shot('expansion-chart');
     check('full chart names both new islands', await page.locator('#panelContent').innerText().then(t => t.includes('Reedglass Haven') && t.includes('Honeycomb Isle')));
     await page.evaluate(() => __test.saveNow());
-    check('first v2 write retains byte-identical v1 backup', await page.evaluate(raw => localStorage.getItem('emberwake.v1.1.backup') === raw, legacy));
+    check('first updated write retains byte-identical v1 backup', await page.evaluate(raw => localStorage.getItem('emberwake.v1.1.backup') === raw, legacy));
     // Fresh normal-action run, separately from the migration fixture.
     const result = await page.evaluate(async ({ original, expansion }) => {
       await __test.replaceGame(EWGame.fresh(741092), 3);
@@ -83,16 +83,17 @@ const check = (name, value) => { assert(value, name); checks.push(name); console
     // Read-only UI crafting with earned bamboo makes the owned staff visible.
     await page.evaluate(() => __test.openPanel('Craft')); await page.locator('input[type="search"]').fill('bamboo'); await shot('expansion-recipes');
     // Small player-built island fixture for visual cartography, then remove it through world edits.
+    // Keep the white player arrow clear of the edited pixels at the current chart scale.
     const maps = await page.evaluate(() => {
-      const g = __test.game; Object.assign(g.state.player, { x: 13, y: 13, z: 10, boat: null }); g.paused = true;
-      for (let x = 4; x < 12; x++) for (let z = 4; z < 12; z++) { g.world.set(x, 12, z, EWData.ids.bambooPlank); g.state.placed[`${x},12,${z}`] = EWData.ids.bambooPlank; }
+      const g = __test.game; Object.assign(g.state.player, { x: 666, y: 13, z: -535, yaw: 0, boat: null }); g.paused = true;
+      for (let x = 612; x < 620; x++) for (let z = -540; z < -532; z++) { g.world.set(x, 12, z, EWData.ids.bambooPlank); g.state.placed[`${x},12,${z}`] = EWData.ids.bambooPlank; }
       __test.openPanel('Chart'); return document.querySelector('#panelContent canvas').toDataURL();
     });
     await shot('expansion-built-island-chart'); await page.evaluate(() => { __test.closePanel(false); __test.game.paused = true; }); await ready(); await page.waitForTimeout(1000); await shot('expansion-built-island-local-map');
     const miniBefore = await page.locator('#miniMap').evaluate(c => c.toDataURL());
     const after = await page.evaluate(() => {
       const g = __test.game;
-      for (let x = 4; x < 12; x++) for (let z = 4; z < 12; z++) { g.world.set(x, 12, z, 0); delete g.state.placed[`${x},12,${z}`]; }
+      for (let x = 612; x < 620; x++) for (let z = -540; z < -532; z++) { g.world.set(x, 12, z, 0); delete g.state.placed[`${x},12,${z}`]; }
       __test.openPanel('Chart'); return document.querySelector('#panelContent canvas').toDataURL();
     });
     check('full chart invalidates cached terrain after building and removing an ocean island', maps !== after);

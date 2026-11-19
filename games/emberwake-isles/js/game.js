@@ -31,7 +31,7 @@
     for (const [id, n] of Object.entries(delta)) {
       if (!items[id] || !Number.isInteger(n)) return null;
       next[id] = (next[id] || 0) + n;
-      if (next[id] < 0 || next[id] > 999) return null;
+      if (next[id] < 0 || next[id] > C.stack) return null;
       if (!next[id]) delete next[id];
     }
     return total(next) <= limit ? next : null;
@@ -267,7 +267,7 @@
       if (!this.state.inventory[id]) return this.notify('Select an item you own in your pack.');
       if (item?.food) return this.eat(id);
       if (item?.boat) return this.launchBoat(id);
-      if (item?.weapon) return this.notify('Hold left click while aiming at a nearby pebble mite. This tool shoos one in a single hit.');
+      if (item?.weapon) return this.notify('Hold left click while aiming at a nearby island creature. This tool shoos one in a single hit.');
       if (!item?.block) return this.notify('This item is used through crafting or E interactions.');
       const hit = this.target();
       if (!hit) return this.notify('Aim at a nearby surface (within 5½ blocks).');
@@ -501,7 +501,7 @@
       return this.notify('E: pick berries, garden, fish, read landmarks, use furniture or board a nearby vessel.');
     }
     transfer(k, id, amount, toChest) {
-      if (this.state.status !== 'alive' || !items[id] || !Number.isInteger(amount) || amount < 1 || amount > 999 || this.state.placed[k] !== B.chest) return false;
+      if (this.state.status !== 'alive' || !items[id] || !Number.isInteger(amount) || amount < 1 || amount > C.stack || this.state.placed[k] !== B.chest) return false;
       const [x, y, z] = decodeKey(k);
       if (distance(this.state.player, {
         x,

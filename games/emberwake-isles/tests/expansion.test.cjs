@@ -37,7 +37,7 @@ test('full old-map height and biome fingerprints are unchanged for three seeds',
   }
 });
 test('new islands plus noise margins lie outside the entire old square and inside safe sea', () => {
-  for (const i of D.islands.slice(5)) {
+  for (const i of D.islands.slice(5, 7)) {
     assert(Math.abs(i.x) - i.rx * 1.07 > D.legacy.extent);
     assert(Math.hypot(i.x, i.z) + Math.max(i.rx, i.rz) * 1.07 < D.C.warning);
     for (const seed of [0, 12, 741092]) assert(W.column(i.x, i.z, seed).h > 25);
@@ -46,7 +46,7 @@ test('new islands plus noise margins lie outside the entire old square and insid
 test('both new caves expose their required ore, with safe open entrances for ten seeds', () => {
   for (let seed = 0; seed < 10; seed++) {
     const w = new W.World(seed);
-    for (const island of D.islands.slice(5)) {
+    for (const island of D.islands.slice(5, 7)) {
       const c = w.networks.find(c => c.island === island.id), [x, y, z] = c.entrance;
       assert(!w.solid(x, y, z)); assert(w.solid(x, y - 1, z) || w.solid(x, y - 2, z));
       let ore = 0;
@@ -57,7 +57,7 @@ test('both new caves expose their required ore, with safe open entrances for ten
 });
 test('v1 migration preserves every existing field and adds only schema and expedition defaults', () => {
   const old = JSON.parse(legacyRaw), migrated = S.decode(legacyRaw), { expedition, ...rest } = migrated;
-  assert.deepEqual(rest, { ...old, version: 2 });
+  assert.deepEqual(rest, { ...old, version: D.C.version });
   assert.deepEqual(expedition, { projects: { reed: 0, amber: 0 }, defeated: 0, creatures: {} });
   const g = new G.Game(migrated); g.world.unload(665, 220, 1);
   assert.equal(g.world.get(0, 12, 0), D.ids.marble);
@@ -69,13 +69,28 @@ test('same storage keys load v1 without writing; first v2 save keeps exact v1 ba
   const mem = new Memory(), saves = new S.Saves(mem); mem.setItem(saves.key(2), legacyRaw); mem.setItem('unrelated', 'keep');
   const loaded = saves.load(2); assert(loaded.ok); assert.equal(mem.getItem(saves.key(2)), legacyRaw);
   assert(saves.save(2, loaded.state).ok); assert.equal(mem.getItem(saves.key(2, 'backup')), legacyRaw);
-  assert.equal(saves.load(2, true).state.version, 2); assert.equal(mem.getItem('unrelated'), 'keep');
+  assert.equal(saves.load(2, true).state.version, D.C.version); assert.equal(mem.getItem('unrelated'), 'keep');
 });
 test('migration write quota failures preserve original primary and backup', () => {
   for (const suffix of ['save', 'backup']) {
     const mem = new Memory(), saves = new S.Saves(mem); mem.setItem(saves.key(1), legacyRaw); mem.setItem(saves.key(1, 'backup'), legacyRaw); mem.fail = saves.key(1, suffix);
     assert(!saves.save(1, saves.load(1).state).ok); assert.equal(mem.getItem(saves.key(1)), legacyRaw); assert.equal(mem.getItem(saves.key(1, 'backup')), legacyRaw);
   }
+});
+test('v2 slot retains distinct old checkpoints across a failed upgrade and rewinds an old storm explicitly', () => {
+  const mem = new Memory(), saves = new S.Saves(mem);
+  const raw = fs.readFileSync(require.resolve('./fixtures/v2-voyage.json'), 'utf8');
+  const primary = saves.key(1), backup = saves.key(1, 'backup');
+  mem.setItem(primary, raw); mem.setItem(backup, legacyRaw); saves.terminal(1);
+  assert.equal(saves.load(1).state.status, 'dead');
+  const recovery = saves.load(1, false, true);
+  assert.equal(recovery.state.version, 3);
+  mem.fail = primary;
+  assert.equal(saves.save(1, recovery.state).ok, false);
+  assert.equal(mem.getItem(primary), raw); assert.equal(mem.getItem(backup), legacyRaw);
+  mem.fail = null;
+  assert(saves.save(1, recovery.state).ok);
+  assert.equal(mem.getItem(backup), raw); assert.equal(JSON.parse(mem.getItem(primary)).version, 3);
 });
 test('old terminal marker still ends voyage after boundary expansion; explicit recovery works', () => {
   const mem = new Memory(), saves = new S.Saves(mem); mem.setItem(saves.key(1), legacyRaw); saves.terminal(1);
@@ -93,7 +108,7 @@ test('expanded travel, buildings, encounters, nursery timers and restoration rou
   g.state.expedition.creatures['amber:0'] = { health: 0, respawn: g.state.time + 300 };
   const restored = S.decode(JSON.stringify(g.snapshot())); assert.deepEqual(restored, g.snapshot());
   assert.equal(new G.Game(restored).world.get(650, 40, 221), D.ids.bambooPlanter);
-  for (const change of [s => s.expedition.creatures.evil = { health: 1, respawn: 0 }, s => s.expedition.projects.amber = 3, s => s.expedition.creatures['amber:0'].respawn = s.time + 301, s => s.player.x = 1100]) {
+  for (const change of [s => s.expedition.creatures.evil = { health: 1, respawn: 0 }, s => s.expedition.projects.amber = 3, s => s.expedition.creatures['amber:0'].respawn = s.time + 301, s => s.player.x = D.C.extent + 1]) {
     const bad = copy(restored); change(bad); assert.throws(() => S.validate(bad));
   }
 });
@@ -135,7 +150,7 @@ test('melee reach and solid walls stop attacks; pack-full kill consumes no rewar
   g.state.player.z = a.z - 2;
   const x = Math.floor(a.x), z = Math.floor(a.z - 1); g.world.set(x, a.y + 1, z, D.ids.plank); g.world.set(x, a.y, z, D.ids.plank);
   assert(!swing(g, a)); g.world.set(x, a.y + 1, z, 0); g.world.set(x, a.y, z, 0);
-  g.state.inventory = { log: 999, stone: 801 }; swing(g, a); swing(g, a); swing(g, a);
+  g.state.inventory = { log: D.C.stack, stone: D.C.pack - D.C.stack }; swing(g, a); swing(g, a); swing(g, a);
   assert.equal(g.state.expedition.creatures[a.id].health, 1); assert.equal(g.state.expedition.defeated, 0);
 });
 test('actors cannot follow into ocean, through walls, beyond home leash or onto other islands', () => {
@@ -180,7 +195,7 @@ test('nursery is renewable, paused timers do not progress, and harvest drives ne
   assert(g.craft('shootSoup')); g.state.player.food = 10; assert(g.eat('shootSoup')); assert(g.state.player.food >= 75); assert.equal(g.state.buff, 240);
 });
 test('atlas grows past 64 slots and all new furnishing shapes have valid mesh UVs', () => {
-  assert.equal(D.atlas.height, 176); assert.equal(D.blocks.length, 85);
+  assert.equal(D.atlas.height, Math.ceil(D.blocks.length / 8) * 16); assert.equal(D.gardens.blocks, 85);
   for (const b of D.blocks.slice(63)) if (b.shape) assert(M.shapes[b.shape], b.key);
 });
 test('empty-pack route sails the expansion, mines jade, builds nursery and restores organ stage', () => {

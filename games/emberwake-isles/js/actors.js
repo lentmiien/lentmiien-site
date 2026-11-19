@@ -4,6 +4,7 @@
   if (typeof module === 'object') module.exports = api; else root.EWActors = api;
 })(typeof window !== 'undefined' ? window : globalThis, function (D) {
   'use strict';
+  const mite = { name: 'Pebble mite', form: 'mite', speed: 1.3, colors: ['#bd9862', '#efd08a'], loot: { fossil: 1, amber: 1 } };
   class Encounters {
     constructor(game) { this.game = game; this.actors = []; this.nextSwing = 0; }
     homeGround(x, z, island, home) {
@@ -14,12 +15,13 @@
     }
     step(dt) {
       const g = this.game, s = g.state, p = s.player;
-      const island = D.islands.find(i => i.enemies);
-      if (Math.hypot(p.x - island.x, p.z - island.z) > 120) { this.actors = []; return; }
-      if (!this.actors.length) {
+      const island = D.islands.find(i => i.enemies && Math.hypot(p.x - i.x, p.z - i.z) <= 120);
+      if (!island) { this.actors = []; return; }
+      if (this.actors[0]?.island !== island.id) {
+        this.actors = [];
         for (let n = 0; n < 6; n++) {
           const home = { x: island.x + (n % 3 - 1) * 13 + .5, z: island.z - 10 + Math.floor(n / 3) * 20 + .5 };
-          this.actors.push({ id: `amber:${n}`, home, x: home.x, z: home.z, y: 0, alive: false, nextBump: 0 });
+          this.actors.push({ id: `${island.id}:${n}`, island: island.id, species: island.species || mite, home, x: home.x, z: home.z, y: 0, alive: false, nextBump: 0 });
         }
       }
       for (const a of this.actors) {
@@ -34,7 +36,7 @@
         const dest = chase ? p : a.home;
         const len = Math.hypot(dest.x - a.x, dest.z - a.z);
         if (len > (chase ? 1.15 : .2)) {
-          const nx = a.x + (dest.x - a.x) / len * dt * 1.3, nz = a.z + (dest.z - a.z) / len * dt * 1.3;
+          const nx = a.x + (dest.x - a.x) / len * dt * a.species.speed, nz = a.z + (dest.z - a.z) / len * dt * a.species.speed;
           const ny = this.homeGround(nx, nz, island, a.home);
           if (ny !== null && Math.abs(ny - a.y) <= 1.05) { a.x = nx; a.z = nz; a.y = ny; }
         }
@@ -43,7 +45,7 @@
           const eye = g.eye(), target = { x: a.x, y: a.y + .5, z: a.z };
           const d = Math.hypot(target.x - eye.x, target.y - eye.y, target.z - eye.z);
           const wall = g.world.ray(eye, { x: (target.x - eye.x) / d, y: (target.y - eye.y) / d, z: (target.z - eye.z) / d }, d);
-          if (!wall) { p.health = Math.max(25, p.health - 2); g.notify('A pebble mite nudged you (−2). Hold left click to shoo it; three barehanded hits.'); }
+          if (!wall) { p.health = Math.max(25, p.health - 2); g.notify(`${a.species.name} nudged you (−2). Hold left click to shoo it.`); }
           a.nextBump = s.time + 2;
         }
       }
@@ -70,11 +72,11 @@
       const record = s.expedition.creatures[a.id], held = g.selected();
       const damage = s.inventory[held] ? D.items[held].weapon || 1 : 1;
       if (record.health <= damage) {
-        if (!g.give({ fossil: 1, amber: 1 })) return true;
+        if (!g.give(a.species.loot)) return true;
         record.health = 0; record.respawn = s.time + 300; a.alive = false;
-        s.expedition.defeated++;
-        g.notify('Pebble mite shooed! Found a spiral fossil and amber. It rests for five minutes.');
-      } else { record.health -= damage; g.notify(`Gentle bonk · pebble mite ${record.health}/3 · a bamboo staff needs only one hit.`); }
+        if (a.island === 'amber') s.expedition.defeated++;
+        g.notify(`${a.species.name} shooed! Found ${Object.entries(a.species.loot).map(([id, n]) => n + ' × ' + D.items[id].name).join(', ')}.`);
+      } else { record.health -= damage; g.notify(`Gentle bonk · ${a.species.name} ${record.health}/3 · a bamboo staff needs only one hit.`); }
       return true;
     }
   }

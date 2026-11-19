@@ -506,7 +506,7 @@ dialog footer {
   position: relative;
 }
 .map-wrap canvas {
-  width: 100%;
+  width: min(100%, max(280px, calc(100dvh - 390px)));
   height: auto;
   border-radius: 8px;
 }

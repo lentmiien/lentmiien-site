@@ -142,20 +142,30 @@ export class Renderer {
     if (!this.actorMeshes) {
       this.actorMeshes = new Map();
       this.actorGeometry = new THREE.BoxGeometry(1, 1, 1);
-      this.actorMaterials = ['#bd9862', '#efd08a', '#263942'].map(color => new THREE.MeshLambertMaterial({ color }));
+      this.actorMaterials = new Map();
     }
     for (const mesh of this.actorMeshes.values()) mesh.visible = false;
     for (const actor of this.game.encounters.actors) {
       let group = this.actorMeshes.get(actor.id);
       if (!group) {
         group = new THREE.Group();
+        if (!this.actorMaterials.has(actor.island)) {
+          this.actorMaterials.set(actor.island, [...actor.species.colors, '#263942'].map(color => new THREE.MeshLambertMaterial({ color })));
+        }
+        const materials = this.actorMaterials.get(actor.island);
         const box = (x, y, z, sx, sy, sz, material) => {
-          const mesh = new THREE.Mesh(this.actorGeometry, this.actorMaterials[material]);
+          const mesh = new THREE.Mesh(this.actorGeometry, materials[material]);
           mesh.position.set(x, y, z); mesh.scale.set(sx, sy, sz); group.add(mesh);
         };
         box(0, .43, 0, .9, .6, .8, 0);
         box(0, .78, 0, .65, .25, .6, 1);
         for (const sign of [-1, 1]) {
+          switch (actor.species.form) {
+            case 'ears': box(sign * .2, .94, .08, .14, .48, .2, 1); break;
+            case 'claws': box(sign * .49, .45, -.43, .27, .33, .38, 1); break;
+            case 'leaf': box(sign * .22, .78, .14, .38, .28, .9, 1); break;
+            case 'wings': box(sign * .48, .69, 0, .22, .62, .82, 1); break;
+          }
           box(sign * .22, .62, -.42, .12, .16, .08, 2);
           box(sign * .49, .16, -.22, .24, .18, .18, 1);
           box(sign * .49, .16, .22, .24, .18, .18, 1);
@@ -429,7 +439,7 @@ export class Renderer {
       if (lights[n]) {
         const a = lights[n];
         l.position.set(a.x + .5, a.y + 1.2, a.z + .5);
-        l.color.set(a.id === D.ids.prismLamp ? '#83e8e3' : '#ffd293');
+        l.color.set(D.blocks[a.id].lightColor || (a.id === D.ids.prismLamp ? '#83e8e3' : '#ffd293'));
       }
     });
     this.clouds.position.x = Math.sin(s.time / 180) * 12;
