@@ -528,6 +528,11 @@
   const legacy = { extent: 512, border: 490, warning: 405, blocks: blocks.length, items: Object.keys(items), recipes: recipes.map(r => r.id), islands: islands.map(i => i.id) };
   let gardens;
   const projects = {};
+  expansions.push({
+    id: 'wayfinding', firstBlock: 126, islands: [], items: [],
+    blocks: [['portal', 'Tideglass portal', '#63d9cd', { shape: 'portal' }]],
+    recipes: [['portal', 1, { glass: 4, copper: 2, stone: 4 }, 'bench', null, 'Voyaging']]
+  });
   for (const pack of expansions) {
     if (blocks.length !== pack.firstBlock) throw new Error('Expansion block IDs changed');
     pack.blocks.forEach(args => block(...args));

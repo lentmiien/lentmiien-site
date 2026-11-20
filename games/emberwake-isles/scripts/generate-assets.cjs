@@ -32,7 +32,9 @@ for (let y = 0; y < height; y++) for (let x = 0; x < size; x++) {
     b = D.blocks[id] || D.blocks[1],
     px = x % 16,
     py = y % 16;
-  const hex = b.key === 'spectrumTile' ? rainbow[Math.floor((px + py) / 3) % rainbow.length] : b.color || '#000000',
+  const radius = Math.hypot(px - 7.5, py - 7.5);
+  const portalColor = radius > 7 ? '#35445a' : radius > 6 ? '#e4bb80' : radius > 4.5 ? '#8effe6' : radius > 3 ? '#336489' : '#72c4ea';
+  const hex = b.key === 'portal' ? portalColor : b.key === 'spectrumTile' ? rainbow[Math.floor((px + py) / 3) % rainbow.length] : b.color || '#000000',
     rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
   let n = (x * 1537 + y * 317 + id * 17 ^ (x + y) * 191) % 19 - 9;
   if (/plank|wood|log|bench|shelf|chest|bamboo/i.test(b.key)) n += py % 5 === 0 ? -32 : px % 8 === 0 ? 10 : 0;
@@ -55,6 +57,7 @@ function quarryIcon(item) {
   if (item.key === 'spectrumTile') {
     return '<g transform="translate(9 10)">' + rainbow.map((color, n) => `<path fill="${color}" d="M0 ${n * 6}h46v6H0z"/>`).join('') + '</g>';
   }
+  if (item.key === 'portal') return '<path fill="#344658" d="M4 33l28-18 28 18v7L32 56 4 40z"/><ellipse cx="32" cy="33" rx="24" ry="13" fill="#dcbb80"/><ellipse cx="32" cy="33" rx="20" ry="10" fill="#86f4db"/><ellipse cx="32" cy="33" rx="12" ry="6" fill="#42739a"/>';
   if (!region) return null;
   const base = region.colors[0][1], bright = region.colors[1][1], trim = region.colors[4][1];
   const suffix = item.key.slice(region.id.length);

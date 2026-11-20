@@ -104,6 +104,7 @@
       this.saveBlocked = false;
       this.boundaryChecked = false;
       this.validatePosition();
+      this.lastPortal = this.standingPortal();
     }
     notify(text) {
       this.message = text;
@@ -153,6 +154,34 @@
         for (const b of shapes[block.shape] || [[0, 0, 0, 1, 1, 1]]) if (x + .29 > xx + b[0] && x - .29 < xx + b[3] && y + 1.74 > yy + b[1] && y + .001 < yy + b[4] && z + .29 > zz + b[2] && z - .29 < zz + b[5]) return true;
       }
       return false;
+    }
+    standingPortal() {
+      const p = this.state.player;
+      if (this.state.status !== 'alive' || p.boat !== null) return null;
+      const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+      const here = key(x, y, z), height = p.y - y;
+      return height >= .175 && this.state.placed[here] === B.portal ? here : null;
+    }
+    enteredPortal() {
+      const here = this.standingPortal(), entered = here && here !== this.lastPortal;
+      this.lastPortal = here;
+      return entered;
+    }
+    travelPortal(destination) {
+      const origin = this.standingPortal();
+      if (!origin || destination === origin || this.state.placed[destination] !== B.portal) return this.notify('Stand on a portal and choose another placed portal.');
+      const [x, y, z] = decodeKey(destination);
+      const arrival = { x: x + .5, y: y + .18, z: z + .5 };
+      if (this.world.get(x, y, z) !== B.portal || Math.hypot(arrival.x, arrival.z) >= C.warning ||
+          this.collides(arrival.x, arrival.y, arrival.z)) return this.notify('Exit obstructed or outside sheltered waters. Choose another portal.');
+      Object.assign(this.state.player, arrival);
+      this.velocity = 0;
+      this.grounded = true;
+      this.fishing = 0;
+      this.mineProgress = 0;
+      this.lastPortal = destination;
+      this.notify('Arrived by tideglass. Step off and back on to travel again.');
+      return true;
     }
     stations() {
       const p = this.state.player,
@@ -276,6 +305,7 @@
       if (this.world.get(x, y, z) || y < 1 || y >= C.height - 1) return this.notify('That space is occupied or outside building height.');
       if (x < p.x + .3 && x + 1 > p.x - .3 && z < p.z + .3 && z + 1 > p.z - .3 && y < p.y + 1.8 && y + 1 > p.y) return this.notify('Step back before placing a block here.');
       if (Math.hypot(x, z) > C.warning) return this.notify('Build inside the sheltered archipelago.');
+      if (id === 'portal' && (Math.hypot(x + .5, z + .5) >= C.warning || this.world.get(x, y + 1, z))) return this.notify('Place portals in sheltered waters with headroom above.');
       if (Object.keys(this.state.placed).length >= 12000) return this.notify('Camp block limit reached (12,000).');
       if (item.category === 'storage' && Object.values(this.state.placed).filter(v => v === B.chest).length >= 16) return this.notify('A world supports 16 storage chests.');
       if (id === 'bambooPlanter' && !Object.hasOwn(this.state.harvests, key(x, y, z)) && Object.keys(this.state.harvests).length >= 4096) return this.notify('Active garden timer limit reached. Harvest existing nurseries first.');

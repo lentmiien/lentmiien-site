@@ -52,13 +52,13 @@ function put(g, id, x = -207, y = 14, z = 100) {
 function step(g, t, input = {}) {
   for (let j = 0; j < Math.ceil(t * 60); j++) g.step(input, 1 / 60);
 }
-test('catalog has 11 substantial unique biomes, 4 islets and 105 implemented recipes', () => {
+test('catalog has 11 substantial unique biomes, 4 islets and 106 implemented recipes', () => {
   assert.equal(D.islands.length, 11);
   assert.equal(new Set(D.islands.map(i => i.biome)).size, 11);
   assert.equal(D.islets.length, 4);
-  assert.equal(D.recipes.length, 105);
+  assert.equal(D.recipes.length, 106);
   assert(D.islands.every(i => i.rx >= 80 && i.rz >= 75));
-  assert.equal(new Set(D.recipes.map(r => r.id)).size, 105);
+  assert.equal(new Set(D.recipes.map(r => r.id)).size, 106);
 });
 test('same seed gives identical terrain and alternate seeds change relief', () => {
   const a = new W.World(12),
@@ -217,7 +217,7 @@ test('craft requires nearby station and discovery independently', () => {
   assert(!g.craft('tile'));
   assert(k);
 });
-test('all 105 recipes change inventory correctly when their requirements are met', () => {
+test('all 106 recipes change inventory correctly when their requirements are met', () => {
   for (const r of D.recipes) {
     const g = fixture();
     g.state.inventory = {

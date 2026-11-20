@@ -54,3 +54,7 @@ For recipes, check resource acquisition, tool tier, station and discovery/projec
 Finish with model tests, old-save migration/recovery tests, actual browser inputs, screenshots of changed scenes, a normal-action progression run, and a scoped diff review. `README.md` is the player/architecture overview; consult code for details rather than relying on prior conversations.
 
 Spectrum terrain uses five shaded block IDs per island in the upper twelve metres. The island species record drives its silhouette, colors, pursuit speed and pigment drop. Run `tests/browser-spectrum.cjs` with the Playwright settings above to load a v2 voyage, earn and sail a raft to a quarry, reload a crafted brick, and render the islands and rainbow fixture. Its evidence goes into `docs/validation/spectrum/`.
+
+Tideglass portals append voxel ID 126 in the wayfinding catalog in `js/data.js`. Their locations come directly from saved placed blocks. Schema 3 needs no additional fields. `game.js` handles entry and collision-checked travel, and `boot.js` adds map picking and a paged coordinate list to the chart. The entry latch is transient so arrival, cancellation and loading on a pad allow the player to step away.
+
+Run `tests/browser-portals.cjs` with the Playwright settings above to exercise real pad entry, distant map picking, stacked exits and a saved arrival. Set `PORTAL_SCREENSHOT` to capture the open chart. The fixture supplies the test pier and installed pads. Crafting, placement, mining and blocked arrivals are covered in `tests/portals.test.cjs`.

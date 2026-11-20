@@ -137,7 +137,7 @@ function renderPanel() {
   if (tab === 'Pack') packPage();
   if (tab === 'Craft') craftPage();
   if (tab === 'Journal') journalPage();
-  if (tab === 'Chart') chartPage();
+  if (tab === 'Chart' || tab === 'Portal crossings') chartPage();
   if (tab === 'Camp') campPage();
   if (tab === 'Saves') savesPage();
   if (tab === 'Help') helpPage();
@@ -161,6 +161,8 @@ function journalPage() {
     ol.append(li);
   }
   left.append(ol);
+  right.append(el('h3', 'Tideglass portals'));
+  paragraph('At a workbench, craft a portal from four glass, two copper ingots and four stone. Place pads at the stops you want to connect. Step onto one and choose an exit on the chart. Mine a pad to move it.', right);
   right.append(el('h3', 'The Spectrum Shores'));
   paragraph('Sail to the four outer islands for sculpture stone. Hold left click to gather the colored layers by hand, equip a stone from your pack, then right click a face to build. Each shore also has pigment seams for a driftwood pick, and a local creature that drops the same pigment.', right);
   for (const i of D.islands.filter(i => i.shades)) paragraph(`${i.name} (${i.x}, ${i.z}) · ${i.colors.map(([shade]) => shade).join(', ')} · ${i.creature}`, right);
@@ -371,6 +373,13 @@ function chartPage() {
   ctx.restore();
   ctx.fillStyle = '#ff6a1f';
   ctx.fillText('⌂', map(game.state.camp.x), map(game.state.camp.z));
+  const picking = tab === 'Portal crossings';
+  const exits = portalMarkers(ctx, map, picking ? game.standingPortal() : null);
+  if (picking) {
+    portalChart(canvas, notes, exits);
+    return;
+  }
+  if (exits.length) paragraph('Turquoise rings mark your portals. Step onto a pad to choose an exit.', notes);
   notes.append(el('h3', 'The sheltered sea'));
   paragraph('The chart and live local map reflect mining and building. Global pixels cover 6 m; the local map shows individual blocks. North is up (−Z). White arrow: you. Ember house: camp. ▲ Safe cave entrances. ✦ Tidekeeper landmarks. Dashed rings: warning waters and the fatal outer boundary.', notes);
   for (const i of D.islands) {
@@ -378,6 +387,71 @@ function chartPage() {
     paragraph(`${i.biome} · ${i.x}, ${i.z} · ${Math.round(Math.hypot(i.x - p.x, i.z - p.z))} m from you`, notes);
   }
   paragraph('Allow 10–25 seconds for a short crossing. The Spectrum quarries are farther out. Measure a route on the chart and allow about seven seconds per 100 m by raft. Caves descend along walkable ramps into three branches. Follow the amber entrance mark.', notes);
+}
+function portalMarkers(ctx, map, origin) {
+  const exits = [];
+  for (const [id, block] of Object.entries(game.state.placed)) {
+    if (block !== D.ids.portal) continue;
+    const [x, y, z] = W.decodeKey(id), mx = map(x + .5), mz = map(z + .5);
+    ctx.beginPath();
+    ctx.arc(mx, mz, 7, 0, Math.PI * 2);
+    ctx.fillStyle = id === origin ? '#ffc247' : '#82f5e2';
+    ctx.fill();
+    ctx.strokeStyle = '#172b39';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(mx, mz, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#173a49';
+    ctx.fill();
+    if (id !== origin) exits.push({ id, x, y, z, mx, mz });
+  }
+  if (origin) {
+    const [x, , z] = W.decodeKey(origin);
+    ctx.beginPath();
+    ctx.arc(map(x + .5), map(z + .5), 10, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ffc247';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+  return exits;
+}
+function portalChart(canvas, notes, exits) {
+  exits.sort((a, b) => a.x - b.x || a.z - b.z || a.y - b.y);
+  canvas.setAttribute('aria-label', 'Portal destinations on the world chart. Each exit also appears in the destination list.');
+  notes.append(el('h3', 'Choose an exit'));
+  paragraph(exits.length ? 'Select a turquoise marker or choose its coordinates below. Gold marks your entrance.' : 'This is your first portal. Craft another at a workbench and place it where you want to travel.', notes);
+  const list = el('div', undefined, 'portal-exits');
+  notes.append(list);
+  function travel(exit) {
+    if (!game.travelPortal(exit.id)) return notice(game.message);
+    closePanel();
+    audio.effect('use');
+  }
+  function choices(matches, page = 0) {
+    list.replaceChildren();
+    for (const e of matches.slice(page * 12, page * 12 + 12)) {
+      const name = W.column(e.x, e.z, game.state.seed).island?.name || 'Open sea';
+      list.append(button(name + ' · ' + [e.x, e.y, e.z].join(', '), () => travel(e)));
+    }
+    if (page > 0) list.append(button('Previous exits', () => choices(matches, page - 1)));
+    if ((page + 1) * 12 < matches.length) list.append(button('More exits', () => choices(matches, page + 1)));
+    if (matches !== exits) list.append(button('Show all exits', () => choices(exits)));
+  }
+  choices(exits);
+  canvas.classList.add('portal-chart');
+  canvas.onclick = event => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = (event.clientX - rect.left) * canvas.width / rect.width;
+    const mz = (event.clientY - rect.top) * canvas.height / rect.height;
+    const hits = exits.filter(e => Math.hypot(mx - e.mx, mz - e.mz) <= 14);
+    if (hits.length === 1) travel(hits[0]);
+    else if (hits.length > 1) {
+      choices(hits);
+      notice('These portals share a marker. Choose an exit by its coordinates.');
+      list.querySelector('button')?.focus();
+    }
+  };
 }
 function campPage() {
   const l = game.luxury();
@@ -774,6 +848,7 @@ function frame(now) {
         mine: mining
       }, dt);
       jumpQueued = false;
+      if (!game.paused && game.enteredPortal()) openPanel('Portal crossings');
       if (game.state.status === 'disaster' && !stormShown) {
         stormShown = true;
         clearInputs();

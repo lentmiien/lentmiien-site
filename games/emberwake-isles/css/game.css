@@ -685,3 +685,7 @@ dialog footer {
 #miniMap { width: 128px; height: 128px; display: block; image-rendering: pixelated; }
 #miniChart small { display: block; text-align: center; margin-top: 4px; color: var(--text-secondary, #c8cbd0); font-size: 10px; }
 @media (max-width: 800px), (max-height: 560px) { #miniChart { display: none; } }
+
+.portal-chart { cursor: pointer; }
+.portal-exits { display: grid; gap: .4rem; }
+.portal-exits button { text-align: left; }
