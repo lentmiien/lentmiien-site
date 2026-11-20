@@ -1,14 +1,17 @@
-const CodexOllamaReservation = require('../../services/codexOllamaReservation');
+const CodexGpuReservation = require('../../services/codexGpuReservation');
 
-describe('CodexOllamaReservation', () => {
-  test('reserves Ollama with a minimum six-hour window and releases it', async () => {
+describe('CodexGpuReservation', () => {
+  test.each([
+    ['ollama', 21600],
+    ['vllm', 1800],
+  ])('reserves and releases %s with its provider timeout', async (provider, timeout) => {
     const httpClient = {
       get: jest.fn().mockResolvedValue({
         data: {
           active: true,
           id: 'reservation-1',
-          service: 'ollama',
-          idle_timeout_sec: 21600,
+          service: provider,
+          idle_timeout_sec: timeout,
         },
       }),
       post: jest.fn().mockResolvedValue({
@@ -16,8 +19,8 @@ describe('CodexOllamaReservation', () => {
           reservation: {
             active: true,
             id: 'reservation-1',
-            service: 'ollama',
-            idle_timeout_sec: 21600,
+            service: provider,
+            idle_timeout_sec: timeout,
           },
         },
       }),
@@ -25,7 +28,8 @@ describe('CodexOllamaReservation', () => {
         data: { reservation: { active: false, service: null } },
       }),
     };
-    const reservation = new CodexOllamaReservation({
+    const reservation = new CodexGpuReservation({
+      provider,
       httpClient,
       baseUrl: 'http://gateway.test/',
       adminToken: 'admin-token',
@@ -37,14 +41,14 @@ describe('CodexOllamaReservation', () => {
 
     expect(reserved).toEqual(expect.objectContaining({
       active: true,
-      service: 'ollama',
-      idleTimeoutSec: 21600,
+      service: provider,
+      idleTimeoutSec: timeout,
     }));
     expect(httpClient.post).toHaveBeenCalledWith(
       'http://gateway.test/gpu/reservation',
       {
-        container_id: 'ollama',
-        idle_timeout_sec: 21600,
+        container_id: provider,
+        idle_timeout_sec: timeout,
         wait: true,
       },
       {
@@ -56,7 +60,7 @@ describe('CodexOllamaReservation', () => {
 
     await expect(reservation.reserve()).resolves.toEqual(expect.objectContaining({
       active: true,
-      service: 'ollama',
+      service: provider,
     }));
     expect(httpClient.get).toHaveBeenCalledWith(
       'http://gateway.test/gpu/reservation',
@@ -79,7 +83,7 @@ describe('CodexOllamaReservation', () => {
   });
 
   test('does not mark an unconfirmed Gateway reservation as held', async () => {
-    const reservation = new CodexOllamaReservation({
+    const reservation = new CodexGpuReservation({
       httpClient: {
         post: jest.fn().mockResolvedValue({ data: { reservation: { active: false } } }),
       },
@@ -87,7 +91,7 @@ describe('CodexOllamaReservation', () => {
     });
 
     await expect(reservation.reserve()).rejects.toThrow(
-      'The AI Gateway did not confirm an active Ollama GPU reservation.',
+      'The AI Gateway did not confirm an active GPU reservation for ollama.',
     );
     expect(reservation.getStatus().held).toBe(false);
   });
@@ -99,7 +103,7 @@ describe('CodexOllamaReservation', () => {
         data: { reservation: { active: true, service: 'ollama' } },
       }),
     };
-    const reservation = new CodexOllamaReservation({
+    const reservation = new CodexGpuReservation({
       httpClient,
       baseUrl: 'http://gateway.test',
     });
@@ -122,7 +126,7 @@ describe('CodexOllamaReservation', () => {
         finishRelease = resolve;
       })),
     };
-    const reservation = new CodexOllamaReservation({
+    const reservation = new CodexGpuReservation({
       httpClient,
       baseUrl: 'http://gateway.test',
     });

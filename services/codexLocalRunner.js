@@ -125,13 +125,13 @@ function buildProfileEnvironmentShellScript(commandText, environmentFileExpressi
 
 function getTurnLaunchSettings(turn, ollamaProfile) {
   const modelProvider = codexToolService.getTurnModelProvider(turn);
-  const providerProfile = codexToolService.getModelProviderCodexProfile(modelProvider);
+  const { codexProfile: providerProfile, fixedModel } = codexToolService.getModelProviderDefinition(modelProvider);
   const effectiveProfile = providerProfile || (modelProvider === 'ollama'
     ? (ollamaProfile || turn.profile || '')
     : (turn.profile || ''));
   return {
     effectiveProfile,
-    model: providerProfile ? '' : String(turn.model || ''),
+    model: providerProfile ? (fixedModel || '') : String(turn.model || ''),
     modelProvider,
     reasoningEffort: providerProfile ? '' : String(turn.reasoningEffort || ''),
   };
@@ -471,7 +471,7 @@ class CodexLocalRunner {
     let terminalTurn = null;
     let childClosed = false;
     const trackBatchProcessGroup = process.env.LOCAL_AI_BATCH_ENABLED === 'true'
-      && turn.modelProvider === 'ollama' && process.platform === 'linux' && target?.type !== 'remote-ssh-linux';
+      && ['ollama', 'vllm'].includes(turn.modelProvider) && process.platform === 'linux' && target?.type !== 'remote-ssh-linux';
     let timeoutHandle = null;
     let cancelInterval = null;
     let killTimer = null;

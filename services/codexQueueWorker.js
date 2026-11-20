@@ -9,7 +9,7 @@ const CodexSession = require('../models/codex_session');
 const codexToolService = require('./codexToolService');
 const CodexLocalRunner = require('./codexLocalRunner');
 const { CodexTurnEventStore } = require('./codexTurnEventStore');
-const CodexOllamaReservation = require('./codexOllamaReservation');
+const CodexGpuReservation = require('./codexGpuReservation');
 const { CodexActivity } = require('./localAi/codexActivity');
 const logger = require('../utils/logger');
 
@@ -191,7 +191,10 @@ class CodexQueueWorker {
     this.workerId = `codex-worker-${process.pid}-${randomUUID()}`;
     this.runner = options.runner || new CodexLocalRunner();
     this.batchActivity = options.batchActivity || new CodexActivity();
-    this.ollamaReservation = options.ollamaReservation || new CodexOllamaReservation();
+    this.gpuReservations = new Map([
+      ['ollama', options.ollamaReservation || new CodexGpuReservation()],
+      ['vllm', options.vllmReservation || new CodexGpuReservation({ provider: 'vllm' })],
+    ]);
     this.databaseReady = options.databaseReady || (() => true);
     this.started = false;
     this.tickInFlight = false;
@@ -255,7 +258,7 @@ class CodexQueueWorker {
       this.interval = null;
     }
     this.started = false;
-    await this.releaseOllamaReservationIfIdle();
+    await this.releaseIdleGpuReservations();
   }
 
   getStatus() {
@@ -270,7 +273,8 @@ class CodexQueueWorker {
       pollIntervalMs: config.pollIntervalMs,
       lastTickAt: this.lastTickAt,
       lastError: this.lastError,
-      ollamaReservation: this.ollamaReservation.getStatus(),
+      ollamaReservation: this.gpuReservations.get('ollama').getStatus(),
+      vllmReservation: this.gpuReservations.get('vllm').getStatus(),
     };
   }
 
@@ -324,7 +328,7 @@ class CodexQueueWorker {
           break;
         }
       }
-      await this.releaseOllamaReservationIfIdle();
+      await this.releaseIdleGpuReservations();
     } finally {
       this.tickInFlight = false;
     }
@@ -359,6 +363,11 @@ class CodexQueueWorker {
             modelProvider: codexToolService.getTurnModelProvider(queuedTurn),
           },
         });
+        continue;
+      }
+
+      const provider = codexToolService.getTurnModelProvider(queuedTurn);
+      if (this.gpuReservations.has(provider) && !await this.canClaimGpuProvider(provider)) {
         continue;
       }
 
@@ -473,55 +482,51 @@ class CodexQueueWorker {
     await codexToolService.updateSessionAfterTurn(updatedTurn);
   }
 
-  async hasPendingOllamaTurns(excludeTurnId = '') {
+  async canClaimGpuProvider(provider) {
+    for (const [other, reservation] of this.gpuReservations) {
+      if (other === provider) continue;
+      if (Array.from(this.activeTurns.values()).some(turn => turn.modelProvider === other)) {
+        return false;
+      }
+      // The Gateway has a single reservation. Hand it off even when more
+      // turns for the previous provider are queued behind this one.
+      if (reservation.getStatus().held && !await this.releaseGpuReservationIfIdle(other, { runningOnly: true })) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  async releaseIdleGpuReservations() {
+    for (const provider of this.gpuReservations.keys()) {
+      await this.releaseGpuReservationIfIdle(provider);
+    }
+  }
+
+  async releaseGpuReservationIfIdle(provider, { excludeTurnId, runningOnly = false } = {}) {
+    const lease = this.gpuReservations.get(provider);
+    if (!lease.getStatus().held) return false;
     const query = {
-      modelProvider: 'ollama',
-      status: { $in: ['queued', 'running'] },
+      modelProvider: provider,
+      status: runningOnly ? 'running' : { $in: ['queued', 'running'] },
     };
-    if (excludeTurnId) {
-      query._id = { $ne: String(excludeTurnId) };
-    }
-    return Boolean(await CodexTurn.exists(query).exec());
-  }
-
-  async reserveOllamaGpu(turn) {
-    const reservation = await this.ollamaReservation.reserve();
-    logger.notice('Reserved AI Gateway GPU for Codex Ollama turn', {
-      category: 'codex_tool',
-      metadata: {
-        workerId: this.workerId,
-        turnId: String(turn._id),
-        service: reservation.service || 'ollama',
-        idleTimeoutSec: reservation.idleTimeoutSec || this.ollamaReservation.getStatus().idleTimeoutSec,
-      },
-    });
-    return reservation;
-  }
-
-  async releaseOllamaReservationIfIdle(excludeTurnId = '') {
-    if (!this.ollamaReservation.getStatus().held) {
-      return false;
-    }
-    if (await this.hasPendingOllamaTurns(excludeTurnId)) {
-      return false;
-    }
+    if (excludeTurnId) query._id = { $ne: String(excludeTurnId) };
+    if (await CodexTurn.exists(query).exec()) return false;
+    if (Array.from(this.activeTurns.values()).some(turn => turn.modelProvider === provider)) return false;
     try {
-      const result = await this.ollamaReservation.release();
+      const result = await lease.release();
       if (result.released && result.initiated !== false) {
-        logger.notice('Released AI Gateway GPU after Codex Ollama queue drained', {
+        logger.notice('Released AI Gateway GPU after Codex local turns', {
           category: 'codex_tool',
-          metadata: { workerId: this.workerId },
+          metadata: { workerId: this.workerId, provider },
         });
       }
       return result.released;
     } catch (error) {
       this.lastError = error.message;
-      logger.warning('Failed to release AI Gateway GPU after Codex Ollama turn', {
+      logger.warning('Failed to release AI Gateway GPU after Codex local turn', {
         category: 'codex_tool',
-        metadata: {
-          workerId: this.workerId,
-          error: error.message,
-        },
+        metadata: { workerId: this.workerId, provider, error: error.message },
       });
       return false;
     }
@@ -729,7 +734,8 @@ class CodexQueueWorker {
     let heartbeatInterval = null;
     let additionalMessageInterval = null;
     let eventWriteChain = Promise.resolve();
-    const usesOllama = codexToolService.getTurnModelProvider(turn) === 'ollama';
+    const modelProvider = codexToolService.getTurnModelProvider(turn);
+    const gpuReservation = this.gpuReservations.get(modelProvider);
 
     const session = await CodexSession.findById(turn.sessionId).lean().exec();
     const eventStore = new CodexTurnEventStore({
@@ -916,23 +922,29 @@ class CodexQueueWorker {
     let batchTerminationProven = false;
     let batchRunnerEntered = false;
     try {
-      if (usesOllama) {
+      if (gpuReservation) {
         batchActivity = await this.batchActivity.begin(String(turn._id), this.workerId);
         await onEvent({
           stream: 'system',
           eventType: 'gpu.reservation.requested',
-          text: 'Waiting for the AI Gateway Ollama GPU reservation.',
+          text: `Waiting for the AI Gateway GPU reservation for ${modelProvider}.`,
           severity: 'info',
         });
-        const reservation = await this.reserveOllamaGpu(turn);
+        const reservation = await gpuReservation.reserve().catch(error => {
+          logger.error('Failed to acquire AI Gateway GPU for Codex turn', {
+            category: 'codex_tool',
+            metadata: { turnId: String(turn._id), modelProvider, code: error.code, status: error.response?.status },
+          });
+          throw error;
+        });
         await onEvent({
           stream: 'system',
           eventType: 'gpu.reservation.acquired',
           payload: {
-            service: reservation.service || 'ollama',
-            idleTimeoutSec: reservation.idleTimeoutSec || this.ollamaReservation.getStatus().idleTimeoutSec,
+            service: reservation.service || modelProvider,
+            idleTimeoutSec: reservation.idleTimeoutSec || gpuReservation.getStatus().idleTimeoutSec,
           },
-          text: 'AI Gateway Ollama GPU reservation acquired.',
+          text: `AI Gateway GPU reservation acquired for ${modelProvider}.`,
           severity: 'info',
         });
       }
@@ -1073,8 +1085,8 @@ class CodexQueueWorker {
         logger.warning('Codex durable activity release pending reconciliation', { category: 'local_ai', metadata: { turnId: String(turn._id), code: error.code || 'storage_failure' } });
       });
       this.activeTurns.delete(String(turn._id));
-      if (usesOllama) {
-        await this.releaseOllamaReservationIfIdle(turn._id);
+      if (gpuReservation) {
+        await this.releaseGpuReservationIfIdle(modelProvider, { excludeTurnId: turn._id });
       }
       await this.releaseLock(lock).catch((error) => {
         this.lastError = error.message;

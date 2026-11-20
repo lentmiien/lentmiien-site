@@ -40,7 +40,7 @@ const CodexTurnSchema = new Schema({
   requestProfileName: { type: String, default: '', trim: true, maxlength: 80 },
   modelProvider: {
     type: String,
-    enum: ['openai', 'ollama', 'runpod-qwen', 'runpod-glm'],
+    enum: ['openai', 'ollama', 'vllm', 'runpod-qwen', 'runpod-glm'],
     default: 'openai',
     index: true,
   },

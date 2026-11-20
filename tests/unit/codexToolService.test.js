@@ -278,6 +278,7 @@ describe('codexToolService Runpod model provider availability', () => {
     expect(config.modelProviderOptions.map((provider) => provider.value)).toEqual([
       'openai',
       'ollama',
+      'vllm',
       'runpod-qwen',
     ]);
     expect(config.modelProviderOptions).toContainEqual(expect.objectContaining({
@@ -310,6 +311,7 @@ describe('codexToolService Runpod model provider availability', () => {
     expect(config.modelProviderOptions.map((provider) => provider.value)).toEqual([
       'openai',
       'ollama',
+      'vllm',
     ]);
   });
 
@@ -321,6 +323,7 @@ describe('codexToolService Runpod model provider availability', () => {
     expect(config.modelProviderOptions.map((provider) => provider.value)).toEqual([
       'openai',
       'ollama',
+      'vllm',
     ]);
     expect(RunpodPod.find).not.toHaveBeenCalled();
   });
@@ -338,6 +341,7 @@ describe('codexToolService Runpod model provider availability', () => {
     expect(config.modelProviderOptions.map((provider) => provider.value)).toEqual([
       'openai',
       'ollama',
+      'vllm',
       'runpod-glm',
     ]);
   });
@@ -352,6 +356,7 @@ describe('codexToolService Runpod model provider availability', () => {
     expect(config.modelProviderOptions.map((provider) => provider.value)).toEqual([
       'openai',
       'ollama',
+      'vllm',
     ]);
   });
 });
@@ -1145,7 +1150,7 @@ describe('codexToolService token usage helpers', () => {
     expect(serialized.costEstimate.total).toBeCloseTo(0.21, 8);
   });
 
-  test('keeps OpenAI and Ollama costs in separate provider totals', () => {
+  test('combines vLLM and Ollama usage under Local AI and prices OpenAI separately', () => {
     const stats = codexToolService.buildSessionStats([
       {
         _id: 'openai-turn',
@@ -1166,6 +1171,15 @@ describe('codexToolService token usage helpers', () => {
         status: 'succeeded',
         usage: { input_tokens: 100, output_tokens: 100, total_tokens: 200 },
       },
+      {
+        _id: 'vllm-turn',
+        sessionId: 'vllm-session',
+        modelProvider: 'vllm',
+        sequence: 1,
+        kind: 'question',
+        status: 'succeeded',
+        usage: { input_tokens: 50, output_tokens: 50, total_tokens: 100 },
+      },
     ], {
       openai: {
         provider: 'openai',
@@ -1182,10 +1196,11 @@ describe('codexToolService token usage helpers', () => {
     });
 
     expect(stats.cost).toBeCloseTo(0.15, 8);
-    expect(stats.ollamaCost).toBeCloseTo(0.4, 8);
-    expect(stats.combinedCost).toBeCloseTo(0.55, 8);
+    expect(stats.ollamaCost).toBeCloseTo(0.6, 8);
+    expect(stats.combinedCost).toBeCloseTo(0.75, 8);
     expect(stats.providerUsage.openai.tokens.total).toBe(150);
-    expect(stats.providerUsage.ollama.tokens.total).toBe(200);
+    expect(stats.providerUsage.ollama.tokens.total).toBe(300);
+    expect(stats.providerDistribution).toContainEqual(expect.objectContaining({ label: 'Local AI', count: 2 }));
   });
 
   test('serializes an Ollama turn using only the Ollama price table', () => {
@@ -1272,6 +1287,14 @@ describe('codexToolService token usage helpers', () => {
 });
 
 describe('codexToolService local model request options', () => {
+  test('pins vLLM requests to the configured local profile and model', async () => {
+    await expect(codexToolService.resolveTurnRequestOptions({
+      modelProvider: 'vllm', model: 'other', profile: 'other', reasoningEffort: 'high',
+    })).resolves.toMatchObject({
+      modelProvider: 'vllm', model: 'qwen3.8:27b-vllm', profile: 'vllm', reasoningEffort: '',
+    });
+  });
+
   test('resolves an Ollama request without an OpenAI profile or reasoning override', async () => {
     await expect(codexToolService.resolveTurnRequestOptions({
       modelProvider: 'ollama',

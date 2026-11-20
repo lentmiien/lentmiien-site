@@ -429,7 +429,7 @@ before acknowledging acceptance externally.
 
 ## Codex ownership and explicit reconciliation
 
-With batching enabled, an Ollama-backed Codex turn persists `batchActivity` in its
+With batching enabled, a local Ollama or vLLM Codex turn persists `batchActivity` in its
 existing turn record before registering. Registration precedes GPU reservation and
 runner launch; any error fails closed. Heartbeats run every 30 seconds throughout
 model calls, tools and child-agent gaps. A stale heartbeat never releases ownership.

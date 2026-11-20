@@ -47,6 +47,7 @@ const TOKEN_TYPES = ['input', 'cached', 'output', 'reasoning'];
 const MODEL_PROVIDERS = Object.freeze({
   OPENAI: 'openai',
   OLLAMA: 'ollama',
+  VLLM: 'vllm',
   RUNPOD_QWEN: 'runpod-qwen',
   RUNPOD_GLM: 'runpod-glm',
 });
@@ -68,6 +69,15 @@ const MODEL_PROVIDER_DEFINITIONS = Object.freeze([
     description: 'Local Ollama models on the Codex machine; reserves the AI Gateway GPU while active.',
     controlMode: 'local-model',
     usageProvider: MODEL_PROVIDERS.OLLAMA,
+  }),
+  Object.freeze({
+    value: MODEL_PROVIDERS.VLLM,
+    label: 'vLLM (local)',
+    description: 'Runs qwen3.8:27b-vllm with the local vLLM GPU reservation.',
+    controlMode: 'fixed-profile',
+    usageProvider: MODEL_PROVIDERS.OLLAMA,
+    codexProfile: 'vllm',
+    fixedModel: 'qwen3.8:27b-vllm',
   }),
   Object.freeze({
     value: MODEL_PROVIDERS.RUNPOD_QWEN,
@@ -467,6 +477,7 @@ async function getAvailableModelProviderOptions({ user, localModelOptions = [] }
   if (localModelOptions.length) {
     options.push(MODEL_PROVIDER_DEFINITION_BY_VALUE.get(MODEL_PROVIDERS.OLLAMA));
   }
+  options.push(MODEL_PROVIDER_DEFINITION_BY_VALUE.get(MODEL_PROVIDERS.VLLM));
   let authorized = false;
   try {
     authorized = await canUseRunpodModelProviders(user);
@@ -1103,7 +1114,7 @@ function finalizeActivityBucket(bucket, pricing) {
     modelDistribution: serializeDistribution(bucket.modelMap, bucket.turnCount),
     providerDistribution: serializeDistribution(bucket.providerMap, bucket.turnCount, {
       openai: 'OpenAI',
-      ollama: 'Ollama',
+      ollama: 'Local AI',
     }),
     busiestDay: getTopDay(bucket.dayMap),
     lastStartedAt: bucket.lastStartedAt,
@@ -1963,13 +1974,13 @@ async function resolveTurnRequestOptions(payload = {}, workspace = {}, options =
     throw createHttpError(409, 'A Codex session cannot switch model providers. Start a new session to change providers.');
   }
   await assertRunpodModelProviderAuthorized(modelProvider, options.user);
-  if (isRunpodModelProvider(modelProvider)) {
+  if (getModelProviderCodexProfile(modelProvider)) {
     const definition = await assertModelProviderAvailable(modelProvider);
     return {
       requestProfileId: '',
       requestProfileName: '',
       modelProvider,
-      model: '',
+      model: definition.fixedModel || '',
       profile: definition.codexProfile,
       reasoningEffort: '',
     };
@@ -3432,6 +3443,7 @@ module.exports = {
   getDashboardStats,
   getHealth,
   getModelProviderCodexProfile,
+  getModelProviderDefinition,
   getModelProviderLabel,
   getQueueState,
   getRuntimeConfig,

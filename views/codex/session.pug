@@ -17,7 +17,7 @@ block content
   - const localModelOptions = config.localModelOptions || [];
   - const modelProviderOptions = config.modelProviderOptions || [];
   - const sessionProvider = session.modelProvider || 'openai';
-  - const sessionProviderLabel = session.modelProviderLabel || (sessionProvider === 'ollama' ? 'Ollama' : 'OpenAI');
+  - const sessionProviderLabel = session.modelProviderLabel || ({ ollama: 'Ollama', vllm: 'vLLM (local)' }[sessionProvider] || 'OpenAI');
   - const sessionProviderAvailable = !session.runpodBacked || modelProviderOptions.some((provider) => provider.value === sessionProvider);
   - const latestTurn = turns.length ? turns[turns.length - 1] : {};
   - const selectedLocalModel = latestTurn.model || session.model || (localModelOptions[0] && localModelOptions[0].value) || '';
@@ -64,7 +64,7 @@ block content
           h2 Session Totals
           .codex-panel__header-actions
             span.codex-chip= 'OpenAI ' + money(stats.cost)
-            span.codex-chip= 'Ollama ' + money(stats.ollamaCost)
+            span.codex-chip= 'Local AI ' + money(stats.ollamaCost)
         .codex-stat-grid.codex-stat-grid--compact
           .codex-stat-card
             small Total Time
@@ -125,14 +125,14 @@ block content
                     span= turn.permissionMode
                     if turn.requestProfileName || turn.profile
                       span= 'Profile ' + (turn.requestProfileName || turn.profile)
-                    span= 'Provider ' + (turn.modelProviderLabel || (turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI'))
+                    span= 'Provider ' + (turn.modelProviderLabel || ({ ollama: 'Ollama', vllm: 'vLLM (local)' }[turn.modelProvider] || 'OpenAI'))
                     if turn.model
                       span= 'Model ' + turn.model
                     if turn.reasoningEffort
                       span= 'Reasoning ' + turn.reasoningEffort
                     span= 'Queued ' + fmt(turn.queuedAt)
                     span= 'Duration ' + duration(turn.durationMs)
-                    span= ((turn.usageProvider === 'ollama' ? 'Ollama' : 'OpenAI') + ' cost ') + money(turn.costEstimate && turn.costEstimate.total)
+                    span= ((turn.usageProvider === 'ollama' ? 'Local AI' : 'OpenAI') + ' cost ') + money(turn.costEstimate && turn.costEstimate.total)
                   .codex-token-strip
                     each type in tokenTypes
                       span.codex-token-pill
@@ -184,6 +184,10 @@ block content
                   each model in localModelOptions
                     option(value=model.value, selected=model.value === selectedLocalModel)= model.description ? `${model.label} - ${model.description}` : model.label
                 small.codex-field-help Provider is locked to Ollama for this session. Start a new session to return to OpenAI.
+            else if sessionProvider === 'vllm'
+              .codex-field
+                label Local vLLM model
+                strong= session.model
             else if sessionProvider === 'openai'
               .codex-field
                 label(for='codex-followup-profile') OpenAI profile

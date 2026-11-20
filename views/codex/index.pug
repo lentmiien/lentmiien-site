@@ -13,7 +13,7 @@ block content
   - const recentSessions = state.recentSessions || [];
   - const requestProfiles = state.requestProfiles || [];
   - const localModelOptions = config.localModelOptions || [];
-  - const modelProviderOptions = Array.isArray(config.modelProviderOptions) && config.modelProviderOptions.length ? config.modelProviderOptions : [{ value: 'openai', label: 'OpenAI', description: 'OpenAI-backed Codex profiles.', controlMode: 'openai-profile' }, ...(localModelOptions.length ? [{ value: 'ollama', label: 'Ollama (local)', description: 'Local Ollama models on the Codex machine.', controlMode: 'local-model' }] : [])];
+  - const modelProviderOptions = Array.isArray(config.modelProviderOptions) && config.modelProviderOptions.length ? config.modelProviderOptions : [{ value: 'openai', label: 'OpenAI', description: 'OpenAI-backed Codex profiles.', controlMode: 'openai-profile' }, ...(localModelOptions.length ? [{ value: 'ollama', label: 'Ollama (local)', description: 'Local Ollama models on the Codex machine.', controlMode: 'local-model' }] : []), { value: 'vllm', label: 'vLLM (local)', description: 'Runs qwen3.8:27b-vllm locally.', controlMode: 'fixed-profile' }];
   - const promptTemplates = state.promptTemplates || [];
   - const selectedWorkspaceId = workspaces.length ? String(workspaces[0].id || '') : '';
   - const visiblePromptTemplates = promptTemplates.filter((template) => !template.workspaceId || String(template.workspaceId) === selectedWorkspaceId);
@@ -21,7 +21,7 @@ block content
   - const summary = stats.summary || {};
   - const pricing = state.pricing || {};
   - const pricingByProvider = state.pricingByProvider || { openai: pricing, ollama: {} };
-  - const pricingProviders = [{ value: 'openai', label: 'OpenAI' }, { value: 'ollama', label: 'Ollama' }];
+  - const pricingProviders = [{ value: 'openai', label: 'OpenAI' }, { value: 'ollama', label: 'Local AI' }];
   - const tokenTypes = ['input', 'cached', 'output', 'reasoning'];
   - const tokenLabels = { input: 'Input', cached: 'Cached', output: 'Output', reasoning: 'Reasoning' };
   - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
@@ -288,7 +288,7 @@ block content
               strong= money(summary.cost)
               span= (pricingByProvider.openai && pricingByProvider.openai.currency) || 'USD'
             .codex-stat-card
-              small Ollama Cost
+              small Local AI Cost
               strong= money(summary.ollamaCost)
               span= (pricingByProvider.ollama && pricingByProvider.ollama.currency) || 'USD'
             .codex-stat-card
@@ -363,7 +363,7 @@ block content
                 form.codex-pricing-card.codex-form.codex-form--pricing(method='post', data-codex-pricing-form, data-provider=provider.value)
                   .codex-pricing-card__heading
                     h3= provider.label
-                    p= provider.value === 'openai' ? 'Used only for OpenAI-backed Codex turns.' : 'Used for local Ollama and Runpod-backed Qwen/GLM turns.'
+                    p= provider.value === 'openai' ? 'Used only for OpenAI-backed Codex turns.' : 'Used for local Ollama, local vLLM, and Runpod-backed Qwen/GLM turns.'
                   each type in tokenTypes
                     .codex-field
                       label(for=`codex-price-${provider.value}-${type}`)= tokenLabels[type]
@@ -393,7 +393,7 @@ block content
                   each type in tokenTypes
                     th= tokenLabels[type]
                   th OpenAI Cost
-                  th Ollama Cost
+                  th Local AI Cost
               tbody(data-codex-monthly-body)
                 if stats.months && stats.months.length
                   each month in stats.months
@@ -404,7 +404,7 @@ block content
                       each type in tokenTypes
                         td(data-label=tokenLabels[type])= num(month.tokens && month.tokens[type])
                       td(data-label='OpenAI Cost')= money(month.cost)
-                      td(data-label='Ollama Cost')= money(month.ollamaCost)
+                      td(data-label='Local AI Cost')= money(month.ollamaCost)
                 else
                   tr
                     td(colspan='9') No token usage recorded for the last 3 months.
@@ -427,7 +427,7 @@ block content
                   th Avg Time
                   th Success
                   th OpenAI Cost
-                  th Ollama Cost
+                  th Local AI Cost
               tbody(data-codex-workspace-body)
                 if stats.workspaceActivity && stats.workspaceActivity.length
                   each workspaceStat in stats.workspaceActivity
@@ -445,7 +445,7 @@ block content
                       td(data-label='Avg Time')= duration(workspaceStat.avgDurationMs)
                       td(data-label='Success')= pct(workspaceStat.successRate)
                       td(data-label='OpenAI Cost')= money(workspaceStat.cost)
-                      td(data-label='Ollama Cost')= money(workspaceStat.ollamaCost)
+                      td(data-label='Local AI Cost')= money(workspaceStat.ollamaCost)
                 else
                   tr
                     td(colspan='11') No workspace activity recorded for the last 3 months.

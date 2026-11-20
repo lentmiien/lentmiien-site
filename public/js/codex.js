@@ -351,6 +351,7 @@
     maxPromptChars: 'Maximum prompt length',
     yoloEnabled: 'YOLO enabled',
     ollamaReservation: 'Ollama GPU reservation',
+    vllmReservation: 'vLLM GPU reservation',
     held: 'Held',
     service: 'Service',
     reservationId: 'Reservation ID',
@@ -404,6 +405,7 @@
     if (turn && turn.modelProviderLabel) return turn.modelProviderLabel;
     const provider = String(turn && turn.modelProvider || '').trim();
     if (provider === 'ollama') return 'Ollama';
+    if (provider === 'vllm') return 'vLLM (local)';
     if (provider === 'runpod-qwen') return 'Qwen (Runpod)';
     if (provider === 'runpod-glm') return 'GLM-5.3 Flash (Runpod)';
     return 'OpenAI';
@@ -413,7 +415,7 @@
     const provider = String(
       turn && (turn.usageProvider || turn.costEstimate?.provider || turn.modelProvider) || ''
     ).trim();
-    return provider === 'openai' ? 'OpenAI' : 'Ollama';
+    return provider === 'openai' ? 'OpenAI' : 'Local AI';
   }
 
   function formatPercent(value) {
@@ -1620,7 +1622,7 @@
       grid.appendChild(renderMetricCard('Turns', formatNumber(summary.turnCount), `${formatNumber(summary.sessionCount)} sessions`));
       grid.appendChild(renderMetricCard('Tokens', formatNumber(summary.tokens && summary.tokens.total), `Avg ${formatNumber(summary.averageTokensPerTurn)} / turn`));
       grid.appendChild(renderMetricCard('OpenAI Cost', formatMoney(summary.cost), (pricing?.openai?.currency || pricing?.currency) || 'USD'));
-      grid.appendChild(renderMetricCard('Ollama Cost', formatMoney(summary.ollamaCost), pricing?.ollama?.currency || 'USD'));
+      grid.appendChild(renderMetricCard('Local AI Cost', formatMoney(summary.ollamaCost), pricing?.ollama?.currency || 'USD'));
       grid.appendChild(renderMetricCard('Avg Time', formatDuration(summary.durationStats && summary.durationStats.avg), `Max ${formatDuration(summary.durationStats && summary.durationStats.max)}`));
       grid.appendChild(renderMetricCard('Success', formatPercent(summary.successRate), `${formatNumber(summary.successfulTurnCount)} completed`));
       grid.appendChild(renderMetricCard('Cache Share', formatPercent(summary.cacheShare), `Reasoning ${formatPercent(summary.reasoningShare)}`));
@@ -1665,7 +1667,7 @@
           const tokens = normalizeTokens(month.tokens);
           TOKEN_TYPES.forEach((type) => row.appendChild(tableCell(TOKEN_LABELS[type], { text: formatNumber(tokens[type]) })));
           row.appendChild(tableCell('OpenAI Cost', { text: formatMoney(month.cost) }));
-          row.appendChild(tableCell('Ollama Cost', { text: formatMoney(month.ollamaCost) }));
+          row.appendChild(tableCell('Local AI Cost', { text: formatMoney(month.ollamaCost) }));
           monthlyBody.appendChild(row);
         });
       }
@@ -1695,7 +1697,7 @@
           row.appendChild(tableCell('Avg Time', { text: formatDuration(workspace.avgDurationMs) }));
           row.appendChild(tableCell('Success', { text: formatPercent(workspace.successRate) }));
           row.appendChild(tableCell('OpenAI Cost', { text: formatMoney(workspace.cost) }));
-          row.appendChild(tableCell('Ollama Cost', { text: formatMoney(workspace.ollamaCost) }));
+          row.appendChild(tableCell('Local AI Cost', { text: formatMoney(workspace.ollamaCost) }));
           workspaceBody.appendChild(row);
         });
       }
@@ -1711,7 +1713,7 @@
     header.appendChild(createEl('h2', { text: 'Session Totals' }));
     const costs = createEl('div', { className: 'codex-panel__header-actions' });
     costs.appendChild(createEl('span', { className: 'codex-chip', text: `OpenAI ${formatMoney(current.cost)}` }));
-    costs.appendChild(createEl('span', { className: 'codex-chip', text: `Ollama ${formatMoney(current.ollamaCost)}` }));
+    costs.appendChild(createEl('span', { className: 'codex-chip', text: `Local AI ${formatMoney(current.ollamaCost)}` }));
     header.appendChild(costs);
     container.appendChild(header);
     const grid = createEl('div', { className: 'codex-stat-grid codex-stat-grid--compact' });

@@ -447,6 +447,27 @@ describe('CodexLocalRunner', () => {
       await expect(resultPromise).resolves.toEqual(expect.objectContaining({ status: 'succeeded' }));
     });
 
+    test.each(['question', 'followup_question'])('uses the vLLM profile and fixed model for %s', async (kind) => {
+      const child = createFakeChild();
+      spawn.mockReturnValue(child);
+      const profileConfig = { model_provider: 'local_vllm' };
+      const profileLoader = jest.fn().mockResolvedValue(profileConfig);
+      const runner = new CodexLocalRunner({ binaryPath: 'codex-test', profileLoader, completionExitGraceMs: 10 });
+      const input = createRunInput({ turn: { kind, modelProvider: 'vllm' }, session: { codexThreadId: 'thread-123' } });
+      const { resultPromise, threadRequest, turnRequest } = await startAppServerTurn(runner, child, input, {
+        resume: kind === 'followup_question',
+      });
+      expect(profileLoader).toHaveBeenCalledWith('vllm', input.target, expect.any(Object));
+      expect(threadRequest.params).toMatchObject({
+        config: profileConfig, model: 'qwen3.8:27b-vllm', modelProvider: 'local_vllm',
+      });
+      expect(turnRequest.params.model).toBe('qwen3.8:27b-vllm');
+      notify(child, 'turn/completed', {
+        threadId: 'thread-123', turn: { id: 'codex-turn-123', status: 'completed', items: [] },
+      });
+      await expect(resultPromise).resolves.toMatchObject({ status: 'succeeded' });
+    });
+
     test('reports a profile load failure without starting or exposing its cause', async () => {
       const privateError = Object.assign(new Error('private profile diagnostic'), {
         code: 'CODEX_PROFILE_READ_FAILED',

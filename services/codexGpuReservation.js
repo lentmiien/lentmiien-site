@@ -7,7 +7,7 @@ const {
 
 const DEFAULT_AI_GATEWAY_BASE_URL = 'http://192.168.0.20:8080';
 const RESERVATION_PATH = '/gpu/reservation';
-const MINIMUM_IDLE_TIMEOUT_SEC = 6 * 60 * 60;
+const OLLAMA_MINIMUM_IDLE_TIMEOUT_SEC = 6 * 60 * 60;
 const DEFAULT_REQUEST_TIMEOUT_MS = 630000;
 
 function positiveInteger(value, fallback) {
@@ -20,27 +20,38 @@ function normalizeBaseUrl(value) {
   return (baseUrl || DEFAULT_AI_GATEWAY_BASE_URL).replace(/\/+$/, '');
 }
 
-function getCodexOllamaReservationConfig(overrides = {}) {
+function getCodexGpuReservationConfig(overrides = {}) {
+  const common = {
+    baseUrl: normalizeBaseUrl(overrides.baseUrl ?? process.env.AI_GATEWAY_BASE_URL),
+    adminToken: String(overrides.adminToken ?? process.env.LLM_ADMIN_TOKEN ?? '').trim(),
+  };
+  if (overrides.provider === 'vllm') {
+    return {
+      ...common,
+      containerId: 'vllm',
+      idleTimeoutSec: 1800,
+      requestTimeoutMs: positiveInteger(overrides.requestTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS),
+    };
+  }
+
   const configuredIdleTimeout = positiveInteger(
     overrides.idleTimeoutSec ?? process.env.CODEX_OLLAMA_RESERVATION_SECONDS,
-    MINIMUM_IDLE_TIMEOUT_SEC,
+    OLLAMA_MINIMUM_IDLE_TIMEOUT_SEC,
   );
-
   return {
-    baseUrl: normalizeBaseUrl(overrides.baseUrl ?? process.env.AI_GATEWAY_BASE_URL),
+    ...common,
     containerId: String(
       overrides.containerId ?? process.env.CODEX_OLLAMA_RESERVATION_CONTAINER ?? 'ollama',
     ).trim() || 'ollama',
-    idleTimeoutSec: Math.max(MINIMUM_IDLE_TIMEOUT_SEC, configuredIdleTimeout),
+    idleTimeoutSec: Math.max(OLLAMA_MINIMUM_IDLE_TIMEOUT_SEC, configuredIdleTimeout),
     requestTimeoutMs: positiveInteger(
       overrides.requestTimeoutMs ?? process.env.CODEX_OLLAMA_RESERVATION_TIMEOUT_MS,
       DEFAULT_REQUEST_TIMEOUT_MS,
     ),
-    adminToken: String(overrides.adminToken ?? process.env.LLM_ADMIN_TOKEN ?? '').trim(),
   };
 }
 
-class CodexOllamaReservation {
+class CodexGpuReservation {
   constructor(options = {}) {
     this.httpClient = options.httpClient || axios;
     this.configOverrides = options;
@@ -51,7 +62,7 @@ class CodexOllamaReservation {
   }
 
   getConfig() {
-    return getCodexOllamaReservationConfig(this.configOverrides);
+    return getCodexGpuReservationConfig(this.configOverrides);
   }
 
   getStatus() {
@@ -70,6 +81,7 @@ class CodexOllamaReservation {
   }
 
   async reserve() {
+    if (this.releasePromise) await this.releasePromise;
     if (this.reservePromise) {
       return this.reservePromise;
     }
@@ -92,6 +104,8 @@ class CodexOllamaReservation {
     const reservation = normalizeAiGatewayReservation(response.data);
     if (reservation?.active === true) {
       if (reservation.service && reservation.service !== config.containerId) {
+        this.held = false;
+        this.reservation = null;
         throw new Error(`The AI Gateway reservation changed to ${reservation.service}.`);
       }
       this.reservation = reservation;
@@ -120,7 +134,7 @@ class CodexOllamaReservation {
     );
     const reservation = normalizeAiGatewayReservation(response.data);
     if (!reservation || reservation.active !== true) {
-      throw new Error('The AI Gateway did not confirm an active Ollama GPU reservation.');
+      throw new Error(`The AI Gateway did not confirm an active GPU reservation for ${config.containerId}.`);
     }
     if (reservation.service && reservation.service !== config.containerId) {
       throw new Error(`The AI Gateway reserved ${reservation.service} instead of ${config.containerId}.`);
@@ -165,7 +179,7 @@ class CodexOllamaReservation {
   }
 }
 
-module.exports = CodexOllamaReservation;
+module.exports = CodexGpuReservation;
 module.exports.DEFAULT_REQUEST_TIMEOUT_MS = DEFAULT_REQUEST_TIMEOUT_MS;
-module.exports.MINIMUM_IDLE_TIMEOUT_SEC = MINIMUM_IDLE_TIMEOUT_SEC;
-module.exports.getCodexOllamaReservationConfig = getCodexOllamaReservationConfig;
+module.exports.OLLAMA_MINIMUM_IDLE_TIMEOUT_SEC = OLLAMA_MINIMUM_IDLE_TIMEOUT_SEC;
+module.exports.getCodexGpuReservationConfig = getCodexGpuReservationConfig;

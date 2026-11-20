@@ -6,10 +6,12 @@ jest.mock('../../utils/logger', () => ({
 
 const { CodexQueueWorker } = require('../../services/codexQueueWorker');
 const CodexTurn = require('../../models/codex_turn');
+const CodexSession = require('../../models/codex_session');
+const CodexWorkspaceLock = require('../../models/codex_workspace_lock');
 const codexToolService = require('../../services/codexToolService');
 const logger = require('../../utils/logger');
 
-describe('Codex queue worker Ollama reservation lifecycle', () => {
+describe('Codex queue worker GPU reservation lifecycle', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -17,59 +19,83 @@ describe('Codex queue worker Ollama reservation lifecycle', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
-  function createWorker() {
-    const ollamaReservation = {
-      getStatus: jest.fn().mockReturnValue({
-        held: true,
-        service: 'ollama',
-        idleTimeoutSec: 21600,
-      }),
+  function createWorker(provider = 'ollama') {
+    const reservation = {
+      getStatus: jest.fn().mockReturnValue({ held: true, service: provider }),
       release: jest.fn().mockResolvedValue({ released: true }),
-      reserve: jest.fn().mockResolvedValue({
-        active: true,
-        service: 'ollama',
-        idleTimeoutSec: 21600,
-      }),
     };
-    return {
-      ollamaReservation,
-      worker: new CodexQueueWorker({
-        runner: {},
-        ollamaReservation,
-      }),
-    };
+    const worker = new CodexQueueWorker({ runner: {}, [`${provider}Reservation`]: reservation });
+    return { reservation, worker };
   }
 
-  test('keeps the reservation while another Ollama turn is pending', async () => {
-    const { worker, ollamaReservation } = createWorker();
-    worker.hasPendingOllamaTurns = jest.fn().mockResolvedValue(true);
+  test.each(['ollama', 'vllm'])('holds %s until its last turn completes', async (provider) => {
+    const { worker, reservation } = createWorker(provider);
+    const exists = jest.spyOn(CodexTurn, 'exists').mockReturnValueOnce({
+      exec: jest.fn().mockResolvedValue({ _id: 'turn-2' }),
+    }).mockReturnValueOnce({ exec: jest.fn().mockResolvedValue(null) });
 
-    await expect(worker.releaseOllamaReservationIfIdle('turn-1')).resolves.toBe(false);
-
-    expect(worker.hasPendingOllamaTurns).toHaveBeenCalledWith('turn-1');
-    expect(ollamaReservation.release).not.toHaveBeenCalled();
+    await expect(worker.releaseGpuReservationIfIdle(provider, { excludeTurnId: 'turn-1' })).resolves.toBe(false);
+    expect(exists).toHaveBeenCalledWith({
+      modelProvider: provider, status: { $in: ['queued', 'running'] }, _id: { $ne: 'turn-1' },
+    });
+    expect(reservation.release).not.toHaveBeenCalled();
+    await expect(worker.releaseGpuReservationIfIdle(provider)).resolves.toBe(true);
+    expect(reservation.release).toHaveBeenCalledTimes(1);
   });
 
-  test('releases the reservation after the Ollama queue drains', async () => {
-    const { worker, ollamaReservation } = createWorker();
-    worker.hasPendingOllamaTurns = jest.fn().mockResolvedValue(false);
+  test('hands the GPU to vLLM only after the active Ollama turn finishes', async () => {
+    const { worker, reservation } = createWorker();
+    worker.activeTurns.set('running-turn', { modelProvider: 'ollama' });
+    await expect(worker.canClaimGpuProvider('vllm')).resolves.toBe(false);
+    expect(reservation.release).not.toHaveBeenCalled();
 
-    await expect(worker.releaseOllamaReservationIfIdle('turn-1')).resolves.toBe(true);
-
-    expect(ollamaReservation.release).toHaveBeenCalledTimes(1);
+    worker.activeTurns.clear();
+    jest.spyOn(CodexTurn, 'exists').mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+    await expect(worker.canClaimGpuProvider('vllm')).resolves.toBe(true);
+    expect(CodexTurn.exists).toHaveBeenCalledWith({ modelProvider: 'ollama', status: 'running' });
+    expect(reservation.release).toHaveBeenCalledTimes(1);
   });
 
   test('does not duplicate the release notice for a coalesced caller', async () => {
-    const { worker, ollamaReservation } = createWorker();
-    worker.hasPendingOllamaTurns = jest.fn().mockResolvedValue(false);
-    ollamaReservation.release.mockResolvedValue({ released: true, initiated: false });
+    const { worker, reservation } = createWorker();
+    jest.spyOn(CodexTurn, 'exists').mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+    reservation.release.mockResolvedValue({ released: true, initiated: false });
+    await expect(worker.releaseGpuReservationIfIdle('ollama')).resolves.toBe(true);
+    expect(logger.notice).not.toHaveBeenCalled();
+  });
 
-    await expect(worker.releaseOllamaReservationIfIdle('turn-1')).resolves.toBe(true);
+  test.each([true, false])('runs the vLLM worker only with a confirmed reservation (granted=%s)', async granted => {
+    const turn = { _id: 't', sessionId: 's', modelProvider: 'vllm' };
+    const trace = [];
+    const vllmReservation = {
+      reserve: async () => {
+        trace.push('reserve');
+        if (!granted) throw new Error('Gateway unavailable');
+        return { service: 'vllm', idleTimeoutSec: 1800 };
+      },
+      getStatus: () => ({ held: granted }),
+      release: async () => { trace.push('release'); return { released: true }; },
+    };
+    const runner = { runTurn: async () => { trace.push('run'); return { status: 'succeeded' }; } };
+    const worker = new CodexQueueWorker({ runner, vllmReservation });
+    const query = value => ({ lean() { return this; }, exec: jest.fn().mockResolvedValue(value) });
+    jest.spyOn(CodexSession, 'findById').mockReturnValue(query({}));
+    jest.spyOn(CodexWorkspaceLock, 'updateOne').mockReturnValue(query({ matchedCount: 1 }));
+    jest.spyOn(CodexTurn, 'exists').mockReturnValue(query(null));
+    jest.spyOn(CodexTurn, 'updateOne').mockReturnValue(query({ matchedCount: 1 }));
+    jest.spyOn(CodexTurn, 'findByIdAndUpdate').mockReturnValue(query({ ...turn }));
+    jest.spyOn(codexToolService, 'updateSessionAfterTurn').mockResolvedValue();
+    worker.batchActivity = { begin: jest.fn().mockResolvedValue(null), finish: jest.fn().mockResolvedValue() };
+    worker.recordEvent = jest.fn().mockResolvedValue();
+    worker.failOutstandingAdditionalMessages = jest.fn().mockResolvedValue();
+    worker.failQueuedAdditionalMessages = jest.fn().mockResolvedValue();
+    worker.releaseLock = jest.fn().mockResolvedValue();
 
-    expect(logger.notice).not.toHaveBeenCalledWith(
-      'Released AI Gateway GPU after Codex Ollama queue drained',
-      expect.anything(),
-    );
+    await worker.runClaimedTurn(turn, {}, {}, {});
+    expect(trace).toEqual(granted ? ['reserve', 'run', 'release'] : ['reserve']);
+    expect(CodexTurn.findByIdAndUpdate).toHaveBeenCalledWith('t', {
+      $set: expect.objectContaining({ status: granted ? 'succeeded' : 'failed' }),
+    }, expect.any(Object));
   });
 
   test('does not claim new work while the database is unavailable', async () => {

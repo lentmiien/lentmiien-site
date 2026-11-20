@@ -212,8 +212,8 @@ Validation on Node 26.13.0: full Jest coverage run (`npm test -- --maxWorkers=2 
 | `CODEX_OLLAMA_PROFILE` | Codex profile-v2 config applied to every Ollama App Server thread. Defaults to `ollama`, which the worker loads from `$CODEX_HOME/ollama.config.toml` on the execution target. |
 | `CODEX_RUNPOD_PROFILE_ENV_FILE` | Shell environment file sourced before Runpod-backed Qwen or GLM Codex turns. Defaults to `~/.codex/lentmiien.env` on the machine executing Codex. |
 | `CODEX_RUNPOD_PROFILE_SHELL` | Shell used to source the Runpod profile environment locally and on SSH targets without an explicit target shell. Defaults to `/bin/bash`. |
-| `CODEX_OLLAMA_RESERVATION_CONTAINER` | AI Gateway container reserved before a local Codex turn. Defaults to `ollama`. |
-| `CODEX_OLLAMA_RESERVATION_SECONDS` | AI Gateway reservation idle timeout for local Codex turns. Values below six hours are raised to `21600` seconds. |
+| `CODEX_OLLAMA_RESERVATION_CONTAINER` | AI Gateway container reserved before an Ollama Codex turn. Defaults to `ollama`. |
+| `CODEX_OLLAMA_RESERVATION_SECONDS` | AI Gateway reservation idle timeout for Ollama Codex turns. Values below six hours are raised to `21600` seconds. |
 | `CODEX_OLLAMA_RESERVATION_TIMEOUT_MS` | Maximum time to wait for AI Gateway reservation and release requests. Defaults to `630000`. |
 | `CODEX_REMOTE_SSH_ENABLED` | Seeds an SSH-backed Linux Codex execution target when set to `true`. |
 | `CODEX_REMOTE_SSH_DESTINATION` | SSH destination for the seeded target, such as `user@host`. |
@@ -275,7 +275,7 @@ When the Express web server runs as a Windows service, keep it from claiming Cod
 
 The web UI still creates and displays Codex turns through MongoDB. The separate user-login worker is the only process that should execute queued turns.
 
-To enable local models, configure an Ollama-only Codex profile on the machine that executes Codex. The worker defaults `CODEX_OLLAMA_PROFILE` to `ollama`, so local turns load `$CODEX_HOME/ollama.config.toml`. Use a custom provider ID because Codex's built-in `ollama` provider is reserved and cannot be overridden:
+To enable local Ollama models, configure an Ollama-only Codex profile on the machine that executes Codex. The worker defaults `CODEX_OLLAMA_PROFILE` to `ollama`, so Ollama turns load `$CODEX_HOME/ollama.config.toml`. Use a custom provider ID because Codex's built-in `ollama` provider is reserved and cannot be overridden:
 
 ```toml
 oss_provider = "local_ollama"
@@ -289,9 +289,11 @@ stream_idle_timeout_ms = 900000
 stream_max_retries = 5
 ```
 
-The `900000` ms SSE idle timeout lets Ollama spend up to 15 minutes without emitting a stream event. Selecting Ollama in `/codex` launches `codex app-server`, reads the bounded profile-v2 file on the execution target, passes the startup-only `model_catalog_json` setting when starting App Server, and sends the remaining config, `oss_provider`, and selected model through `thread/start` or `thread/resume`. Profile files larger than 1 MiB are rejected, and their raw contents are not included in command summaries or logs. The worker reserves the AI Gateway `ollama` container for at least six hours before each local turn and releases it once no other local Ollama turn is queued or running. OpenAI and Ollama token prices and cost estimates are stored and displayed separately.
+The `900000` ms SSE idle timeout lets Ollama spend up to 15 minutes without emitting a stream event. Selecting Ollama in `/codex` launches `codex app-server`, reads the bounded profile-v2 file on the execution target, passes the startup-only `model_catalog_json` setting when starting App Server, and sends the remaining config, `oss_provider`, and selected model through `thread/start` or `thread/resume`. Profile files larger than 1 MiB are rejected, and their raw contents are not included in command summaries or logs. Ollama reservations use an idle timeout of at least six hours.
 
-The Codex provider selector also supports two fixed Runpod-backed profiles. `Qwen (Runpod)` uses `lentmiien-qwen` and is shown only while the `/admin/runpod` record named `ollama-qwen` is `RUNNING`; `GLM-5.3 Flash (Runpod)` similarly uses `lentmiien-glm` and requires a running `glm53-flash` record. These options are restricted to administrators by default (or accounts explicitly granted `codex.run.runpod_model`). The worker checks the pod state again when accepting and claiming a turn, sources `CODEX_RUNPOD_PROFILE_ENV_FILE`, launches `codex app-server`, and applies the fixed profile through the App Server thread protocol. Both providers are included in the Ollama usage and cost totals. See [documentation/codex-runpod-model-providers.md](documentation/codex-runpod-model-providers.md) for setup and security details.
+Selecting **vLLM (local)** loads `$CODEX_HOME/vllm.config.toml` on the execution target and pins each turn to `qwen3.8:27b-vllm`. Before launch, the worker posts to the AI Gateway’s `/gpu/reservation` endpoint with `container_id=vllm`, `wait=true`, and a 1,800-second idle timeout. It sends `DELETE /gpu/reservation` after the final queued vLLM turn or before handing the GPU to Ollama. The **Local AI** statistics combine vLLM and Ollama usage at the existing Ollama token prices.
+
+The Codex provider selector also supports two fixed Runpod-backed profiles. `Qwen (Runpod)` uses `lentmiien-qwen` and is shown only while the `/admin/runpod` record named `ollama-qwen` is `RUNNING`; `GLM-5.3 Flash (Runpod)` similarly uses `lentmiien-glm` and requires a running `glm53-flash` record. These options are restricted to administrators by default (or accounts explicitly granted `codex.run.runpod_model`). The worker checks the pod state again when accepting and claiming a turn, sources `CODEX_RUNPOD_PROFILE_ENV_FILE`, launches `codex app-server`, and applies the fixed profile through the App Server thread protocol. Both providers are included in the Local AI usage and cost totals. See [documentation/codex-runpod-model-providers.md](documentation/codex-runpod-model-providers.md) for setup and security details.
 
 For SSH-backed Linux targets, make sure the worker account can run a non-interactive SSH command such as:
 ```powershell

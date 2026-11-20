@@ -4,8 +4,8 @@ The `/codex` model-provider selector exposes these fixed mappings when their exa
 
 | Provider choice | Required pod name | Codex profile | Usage group |
 | --- | --- | --- | --- |
-| Qwen (Runpod) | `ollama-qwen` | `lentmiien-qwen` | Ollama |
-| GLM-5.3 Flash (Runpod) | `glm53-flash` | `lentmiien-glm` | Ollama |
+| Qwen (Runpod) | `ollama-qwen` | `lentmiien-qwen` | Local AI |
+| GLM-5.3 Flash (Runpod) | `glm53-flash` | `lentmiien-glm` | Local AI |
 
 A pod is available only when its durable `/admin/runpod` database record has `providerStatus: RUNNING`, `lifecycleGroup: running`, no `archivedAt` value, and a valid `lastProviderSyncAt` no older than three minutes (with at most 15 seconds of future clock tolerance). `CODEX_RUNPOD_STATE_MAX_AGE_MS` defaults to `180000` and is clamped to `120000`–`600000`. The Runpod guard refreshes those records every 60 seconds; the default allows two delayed observations during provisioning or temporary throttling. Missing or stale timestamps fail closed with an unavailable message, without adding provider HTTP requests to Codex turns. The service repeats this check when a request is submitted, retried, and claimed by a worker, so a stale browser cannot start a turn after the pod stops.
 
@@ -55,4 +55,4 @@ Then run `sudo systemctl daemon-reload` and restart the worker unit. A systemd `
 - Responses and caching: Pug/JSON output uses the existing escaping/serialization path, and `/codex` responses are marked `private, no-store`.
 - Logging: failed capability lookups and turns blocked because a pod stopped are reported through the production logger without credentials or prompt content.
 - Retention: provider choice, fixed profile name, token usage, and normal Codex turn history follow the existing Codex retention behavior. Authentication environment values are never persisted by this feature.
-- Negative tests: focused tests cover unauthorized provider submission, stopped/absent pod rejection, missing/stale/malformed/future observation rejection, hidden offline choices, fixed-profile enforcement, shell argument construction, and Ollama usage grouping.
+- Negative tests: focused tests cover unauthorized provider submission, stopped/absent pod rejection, missing/stale/malformed/future observation rejection, hidden offline choices, fixed-profile enforcement, shell argument construction, and Local AI usage grouping.

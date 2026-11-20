@@ -761,7 +761,7 @@ module.exports = [
           },
           model_provider: {
             type: 'string',
-            enum: ['openai', 'ollama', 'runpod-qwen', 'runpod-glm'],
+            enum: ['openai', 'ollama', 'vllm', 'runpod-qwen', 'runpod-glm'],
             description: 'An available model provider returned by the fetch tool.',
           },
           mode: {

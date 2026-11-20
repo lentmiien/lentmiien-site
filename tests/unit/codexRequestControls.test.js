@@ -131,6 +131,7 @@ describe('Codex request prompt controls', () => {
     expect(html).toContain('name="modelProvider"');
     expect(html).toContain('<option value="ollama"');
     expect(html).toContain('Ollama (local)</option>');
+    expect(html).toContain('vLLM (local)</option>');
     expect(html).toContain('id="codex-local-model"');
     expect(html).toContain('value="qwen3.6:27b"');
     expect(html).toContain('value="llama4:scout"');
@@ -192,7 +193,7 @@ describe('Codex request prompt controls', () => {
     expect(html).not.toContain('value="runpod-glm"');
   });
 
-  test('renders independent OpenAI and Ollama pricing forms for admins', () => {
+  test('renders independent OpenAI and Local AI pricing forms for admins', () => {
     const state = {
       config: { maxPromptChars: 20000, localModelOptions: [{ value: 'qwen3.6:27b', label: 'Qwen' }] },
       workspaces: [{ id: 'workspace-1', name: 'Workspace', rootPath: '/workspace' }],
@@ -215,7 +216,7 @@ describe('Codex request prompt controls', () => {
     expect(html).toContain('id="codex-price-openai-input"');
     expect(html).toContain('id="codex-price-ollama-input"');
     expect(html).toContain('Save OpenAI Prices');
-    expect(html).toContain('Save Ollama Prices');
+    expect(html).toContain('Save Local AI Prices');
   });
 
   test('shows only global and selected-workspace templates for a new request', () => {
@@ -321,6 +322,19 @@ describe('Codex request prompt controls', () => {
     expect(html).toContain('name="modelProvider" value="ollama"');
     expect(html).toContain('id="codex-followup-local-model"');
     expect(html).toContain('value="qwen3.6:27b" selected');
+    expect(html).not.toContain('id="codex-followup-profile"');
+  });
+
+  test('shows the fixed vLLM follow-up model and Local AI turn cost', () => {
+    const state = {
+      session: { id: 's', codexThreadId: 'thread', modelProvider: 'vllm', model: 'qwen3.8:27b-vllm' },
+      turns: [{ id: 't', kind: 'question', sequence: 1, status: 'succeeded', modelProvider: 'vllm', usageProvider: 'ollama', costEstimate: { total: 0.15 } }],
+    };
+    const html = renderCodexView('session', state);
+    expect(html).toContain('name="modelProvider" value="vllm"');
+    expect(html).toContain('qwen3.8:27b-vllm');
+    expect(html).toContain('Local AI cost $0.1500');
+    expect(html).not.toContain('Runpod model provider');
     expect(html).not.toContain('id="codex-followup-profile"');
   });
 
