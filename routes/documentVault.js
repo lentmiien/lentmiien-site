@@ -126,7 +126,7 @@ function createRouter({ repository = repo, queueService = queue, roleModel = Rol
     const { id } = req.params;
     const revision = integer(req.body.revision);
     await repository.mutate(repository.pageScope(id, req.user._id), group => {
-      workflow.editLocation(group.pages.id(id), revision, physical);
+      workflow.editLocation(group, group.pages.id(id), revision, physical);
     });
     res.redirect(303, base + '/pages/' + req.params.id + '?notice=location');
   });

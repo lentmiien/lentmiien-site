@@ -40,6 +40,7 @@ NAVIGATION.push({ id: 'experimental_models', href: '/admin/experimental-models',
 NAVIGATION.push({ id: 'user_settings', href: '/settings', label: 'User settings', src: '/i/product.svg', capability: 'account.profile.read', subgroup: 'Account' });
 NAVIGATION.push({ id: 'smallest_box', href: '/binpacking-smallest', label: 'Smallest Box Finder', src: '/i/binpacking.svg', capability: 'packing.container.read', subgroup: 'Packing tools' });
 NAVIGATION.push({ id: 'multi_box', href: '/binpacking-multi', label: 'Multi-box Packer', src: '/i/binpacking.svg', capability: 'packing.container.read', subgroup: 'Packing tools' });
+NAVIGATION.push({ id: 'insurance', href: '/insurance/', label: 'Insurance', src: '/i/receipt.svg', capability: VAULT_READ });
 NAVIGATION.push({ id: 'document_vault', href: '/document-vault/', label: 'Document vault', src: '/i/receipt.svg', capability: VAULT_READ });
 NAVIGATION.push({ id: 'local_ai_queue', href: '/local-ai/queue', label: 'Local AI queue', src: '/i/batch.svg', capability: 'local_ai.jobs.use' });
 NAVIGATION.push({ id: 'lantern_commons', href: '/commons', label: 'Lantern Commons', src: '/commons/icon.svg', capability: 'commons.world.play', subgroup: 'Village & play' });

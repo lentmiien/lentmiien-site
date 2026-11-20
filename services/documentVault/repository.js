@@ -4,7 +4,7 @@ const { Group, Scan } = require('../../models/document_vault');
 const User = require('../../models/useraccount');
 const logger = require('../../utils/logger');
 const { MAX_PAGES, MAX_BATCH, INTAKE, PAGE_SIZE, VaultError, validId, sameId } = require('./policy');
-const { enqueue, syncNextJob, canRead, canManage, isFiled } = require('./workflow');
+const { enqueue, syncNextJob, canRead, canManage, isFiled, filingLocked, EDIT_WINDOW, restoreExpired } = require('./workflow');
 const { validateScan } = require('./scans');
 
 const missing = () => new VaultError(404, 'Document not found.');
@@ -54,6 +54,15 @@ async function cleanInterruptedUploads() {
     .select('_id').limit(16).lean();
   for (const group of abandoned) await discardUpload(group._id);
   if (abandoned.length) logger.warning('Removed interrupted Document vault uploads', { category: 'document_vault', metadata: { count: abandoned.length } });
+}
+async function restoreExpiredRedos() {
+  const pending = { state: 'ready', createdAt: { $lte: new Date(Date.now() - EDIT_WINDOW) }, $or: [
+    { pages: { $elemMatch: { filedAt: { $type: 'date' }, state: { $ne: 'stored' },
+      $or: [{ beforeRedo: { $exists: true } }, { state: 'approved' }] } } },
+    { beforeRedoDescription: { $type: 'string' } },
+  ] };
+  const groups = await Group.find(pending).select('_id').limit(32).lean();
+  for (const { _id } of groups) await mutate({ _id }, restoreExpired);
 }
 async function upload(actorId, ownerId, viewers, files, uploadKey) {
   if (typeof uploadKey !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(uploadKey)) {
@@ -174,10 +183,12 @@ async function detail(pageId, userId, review = false) {
   if (!group) throw missing();
   const page = group.pages.find(p => sameId(p._id, pageId));
   const manage = canManage(group, page, userId);
+  delete page.beforeRedo;
   if (!manage || !review) delete page.failedReply;
   const accounts = await User.find({ _id: { $in: manage ? [group.ownerId, ...group.viewerIds] : [group.ownerId] } }).select('_id name').lean();
   const name = id => accounts.find(u => sameId(u._id, id))?.name || 'Unavailable account';
   return {
+    locked: filingLocked(group, page), groupLocked: group.pages.some(p => filingLocked(group, p)),
     page, manage, filed: isFiled(page), ownerName: name(group.ownerId),
     viewers: manage ? group.viewerIds.map(name) : [],
     summary: group.description, summaryState: group.summaryState, summaryIssue: group.summaryIssue,
@@ -196,4 +207,4 @@ async function image(pageId, userId) {
   if (!scan) throw new Error('Missing archived scan.');
   return scan;
 }
-module.exports = { upload, directory, list, detail, image, mutate, pageScope, cleanInterruptedUploads };
+module.exports = { upload, directory, list, detail, image, mutate, pageScope, cleanInterruptedUploads, restoreExpiredRedos };

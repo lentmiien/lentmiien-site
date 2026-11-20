@@ -4,8 +4,8 @@ const Role = require('../../models/role');
 const { hasCapabilities } = require('../../utils/authorization');
 const logger = require('../../utils/logger');
 const { READ, REVIEW, INTAKE, BUNDLES, sameId, VaultError } = require('./policy');
-const { finishJob, isOperator } = require('./workflow');
-const { mutate, cleanInterruptedUploads } = require('./repository');
+const { finishJob, isOperator, filingLocked } = require('./workflow');
+const { mutate, cleanInterruptedUploads, restoreExpiredRedos } = require('./repository');
 const providers = require('./providers');
 const { VaultReplyError } = require('./content');
 
@@ -80,6 +80,7 @@ class VaultWorker {
     try {
       if (this.now() - this.lastCleanup > 10 * 60 * 1000) {
         await cleanInterruptedUploads();
+        await restoreExpiredRedos();
         this.lastCleanup = this.now();
       }
       await this.runOne();
@@ -114,6 +115,9 @@ class VaultWorker {
     const group = await Group.findOne({ _id: next._id, state: 'ready', 'jobs._id': jobId });
     if (!group) return release(claim, 'superseded');
     const job = group.jobs.id(jobId);
+    const expiredRedo = job.pageId ? filingLocked(group, group.pages.id(job.pageId))
+      : group.beforeRedoDescription && group.pages.some(page => filingLocked(group, page));
+    if (expiredRedo) return persist(claim, 'superseded');
     if (!await this.authorize(group, job)) {
       logger.warning('Document vault job lost its initiating account access', meta(job.kind, { jobId }));
       return persist(claim, 'access');

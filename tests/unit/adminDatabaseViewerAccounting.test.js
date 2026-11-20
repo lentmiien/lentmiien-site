@@ -75,7 +75,7 @@ test.each(['account_dbs', 'transaction_dbs', 'accounting_write_locks', 'ordinary
 });
 
 
-test.each(['commonsdiaries', 'documentvaultgroups', 'documentvaultscans', 'documentvaultqueues'])('private collection %s is absent from generic admin list and direct read/delete are denied', async collection => {
+test.each(['commonsdiaries', 'documentvaultgroups', 'documentvaultscans', 'documentvaultqueues', 'insuranceclaims'])('private collection %s is absent from generic admin list and direct read/delete are denied', async collection => {
   const f = fixture();
   await f.controller.database_viewer_page({ query: {} }, f.res);
   expect(f.res.render.mock.calls[0][1].collections).not.toContain(collection);

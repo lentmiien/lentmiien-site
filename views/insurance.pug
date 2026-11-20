@@ -1,0 +1,101 @@
+doctype html
+html(lang='en')
+  head
+    meta(charset='utf-8')
+    meta(name='viewport', content='width=device-width, initial-scale=1')
+    meta(name='robots', content='noindex,nofollow')
+    title Insurance
+    link(rel='stylesheet', href='/css/color-theme.css')
+    link(rel='stylesheet', href='/css/document-vault.css')
+    script(src='/js/insurance.js', defer)
+    include includes/navigation_assets
+  body
+    include includes/navigation
+    main.vault-main.insurance
+      header.vault-header
+        a.vault-name(href='/insurance/') Insurance
+        nav.tabs(aria-label='Insurance')
+          each tab in [{view:'unreviewed', path:'/', label:'Unreviewed'}, {view:'processing', path:'/processing', label:'Processing'}, {view:'batches', path:'/batches', label:'Submitted batches'}]
+            a(href='/insurance' + tab.path, aria-current=view === tab.view || (view === 'batch' && tab.view === 'batches') ? 'page' : null)= tab.label
+      if view === 'error'
+        .empty
+          p(role='alert')= message
+          a(href='/insurance/') Return to Insurance
+      else
+        - const here = '/insurance/' + (view === 'unreviewed' ? '' : view)
+        - const suffix = view === 'batch' ? '&owner=' + owner + '&date=' + date : ''
+        header.section-head.heading-row
+          h1= ({unreviewed:'Unreviewed invoices', processing:'Insurance processing', batches:'Submitted batches', batch:'Submitted on ' + date})[view]
+          if rows.length && ['processing','batch'].includes(view)
+            .form-actions
+              a.action.secondary(href=here + '/all-scans.zip' + (suffix ? '?' + suffix.slice(1) : '')) Download all scans (.zip)
+              if offset || more
+                a(href=here + '/scans.zip?offset=' + offset + suffix) Download this page
+        if !rows.length
+          p.empty= ({unreviewed:'No invoices awaiting review.', processing:'No invoices awaiting submission.', batches:'No submitted batches.', batch:'No invoices in this batch.'})[view]
+        else if view === 'batches'
+          .table-wrap
+            table
+              thead
+                tr
+                  th Submission date
+                  th Owner
+                  th Invoices
+              tbody
+                each row in rows
+                  tr
+                    td
+                      a(href='/insurance/batch?owner=' + row.ownerId + '&date=' + row.submittedOn)= row.submittedOn
+                    td= row.ownerName
+                    td= row.count
+        else
+          if view === 'processing'
+            form#submit-claims.panel(method='post', action='/insurance/status')
+              input(type='hidden', name='_csrf', value=csrfToken)
+              input(type='hidden', name='from', value='processing')
+              input(type='hidden', name='status', value='completed')
+              .fields
+                label(for='submission-date') Submission date
+                input#submission-date(type='date', name='submittedOn', required)
+              label.inline-check(hidden data-select-all)
+                input(type='checkbox')
+                | Select all on this page
+              button.primary(type='submit') Mark selected invoices submitted
+          .table-wrap
+            table
+              thead
+                tr
+                  th Invoice
+                  th Owner
+                  th Total
+                  if view !== 'batch'
+                    th Actions
+              tbody
+                each row in rows
+                  tr
+                    td
+                      if view === 'processing'
+                        input(type='checkbox', name='ids', value=row._id, form='submit-claims', aria-label='Select ' + row.title)
+                        | #{' '}
+                      a.doc-link(href='/document-vault/pages/' + row._id)= row.title
+                      small
+                        | #{row.date || 'Undated'} · #{' '}
+                        a(href='/document-vault/pages/' + row._id + '/image', target='_blank', rel='noreferrer') Open scan
+                    td= row.ownerName
+                    td= row.amount == null ? '—' : [row.amount,row.currency].filter(v => v != null).join(' ')
+                    if view !== 'batch'
+                      td
+                        form(method='post', action='/insurance/status')
+                          input(type='hidden', name='_csrf', value=csrfToken)
+                          input(type='hidden', name='ids', value=row._id)
+                          input(type='hidden', name='from', value=view)
+                          if view === 'unreviewed'
+                            button.primary(type='submit', name='status', value='processing') Insurance processing
+                            button.secondary(type='submit', name='status', value='dismissed') No further action
+                          button.secondary(type='submit', name='status', value='expired') Expired
+        if offset || more
+          nav.pager(aria-label='Results pages')
+            if offset
+              a(href=here + '?offset=' + Math.max(0, offset - pageSize) + suffix) Previous
+            if more
+              a(href=here + '?offset=' + (offset + pageSize) + suffix) Next

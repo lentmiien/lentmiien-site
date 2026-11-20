@@ -26,6 +26,8 @@ const page = new Schema({
     folderId: String,
     groupLabel: String,
   },
+  // Kept only while reprocessing a filed page, for restoration at the edit deadline.
+  beforeRedo: Schema.Types.Mixed,
   failedStage: String,
   failedReply,
   issue: String,
@@ -49,6 +51,7 @@ const group = new Schema({
   jobs: [job],
   nextJobAt: Date,
   description: String,
+  beforeRedoDescription: String,
   descriptionRevision: { type: Number, default: 0 },
   summaryState: { type: String, enum: ['waiting', 'queued', 'ready', 'failed'], default: 'waiting' },
   summaryIssue: String,

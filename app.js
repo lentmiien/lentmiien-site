@@ -204,13 +204,13 @@ const isExperimentalModelsPath = req => /^\/admin\/experimental-models(?:\/|$)/i
 const isEmbeddingGemma2Path = req => /^\/admin\/embeddinggemma2(?:\/|$)/i.test(req.path);
 const isDecisionsPath = req => /^\/admin\/decisions(?:\/|$)/i.test(req.path);
 const isToolTestPath = req => /^\/admin\/tools\/test\/?$/i.test(req.path);
-const isDocumentVaultPath = req => /^\/document-vault(?:\/|$)/i.test(req.path);
+const isDocumentToolPath = req => /^\/(?:document-vault|insurance)(?:\/|$)/i.test(req.path);
 const isLocalAiPath = req => /^\/local-ai(?:\/|$)/i.test(req.path);
 const isPackingToolPath = req => /^\/binpacking-(?:smallest|multi)(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
 const isUserSettingsPath = req => /^\/(?:settings|admin\/password-reminders|two-factor|login)(?:\/|$)/i.test(req.path);
-app.use((req, res, next) => (isDocumentVaultPath(req) || isHealthCheckPath(req) || isDecisionsPath(req) || isToolTestPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isAmiAmiDuplicatesPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
-app.use((req, res, next) => (isDocumentVaultPath(req) || isHealthCheckPath(req) || isDecisionsPath(req) || isToolTestPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isAmiAmiDuplicatesPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
+app.use((req, res, next) => (isDocumentToolPath(req) || isHealthCheckPath(req) || isDecisionsPath(req) || isToolTestPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isAmiAmiDuplicatesPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
+app.use((req, res, next) => (isDocumentToolPath(req) || isHealthCheckPath(req) || isDecisionsPath(req) || isToolTestPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isAmiAmiDuplicatesPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -567,6 +567,8 @@ app.use('/image_gen', isAuthenticated, authorize("image_gen"), imageGenRouter);
 app.use('/gpt-image', gptImageRouter);
 app.use('/music', isAuthenticated, musicRouter);
 const documentVault = require('./services/documentVault/worker');
+const insurance = require('./services/insuranceService');
+app.use('/insurance', require('./routes/insurance').createRouter());
 app.use('/document-vault', require('./routes/documentVault').createRouter());
 app.use('/ocr', isAuthenticated, authorize("ocr"), ocrRouter);
 app.use('/ocr-tts', isAuthenticated, authorize("ocr"), ocrTtsRouter);
@@ -806,6 +808,7 @@ function startDatabaseServices() {
   });
 
   const starters = [
+    ['Insurance invoice importer', () => insurance.start()],
     ['Document vault worker', () => documentVault.worker.start()],
     ['TARIC worker', () => taricTool.worker.start()],
     ['AmiAmi HTML import worker', () => amiamiUpload.start()],
@@ -883,6 +886,7 @@ databaseLifecycle.on('ready', startDatabaseServices);
 // Remove our listener before re-raising so normal process termination is preserved.
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.once(signal, () => {
+    insurance.stop();
     documentVault.worker.stop();
     localAi.worker.stop();
     taricTool.worker.stop();
@@ -891,6 +895,7 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
   });
 }
 databaseLifecycle.on('unavailable', () => {
+  insurance.stop();
   documentVault.worker.stop();
   localAi.worker.stop();
   taricTool.worker.stop();
@@ -899,6 +904,7 @@ databaseLifecycle.on('unavailable', () => {
   io.disconnectSockets?.(true);
 });
 databaseLifecycle.on('recovered', () => {
+  insurance.start();
   documentVault.worker.start();
   localAi.worker.start();
   taricTool.worker.start();

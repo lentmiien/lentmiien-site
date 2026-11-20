@@ -65,6 +65,7 @@ suite('Document vault with standalone MongoDB', () => {
       req.isAuthenticated = () => Boolean(req.user);
       next();
     });
+    app.use('/insurance', require('../../routes/insurance').createRouter());
     app.use('/document-vault', require('../../routes/documentVault').createRouter());
     site = await listen(app);
     scan = await sharp({ create: { width: 16, height: 24, channels: 3, background: 'white' } }).png().toBuffer();
@@ -78,7 +79,7 @@ suite('Document vault with standalone MongoDB', () => {
   beforeEach(async () => {
     calls = [];
     responseMode = 'ok';
-    await Promise.all([Group.deleteMany({}), Scan.deleteMany({}), Queue.deleteMany({}), AppSetting.deleteMany({})]);
+    await Promise.all([Group.deleteMany({}), Scan.deleteMany({}), Queue.deleteMany({}), AppSetting.deleteMany({}), require('../../models/insurance_claim').deleteMany({})]);
   });
   afterAll(async () => {
     await Promise.all([close(site), close(gateway)]);
@@ -89,7 +90,7 @@ suite('Document vault with standalone MongoDB', () => {
     }
   });
   function request(user, route, body, csrf = true) {
-    return fetch(urlOf(site) + '/document-vault' + route, {
+    return fetch(urlOf(site) + (route.startsWith('/insurance/') ? route : '/document-vault' + route), {
       method: body ? 'POST' : 'GET', redirect: 'manual', body, headers: {
         ...(user ? { 'x-test-user': user } : {}), ...(csrf ? { 'x-csrf-token': session.csrfToken } : {}),
       },
@@ -213,6 +214,123 @@ suite('Document vault with standalone MongoDB', () => {
     expect((await request('viewer', '/pages/' + second + '/redo', new URLSearchParams({ mode: 'both', revision: '1' }))).status).toBe(404);
     expect(await (await request('viewer', '/?q=Reviewed')).text()).toContain('Reviewed receipt');
   });
+  test('review storage defaults follow corrected dates until edited and Other is a manual override', async () => {
+    const group = await Group.create({ ownerId: users.owner._id, uploaderId: users.clerk._id, state: 'ready',
+      pages: [{ ...answer, state: 'review', filename: 'scan.png' }] });
+    const dom = new (require('jsdom').JSDOM)(await (await request('clerk', '/pages/' + group.pages[0]._id)).text(), { runScripts: 'outside-only' });
+    try {
+      dom.window.eval(require('fs').readFileSync(path.resolve(__dirname, '../../public/js/document-vault.js'), 'utf8'));
+      const field = id => dom.window.document.getElementById(id);
+      const set = (id, value) => { field(id).value = value; field(id).dispatchEvent(new dom.window.Event('input')); };
+      expect(field('yearLabel').value).toBe('2026');
+      expect(field('folderId').value).toBe('OWNER');
+      expect(field('groupLabel').value).toBe('Q3');
+      set('date', '2025-03-31');
+      expect(field('yearLabel').value).toBe('2025');
+      expect(field('groupLabel').value).toBe('Q1');
+      field('group-other').click();
+      set('yearLabel', 'FY25');
+      set('folderId', 'OWNER2');
+      set('date', '2024-12-31');
+      expect(field('groupLabel').value).toBe('Other');
+      expect(field('yearLabel').value).toBe('FY25');
+      expect(field('folderId').value).toBe('OWNER2');
+    } finally { dom.window.close(); }
+  });
+
+  test('uses the original upload deadline for filed pages and shared summary redos', async () => {
+    const physical = { decision: 'keep', yearLabel: '2025', folderId: 'F', groupLabel: 'Q1' };
+    const page = { ...answer, documentDate: '2001-04-01', filedAt: new Date(), state: 'stored', filename: 'scan.png', physical };
+    const group = await Group.create({ ownerId: users.owner._id, viewerIds: [users.reader._id], uploaderId: users.clerk._id,
+      state: 'ready', summaryState: 'ready', pages: [page, page] });
+    const target = '/pages/' + group.pages[0]._id;
+    const edit = new URLSearchParams({ revision: '0', yearLabel: '2001', folderId: 'A', groupLabel: 'Q2' });
+    expect((await request('reader', target + '/location', edit)).status).toBe(303);
+    await Group.collection.updateOne({ _id: group._id }, { $set: { createdAt: new Date(Date.now() - 90 * 86400000) } });
+    edit.set('revision', '1');
+    expect((await request('reader', target + '/location', edit)).status).toBe(409);
+    expect((await request('owner', target + '/redo', new URLSearchParams({ mode: 'both', revision: '1' }))).status).toBe(409);
+    expect((await request('owner', target + '/redo-group', new URLSearchParams({ revision: '0' }))).status).toBe(409);
+    const html = await (await request('owner', target)).text();
+    expect(html).toContain('Filed document locked');
+    expect(html).not.toContain('Edit storage location');
+  });
+
+  test('Insurance delegates triage, expiration and dated batches through current vault membership', async () => {
+    const service = require('../../services/insuranceService');
+    const Claim = require('../../models/insurance_claim');
+    const invoice = { ...answer, tags: ['INVOICE'], state: 'stored', filename: 'scan.png', filedAt: new Date() };
+    const pages = ['A', 'B', 'C', 'D', 'E'].map(letter => ({ ...invoice, title: 'Fixture invoice ' + letter }));
+    pages.push({ ...invoice, title: 'Private draft', state: 'review' }, { ...invoice, title: 'Unrelated', tags: ['receipt'] });
+    const group = await Group.create({ ownerId: users.owner._id, uploaderId: users.clerk._id, viewerIds: [users.reader._id],
+      state: 'ready', pages, createdAt: new Date('2020-11-20T00:00:00Z') });
+    const ids = group.pages.map(p => String(p._id));
+    await Scan.insertMany(group.pages.map(p => ({ _id: p._id, groupId: group._id, mime: 'image/png', bytes: scan })));
+    const act = (actor, indexes, from, status, date, csrf = true) => {
+      const form = new URLSearchParams({ from, status });
+      for (const index of indexes) form.append('ids', ids[index]);
+      if (date) form.set('submittedOn', date);
+      return request(actor, '/insurance/status', form, csrf);
+    };
+    expect((await request(null, '/insurance/')).status).toBe(401);
+    expect((await request('denied', '/insurance/')).status).toBe(403);
+    const fresh = await request('reader', '/insurance/');
+    expect(fresh.headers.get('cache-control')).toContain('no-store');
+    expect(await fresh.text()).toContain('Fixture invoice A');
+    expect(await Claim.countDocuments()).toBe(0);
+    await Promise.all([service.syncChunk(), service.syncChunk()]);
+    expect(await Claim.countDocuments({ status: 'unreviewed' })).toBe(5);
+    expect((await act('admin', [0], 'unreviewed', 'processing')).status).toBe(404);
+    expect((await act('reader', [5], 'unreviewed', 'processing')).status).toBe(404);
+    expect((await act('reader', [0], 'unreviewed', 'processing', null, false)).status).toBe(403);
+    expect((await act('reader', [0], 'unreviewed', 'completed', '2026-11-20')).status).toBe(422);
+    expect((await act('reader', [0, 1, 2], 'unreviewed', 'processing')).status).toBe(303);
+    expect((await act('owner', [3], 'unreviewed', 'expired')).status).toBe(303);
+    expect((await act('reader', [4], 'unreviewed', 'dismissed')).status).toBe(303);
+    expect((await act('reader', [2], 'processing', 'expired')).status).toBe(303);
+    expect((await act('reader', [2], 'processing', 'completed', '2026-11-20')).status).toBe(409);
+    const processing = await (await request('reader', '/insurance/processing')).text();
+    const dom = new (require('jsdom').JSDOM)(processing, { runScripts: 'outside-only' });
+    try {
+      dom.window.eval(require('fs').readFileSync(path.resolve(__dirname, '../../public/js/insurance.js'), 'utf8'));
+      const doc = dom.window.document;
+      expect(doc.querySelector('#submit-claims button').disabled).toBe(true);
+      doc.querySelector('[data-select-all] input').click();
+      expect(doc.querySelectorAll('[name="ids"]:checked')).toHaveLength(2);
+      expect(doc.querySelector('#submit-claims button').disabled).toBe(false);
+    } finally { dom.window.close(); }
+    const zip = await request('owner', '/insurance/processing/all-scans.zip');
+    expect(zip.status).toBe(200);
+    const bytes = Buffer.from(await zip.arrayBuffer());
+    expect(bytes.subarray(0, 2).toString()).toBe('PK');
+    expect(bytes.includes(Buffer.from(ids[0] + '.png'))).toBe(true);
+    expect(bytes.includes(Buffer.from(ids[2] + '.png'))).toBe(false);
+    expect((await act('reader', [0, 1], 'processing', 'completed', '2026-11-20')).status).toBe(303);
+    await service.syncChunk();
+    expect(await Claim.countDocuments({ status: 'completed', submittedOn: '2026-11-20', updatedBy: users.reader._id })).toBe(2);
+    expect(await (await request('owner', '/insurance/')).text()).toContain('No invoices awaiting review');
+    expect(await (await request('owner', '/insurance/processing')).text()).toContain('No invoices awaiting submission');
+    expect(await (await request('owner', '/insurance/batches')).text()).toContain('2026-11-20');
+    const batch = '?date=2026-11-20&owner=' + users.owner._id;
+    expect(await (await request('reader', '/insurance/batch' + batch)).text()).toContain('Fixture invoice B');
+    const ownBatch = await request('reader', '/insurance/batch/all-scans.zip' + batch);
+    expect(ownBatch.status).toBe(200);
+    expect(Buffer.from(await ownBatch.arrayBuffer()).includes(Buffer.from(ids[1] + '.png'))).toBe(true);
+    const otherGroup = await Group.create({ ownerId: users.viewer._id, uploaderId: users.clerk._id,
+      viewerIds: [users.reader._id], state: 'ready', pages: [{ ...invoice, title: 'Second owner' }] });
+    const secondId = String(otherGroup.pages[0]._id);
+    await service.transition(users.reader._id, [secondId], 'unreviewed', 'processing');
+    await service.transition(users.reader._id, [secondId], 'processing', 'completed', '2026-11-20');
+    const list = await service.list(users.reader._id, { view: 'batches', offset: 0 });
+    expect(list.rows.map(row => row.count).sort()).toEqual([1, 2]);
+    expect(await (await request('reader', '/insurance/batch' + batch)).text()).not.toContain('Second owner');
+    await Group.updateOne({ _id: otherGroup._id }, { $set: { 'pages.0.tags': [] } });
+    await Group.updateOne({ _id: group._id }, { $set: { viewerIds: [] } });
+    expect(await (await request('reader', '/insurance/batches')).text()).toContain('No submitted batches');
+    expect((await request('reader', '/insurance/batch/scans.zip' + batch)).status).toBe(404);
+    expect((await request('reader', '/pages/' + ids[0] + '/image')).status).toBe(404);
+  });
+
   test('corrects one filed storage location and enforces scope, revision and page state', async () => {
     const physical = { decision: 'keep', yearLabel: '2025', folderId: 'F.1', groupLabel: 'Old' };
     const seed = { ...answer, filename: 'scan.png', state: 'stored', filedAt: new Date(), physical };

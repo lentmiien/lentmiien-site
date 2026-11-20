@@ -23,13 +23,15 @@ block content
         if reply.clipped
           p.hint Only the first 131,072 characters of this reply were saved.
   - const target = base + '/pages/' + page._id
-  - const editing = manage && review && page.state === 'review'
+  - const editing = !locked && manage && review && page.state === 'review'
   - const paper = page.physical || {}
   - const issueText = issue => ({generation:'The service failed or returned an incomplete response.', interrupted:'The generation was interrupted.', access:'The account that requested the job no longer has access.', media:'The archived scan could not be found.'}[issue])
   header.section-head
     p.page-count Page #{position} of #{pageCount}
     h1= page.title || page.filename
     p= filed ? 'Filed document' : stateLabel(Object.assign({}, page, {summaryState}))
+  if locked
+    p.banner Filed document locked · 90 days since upload.
   if page.issue || summaryIssue
     .banner.warn(role='status')
       p= issueText(page.issue || summaryIssue)
@@ -89,7 +91,10 @@ block content
               option(value='keep', selected=paper.decision === 'keep') Keep in storage
               option(value='dispose', selected=paper.decision === 'dispose') Dispose of paper copy
           #storage-location
-            +storageFields(paper, false)
+            - const month = Number((page.documentDate || '').slice(5, 7))
+            - const quarter = month ? 'Q' + Math.ceil(month / 3) : ''
+            +storageFields({ yearLabel: paper.yearLabel || (page.documentDate || '').slice(0, 4), folderId: paper.folderId || (ownerName === 'Unavailable account' ? '' : ownerName.toUpperCase()).slice(0, 80), groupLabel: paper.groupLabel || quarter }, false)
+            button.secondary#group-other(type='button') Use Other
           button.primary(type='submit') Save review and continue
       else
         h2 Page details
@@ -110,7 +115,7 @@ block content
           if paper.decision
             dt Physical copy
             dd= paper.decision === 'dispose' ? 'For disposal' : [paper.yearLabel, paper.folderId, paper.groupLabel].join(' / ')
-        if filed && paper.decision === 'keep'
+        if filed && !locked && paper.decision === 'keep'
           details.source
             summary Edit storage location
             form.location-edit(method='post', action=target + '/location')
@@ -133,7 +138,7 @@ block content
         p= summary
       else
         p.hint= summaryState === 'failed' ? 'Group description failed.' : 'The group description is pending.'
-      if editing && pageCount > 1 && summaryState === 'ready'
+      if editing && !groupLocked && pageCount > 1 && summaryState === 'ready'
         details.group-correction
           summary Correct the group description
           input(type='hidden', name='groupRevision', form='page-review', value=descriptionRevision)
@@ -152,7 +157,7 @@ block content
         h3 Access
         p Owner · #{ownerName}
         p= viewers.length ? 'Viewers · ' + viewers.join(', ') : 'Only the owner can view filed pages.'
-    if manage && review && (['review','failed','approved','stored'].includes(page.state) || summaryState === 'failed' || page.failedReply || failedSummaryReply)
+    if !locked && manage && review && (['review','failed','approved','stored'].includes(page.state) || summaryState === 'failed' || page.failedReply || failedSummaryReply)
       section#retry.panel
         h2 Processing controls
         +failedReply('Last failed page classification reply', page.failedReply)
@@ -169,7 +174,7 @@ block content
                 if page.ocrText != null
                   option(value='chat', selected=page.failedStage === 'chat') English classification only
             button.secondary(type='submit') Return page to queue
-        if pageCount > 1 && ['ready','failed'].includes(summaryState)
+        if !groupLocked && pageCount > 1 && ['ready','failed'].includes(summaryState)
           form.group-redo(method='post', action=target + '/redo-group')
             input(type='hidden', name='_csrf', value=csrfToken)
             input(type='hidden', name='revision', value=descriptionRevision)

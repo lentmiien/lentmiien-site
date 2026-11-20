@@ -188,3 +188,30 @@ test('reviewers can correct a generated group summary without overwriting a newe
   expect(() => reviewPage(group, group.pages[1], owner, group.pages[1].revision, fields, { revision, text: 'Stale edit' })).toThrow('changed');
   expect(group.pages[1].state).toBe('review');
 });
+
+test('a redo left in review at the upload deadline restores the previously filed transcript and summary', () => {
+  const { EDIT_WINDOW, filingLocked, restoreExpired } = require('../../services/documentVault/workflow');
+  const group = create();
+  const uploaded = Date.now() - EDIT_WINDOW + 60000;
+  group.createdAt = new Date(uploaded);
+  const page = group.pages[0];
+  complete(group, 'Original OCR');
+  complete(group, receipt);
+  reviewPage(group, page, owner, page.revision, { ...receipt, physical: { decision: 'dispose' } });
+  redoPage(group, page, owner, page.revision, 'both');
+  complete(group, 'Replacement OCR');
+  complete(group, { ...receipt, title: 'Unapproved', description: 'Changed draft.' });
+  const clock = jest.spyOn(Date, 'now');
+  try {
+    clock.mockReturnValue(uploaded + EDIT_WINDOW - 1);
+    expect(filingLocked(group, page)).toBe(false);
+    clock.mockReturnValue(uploaded + EDIT_WINDOW);
+    expect(filingLocked(group, page)).toBe(true);
+    restoreExpired(group);
+    expect(page).toMatchObject({ state: 'stored', ocrText: 'Original OCR', title: receipt.title });
+    expect(group.description).toBe(receipt.description);
+    expect(page.beforeRedo).toBeUndefined();
+    expect(group.beforeRedoDescription).toBeUndefined();
+    expect(group.jobs).toHaveLength(0);
+  } finally { clock.mockRestore(); }
+});

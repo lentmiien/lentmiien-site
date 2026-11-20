@@ -76,6 +76,22 @@
   const decision = document.querySelector('#decision');
   if (decision) {
     const location = document.querySelector('#storage-location');
+    const date = document.querySelector('#date');
+    const year = location.querySelector('#yearLabel');
+    const group = location.querySelector('#groupLabel');
+    let yearEdited = year.value !== date.value.slice(0, 4);
+    const quarter = () => date.value ? 'Q' + Math.ceil(Number(date.value.slice(5, 7)) / 3) : '';
+    let groupEdited = group.value !== quarter();
+    year.addEventListener('input', () => { yearEdited = true; });
+    group.addEventListener('input', () => { groupEdited = true; });
+    date.addEventListener('input', () => {
+      if (!yearEdited) year.value = date.value.slice(0, 4);
+      if (!groupEdited) group.value = quarter();
+    });
+    document.querySelector('#group-other').addEventListener('click', () => {
+      groupEdited = true;
+      group.value = 'Other';
+    });
     function displayLocation() {
       const keep = decision.value === 'keep';
       location.hidden = !keep;
