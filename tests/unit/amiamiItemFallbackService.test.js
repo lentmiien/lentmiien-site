@@ -128,6 +128,7 @@ describe('amiamiItemFallbackService', () => {
     });
   });
   test.each([
+    { mergedInto: 'saved' },
     { detailStatus: 'fetched', details: {} },
     { detailStatus: 'error', details: { itemName: 'Retained' } },
     { detailStatus: 'pending', details: null },
@@ -136,6 +137,17 @@ describe('amiamiItemFallbackService', () => {
     const f = createService({ initialItems: [{ source: 'amiami-api-lookup', ...record, gcode: 'FIGURE-1' }] });
     return expect(f.service.retryFailedItemScrape('FIGURE-1')).resolves.toMatchObject({ status: 'existing' });
   });
+  test('an import already in flight recognizes a newly reserved code', async () => {
+    const f = createService();
+    const alias = { gcode: 'FIGURE-404', mergedInto: 'saved' };
+    f.fetchDetail.mockImplementationOnce(async () => {
+      f.items.set(alias.gcode, alias);
+      throw new Error('unavailable');
+    });
+    await expect(f.service.attemptMissingItemScrape(alias.gcode)).resolves.toEqual({ item: alias, status: 'existing' });
+    expect(f.items.get(alias.gcode)).toEqual(alias);
+  });
+
   test('scrapes once without retries and saves a fetched AmiAmi item', async () => {
     const apiData = {
       RSuccess: true,

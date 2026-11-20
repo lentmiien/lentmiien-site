@@ -2,6 +2,7 @@ const { AmiAmiItem } = require('../database');
 const {
   attemptMissingItemScrape,
 } = require('../services/amiamiItemFallbackService');
+const { resolveSavedItems } = require('../services/amiamiItemRedirects');
 const logger = require('../utils/logger');
 
 const MAX_CODES_PER_REQUEST = 100;
@@ -109,7 +110,9 @@ exports.fetchItems = async (req, res) => {
       }
     }
 
-    return res.json(orderItemsByRequestedCodes(responseItems, uniqueCodes));
+    const ordered = orderItemsByRequestedCodes(responseItems, uniqueCodes);
+    const saved = await resolveSavedItems(AmiAmiItem, ordered);
+    return res.json([...new Map(saved.map(item => [item.gcode, item])).values()]);
   } catch (error) {
     logger.error('Unable to fetch AmiAmi items through the API', {
       category: 'amiami-items-api',

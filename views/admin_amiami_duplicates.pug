@@ -1,0 +1,41 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/amiami-items.css')
+
+block content
+  main.amiami-items
+    header.amiami-items__header
+      h1 Duplicate JAN codes
+      a(href='/admin/amiami-items') AmiAmi Items
+    if message
+      p(role='alert')= message
+      a(href=base) Return to duplicate review
+    else
+      if merged
+        p(role='status') Merge complete. The old product code now points to the saved entry.
+      if groups.length
+        .amiami-items__table-wrap
+          table.amiami-items__table.amiami-duplicates__table
+            thead
+              tr
+                th JAN code
+                th Saved entries
+                th Review
+            tbody
+              each group in groups
+                tr
+                  th(scope='row')= group._id
+                  td= group.count
+                  td
+                    if group.count === 2
+                      a(href=base + '/compare/' + group.first + '/' + group.last) Compare entries
+                    else
+                      a(href=base + '/group?jan=' + encodeURIComponent(group._id)) Choose entries
+      else
+        p.amiami-items__empty= paged ? 'No more duplicate JAN codes.' : 'No duplicate JAN codes found.'
+      nav.amiami-items__pagination
+        if paged
+          a(href=base) First page
+        if nextUrl
+          a(href=nextUrl) Next page

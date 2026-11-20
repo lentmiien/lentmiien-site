@@ -1,5 +1,6 @@
 const fs = require('fs/promises');
 const path = require('path');
+const getListingHash = require('../utils/amiamiListingHash');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
@@ -364,7 +365,7 @@ async function runWithDatabase(options, run) {
   await connectMongo(options);
 
   run.phase = 'storage-read';
-  const existingCount = await AmiAmiItem.countDocuments();
+  const existingCount = await AmiAmiItem.countDocuments({ mergedInto: null });
   run.summary.existingBeforeRun = existingCount;
 
   run.phase = 'list';
@@ -415,7 +416,7 @@ async function runWithDatabase(options, run) {
       // A failed database write must not become a fetch failure or trigger
       // another database write claiming the upstream item failed.
       run.phase = 'detail-persistence';
-      await AmiAmiItem.updateOne({ gcode }, { $set: update });
+      await AmiAmiItem.updateOne({ gcode, mergedInto: null }, { $set: update });
       if (!detailError) detailResults.fetched += 1;
     }
   }
@@ -423,7 +424,7 @@ async function runWithDatabase(options, run) {
   run.itemCode = null;
   run.phase = 'storage-read';
   const pendingDetailCount = await countMongoPendingDetails();
-  const existingAfterRun = await AmiAmiItem.countDocuments();
+  const existingAfterRun = await AmiAmiItem.countDocuments({ mergedInto: null });
   Object.assign(run.summary, {
     startedAt: startedAt.toISOString(),
     finishedAt: new Date().toISOString(),
@@ -476,7 +477,7 @@ async function upsertMongoListings(listings, seenAt) {
   }
 
   const gcodes = listings.map((listing) => listing.gcode);
-  const existing = await AmiAmiItem.find({ gcode: { $in: gcodes } }).select('gcode listingHash').lean();
+  const existing = await AmiAmiItem.find({ gcode: { $in: gcodes } }).select('gcode listingHash mergedInto').lean();
   const existingByGcode = new Map(existing.map((item) => [item.gcode, item]));
   const existingGcodes = new Set(existingByGcode.keys());
   const newlyDiscovered = gcodes.filter((gcode) => !existingGcodes.has(gcode));
@@ -484,6 +485,7 @@ async function upsertMongoListings(listings, seenAt) {
   const operations = listings.map((listing) => {
     const currentListingHash = getListingHash(listing);
     const existingItem = existingByGcode.get(listing.gcode);
+    if (existingItem?.mergedInto) return null;
     const hasStoredListingHash = Boolean(existingItem && existingItem.listingHash);
     const didListingChange = Boolean(
       existingItem &&
@@ -501,15 +503,13 @@ async function upsertMongoListings(listings, seenAt) {
         updateOne: {
           filter: { gcode: listing.gcode },
           update: {
-            $set: {
+            $setOnInsert: {
               url: listing.url,
               source: 'amiami-new-products',
               sourceUrl: NEW_ITEMS_URL,
               lastSeenAt: seenAt,
               listing,
               listingHash: currentListingHash,
-            },
-            $setOnInsert: {
               gcode: listing.gcode,
               firstSeenAt: seenAt,
               listingChangedAt: seenAt,
@@ -543,7 +543,7 @@ async function upsertMongoListings(listings, seenAt) {
 
     return {
       updateOne: {
-        filter: { gcode: listing.gcode },
+        filter: { gcode: listing.gcode, mergedInto: null },
         update: {
           $set: updateSet,
         },
@@ -562,28 +562,15 @@ async function upsertMongoListings(listings, seenAt) {
   };
 }
 
-function getListingHash(listing) {
-  const stableListing = {
-    itemName: listing && listing.itemName,
-    brand: listing && listing.brand,
-    priceText: listing && listing.priceText,
-    imageUrl: listing && listing.imageUrl,
-    tags: listing && listing.tags,
-  };
-  return crypto
-    .createHash('sha256')
-    .update(JSON.stringify(stableListing))
-    .digest('hex');
-}
-
 async function buildMongoDetailQueue(newlyDiscovered, listingChanged, options) {
   if (options.forceRefreshDetails) {
-    const docs = await AmiAmiItem.find({}).select('gcode').sort({ gcode: 1 }).lean();
+    const docs = await AmiAmiItem.find({ mergedInto: null }).select('gcode').sort({ gcode: 1 }).lean();
     return docs.map((item) => item.gcode);
   }
 
   const priorityGcodes = uniqueStrings([...newlyDiscovered, ...listingChanged]);
   const olderPending = await AmiAmiItem.find({
+    mergedInto: null,
     gcode: { $nin: priorityGcodes },
     $or: [
       { details: null },
@@ -600,6 +587,7 @@ function uniqueStrings(values) {
 
 async function countMongoPendingDetails() {
   return AmiAmiItem.countDocuments({
+    mergedInto: null,
     $or: [
       { details: null },
       { detailStatus: 'error' },

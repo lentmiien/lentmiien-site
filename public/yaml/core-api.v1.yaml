@@ -68,7 +68,8 @@ paths:
       description: >
         Performs an exact lookup against both `gcode` and `details.janCode`. The body may mix both
         code types and is limited to 100 entries. Duplicate input codes are queried once and
-        matching database entries are returned once in request-code order. When a missing string
+        matching database entries are returned once in request-code order. A merged product code
+        resolves to the saved item and counts as a match. When a missing string
         contains only letters, numbers, and hyphens with at least one of each, the first such code
         can trigger one AmiAmi item fetch. A successful item or a failure marker is saved, so the
         API route does not fetch that code again. Numeric barcodes and other unmatched codes are

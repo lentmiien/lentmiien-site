@@ -147,7 +147,7 @@ function createTaricEvidenceService({ itemModel, fetchFactual = null, serviceLog
           const detailUpdate = detailsType === 'object'
             ? Object.fromEntries(Object.entries(safeDetails).map(([field, value]) => [`details.${field}`, value]))
             : { details: safeDetails };
-          await itemModel.updateOne({ _id: existing._id, gcode: candidate.gcode, updatedAt: existing.updatedAt },
+          await itemModel.updateOne({ _id: existing._id, gcode: candidate.gcode, mergedInto: null, updatedAt: existing.updatedAt },
             { $set: { ...detailUpdate, detailStatus: 'fetched', detailFetchedAt: fetchedAt,
               detailError: record.detailError } }, { runValidators: true }).exec();
         } else {

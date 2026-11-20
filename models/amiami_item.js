@@ -56,19 +56,24 @@ const AmiAmiDetailSchema = new mongoose.Schema({
   raw: { type: mongoose.Schema.Types.Mixed, default: undefined },
 }, { _id: false, minimize: false });
 
+function isCatalogItem() {
+  return !this.mergedInto;
+}
+
 const AmiAmiItemSchema = new mongoose.Schema({
   gcode: { type: String, required: true, unique: true, index: true, trim: true },
-  url: { type: String, required: true, trim: true },
-  source: { type: String, required: true, default: 'amiami-new-products', index: true },
-  sourceUrl: { type: String, required: true, trim: true },
-  firstSeenAt: { type: Date, required: true, index: true },
-  lastSeenAt: { type: Date, required: true, index: true },
-  listingChangedAt: { type: Date, required: true, index: true },
+  mergedInto: { type: mongoose.Schema.Types.ObjectId, ref: 'amiamiitems', index: { sparse: true } },
+  url: { type: String, required: isCatalogItem, trim: true },
+  source: { type: String, required: isCatalogItem, default: 'amiami-new-products', index: true },
+  sourceUrl: { type: String, required: isCatalogItem, trim: true },
+  firstSeenAt: { type: Date, required: isCatalogItem, index: true },
+  lastSeenAt: { type: Date, required: isCatalogItem, index: true },
+  listingChangedAt: { type: Date, required: isCatalogItem, index: true },
   listingHash: { type: String, default: null, index: true },
-  listing: { type: AmiAmiListingSchema, required: true },
+  listing: { type: AmiAmiListingSchema, required: isCatalogItem },
   detailStatus: {
     type: String,
-    required: true,
+    required: isCatalogItem,
     enum: ['pending', 'fetched', 'error'],
     default: 'pending',
     index: true,

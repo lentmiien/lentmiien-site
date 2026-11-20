@@ -111,7 +111,7 @@ test.each(['tmp', 'db'])('%s partial detail failures retain counts and continue 
   expect(process.exitCode).toBeUndefined();
   expect(scraper.fetchItemDetail).toHaveBeenCalledTimes(2);
   if (storage === 'db') {
-    expect(model.updateOne).toHaveBeenCalledWith({ gcode: 'FIGURE-1' }, { $set: {
+    expect(model.updateOne).toHaveBeenCalledWith({ gcode: 'FIGURE-1', mergedInto: null }, { $set: {
       detailStatus: 'error', detailError: { message: expect.stringContaining('Access denied'), at: expect.any(String) },
     } });
     expect(mongoose.disconnect).toHaveBeenCalledTimes(1);
@@ -311,4 +311,12 @@ test.each([false, true])('isolated child exits naturally after draining cleanup/
   expect(child.stdout).toContain('CLEANUP_DRAINED');
   if (fatal) expect(child.stdout).toContain('LOGGER_DRAINED');
   expect(child.stdout.trim().endsWith('RUN_DRAINED')).toBe(true);
+});
+
+test.each([{ flags: [] }, { flags: ['--force-refresh-details'] }])('skips retired product codes in listing and detail work %j', async ({ flags }) => {
+  model.find.mockReturnValueOnce({ select: () => ({ lean: async () => [{ gcode: 'FIGURE-1', mergedInto: 'saved' }] }) });
+  await main([...args('db'), ...flags]);
+  expect(model.bulkWrite).not.toHaveBeenCalled();
+  expect(model.find.mock.calls[1][0]).toMatchObject({ mergedInto: null });
+  expect(scraper.fetchItemDetail).not.toHaveBeenCalled();
 });

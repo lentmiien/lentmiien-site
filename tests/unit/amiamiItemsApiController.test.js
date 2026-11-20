@@ -86,6 +86,17 @@ describe('amiamiItemsApiController.fetchItems', () => {
     expect(attemptMissingItemScrape).not.toHaveBeenCalled();
   });
 
+  test('resolves old codes in request order and returns the saved item once', async () => {
+    const saved = { _id: 'one', gcode: 'FIG-1', details: { janCode: '00123' } };
+    const alias = { _id: 'old', gcode: 'FIG-2', mergedInto: saved._id };
+    const other = { _id: 'three', gcode: 'FIG-3' };
+    mockFindResult([other, saved, alias]);
+    const res = createResponse();
+    await controller.fetchItems({ body: [alias.gcode, other.gcode, saved.gcode, '00123'] }, res);
+    expect(res.json).toHaveBeenCalledWith([saved, other]);
+    expect(attemptMissingItemScrape).not.toHaveBeenCalled();
+  });
+
   test('scrapes only the first missing item code and returns the saved item', async () => {
     const existingByJan = {
       _id: 'item-1',

@@ -193,6 +193,7 @@ app.use('/api/local-ai/v1', require('./routes/localAi').createRouter(localAi, { 
 app.use('/api/taric/v1', require('./routes/taric').createTaricRouter(taricTool.service));
 const amiamiUpload = require('./services/amiamiUpload');
 const isAmiAmiUploadPath = req => /^\/admin\/amiami-items\/upload(?:\/|$)/i.test(req.path);
+const isAmiAmiDuplicatesPath = req => /^\/admin\/amiami-items\/duplicates(?:\/|$)/i.test(req.path);
 const isTaricAdminPath = req => /^\/admin\/taric(?:\/|$)/i.test(req.path);
 const legacyFormParser = bodyParser.urlencoded({ extended: false, limit: DEFAULT_BODY_LIMIT });
 const legacyJsonParser = express.json({ limit: DEFAULT_BODY_LIMIT });
@@ -208,8 +209,8 @@ const isLocalAiPath = req => /^\/local-ai(?:\/|$)/i.test(req.path);
 const isPackingToolPath = req => /^\/binpacking-(?:smallest|multi)(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
 const isUserSettingsPath = req => /^\/(?:settings|admin\/password-reminders|two-factor|login)(?:\/|$)/i.test(req.path);
-app.use((req, res, next) => (isDocumentVaultPath(req) || isHealthCheckPath(req) || isDecisionsPath(req) || isToolTestPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
-app.use((req, res, next) => (isDocumentVaultPath(req) || isHealthCheckPath(req) || isDecisionsPath(req) || isToolTestPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
+app.use((req, res, next) => (isDocumentVaultPath(req) || isHealthCheckPath(req) || isDecisionsPath(req) || isToolTestPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isAmiAmiDuplicatesPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
+app.use((req, res, next) => (isDocumentVaultPath(req) || isHealthCheckPath(req) || isDecisionsPath(req) || isToolTestPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isAmiAmiDuplicatesPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -589,6 +590,7 @@ app.use('/admin/database-viewer', (_req, res, next) => {
 });
 app.use('/admin/taric', require('./routes/taricAdmin').createTaricAdminRouter(taricTool.service));
 app.use('/admin/amiami-items/upload', require('./routes/amiamiUpload').createAmiAmiUploadRouter(amiamiUpload));
+app.use('/admin/amiami-items/duplicates', require('./routes/amiamiDuplicates').createAmiAmiDuplicatesRouter());
 app.use('/admin/amiami-items', require('./routes/amiamiItems').createAmiAmiItemsRouter());
 app.use('/admin/experimental-models', require('./routes/experimentalModels').createRouter());
 app.use('/admin/decisions', require('./routes/decisions').createRouter());

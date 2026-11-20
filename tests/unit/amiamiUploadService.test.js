@@ -531,3 +531,13 @@ test('integrates the existing fallback with one request, insert-only persistence
   expect(stored.get('FIGURE-2').details.itemName).toBe('Existing product');
   expect(await f.service.status()).toMatchObject({ state: 'completed', fetched: 1, skippedExisting: 1 });
 });
+
+test('importing a retired code skips it even with failed-item retries enabled', async () => {
+  f.service.stop();
+  f = fixture([{ gcode: 'FIGURE-1', mergedInto: 'saved' }]);
+  const job = await f.service.submit('FIGURE-1', creator, 'codes', { retryFailed: true });
+  expect(job).toMatchObject({ state: 'completed', queuedCount: 0, skippedExisting: 1 });
+  await f.service.tick();
+  expect(f.fetch).not.toHaveBeenCalled();
+  expect(f.retry).not.toHaveBeenCalled();
+});

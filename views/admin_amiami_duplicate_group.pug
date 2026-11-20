@@ -1,0 +1,34 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/amiami-items.css')
+
+block content
+  main.amiami-items
+    header.amiami-items__header
+      h1 JAN #{jan}
+      a(href=base) All duplicate JAN codes
+    h2= keep ? 'Choose an entry to compare with ' + keep.gcode : 'Choose the entry to keep'
+    if items.length
+      .amiami-items__table-wrap
+        table.amiami-items__table.amiami-duplicates__table
+          thead
+            tr
+              th Product code
+              th Item
+              th Action
+          tbody
+            each item in items
+              tr
+                th(scope='row')= item.gcode
+                td= (item.details && item.details.itemName) || (item.listing && item.listing.itemName)
+                td
+                  if keep
+                    a(href=base + '/compare/' + keep._id + '/' + item._id) Compare entries
+                  else
+                    a(href=base + '/group?jan=' + encodeURIComponent(jan) + '&keep=' + item._id) Keep this entry
+    else
+      p.amiami-items__empty No more entries for this JAN.
+    if nextUrl
+      nav.amiami-items__pagination
+        a(href=nextUrl) Next page

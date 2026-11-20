@@ -49,3 +49,44 @@ and table link without changing stored records.
 Focused checks: `npm test -- tests/unit/amiamiItemsDetail.test.js --coverage=false`.
 Use synthetic records for UI verification; no scraper or production database
 startup is needed.
+
+## Duplicate JAN review
+
+The logged-in duplicate reviewer at `/admin/amiami-items/duplicates` handles the
+private, admin-managed catalog. The `amiami.items.read` and `amiami.items.merge` capabilities together cover
+review and pairwise merging across this catalog. Admins have the bundle grant.
+Other authenticated users need an explicit grant. There is no machine access,
+override, upload, private file, external fetch, or new deployment configuration.
+
+GET lists exact nonblank saved JAN matches in bounded pages. The comparison
+keeps the chosen entry's identity, URLs, source records and fetch history.
+POST accepts only the reviewed pair, snapshot and enumerated product-field
+choices, with session CSRF protection. Database work has time limits.
+Responses use escaped Pug text, private no-store caching and disabled analytics.
+Operational failures use the shared logger without catalog contents.
+
+A merge keeps a redirect in the original MongoDB document. It contains the old
+`_id`, the unique product code (`gcode`) and the saved entry's ID (`mergedInto`).
+Replacing the document clears the duplicate's JAN, listing, details and raw data.
+The catalog and duplicate reviewer list active entries. An exact old-code search
+or an old detail link redirects to the current saved entry, including after a
+second merge. The item lookup API returns the saved entry once when a request
+includes multiple codes for it.
+
+MongoDB-backed scrapes skip redirects, including during forced refreshes. Import
+and fallback lookups recognize the reserved code as existing. Deploy the web
+process and scraper together before using merges. An older writer can repopulate
+a redirect. Previously hard-deleted codes have no stored mapping. The AmiAmi
+model and evidence service contribute to the TARIC qualification fingerprint,
+so this release changes that fingerprint.
+
+On standalone MongoDB the merge checks both revisions, saves the selected values,
+then conditionally replaces the duplicate. An interruption between writes can
+leave both full records present with the chosen values already copied. Reopen the
+review before retrying. Existing full records need no migration.
+
+Run the route and merge tests with
+`npm test -- tests/unit/amiamiDuplicates.test.js --coverage=false`.
+The integration suite `tests/integration/amiamiDuplicates.test.js` uses
+`AMIAMI_DUPLICATES_TEST_MONGO_URI` pointing at a disposable MongoDB server.
+It creates and drops a uniquely named fixture database.

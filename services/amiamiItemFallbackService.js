@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+const getListingHash = require('../utils/amiamiListingHash');
 const { AmiAmiItem } = require('../database');
 const logger = require('../utils/logger');
 const { operationDiagnostic, safeItemCode } = require('../utils/amiamiDiagnostics');
@@ -12,7 +12,7 @@ const DEFAULT_MAX_SCRAPES_PER_WINDOW = 20;
 const DEFAULT_SCRAPE_WINDOW_MS = 60 * 1000;
 const FALLBACK_SOURCE = 'amiami-api-lookup';
 function isRetryablePlaceholder(item) {
-  return item?.detailStatus === 'error' && item.details == null && item.source === FALLBACK_SOURCE;
+  return !item?.mergedInto && item?.detailStatus === 'error' && item.details == null && item.source === FALLBACK_SOURCE;
 }
 
 function createAmiAmiItemFallbackService({
@@ -79,8 +79,11 @@ function createAmiAmiItemFallbackService({
     }
 
     async function persist(record) {
-      if (!existing) return { item: await persistIfMissing(record), written: true };
-      const filter = { gcode, source: FALLBACK_SOURCE, detailStatus: 'error', details: null,
+      if (!existing) {
+        const item = await persistIfMissing(record);
+        return { item, written: !item?.mergedInto };
+      }
+      const filter = { gcode, mergedInto: null, source: FALLBACK_SOURCE, detailStatus: 'error', details: null,
         'detailError.at': existing.detailError?.at || null, ...(existing._id ? { _id: existing._id } : {}) };
       // Never replace a fetched record or race a scraper's newer update.
       const { firstSeenAt, ...values } = record;
@@ -209,20 +212,6 @@ function buildListing(gcode, details) {
       : null,
     tags: [],
   };
-}
-
-function getListingHash(listing) {
-  const stableListing = {
-    itemName: listing.itemName,
-    brand: listing.brand,
-    priceText: listing.priceText,
-    imageUrl: listing.imageUrl,
-    tags: listing.tags,
-  };
-  return crypto
-    .createHash('sha256')
-    .update(JSON.stringify(stableListing))
-    .digest('hex');
 }
 
 async function execLean(query) {

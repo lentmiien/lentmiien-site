@@ -1,4 +1,6 @@
 const { AmiAmiItem } = require('../database');
+const { PRIVATE_NO_STORE } = require('../middleware/requireCapabilities');
+const { resolveSavedItems } = require('../services/amiamiItemRedirects');
 const logger = require('../utils/logger');
 
 const DEFAULT_LIMIT = 25;
@@ -32,7 +34,7 @@ function escapeRegExp(value) {
 }
 
 function buildQuery(params) {
-  const query = {};
+  const query = { mergedInto: null };
   const text = normalizeText(params.q);
   const detailStatus = normalizeText(params.detailStatus);
   const brand = normalizeText(params.brand);
@@ -171,6 +173,16 @@ exports.index = async (req, res, next) => {
       sort: sortKey,
       limit: String(limit),
     };
+    if (queryState.q && queryState.q.length <= 128) {
+      const alias = await AmiAmiItem.findOne({
+        gcode: new RegExp('^' + escapeRegExp(queryState.q) + '$', 'i'), mergedInto: { $ne: null },
+      }).maxTimeMS(5000).lean().exec();
+      if (alias) {
+        const [saved] = await resolveSavedItems(AmiAmiItem, [alias], '_id mergedInto');
+        res.set('Cache-Control', PRIVATE_NO_STORE);
+        return res.redirect('/admin/amiami-items/' + saved._id);
+      }
+    }
     const mongoQuery = buildQuery(queryState);
     const totalItems = await AmiAmiItem.countDocuments(mongoQuery);
     const totalPages = Math.max(1, Math.ceil(totalItems / limit));
@@ -201,6 +213,7 @@ exports.index = async (req, res, next) => {
       },
     });
   } catch (error) {
+    logger.error('Unable to search saved AmiAmi items', { category: 'amiami-items' });
     next(error);
   }
 };
@@ -225,6 +238,11 @@ exports.detail = async (req, res) => {
     const item = await AmiAmiItem.findById(id).maxTimeMS(5000).lean().exec();
     if (!item) {
       return res.status(404).send('AmiAmi item not found.');
+    }
+
+    if (item.mergedInto) {
+      const [saved] = await resolveSavedItems(AmiAmiItem, [item], '_id mergedInto');
+      return res.redirect('/admin/amiami-items/' + saved._id);
     }
 
     // Normalize BSON identifiers and dates without projecting away stored fields.

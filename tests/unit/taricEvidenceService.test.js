@@ -202,7 +202,7 @@ describe('TARIC factual resolver (synthetic database and fetch only)', () => {
   test('a failed CAS preserves and validates the concurrently refreshed winner', async () => {
     const state = setup([local({ detailStatus: 'error' })], jest.fn().mockResolvedValue(details));
     state.model.updateOne.mockImplementation((filter) => ({ exec: async () => {
-      expect(filter).toEqual({ _id: 'row1', gcode: request.item_code, updatedAt: new Date(1000) });
+      expect(filter).toEqual({ _id: 'row1', gcode: request.item_code, mergedInto: null, updatedAt: new Date(1000) });
       state.setRows([local({ updatedAt: new Date(3000), details: { ...details, gcode: 'MISMATCH' } })]);
       return { matchedCount: 0 };
     } }));

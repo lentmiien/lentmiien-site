@@ -1,4 +1,4 @@
-jest.mock('../../database', () => ({ AmiAmiItem: { findById: jest.fn(), find: jest.fn(), countDocuments: jest.fn() } }));
+jest.mock('../../database', () => ({ AmiAmiItem: { findById: jest.fn(), findOne: jest.fn(), find: jest.fn(), countDocuments: jest.fn() } }));
 jest.mock('../../utils/logger', () => ({ error: jest.fn() }));
 
 const express = require('express');
@@ -190,4 +190,20 @@ test('application mounts details after upload and before the legacy admin gate',
   const detailMount = source.indexOf("app.use('/admin/amiami-items',");
   expect(detailMount).toBeGreaterThan(source.indexOf("app.use('/admin/amiami-items/upload',"));
   expect(detailMount).toBeLessThan(source.indexOf("app.use('/admin', isAuthenticated, isAdmin"));
+});
+
+test('exact old product code searches and old detail links redirect to the saved entry', async () => {
+  const saved = { ...item };
+  item = { _id: '000000000000000000000001', gcode: 'OLD-123', mergedInto: saved._id };
+  AmiAmiItem.findOne.mockReturnValue(query);
+  AmiAmiItem.find.mockReturnValue({ maxTimeMS: jest.fn().mockReturnThis(), lean: jest.fn().mockReturnThis(), exec: async () => [saved] });
+  for (const suffix of ['?q=old-123', '/' + item._id]) {
+    const response = await fetch(base + suffix, { redirect: 'manual' });
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/admin/amiami-items/' + saved._id);
+  }
+  const { gcode, mergedInto } = AmiAmiItem.findOne.mock.calls[0][0];
+  expect(gcode.test('OLD-123')).toBe(true);
+  expect(gcode.test('OLD-1234')).toBe(false);
+  expect(mergedInto).toEqual({ $ne: null });
 });

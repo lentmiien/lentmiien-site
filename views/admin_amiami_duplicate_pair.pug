@@ -1,0 +1,43 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/amiami-items.css')
+
+block content
+  - const pairUrl = base + '/compare/'
+  - const format = value => value === undefined ? '(missing)' : typeof value === 'string' && value.length ? value : JSON.stringify(value, null, 2)
+  - const fieldLabel = name => name === 'details' ? 'description' : name.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()
+  main.amiami-items.amiami-item-detail
+    header.amiami-items__header
+      h1 Compare entries
+      a(href=base) All duplicate JAN codes
+    p JAN #{keep.details.janCode}
+    .amiami-duplicates__pair
+      each item, index in [keep, remove]
+        section.amiami-item-detail__section
+          h2 #{index ? 'Redirect' : 'Keep'} #{item.gcode}
+          p= item.details.itemName || (item.listing && item.listing.itemName)
+          a(href='/admin/amiami-items/' + item._id, target='_blank', rel='noopener') View saved entry
+    p
+      a(href=pairUrl + remove._id + '/' + keep._id) Switch which entry to keep
+    form(method='post', action=pairUrl + keep._id + '/' + remove._id)
+      input(type='hidden', name='_csrf', value=csrfToken)
+      input(type='hidden', name='snapshot', value=snapshot)
+      if differences.length
+        h2 Choose the values to save
+        p Each field starts with the value from #{keep.gcode}.
+        each row in differences
+          fieldset.amiami-duplicates__difference
+            legend #{row.section === 'listing' ? 'Listing' : 'Fetched details'} · #{fieldLabel(row.name)}
+            .amiami-duplicates__pair
+              each value, index in [row.left, row.right]
+                label
+                  input(type='radio', name=row.key, checked=index === 0, value=index ? 'remove' : 'keep', required)
+                  span= index ? remove.gcode : keep.gcode
+                  pre= format(value)
+      else
+        p The product fields match. You can keep this entry as it is.
+      p.amiami-duplicates__notice #{keep.gcode} keeps its product code, source data and fetch history. #{remove.gcode} will keep only its product code and a link to #{keep.gcode}.
+      .amiami-items__actions
+        a(href=base) Cancel
+        button(type='submit') Merge into #{keep.gcode}
