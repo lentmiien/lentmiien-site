@@ -3,6 +3,7 @@ extends layout
 block styles
   link(rel="stylesheet", href="/vendor/katex/katex.min.css")
   link(rel="stylesheet", href="/css/chat5_export.css")
+  link(rel="stylesheet", href="/css/chat5_chat.css")
 
 block content
   - const personaOptions = Array.isArray(personalities) ? personalities : [];
@@ -63,20 +64,14 @@ block content
     };
   - const trainingFlash = typeof trainingStatus !== 'undefined' && trainingStatus ? trainingStatus : {};
   - const chat5MessageWindow = typeof messageWindow !== 'undefined' && messageWindow ? messageWindow : { batchSize: 25, initialLimit: 25, total: Array.isArray(messages) ? messages.length : 0, loadedStart: 0, loadedEnd: Array.isArray(messages) ? messages.length : 0, hasMoreOlder: false, source: conversationSource };
-  h2#conversation_title.chat5-title= conversation.title
-  p#id.chat5-meta(data-source=conversationSource data-output-format=conversation.metadata.outputFormat)= conversation._id
-  .chat5-header-actions.d-flex.gap-2.mb-3
-    a.btn.btn-outline-primary(href=`/chat4/createknowledgefromchat/${conversation._id.toString()}`) Create knowledge entry
-    a.btn.btn-outline-secondary(href=`/chat5/voice/${conversation._id.toString()}`) Open voice view
-  include partials/chat5_export
   - const selectedTools = Array.isArray(conversation.metadata && conversation.metadata.tools) ? conversation.metadata.tools : []
   - const configuredStartMessageId = conversation.metadata && conversation.metadata.startMessageId ? conversation.metadata.startMessageId.toString() : ''
-  - 
+  -
     const toPositiveInt = (value, fallback = 25) => {
       const parsed = Number(value);
       return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
     };
-  - 
+  -
     const formatTimestamp = (value) => {
       if (!value) return 'Unknown';
       const dateValue = value instanceof Date ? value : new Date(value);
@@ -98,7 +93,7 @@ block content
       if (text.length <= 220) return text;
       return `${text.slice(0, 217)}...`;
     };
-  - 
+  -
     const parseJsonLikeString = (value) => {
       if (typeof value !== 'string') return value;
       const trimmed = value.trim();
@@ -163,7 +158,7 @@ block content
     };
   - const configuredMaxMessages = toPositiveInt(conversation && conversation.metadata && conversation.metadata.maxMessages, 25);
   - const visibleLimit = Math.min(25, configuredMaxMessages);
-  - 
+  -
     const totalNonHiddenMessages = Array.isArray(messages)
       ? messages.reduce((acc, msg) => acc + (msg && msg.hideFromBot ? 0 : 1), 0)
       : 0;
@@ -173,7 +168,7 @@ block content
   - let currentChunkNonHidden = 0;
   - let processedNonHidden = 0;
   - const visibleMessages = [];
-  - 
+  -
     if (Array.isArray(messages)) {
       messages.forEach((msg) => {
         const isHidden = !!(msg && msg.hideFromBot);
@@ -201,92 +196,101 @@ block content
         }
       });
     }
-  mixin chat5RenderMessageCard(m, state)
-    - if (!m) return;
-    - const sender = typeof m.user_id === 'string' && m.user_id.trim().length > 0 ? m.user_id : 'Unknown';
-    - const isBot = sender.toUpperCase() === 'BOT';
-    - const content = m.content && typeof m.content === 'object' ? m.content : {};
-    - const copyText = content ? (content.text || content.transcript || content.revisedPrompt || content.toolOutput || '') : '';
-    - const hasCopyText = typeof copyText === 'string' && copyText.trim().length > 0;
-    - const messageLabel = [m._id ? `id ${m._id}` : '', m.contentType ? `type ${m.contentType}` : '', sender ? `user ${sender}` : ''].filter(Boolean).join(', ') || 'message has no id, type, or user';
-    - const handledMessageTypes = ["text", "image", "audio", "tool", "reasoning", "function_call", "function_call_output"];
-    if !state.lastUser || state.lastUser !== sender
-      hr.chat5-divider
-      div.userlabel.chat5-user-label(data-user=sender)
-        b= sender 
-      - state.lastUser = sender
-    div(data-id=m._id, class={
-        'chat5-message': true,
-        'chat5-message--hidden': m.hideFromBot,
-        'chat5-message--bot': isBot
-      })
-      if isBot
-        img.chat5-avatar(src='/i/avatar.jpg', alt='Bot avatar')
-      if hasCopyText || m.contentType === "text"
+  - const savedChat = conversationSource === 'conversation5';
+  - const canChangeMessage = savedChat && canEditChatMessages === true;
+  - const detailFields = { text: 'Text', image: 'Image file', audio: 'Audio file', tts: 'TTS file', transcript: 'Transcript', revisedPrompt: 'Image prompt', imageQuality: 'Image quality', toolOutput: 'Tool output' };
+  mixin chat5MessageFrame(m)
+    - const id = m._id ? m._id.toString() : '';
+    - const selected = !!id && id === configuredStartMessageId;
+    - const sender = m.user_id || 'Unknown';
+    - const bot = sender.toUpperCase() === 'BOT';
+    - const content = m.content || {};
+    - const copy = formatStructuredMessageJson(m) || content.text || content.transcript || content.revisedPrompt || content.toolOutput || '';
+    - const fields = Object.fromEntries(Object.keys(detailFields).map(key => [key, content[key] || '']));
+    .chat5-entry(data-id=id, data-time=String(m.timestamp || ''), data-fields=JSON.stringify(fields), data-category=m.category, data-tags=(m.tags || []).join(', '), data-type=m.contentType)
+      if selected
+        .chat5-start-divider(role='separator', aria-label='Start message') Start message
+      article.chat5-message(class={'chat5-message--bot': bot, 'chat5-message--hidden': m.hideFromBot})
+        header.chat5-message-heading
+          if bot
+            img.chat5-avatar(src='/i/avatar.jpg', alt='')
+          strong.chat5-sender= sender
+          span.chat5-hidden-label(hidden=!m.hideFromBot) Hidden from model
+          time= formatTimestamp(m.timestamp)
+          button.chat5-action.chat5-inspect(type='button', aria-label='Message details', data-bs-toggle='modal', data-bs-target='#chat5MessageDetails') Details
+        .chat5-message-body
+          block
         .chat5-message-actions
-          if hasCopyText
-            button.chat5-copy-button(type='button', aria-label='Copy message text', data-copy-text=copyText) Copy
-          if m.contentType === "text"
-            button.chat5-embed-button(type='button', aria-label='Embed message (high quality)', data-message-id=m._id, data-conversation-id=conversation && conversation._id ? conversation._id.toString() : '') Embed HQ
-      .chat5-message-body
-        if m.contentType === "text"
-          div.chat5-message-text(id=`${m._id}textout`)
-            if typeof content.html === 'string' && content.html.trim().length > 0
-              != content.html
-            else
-              .chat5-message-problem
-                strong Empty text message received.
-                .chat5-message-problem-details= `${messageLabel}. content.text is empty, null, or missing.`
-        if m.contentType === "image"
-          if content.image
-            img.chat5-message-image(src=`/img/${content.image}`, alt=content.revisedPrompt)
-            p.chat5-image-caption
-              i= content.revisedPrompt
+          button.chat5-copy-button(type='button', aria-label='Copy message text', data-copy-text=copy, hidden=!copy) Copy
+          button.chat5-action(type='button', data-chat5-start-message-id=id, aria-pressed=selected ? 'true' : 'false', disabled=!canChangeMessage)= selected ? 'Selected start message' : 'Set as start message'
+          .chat5-hold-tools(role='group', aria-label='Press and hold to confirm')
+            span.chat5-hold-hint(aria-hidden='true') Hold
+            button.chat5-action(type='button', data-chat5-hold=m.hideFromBot ? 'show' : 'hide', title='Press and hold to change model visibility', disabled=!canChangeMessage)= m.hideFromBot ? 'Show this message' : 'Hide this message'
+            button.chat5-action.chat5-remove(type='button', data-chat5-hold='remove', title='Press and hold to remove from this conversation', disabled=!canChangeMessage) Remove this message
+  mixin chat5RenderMessageCard(m)
+    - if (!m) return;
+    - const content = m.content || {};
+    - const messageLabel = `id ${m._id}, type ${m.contentType}, user ${m.user_id}`;
+    - const handledMessageTypes = ['text', 'image', 'audio', 'tool', 'reasoning', 'function_call', 'function_call_output'];
+    +chat5MessageFrame(m)
+      if m.contentType === "text"
+        div.chat5-message-text(id=`${m._id}textout`)
+          if typeof content.html === 'string' && content.html.trim().length > 0
+            != content.html
           else
             .chat5-message-problem
-              strong Image message is missing a file name.
-              .chat5-message-problem-details= `${messageLabel}. content.image is empty, null, or missing.`
-        if m.contentType === "audio"
-          - const audioFile = content.audio || content.tts;
-          - const audioTranscript = content.transcript || content.text;
-          if audioFile
-            audio.chat5-message-audio(controls, src=`/mp3/${audioFile}`)
-          if audioTranscript
-            p.chat5-audio-transcript= audioTranscript
-          if !audioFile && !audioTranscript
-            .chat5-message-problem
-              strong Empty audio message received.
-              .chat5-message-problem-details= `${messageLabel}. No audio file or transcript is present.`
-        if m.contentType === "tool"
-          div.chat5-message-tool
-            if content.toolOutput
-              i= content.toolOutput
-            else
-              .chat5-message-problem
-                strong Empty tool message received.
-                .chat5-message-problem-details= `${messageLabel}. content.toolOutput is empty, null, or missing.`
-        if m.contentType === "reasoning"
-          div.chat5-message-reasoning
-            if typeof content.html === 'string' && content.html.trim().length > 0
-              i!= content.html
-            else
-              .chat5-message-problem
-                strong Empty reasoning message received.
-                .chat5-message-problem-details= `${messageLabel}. The API response did not include reasoning summary text.`
-        if m.contentType === "function_call" || m.contentType === "function_call_output"
-          - const structuredJson = formatStructuredMessageJson(m);
-          if structuredJson
-            pre.chat5-message-json
-              code.language-json= structuredJson
-          else
-            .chat5-message-problem
-              strong= `Unable to display ${m.contentType} message.`
-              .chat5-message-problem-details= `${messageLabel}. No structured payload could be built from the message content.`
-        if handledMessageTypes.indexOf(m.contentType) === -1
+              strong Empty text message received.
+              .chat5-message-problem-details= `${messageLabel}. content.text is empty, null, or missing.`
+      if m.contentType === "image"
+        if content.image
+          img.chat5-message-image(src=`/img/${content.image}`, alt=content.revisedPrompt)
+          p.chat5-image-caption
+            i= content.revisedPrompt
+        else
           .chat5-message-problem
-            strong Unsupported message type received.
-            .chat5-message-problem-details= `${messageLabel}. contentType "${m.contentType || 'missing'}" is not handled by the browser renderer.`
-  mixin chat5RenderHiddenGroup(group, state)
+            strong Image message is missing a file name.
+            .chat5-message-problem-details= `${messageLabel}. content.image is empty, null, or missing.`
+      if m.contentType === "audio"
+        - const audioFile = content.audio || content.tts;
+        - const audioTranscript = content.transcript || content.text;
+        if audioFile
+          audio.chat5-message-audio(controls, src=`/mp3/${audioFile}`)
+        if audioTranscript
+          p.chat5-audio-transcript= audioTranscript
+        if !audioFile && !audioTranscript
+          .chat5-message-problem
+            strong Empty audio message received.
+            .chat5-message-problem-details= `${messageLabel}. No audio file or transcript is present.`
+      if m.contentType === "tool"
+        div.chat5-message-tool
+          if content.toolOutput
+            i= content.toolOutput
+          else
+            .chat5-message-problem
+              strong Empty tool message received.
+              .chat5-message-problem-details= `${messageLabel}. content.toolOutput is empty, null, or missing.`
+      if m.contentType === "reasoning"
+        div.chat5-message-reasoning
+          if typeof content.html === 'string' && content.html.trim().length > 0
+            i!= content.html
+          else
+            .chat5-message-problem
+              strong Empty reasoning message received.
+              .chat5-message-problem-details= `${messageLabel}. The API response did not include reasoning summary text.`
+      if m.contentType === "function_call" || m.contentType === "function_call_output"
+        - const structuredJson = formatStructuredMessageJson(m);
+        if structuredJson
+          pre.chat5-message-json
+            code.language-json= structuredJson
+        else
+          .chat5-message-problem
+            strong= `Unable to display ${m.contentType} message.`
+            .chat5-message-problem-details= `${messageLabel}. No structured payload could be built from the message content.`
+      if handledMessageTypes.indexOf(m.contentType) === -1
+        .chat5-message-problem
+          strong Unsupported message type received.
+          .chat5-message-problem-details= `${messageLabel}. contentType "${m.contentType || 'missing'}" is not handled by the browser renderer.`
+  mixin chat5RenderHiddenGroup(group)
     - if (!group || !group.length) return;
     - const firstHidden = group[0];
     - const lastHidden = group[group.length - 1];
@@ -294,46 +298,44 @@ block content
     - const firstTime = formatTimestamp(firstHidden && firstHidden.timestamp);
     - const lastTime = formatTimestamp(lastHidden && lastHidden.timestamp);
     - const timeRange = firstTime === lastTime ? firstTime : `${firstTime} - ${lastTime}`;
-    details.chat5-hidden-group
+    details.chat5-hidden-group(open=group.some(m => String(m._id) === configuredStartMessageId))
       summary.chat5-hidden-summary
         span.chat5-hidden-summary-label= hiddenLabel
         span.chat5-hidden-summary-time= timeRange
       .chat5-hidden-body
         each hiddenMsg in group
-          +chat5RenderMessageCard(hiddenMsg, state)
-  mixin chat5RenderMessageList(list, state)
+          +chat5RenderMessageCard(hiddenMsg)
+  mixin chat5RenderMessageList(list)
     - if (!Array.isArray(list) || !list.length) return;
-    - const renderState = state || { lastUser: null };
     - let buffer = [];
     each msg, idx in list
       if msg && msg.hideFromBot
         - buffer.push(msg);
         - const nextMsg = list[idx + 1];
         if !(nextMsg && nextMsg.hideFromBot)
-          +chat5RenderHiddenGroup(buffer, renderState)
+          +chat5RenderHiddenGroup(buffer)
           - buffer = [];
       else
         if buffer.length
-          +chat5RenderHiddenGroup(buffer, renderState)
+          +chat5RenderHiddenGroup(buffer)
           - buffer = [];
-        +chat5RenderMessageCard(msg, renderState)
+        +chat5RenderMessageCard(msg)
     if buffer.length
-      +chat5RenderHiddenGroup(buffer, renderState)
+      +chat5RenderHiddenGroup(buffer)
   mixin chat5RenderHistoryChunk(chunk)
     - if (!chunk || !Array.isArray(chunk.messages) || !chunk.messages.length) return;
-    - const chunkState = { lastUser: null };
     - const firstMessage = chunk.messages[0];
     - const lastMessage = chunk.messages[chunk.messages.length - 1];
     - const rangeStart = formatTimestamp(firstMessage && firstMessage.timestamp);
     - const rangeEnd = formatTimestamp(lastMessage && lastMessage.timestamp);
     - const rangeLabel = rangeStart === rangeEnd ? rangeStart : `${rangeStart} - ${rangeEnd}`;
     - const nonHiddenCount = chunk.nonHiddenCount || chunk.messages.reduce((acc, m) => acc + (m && m.hideFromBot ? 0 : 1), 0);
-    details.chat5-history-chunk
+    details.chat5-history-chunk(open=chunk.messages.some(m => String(m._id) === configuredStartMessageId))
       summary.chat5-history-chunk-summary
         span.chat5-chunk-pill= `Show ${nonHiddenCount} older messages`
         span.chat5-chunk-range= rangeLabel
       .chat5-chunk-body
-        +chat5RenderMessageList(chunk.messages, chunkState)
+        +chat5RenderMessageList(chunk.messages)
   mixin chat5MessageLoadControls()
     - const loadedCount = Math.max(0, (chat5MessageWindow.loadedEnd || 0) - (chat5MessageWindow.loadedStart || 0));
     - const hasMoreOlder = !!chat5MessageWindow.hasMoreOlder;
@@ -341,255 +343,234 @@ block content
       button.btn.btn-outline-primary.btn-sm(type="button", data-chat5-load-more, disabled=!hasMoreOlder)= `Load ${chat5MessageWindow.batchSize || 25} older`
       button.btn.btn-outline-secondary.btn-sm(type="button", data-chat5-load-all, disabled=!hasMoreOlder) Load all
       span.small.text-muted(data-chat5-load-status)= `Showing ${loadedCount} of ${chat5MessageWindow.total || loadedCount} messages`
-  +chat5MessageLoadControls()
-  #conversationContainer.chat5-history
-    if olderChunks.length
-      each chunk, chunkIdx in olderChunks
-        +chat5RenderHistoryChunk(chunk)
-    - const visibleState = { lastUser: null };
-    if visibleMessages.length
-      +chat5RenderMessageList(visibleMessages, visibleState)
-    else if !olderChunks.length
-      p#chat5EmptyMessages.text-muted.mb-0 No messages yet.
-  ul#pills-tab.nav.nav-pills.mb-3.chat5-tabs(role="tablist")
-    li.nav-item(role="presentation")
-      button#pills-chat-tab.nav-link.active(data-bs-toggle="pill" data-bs-target="#pills-chat" type="button" role="tab" aria-controls="pills-chat" aria-selected="true") Chat
-    li.nav-item(role="presentation")
-      button#pills-settings-tab.nav-link(data-bs-toggle="pill" data-bs-target="#pills-settings" type="button" role="tab" aria-controls="pills-settings" aria-selected="false") Settings
-    li.nav-item(role="presentation")
-      button#pills-training-tab.nav-link(data-bs-toggle="pill" data-bs-target="#pills-training" type="button" role="tab" aria-controls="pills-training" aria-selected="false") Add to training
-    li.nav-item(role="presentation")
-      button#pills-raw-tab.nav-link(data-bs-toggle="pill" data-bs-target="#pills-raw" type="button" role="tab" aria-controls="pills-raw" aria-selected="false") Raw
-  #pills-tabContent.tab-content.chat5-tab-content
-    #pills-chat.tab-pane.fade.show.active.chat5-pane(role="tabpanel" aria-labelledby="pills-chat-tab" tabindex="0")
-      .chat5-quick-settings-panel
-        .d-flex.flex-wrap.justify-content-between.align-items-center.gap-2.mb-2
-          strong Quick settings
-          a.chat5-quick-settings-manage.small(href="/chat5/quick-settings") Manage options
-        .chat5-quick-settings-grid
-          if conversationSource === 'unsaved'
-            div(data-quick-new-only)
-              label.form-label.small(for="quickCategory") Category
-              input#quickCategory.form-control.form-control-sm(type="text", value=conversation.category)
-            div(data-quick-new-only)
-              label.form-label.small(for="quickTags") Tags
-              input#quickTags.form-control.form-control-sm(type="text", value=conversation.tags.join(', '), placeholder="comma, separated")
-          div
-            label.form-label.small(for="quickSettingsSelect") Quick setting
-            select#quickSettingsSelect.form-select.form-select-sm(data-current-user=signedInUser, disabled=quickOptions.length === 0)
-              if quickOptions.length
-                option(value="") -- Select quick setting --
-                each setting in quickOptions
-                  option(value=setting._id, data-overrides=JSON.stringify(setting.overrides))= setting.name
-              else
-                option(value="") No quick settings saved
-        small#quickSettingsStatus.text-muted.d-block.mt-2(aria-live="polite") Ignored fields remain unchanged.
-      label.chat5-input-label(for="fileInput") Append image to conversation
-      input#fileInput.form-control(type="file", name="fileInput", accept="image/*")
-      hr.chat5-divider
-      label.chat5-input-label(for="message") Append message to conversation
-      .chat5-input-tools
-        // Template selector for chat messages
-        .chat5-template-controls.chat5-tool-card.d-flex.align-items-center.flex-wrap.gap-2
-          label.form-label.mb-0.chat5-input-label.small(for="messageTemplateSelect") Template
-          select#messageTemplateSelect.form-select.form-select-sm.chat5-template-select.flex-grow-1
-            option(value="") -- Select chat template --
-            each t in templates
-              if t.Type === 'chat'
-                option(value=t._id)= t.Category + ' - ' + t.Title
-          button#messageTemplateSave.btn.btn-outline-primary.btn-sm(type="button" title="Save current message as template") Save as template
-        .chat5-draft-controls.chat5-tool-card
-          .chat5-draft-grid
-            .chat5-draft-field
-              label.form-label.mb-1.chat5-input-label.small(for="draftPersonalitySelect") Personality
-              select#draftPersonalitySelect.form-select.form-select-sm
-                option(value="") -- Select personality --
-                each persona in personaOptions
-                  option(value=persona._id, title=persona.description)= persona.name
-            .chat5-draft-field
-              label.form-label.mb-1.chat5-input-label.small(for="draftResponseTypeSelect") Response type
-              select#draftResponseTypeSelect.form-select.form-select-sm
-                option(value="") -- Select response type --
-                each rt in responseTypeOptions
-                  option(value=rt._id, title=rt.description)= rt.label
-            .chat5-draft-field.chat5-draft-notes
-              label.form-label.mb-1.chat5-input-label.small(for="draftNotes") Prompt notes (optional)
-              textarea#draftNotes.form-control.form-control-sm(rows="2" placeholder="Add reminders or constraints")
-      .chat5-draft-actions
-        button#draftPromptButton.btn.btn-outline-info.btn-sm(type="button") Draft prompt
-        small.text-muted Drafts use the cydonia:24b-q6 Ollama model and only update the editor.
-      .chat5-voice-controls.d-flex.flex-wrap.align-items-center.gap-2.mb-2
-        button#chat5VoiceButton.btn.btn-outline-primary.btn-sm(type="button") Start voice input
-        span#chat5VoiceStatus.small.text-muted Ready for voice input.
-    #message.chat5-editor
-      // Editor is initialized via JS
-    p#chat5CharCounter.small.text-muted.mt-1 0 chars
-    .chat5-send-controls.d-flex.flex-wrap.align-items-center.gap-2
-      .btn-group
-        button#sendAndResponse.btn.btn-primary(type='button') Send & Response
-        button.btn.btn-primary.dropdown-toggle.dropdown-toggle-split(type='button', data-bs-toggle='dropdown', aria-expanded='false', aria-label='More send actions')
-          span.visually-hidden More send actions
-        ul.dropdown-menu
-          li
-            button#chat5Append.dropdown-item(type='button') Append
-          li
-            button#localAiChatBatch.dropdown-item(type='button' disabled) Batch
-          li
-            button#chat5AppendBot.dropdown-item(type='button') Append as bot
-          li
-            button#generateTtsBtn.dropdown-item(type='button') Generate TTS audio
-      .chat5-completion-window
-        label.small(for='completionWindow') Completion window:
-          output#completionWindowValue.ms-1(for='completionWindow') soonest
-        input#completionWindow(type='range' min='0' max='2' step='1' value='0' aria-valuetext='soonest' aria-describedby='completionWindowLabels')
-        #completionWindowLabels.d-flex.justify-content-between.small
-          span soonest
-          span 2h
-          span 8h
-      a(href='/local-ai/queue') Local queue
-      button.btn.btn-outline-secondary.btn-sm(type='button', data-bs-toggle='modal', data-bs-target='#ttsKeywordsModal') Voice & tags
-    p#completionWindowNotice.small(role='status' aria-live='polite')
-    p#localAiBatchStatus.small(role='status')
-    details.local-ai-batch.mb-3
-      summary Batch details & recovery
-      p.small Local models use the durable local queue; supported OpenAI models use the cloud batch queue. A non-empty prompt is included with the request. With an empty prompt, Batch requests a response to the existing conversation.
-      p.small Local batches require a saved conversation, reasoning “none”, standard mode, medium verbosity, text output and no tools. With batch media enabled, vision models accept acknowledged image uploads within catalog limits. Older images require reupload. Queued prompts use independent snapshots.
-      p.small.text-muted Chat image originals remain public; private batch snapshots do not change that.
-      button#localAiRecover.btn.btn-outline-secondary.btn-sm(type='button') Recover uncertain local submission
-    script(src='/js/local-ai-client.js' defer)
-    script(src='/js/local-ai-integrations.js' defer)
-    .chat5-history-actions.d-flex.justify-content-evenly.flex-wrap.gap-2
-      button#hideLastMessageBtn.btn.btn-outline-warning(type="button", onclick="HideLastMessage()", title="Mark the most recent visible message as hidden") Hide last message
-      button#removeLastMessageBtn.btn.btn-outline-danger(type="button", onclick="RemoveLastMessage()", title="Remove the latest visible message and any trailing hidden messages") Remove last message
-      p#batchToolsWarning.chat5-batch-warning.text-warning.small(class={ 'd-none': !selectedTools.length })
-        | Tools are unsupported by the batches API; any selected tools will be ignored during batch processing.
-      hr.chat5-divider
-      label.chat5-input-label(for="audio") Append audio to conversation
-      #audio.chat5-audio
-        b.chat5-todo TODO (upload file or record)
-    #pills-settings.tab-pane.fade.chat5-pane(role="tabpanel" aria-labelledby="pills-settings-tab" tabindex="0")
-      label.chat5-input-label(for="title") Title 
-      .input-group.chat5-input-group 
-        input#title.form-control(type="title", value=conversation.title)
-        button.btn.btn-warning(onclick="GenerateTitle()") AI Generate 
-      label.chat5-input-label(for="summary") Summary 
-      .d-flex.flex-wrap.gap-2.align-items-start.chat5-summary-group
-        textarea#summary.form-control.flex-grow-1(rows="4")= conversation.summary || ''
-        button.btn.btn-warning(type="button", onclick="GenerateSummary()") AI Generate
-      label.chat5-input-label(for="category") Category 
-      input#category.form-control(type="text", value=conversation.category)
-      label.chat5-input-label(for="tags") Tags 
-      input#tags.form-control(type="text", value=conversation.tags.join(", "))
-      label.chat5-input-label(for="context") Context 
-      // Template selector for context
-      .d-flex.align-items-center.flex-wrap.gap-2.mb-2.chat5-template-controls
-        label.form-label.mb-0.chat5-input-label(for="contextTemplateSelect") Template
-        select#contextTemplateSelect.form-select.form-select-sm.chat5-template-select
-          option(value="") -- Select context template --
-          each t in templates
-            if t.Type === 'context'
-              option(value=t._id)= t.Category + ' - ' + t.Title
-        button#contextTemplateSave.btn.btn-outline-primary.btn-sm(type="button" title="Save current context as template") Save as template
-      textarea#context.form-control(name="context")= conversation.metadata.contextPrompt
-      label.chat5-input-label(for="tools") Tools 
-      select#tools.form-control(name="tools", multiple) 
-        option(value="image_generation", selected=selectedTools.indexOf("image_generation") >= 0) Generate Images
-        option(value="web_search_preview", selected=selectedTools.indexOf("web_search_preview") >= 0) Search Web
-        each tool in availableToolOptions
-          option(value=tool.name, title=tool.description, selected=selectedTools.indexOf(tool.name) >= 0)= tool.displayName || tool.name
-      label.chat5-input-label(for="model") Model 
-      select#model.form-control(name="model") 
-        option(value=conversation.metadata.model) Use previous (#{conversation.metadata.model})
-        each m in chat_models
-          option(value=m.api_model)= m.model_name
-      label.chat5-input-label(for="maxMessages") Max messages 
-      input#maxMessages.form-control(type="number", min="1", value=conversation.metadata.maxMessages)
-      label.chat5-input-label(for="startMessageId") Start message ID (optional)
-      input#startMessageId.form-control(type="text", maxlength="100", value=configuredStartMessageId, placeholder="Leave blank to use the full conversation", autocomplete="off", spellcheck="false")
-      small.text-muted The selected message and messages after it remain eligible for context; Max messages is applied afterward. If the ID is not found, the full conversation is used.
-      label.chat5-input-label(for="reasoning") Reasoning effort 
-      select#reasoning.form-control(name="reasoning") 
-        option(value=conversation.metadata.reasoning) Use previous (#{conversation.metadata.reasoning})
-        option(value="none") None *GPT 5.2+
-        option(value="minimal") Minimal 
-        option(value="low") Low 
-        option(value="medium") Medium 
-        option(value="high") High 
-        option(value="xhigh") Extra High *GPT 5.2+
-        option(value="max") Max *GPT 5.6
-      - const reasoningMode = conversation.metadata.mode || "standard"
-      label.chat5-input-label(for="mode") Reasoning mode
-      select#mode.form-control(name="mode")
-        option(value=reasoningMode) Use previous (#{reasoningMode})
-        option(value="standard") Standard
-        option(value="pro") Pro *GPT 5.6
-      label.chat5-input-label(for="verbosity") Verbosity 
-      select#verbosity.form-control(name="verbosity") 
-        option(value=conversation.metadata.verbosity?conversation.metadata.verbosity:"medium") Use previous (#{conversation.metadata.verbosity?conversation.metadata.verbosity:"medium"})
-        option(value="low") Low 
-        option(value="medium") Medium 
-        option(value="high") High 
-      label.chat5-input-label(for="members") Members 
-      input#members.form-control(type="text", value=conversation.members.join(", "))
-      .chat5-update-actions.d-flex.justify-content-evenly.flex-wrap.gap-2
-        button#updateSettingsButton.btn.btn-success(type="button", onclick="UpdateConversation()", disabled=conversationSource !== 'conversation5') Update
-    #pills-training.tab-pane.fade.chat5-pane(role="tabpanel" aria-labelledby="pills-training-tab" tabindex="0")
-      .chat5-training-toolbar
-        div
-          h3.mb-1 Add to training
-          p.text-muted.mb-0 Select one or more prompt messages and one output message for a training group.
-        a.btn.btn-outline-primary.btn-sm(href="/admin/qwen3-lora/training-groups") Manage groups
-      if trainingFlash.error
-        .alert.alert-danger.mt-3.mb-3= trainingFlash.error
-      if trainingFlash.success
-        .alert.alert-success.mt-3.mb-3= trainingFlash.success
-      if conversationSource !== 'conversation5'
-        p.text-muted.mb-0 Training entries can only be created from saved chat5 conversations.
-      else if conversation._id === 'NEW'
-        p.text-muted.mb-0 Save this conversation before adding training entries.
-      else
-        - const selectableTrainingMessages = Array.isArray(messages) ? messages.map((msg, idx) => ({ msg, index: (chat5MessageWindow.loadedStart || 0) + idx })).filter((entry) => trainingText(entry.msg).length > 0) : [];
-        form.chat5-training-form(method="post", action="/chat5/training-entries")
-          input(type="hidden", name="conversation_id", value=conversation._id.toString())
-          .row
-            .col-md-6.mb-3
-              label.chat5-input-label.form-label(for="trainingGroupId") Training group
-              select#trainingGroupId.form-select(name="group_id", required, disabled=trainingGroupOptions.length === 0)
-                if trainingGroupOptions.length
-                  each group in trainingGroupOptions
-                    option(value=group.groupId, selected=group.groupId.toString() === defaultTrainingGroupId)= `${group.groupId} (${group.stats && group.stats.entryCount ? group.stats.entryCount : 0} entries)`
-                else
-                  option(value="") Create a training group first
-            .col-md-6.mb-3
-              label.chat5-input-label.form-label(for="trainingNotes") Notes
-              input#trainingNotes.form-control(type="text", name="notes", maxlength="2000", placeholder="Optional note for this entry")
-          +chat5MessageLoadControls()
-          p#chat5TrainingEmpty.text-muted(class={ 'd-none': selectableTrainingMessages.length > 0 }) No text messages are available for training selection.
-          .chat5-training-message-list#chat5TrainingMessageList
-            each entry in selectableTrainingMessages
-              - const m = entry.msg;
-              - const messageId = m._id.toString();
-              - const messageIndex = entry.index;
-              - const sender = typeof m.user_id === 'string' && m.user_id.trim().length > 0 ? m.user_id : 'Unknown';
-              - const trainingUsage = trainingUsageByMessage[messageId] || null;
-              article.chat5-training-message-option(data-message-id=messageId, data-message-index=messageIndex, class={ 'chat5-training-message-option--in-training': !!trainingUsage })
-                .chat5-training-message-selectors
-                  .form-check
-                    input.form-check-input(type="checkbox", id=`trainingPrompt-${messageId}`, name="prompt_message_ids", value=messageId)
-                    label.form-check-label(for=`trainingPrompt-${messageId}`) Prompt
-                  .form-check
-                    input.form-check-input(type="radio", id=`trainingOutput-${messageId}`, name="output_message_id", value=messageId)
-                    label.form-check-label(for=`trainingOutput-${messageId}`) Output
-                .chat5-training-message-preview
-                  .d-flex.flex-wrap.gap-2.align-items-center
-                    strong= `#${messageIndex} ${sender}`
-                    code= messageId
-                    if trainingUsage
-                      span.chat5-training-usage-badge(title=trainingUsageTitle(trainingUsage))= trainingUsageLabel(trainingUsage)
-                  p.mb-0= trainingPreview(m)
-          .chat5-update-actions.d-flex.justify-content-end.flex-wrap.gap-2
-            button#chat5TrainingSubmit.btn.btn-success(type="submit", disabled=trainingGroupOptions.length === 0 || selectableTrainingMessages.length < 2) Add entry
+  mixin chat5Dialog(id, title, saveId, saveLabel, disabled)
+    .modal.fade.chat5-dialog(id=id, tabindex='-1', aria-labelledby=`${id}Title`, aria-hidden='true')
+      .modal-dialog.modal-lg.modal-dialog-scrollable.modal-dialog-centered
+        .modal-content
+          .modal-header
+            h2.modal-title(id=`${id}Title`)= title
+            button.btn-close(type='button', data-bs-dismiss='modal', aria-label='Close')
+          .modal-body
+            block
+          if saveId
+            .modal-footer
+              if saveId === 'updateSettingsButton' && conversationSource === 'unsaved'
+                small#chat5NewSettingsNote.me-auto Settings apply with your first message.
+              button.btn.btn-outline-secondary(type='button', data-bs-dismiss='modal') Close
+              button.btn.btn-primary(type='button', id=saveId, disabled=disabled)= saveLabel
 
+  .chat5-workspace(data-can-edit=canEditChatMessages === true ? 'true' : 'false', data-csrf=csrfToken)
+    header.chat5-topline
+      .chat5-header-text
+        h1#conversation_title= conversationSource === 'unsaved' && conversation.title === 'NEW' ? 'New conversation' : conversation.title
+        span#chat5ModelLabel= conversation.metadata.model
+      .chat5-header-tools
+        button.chat5-secondary(type='button', data-bs-toggle='modal', data-bs-target='#chat5Settings') Settings
+        button.chat5-secondary(type='button', data-bs-toggle='modal', data-bs-target='#chat5Training') Add to training
+    #chat5Thread.chat5-thread(role='region', aria-label='Conversation messages', tabindex='0')
+      .chat5-thread-inner
+        details#chat5QuickSettings.chat5-disclosure(open=conversationSource === 'unsaved')
+          summary Quick settings
+          .chat5-disclosure-body
+            .chat5-quick-settings-grid
+              if conversationSource === 'unsaved'
+                div(data-quick-new-only)
+                  label.form-label.small(for="quickCategory") Category
+                  input#quickCategory.form-control.form-control-sm(type="text", value=conversation.category)
+                div(data-quick-new-only)
+                  label.form-label.small(for="quickTags") Tags
+                  input#quickTags.form-control.form-control-sm(type="text", value=conversation.tags.join(', '), placeholder="comma, separated")
+              div
+                label.form-label.small(for="quickSettingsSelect") Quick setting
+                select#quickSettingsSelect.form-select.form-select-sm(data-current-user=signedInUser, disabled=quickOptions.length === 0)
+                  if quickOptions.length
+                    option(value="") -- Select quick setting --
+                    each setting in quickOptions
+                      option(value=setting._id, data-overrides=JSON.stringify(setting.overrides))= setting.name
+                  else
+                    option(value="") No quick settings saved
+            a.small(href='/chat5/quick-settings') Manage options
+            small#quickSettingsStatus.d-block(aria-live='polite')
+        +chat5MessageLoadControls()
+        #conversationContainer.chat5-history
+          each chunk in olderChunks
+            +chat5RenderHistoryChunk(chunk)
+          if visibleMessages.length
+            +chat5RenderMessageList(visibleMessages)
+          else if !olderChunks.length
+            p#chat5EmptyMessages.text-muted No messages yet.
+    section#chat5Composer.chat5-composer(aria-label='Message editor')
+      .chat5-composer-inner
+        .chat5-composer-bar
+          button#chat5ComposerToggle.chat5-toggle(type='button', aria-controls='chat5ComposerBody', aria-expanded='true')
+            span.chat5-chevron(aria-hidden='true')
+            span#chat5ToggleLabel Minimize editor
+          span#chat5CharCounter.small 0 chars
+        #chat5ComposerBody
+          #message.chat5-editor
+          .chat5-compose-actions
+            select#messageTemplateSelect.form-select.form-select-sm(aria-label='Message template')
+              option(value='') Use template…
+              each t in templates
+                if t.Type === 'chat'
+                  option(value=t._id)= t.Category + ' – ' + t.Title
+            input#fileInput.visually-hidden(type='file', accept='image/*', tabindex='-1', aria-label='Append image to conversation')
+            button#chat5AddImage.chat5-action(type='button', aria-label='Add image')
+              span.chat5-wide-label Add
+              | Image
+            button.chat5-action(type='button', data-bs-toggle='modal', data-bs-target='#chat5WritingTools', aria-label='Writing tools')
+              span.chat5-wide-label Writing
+              | Tools
+            .chat5-send-controls
+              .btn-group.dropup
+                button#sendAndResponse.btn.btn-primary(type='button', aria-label='Send and request a response') Send
+                  span.chat5-wide-label  & Response
+                button.btn.btn-primary.dropdown-toggle.dropdown-toggle-split(type='button', data-bs-toggle='dropdown', aria-expanded='false', aria-label='More send actions')
+                  span.visually-hidden More send actions
+                ul.dropdown-menu
+                  li
+                    button#chat5Append.dropdown-item(type='button') Append
+                  li
+                    button#localAiChatBatch.dropdown-item(type='button' disabled) Batch
+                  li
+                    button#chat5AppendBot.dropdown-item(type='button') Append as bot
+                  li
+                    button#generateTtsBtn.dropdown-item(type='button') Generate TTS audio
+                  li#localAiBatchReason.small.text-muted.px-3(hidden)
+          p#completionWindowNotice.chat5-notice(role='status')
+          p#localAiBatchStatus.chat5-notice(role='status')
+        p#chat5ActionStatus.chat5-notice(role='status')
+  template#chat5MessageFrame
+    +chat5MessageFrame({})
+  +chat5Dialog('chat5Settings', 'Conversation settings', 'updateSettingsButton', 'Save settings', !savedChat)
+    label.chat5-input-label(for="title") Title
+    .input-group.chat5-input-group
+      input#title.form-control(type="text", value=conversation.title)
+      button.btn.btn-warning(onclick="GenerateTitle()") AI Generate
+    label.chat5-input-label(for="summary") Summary
+    .d-flex.flex-wrap.gap-2.align-items-start.chat5-summary-group
+      textarea#summary.form-control.flex-grow-1(rows="4")= conversation.summary || ''
+      button.btn.btn-warning(type="button", onclick="GenerateSummary()") AI Generate
+    label.chat5-input-label(for="category") Category
+    input#category.form-control(type="text", value=conversation.category)
+    label.chat5-input-label(for="tags") Tags
+    input#tags.form-control(type="text", value=conversation.tags.join(", "))
+    label.chat5-input-label(for="context") Context
+    // Template selector for context
+    .d-flex.align-items-center.flex-wrap.gap-2.mb-2.chat5-template-controls
+      label.form-label.mb-0.chat5-input-label(for="contextTemplateSelect") Template
+      select#contextTemplateSelect.form-select.form-select-sm.chat5-template-select
+        option(value="") -- Select context template --
+        each t in templates
+          if t.Type === 'context'
+            option(value=t._id)= t.Category + ' - ' + t.Title
+      button#contextTemplateSave.btn.btn-outline-primary.btn-sm(type="button" title="Save current context as template") Save as template
+    textarea#context.form-control(name="context")= conversation.metadata.contextPrompt
+    label.chat5-input-label(for="tools") Tools
+    select#tools.form-control(name="tools", multiple)
+      option(value="image_generation", selected=selectedTools.indexOf("image_generation") >= 0) Generate Images
+      option(value="web_search_preview", selected=selectedTools.indexOf("web_search_preview") >= 0) Search Web
+      each tool in availableToolOptions
+        option(value=tool.name, title=tool.description, selected=selectedTools.indexOf(tool.name) >= 0)= tool.displayName || tool.name
+    label.chat5-input-label(for="model") Model
+    select#model.form-control(name="model")
+      option(value=conversation.metadata.model) Use previous (#{conversation.metadata.model})
+      each m in chat_models
+        option(value=m.api_model)= m.model_name
+    label.chat5-input-label(for="maxMessages") Max messages
+    input#maxMessages.form-control(type="number", min="1", value=conversation.metadata.maxMessages)
+    label.chat5-input-label(for="startMessageId") Start message ID (optional)
+    input#startMessageId.form-control(type="text", maxlength="100", value=configuredStartMessageId, placeholder="Leave blank to use the full conversation", autocomplete="off", spellcheck="false")
+    small.text-muted The selected message and messages after it remain eligible for context; Max messages is applied afterward. If the ID is not found, the full conversation is used.
+    label.chat5-input-label(for="reasoning") Reasoning effort
+    select#reasoning.form-control(name="reasoning")
+      option(value=conversation.metadata.reasoning) Use previous (#{conversation.metadata.reasoning})
+      option(value="none") None *GPT 5.2+
+      option(value="minimal") Minimal
+      option(value="low") Low
+      option(value="medium") Medium
+      option(value="high") High
+      option(value="xhigh") Extra High *GPT 5.2+
+      option(value="max") Max *GPT 5.6
+    - const reasoningMode = conversation.metadata.mode || "standard"
+    label.chat5-input-label(for="mode") Reasoning mode
+    select#mode.form-control(name="mode")
+      option(value=reasoningMode) Use previous (#{reasoningMode})
+      option(value="standard") Standard
+      option(value="pro") Pro *GPT 5.6
+    label.chat5-input-label(for="verbosity") Verbosity
+    select#verbosity.form-control(name="verbosity")
+      option(value=conversation.metadata.verbosity?conversation.metadata.verbosity:"medium") Use previous (#{conversation.metadata.verbosity?conversation.metadata.verbosity:"medium"})
+      option(value="low") Low
+      option(value="medium") Medium
+      option(value="high") High
+    label.chat5-input-label(for="members") Members
+    input#members.form-control(type="text", value=conversation.members.join(", "))
+    details.chat5-disclosure
+      summary Conversation details & history
+      .chat5-disclosure-body
+        strong Conversation ID
+        p#id(data-source=conversationSource, data-output-format=conversation.metadata.outputFormat)= conversation._id
+        p.small= `Max audio messages: ${conversation.metadata.maxAudioMessages || 0} · Output format: ${conversation.metadata.outputFormat || 'text'}`
+        label.form-label(for='message_history') Message IDs in order
+        textarea#message_history.form-control(rows='4', spellcheck='false')= conversation.messages.join('\n')
+        button#chat5UpdateHistory.btn.btn-outline-secondary.btn-sm(type='button', disabled=!savedChat) Update message history
+        .chat5-dialog-links
+          a#chat5KnowledgeLink(href=`/chat4/createknowledgefromchat/${conversation._id}`) Create knowledge entry
+          a#chat5VoiceLink(href=`/chat5/voice/${conversation._id}`) Open voice view
+    include partials/chat5_export
+  +chat5Dialog('chat5Training', 'Add to training')
+    .chat5-training-toolbar
+      div
+        p.text-muted.mb-0 Select one or more prompt messages and one output message for a training group.
+      a.btn.btn-outline-primary.btn-sm(href="/admin/qwen3-lora/training-groups") Manage groups
+    p#chat5TrainingStatus(role='status', class=trainingFlash.error ? 'text-danger' : 'text-success')= trainingFlash.error || trainingFlash.success
+    p#chat5TrainingUnavailable.text-muted(hidden=savedChat) Save this conversation in Chat5 to add training entries.
+    #chat5TrainingContent(hidden=!savedChat)
+      - const selectableTrainingMessages = Array.isArray(messages) ? messages.map((msg, idx) => ({ msg, index: (chat5MessageWindow.loadedStart || 0) + idx })).filter((entry) => trainingText(entry.msg).length > 0) : [];
+      form.chat5-training-form(method="post", action="/chat5/training-entries")
+        input(type="hidden", name="_csrf", value=csrfToken)
+        input(type="hidden", name="conversation_id", value=conversation._id.toString())
+        .row
+          .col-md-6.mb-3
+            label.chat5-input-label.form-label(for="trainingGroupId") Training group
+            select#trainingGroupId.form-select(name="group_id", required, disabled=trainingGroupOptions.length === 0)
+              if trainingGroupOptions.length
+                each group in trainingGroupOptions
+                  option(value=group.groupId, selected=group.groupId.toString() === defaultTrainingGroupId)= `${group.groupId} (${group.stats && group.stats.entryCount ? group.stats.entryCount : 0} entries)`
+              else
+                option(value="") Create a training group first
+          .col-md-6.mb-3
+            label.chat5-input-label.form-label(for="trainingNotes") Notes
+            input#trainingNotes.form-control(type="text", name="notes", maxlength="2000", placeholder="Optional note for this entry")
+        +chat5MessageLoadControls()
+        p#chat5TrainingEmpty.text-muted(class={ 'd-none': selectableTrainingMessages.length > 0 }) No text messages are available for training selection.
+        .chat5-training-message-list#chat5TrainingMessageList
+          each entry in selectableTrainingMessages
+            - const m = entry.msg;
+            - const messageId = m._id.toString();
+            - const messageIndex = entry.index;
+            - const sender = typeof m.user_id === 'string' && m.user_id.trim().length > 0 ? m.user_id : 'Unknown';
+            - const trainingUsage = trainingUsageByMessage[messageId] || null;
+            article.chat5-training-message-option(data-message-id=messageId, data-message-index=messageIndex, class={ 'chat5-training-message-option--in-training': !!trainingUsage })
+              .chat5-training-message-selectors
+                .form-check
+                  input.form-check-input(type="checkbox", id=`trainingPrompt-${messageId}`, name="prompt_message_ids", value=messageId)
+                  label.form-check-label(for=`trainingPrompt-${messageId}`) Prompt
+                .form-check
+                  input.form-check-input(type="radio", id=`trainingOutput-${messageId}`, name="output_message_id", value=messageId)
+                  label.form-check-label(for=`trainingOutput-${messageId}`) Output
+              .chat5-training-message-preview
+                .d-flex.flex-wrap.gap-2.align-items-center
+                  strong= `#${messageIndex} ${sender}`
+                  code= messageId
+                  if trainingUsage
+                    span.chat5-training-usage-badge(title=trainingUsageTitle(trainingUsage))= trainingUsageLabel(trainingUsage)
+                p.mb-0= trainingPreview(m)
+        .chat5-update-actions.d-flex.justify-content-end.flex-wrap.gap-2
+          button#chat5TrainingSubmit.btn.btn-success(type="submit", disabled=trainingGroupOptions.length === 0 || selectableTrainingMessages.length < 2) Add entry
+
+      #chat5TrainingEntries(data-usage=JSON.stringify(trainingUsageByMessage))
         hr.chat5-divider
         h3 Existing entries for this conversation
         if trainingEntryOptions.length
@@ -611,179 +592,96 @@ block content
                   if entry.notes
                     p.mb-0.text-muted= entry.notes
                 form(method="post", action=`/chat5/training-entries/${entry._id.toString()}/delete`)
+                  input(type="hidden", name="_csrf", value=csrfToken)
                   input(type="hidden", name="conversation_id", value=conversation._id.toString())
                   button.btn.btn-outline-danger.btn-sm(type="submit") Delete
         else
           p.text-muted.mb-0 No training entries have been added for this conversation yet.
-    #pills-raw.tab-pane.fade.chat5-pane(role="tabpanel" aria-labelledby="pills-raw-tab" tabindex="0")
-      h3 Conversation 
-      .row 
-        .col 
-          div 
-            b _id: 
-            span= conversation._id
-          div 
-            b title: 
-            span= conversation.title
-          div 
-            b category: 
-            span= conversation.category
-          div 
-            b tags: 
-            span= conversation.tags.join(", ")
-          div 
-            b members: 
-            span= conversation.members.join(", ")
-          div 
-            b Messages: 
-            textarea#message_history.form-control(name="message_history")= conversation.messages.join("\n")
-            button.btn.btn-primary(onclick="EditMessageArray()") Update message history
-        .col 
-          h4 Metadata 
-          div 
-            b contextPrompt: 
-            span= conversation.metadata.contextPrompt
-          div 
-            b model: 
-            span= conversation.metadata.model
-          div 
-            b maxMessages: 
-            span= conversation.metadata.maxMessages
-          div
-            b startMessageId:
-            span#rawStartMessageId= configuredStartMessageId || 'Not set'
-          div 
-            b maxAudioMessages: 
-            span= conversation.metadata.maxAudioMessages
-          div 
-            b tools: 
-            span= selectedTools.join(", ")
-          div 
-            b reasoning: 
-            span= conversation.metadata.reasoning
-          div
-            b mode:
-            span= conversation.metadata.mode || "standard"
-          div 
-            b verbosity: 
-            span= conversation.metadata.verbosity
-          div 
-            b outputFormat: 
-            span= conversation.metadata.outputFormat
-      +chat5MessageLoadControls()
-      .chat5-raw-message-list#chat5RawMessageList
-        each m, i in messages
-          - const rawMessageIndex = (chat5MessageWindow.loadedStart || 0) + i;
-          .chat5-raw-message(data-message-id=m._id, data-message-index=rawMessageIndex)
-            h3= `Message#${rawMessageIndex}`
-            .row
-              .col-3
-                div
-                  b _id:
-                  span= m._id
-                div
-                  b user_id:
-                  span= m.user_id
-                div
-                  b category:
-                  span= m.category
-                div
-                  b tags:
-                  span= m.tags.join(", ")
-                div
-                  b contentType:
-                  span= m.contentType
-                div
-                  b Hide from bot:
-                  input(type="checkbox", data-id=m._id, checked=m.hideFromBot, onchange="ToggleHideFromBot(this)")
-                if m._id
-                  .mt-2
-                    button.btn.btn-sm(
-                      type="button",
-                      class=m._id.toString() === configuredStartMessageId ? "btn-warning" : "btn-outline-warning",
-                      data-chat5-start-message-id=m._id,
-                      aria-pressed=m._id.toString() === configuredStartMessageId ? "true" : "false",
-                      disabled=conversationSource !== 'conversation5'
-                    )= m._id.toString() === configuredStartMessageId ? 'Selected start message' : 'Select start message'
-              .col-9
-                h4 Content
-                div
-                  b text:
-                    button.btn.btn-link(data-id=m._id, data-type="text", data-content=m.content.text, onclick=`EditText(this)`) Edit
-                  pre(id=`${m._id}text`)= m.content.text
-                div
-                  b image:
-                    button.btn.btn-link(data-id=m._id, data-type="image", data-content=m.content.image, onclick=`EditText(this)`) Edit
-                  pre(id=`${m._id}image`)= m.content.image
-                div
-                  b audio:
-                    button.btn.btn-link(data-id=m._id, data-type="audio", data-content=m.content.audio, onclick=`EditText(this)`) Edit
-                  pre(id=`${m._id}audio`)= m.content.audio
-                div
-                  b tts:
-                    button.btn.btn-link(data-id=m._id, data-type="tts", data-content=m.content.tts, onclick=`EditText(this)`) Edit
-                  pre(id=`${m._id}tts`)= m.content.tts
-                div
-                  b transcript:
-                    button.btn.btn-link(data-id=m._id, data-type="transcript", data-content=m.content.transcript, onclick=`EditText(this)`) Edit
-                  pre(id=`${m._id}transcript`)= m.content.transcript
-                div
-                  b revisedPrompt:
-                    button.btn.btn-link(data-id=m._id, data-type="revisedPrompt", data-content=m.content.revisedPrompt, onclick=`EditText(this)`) Edit
-                  pre(id=`${m._id}revisedPrompt`)= m.content.revisedPrompt
-                div
-                  b imageQuality:
-                    button.btn.btn-link(data-id=m._id, data-type="imageQuality", data-content=m.content.imageQuality, onclick=`EditText(this)`) Edit
-                  pre(id=`${m._id}imageQuality`)= m.content.imageQuality
-                div
-                  b toolOutput:
-                    button.btn.btn-link(data-id=m._id, data-type="toolOutput", data-content=m.content.toolOutput, onclick=`EditText(this)`) Edit
-                  pre(id=`${m._id}toolOutput`)= m.content.toolOutput
+  +chat5Dialog('chat5WritingTools', 'Writing tools')
+    h3 Templates & drafts
+    button#messageTemplateSave.btn.btn-outline-secondary.btn-sm(type='button') Save current message as template
+    .chat5-draft-grid
+      .chat5-draft-field
+        label.form-label.mb-1.chat5-input-label.small(for="draftPersonalitySelect") Personality
+        select#draftPersonalitySelect.form-select.form-select-sm
+          option(value="") -- Select personality --
+          each persona in personaOptions
+            option(value=persona._id, title=persona.description)= persona.name
+      .chat5-draft-field
+        label.form-label.mb-1.chat5-input-label.small(for="draftResponseTypeSelect") Response type
+        select#draftResponseTypeSelect.form-select.form-select-sm
+          option(value="") -- Select response type --
+          each rt in responseTypeOptions
+            option(value=rt._id, title=rt.description)= rt.label
+      .chat5-draft-field.chat5-draft-notes
+        label.form-label.mb-1.chat5-input-label.small(for="draftNotes") Prompt notes (optional)
+        textarea#draftNotes.form-control.form-control-sm(rows="2" placeholder="Add reminders or constraints")
+    .chat5-draft-actions
+      button#draftPromptButton.btn.btn-outline-info.btn-sm(type="button") Draft prompt
+      small.text-muted Drafts use the cydonia:24b-q6 Ollama model and only update the editor.
+    h3 Voice input
+    .chat5-voice-controls.d-flex.flex-wrap.align-items-center.gap-2.mb-2
+      button#chat5VoiceButton.btn.btn-outline-primary.btn-sm(type="button") Start voice input
+      span#chat5VoiceStatus.small.text-muted Ready for voice input.
+    details.chat5-disclosure
+      summary TTS voice & tone tags
+      .chat5-disclosure-body
+        .mb-3
+          label.form-label(for="ttsReferenceId") Voice
+          - const voiceOptions = Array.isArray(ttsVoices?.voices) ? ttsVoices.voices : [];
+          - const defaultVoiceId = ttsVoices?.defaultVoiceId || '';
+          select#ttsReferenceId.form-select
+            option(value="", selected=!defaultVoiceId) Default (#{defaultVoiceId || 'auto'})
+            if voiceOptions.length
+              each voice in voiceOptions
+                option(value=voice.voiceId, selected=voice.voiceId === defaultVoiceId)= `${voice.displayName || voice.voiceId} (${voice.language || voice.backend || 'voice'})`
+            else
+              option(value="", disabled) No voices available (using API default)
+          small.text-muted Voices loaded from the TTS service. OpenAudio clone voices are slower; prefer piper or voicevox for speed.
+        h6.mb-2 Basic emotions
+        p
+          | (angry) (sad) (excited) (surprised) (satisfied) (delighted) (scared) (worried) (upset) (nervous) (frustrated) (depressed) (empathetic) (embarrassed) (disgusted) (moved) (proud) (relaxed) (grateful) (confident) (interested) (curious) (confused) (joyful)
+        h6.mt-3.mb-2 Advanced emotions
+        p
+          | (disdainful) (unhappy) (anxious) (hysterical) (indifferent) (impatient) (guilty) (scornful) (panicked) (furious) (reluctant) (keen) (disapproving) (negative) (denying) (astonished) (serious) (sarcastic) (conciliative) (comforting) (sincere) (sneering) (hesitating) (yielding) (painful) (awkward) (amused)
+        h6.mt-3.mb-2 Tone markers
+        p
+          | (in a hurry tone) (shouting) (screaming) (whispering) (soft tone)
+        h6.mt-3.mb-2 Special audio effects
+        p
+          | (laughing) (chuckling) (sobbing) (crying loudly) (sighing) (panting) (groaning) (crowd laughing) (background laughter) (audience laughing)
+    h3 Send options
+    .chat5-completion-window
+      label.small(for='completionWindow') Completion window:
+        output#completionWindowValue.ms-1(for='completionWindow') soonest
+      input#completionWindow(type='range' min='0' max='2' step='1' value='0' aria-valuetext='soonest' aria-describedby='completionWindowLabels')
+      #completionWindowLabels.d-flex.justify-content-between.small
+        span soonest
+        span 2h
+        span 8h
+    details.chat5-disclosure
+      summary Batch details & recovery
+      p.small Local models use the durable local queue; supported OpenAI models use the cloud batch queue. A non-empty prompt is included with the request. With an empty prompt, Batch requests a response to the existing conversation.
+      p.small Local batches require a saved conversation, reasoning “none”, standard mode, medium verbosity, text output and no tools. With batch media enabled, vision models accept acknowledged image uploads within catalog limits. Older images require reupload. Queued prompts use independent snapshots.
+      p.small.text-muted Chat image originals remain public; private batch snapshots do not change that.
+      button#localAiRecover.btn.btn-outline-secondary.btn-sm(type='button') Recover uncertain local submission
+      p#batchToolsWarning.text-warning.small(class={ 'd-none': !selectedTools.length }) Cloud batches ignore selected tools.
+      a(href='/local-ai/queue') Local queue
+  +chat5Dialog('chat5MessageDetails', 'Message details', 'chat5SaveField', 'Save field')
+    dl#chat5DetailMetadata.chat5-detail-metadata
+    label.form-label(for='chat5DetailField') Content field
+    select#chat5DetailField.form-select
+      each label, field in detailFields
+        option(value=field)= label
+    textarea#chat5DetailValue.form-control(rows='9', aria-label='Field value')
+    p#chat5DetailStatus.small(role='status')
   #loadingPopup.loading-popup
     span.close-btn(onclick="hideLoadingPopup()") &times;
     .loading-content
       .loader
       p Loading...
-  #editTextModal.modal.fade(tabindex="-1" aria-labelledby="editTextModalLabel" aria-hidden="true")
-    .modal-dialog
-      .modal-content
-        label#text_to_edit_label(for="text_to_edit") text
-        textarea#text_to_edit.form-control(name="text_to_edit", cols="50", rows="30")
-        input#text_to_edit_id(type="hidden", name="text_to_edit_id")
-        input#text_to_edit_type(type="hidden", name="text_to_edit_type")
-        button.btn.btn-success(onclick="SaveText()") Save
-  #ttsKeywordsModal.modal.fade(tabindex="-1" aria-labelledby="ttsKeywordsModalLabel" aria-hidden="true")
-    .modal-dialog.modal-lg
-      .modal-content
-        .modal-header
-          h5#ttsKeywordsModalLabel.modal-title TTS emotion & tone tags
-          button.btn-close(type="button", data-bs-dismiss="modal", aria-label="Close")
-        .modal-body
-          p.small.text-muted Use these tags in your prompt to steer delivery. Audio is saved under public/mp3/ using the format returned by the TTS service.
-          .mb-3
-            label.form-label(for="ttsReferenceId") Voice
-            - const voiceOptions = Array.isArray(ttsVoices?.voices) ? ttsVoices.voices : [];
-            - const defaultVoiceId = ttsVoices?.defaultVoiceId || '';
-            select#ttsReferenceId.form-select
-              option(value="", selected=!defaultVoiceId) Default (#{defaultVoiceId || 'auto'})
-              if voiceOptions.length
-                each voice in voiceOptions
-                  option(value=voice.voiceId, selected=voice.voiceId === defaultVoiceId)= `${voice.displayName || voice.voiceId} (${voice.language || voice.backend || 'voice'})`
-              else
-                option(value="", disabled) No voices available (using API default)
-            small.text-muted Voices loaded from the TTS service. OpenAudio clone voices are slower; prefer piper or voicevox for speed.
-          h6.mb-2 Basic emotions
-          p
-            | (angry) (sad) (excited) (surprised) (satisfied) (delighted) (scared) (worried) (upset) (nervous) (frustrated) (depressed) (empathetic) (embarrassed) (disgusted) (moved) (proud) (relaxed) (grateful) (confident) (interested) (curious) (confused) (joyful)
-          h6.mt-3.mb-2 Advanced emotions
-          p
-            | (disdainful) (unhappy) (anxious) (hysterical) (indifferent) (impatient) (guilty) (scornful) (panicked) (furious) (reluctant) (keen) (disapproving) (negative) (denying) (astonished) (serious) (sarcastic) (conciliative) (comforting) (sincere) (sneering) (hesitating) (yielding) (painful) (awkward) (amused)
-          h6.mt-3.mb-2 Tone markers
-          p
-            | (in a hurry tone) (shouting) (screaming) (whispering) (soft tone)
-          h6.mt-3.mb-2 Special audio effects
-          p
-            | (laughing) (chuckling) (sobbing) (crying loudly) (sighing) (panting) (groaning) (crowd laughing) (background laughter) (audience laughing)
+  script(src='/js/local-ai-client.js' defer)
+  script(src='/js/local-ai-integrations.js' defer)
   script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
   script(src="/vendor/dompurify/purify.min.js", defer)
   script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js", defer)
@@ -794,11 +692,9 @@ block content
     window.chatModels = !{safeJson(chat_models)};
     window.ttsVoices = !{safeJson(ttsVoices || {})};
     window.chat5MessageWindow = !{safeJson(chat5MessageWindow)};
-    window.chat5TrainingUsage = !{safeJson(trainingUsageByMessage)};
-    document.addEventListener('DOMContentLoaded', function(){
-      if (window.location.hash === '#pills-training' && window.bootstrap) {
-        var tab = document.getElementById('pills-training-tab');
-        if (tab) window.bootstrap.Tab.getOrCreateInstance(tab).show();
+    document.addEventListener('DOMContentLoaded', function () {
+      if (['#pills-training', '#chat5Training'].includes(window.location.hash)) {
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('chat5Training')).show();
       }
     });
   // Wire template selectors to inputs
@@ -817,6 +713,7 @@ block content
             var t = getTemplateById(e.target.value);
             if (t && window.editor && typeof window.editor.setMarkdown === 'function') {
               window.editor.setMarkdown(t.TemplateText || '');
+              msgSel.value = '';
             }
           });
         }

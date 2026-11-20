@@ -2,6 +2,7 @@
 (() => {
   const status = document.getElementById('localAiBatchStatus');
   const button = document.getElementById('localAiChatBatch');
+  const batchReason = document.getElementById('localAiBatchReason');
   const recover = document.getElementById('localAiRecover');
   function showJob(job) {
     status.textContent = 'Durably queued. ';
@@ -37,7 +38,11 @@
     function eligible(showReason = true) {
       const reason = ineligible(collectChatSettings());
       button.disabled = submitting || Boolean(reason);
-      if (showReason) status.textContent = reason;
+      if (showReason && (!batchReason || window.chat5UploadBarrier?.pending)) status.textContent = reason;
+      if (batchReason) {
+        batchReason.textContent = reason === status.textContent ? '' : reason;
+        batchReason.hidden = !batchReason.textContent;
+      }
     }
     button.disabled = true;
     window.addEventListener('chat5-upload-state', () => eligible());

@@ -1,0 +1,259 @@
+.chat5-workspace {
+  --chat5-width: 68rem;
+  --chat5-gutter: clamp(.75rem, 3vw, 2rem);
+  --chat5-visible-height: 100dvh;
+  --chat5-editor-height: clamp(8rem, calc(var(--chat5-visible-height) * .23), 13.5rem);
+  position: fixed;
+  inset: var(--nav-clearance) 0 var(--chat5-keyboard, 0px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  color: var(--text);
+  background: var(--bg);
+}
+.chat5-workspace [hidden], .chat5-dialog [hidden] { display: none !important; }
+.chat5-topline, .chat5-thread-inner, .chat5-composer-inner {
+  box-sizing: border-box;
+  min-width: 0;
+  width: min(100%, var(--chat5-width));
+  margin-inline: auto;
+  padding-inline: var(--chat5-gutter);
+}
+.chat5-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-block: .65rem;
+  border-bottom: 1px solid var(--divider);
+}
+.chat5-header-text { min-width: 0; }
+#conversation_title {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: clamp(1.05rem, 2.2vw, 1.5rem);
+  font-weight: 650;
+}
+#chat5ModelLabel, .chat5-message-heading time, .chat5-hold-hint, #chat5CharCounter {
+  color: var(--text-muted);
+  font-size: .8rem;
+}
+.chat5-header-tools, .chat5-hold-tools, .chat5-dialog-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+.chat5-secondary, .chat5-action, .chat5-toggle,
+.chat5-message-actions .chat5-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: .83rem;
+  line-height: 1.25;
+  border: 1px solid transparent;
+  border-radius: .45rem;
+  padding: .35rem .55rem;
+  background: transparent;
+  cursor: pointer;
+}
+.chat5-secondary {
+  border-color: var(--divider);
+  background: var(--surface-1);
+  white-space: nowrap;
+  min-height: 2.15rem;
+  padding-inline: .8rem;
+}
+.chat5-action:hover, .chat5-secondary:hover, .chat5-toggle:hover,
+.chat5-message-actions .chat5-copy-button:hover {
+  color: var(--text);
+  background: var(--surface-3);
+  border-color: var(--divider);
+}
+.chat5-action:disabled { opacity: .5; cursor: default; }
+.chat5-workspace :focus-visible, .chat5-dialog :focus-visible,
+.chat5-message-actions .chat5-copy-button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.chat5-thread { min-height: 0; overflow: auto; overscroll-behavior: contain; overflow-anchor: none; }
+.chat5-thread-inner { padding-block: .75rem 1rem; }
+.chat5-disclosure {
+  margin-bottom: .75rem;
+  border: 1px solid var(--border);
+  border-radius: .65rem;
+  background: var(--surface-1);
+}
+.chat5-disclosure > summary {
+  padding: .55rem .8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: .85rem;
+  font-weight: 600;
+}
+.chat5-disclosure[open] > summary { color: var(--accent); }
+.chat5-disclosure-body { padding: .25rem .8rem .8rem; }
+.chat5-quick-settings-grid { margin-bottom: .5rem; }
+.chat5-history { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.chat5-entry { margin-block: .6rem; }
+.chat5-entry .chat5-message {
+  display: block;
+  padding: .75rem clamp(.75rem, 2vw, 1.15rem) .4rem;
+  margin: 0;
+  background: var(--surface-1);
+  box-shadow: none;
+  border: 1px solid var(--border);
+  border-radius: .65rem;
+}
+.chat5-entry .chat5-message--bot { border-inline-start: 3px solid var(--accent); }
+.chat5-entry .chat5-message--hidden { border-style: dashed; }
+.chat5-message-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin-bottom: .5rem;
+  font-size: .9rem;
+}
+.chat5-message-heading time { margin-inline-start: auto; }
+.chat5-message-heading .chat5-avatar { width: 1.6rem; height: 1.6rem; border: 1px solid var(--accent); box-shadow: none; }
+.chat5-hidden-label { font-size: .75rem; color: var(--warning); }
+.chat5-entry .chat5-message-body { display: block; overflow-wrap: anywhere; }
+.chat5-message-body > :last-child, .chat5-message-text > :last-child { margin-bottom: 0; }
+.chat5-message audio { max-width: 100%; }
+.chat5-entry .chat5-message-actions {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .1rem .3rem;
+  margin-block-start: .45rem;
+}
+.chat5-message-actions .chat5-copy-button { opacity: 1; }
+.chat5-action[aria-pressed='true'] { color: var(--accent); background: var(--accent-tint); }
+.chat5-chevron {
+  content: '';
+  width: .43rem;
+  height: .43rem;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateY(-.12rem) rotate(45deg);
+}
+.chat5-toggle[aria-expanded='false'] .chat5-chevron { transform: translateY(.12rem) rotate(225deg); }
+.chat5-hold-tools { gap: .2rem; margin-inline-start: auto; }
+.chat5-hold-hint { border-inline-start: 1px solid var(--divider); padding-inline: .55rem .15rem; }
+.chat5-message-heading .chat5-inspect { color: var(--text-muted); font-size: .76rem; }
+.chat5-action[data-chat5-hold] {
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
+  user-select: none;
+  background-image: linear-gradient(var(--accent-tint), var(--accent-tint));
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+}
+.chat5-action.chat5-remove { color: var(--danger); }
+.chat5-action.is-holding { background-size: 100% 100%; transition: background-size 700ms linear; border-color: var(--accent); }
+.chat5-start-divider {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin: 1rem 0 .5rem;
+  color: var(--accent);
+  font-size: .86rem;
+  font-weight: 700;
+}
+.chat5-start-divider::before, .chat5-start-divider::after { content: ''; height: 2px; background: var(--accent); }
+.chat5-start-divider::before { width: 1.5rem; }
+.chat5-start-divider::after { flex: 1; }
+.chat5-hidden-summary { flex-wrap: wrap; }
+#chat5EmptyMessages { margin: 2rem 0; text-align: center; }
+.chat5-composer {
+  z-index: 2;
+  border-top: 1px solid var(--divider);
+  background: var(--surface-1);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.chat5-composer-bar, .chat5-compose-actions {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+}
+.chat5-composer-bar { justify-content: space-between; min-height: 2.6rem; }
+.chat5-toggle { min-height: 2.25rem; padding-inline: .2rem .65rem; font-weight: 600; }
+.chat5-chevron { color: var(--accent); margin-inline: .2rem; }
+.chat5-composer .chat5-editor {
+  height: var(--chat5-editor-height);
+  min-height: 0;
+  margin: 0;
+  border: 1px solid var(--divider);
+  border-radius: .55rem;
+}
+.chat5-editor .toastui-editor-defaultUI { border: 0; }
+.chat5-editor .toastui-editor-defaultUI-toolbar { background: var(--surface-2); }
+.chat5-compose-actions { padding-block: .45rem; flex-wrap: wrap; }
+.chat5-compose-actions select { width: clamp(7rem, 22%, 16rem); min-width: 0; }
+.chat5-compose-actions .chat5-send-controls { margin: 0 0 0 auto; }
+.chat5-send-controls .btn-primary { color: var(--text-inverse); background: var(--brand); border-color: var(--brand); }
+.chat5-send-controls .btn-primary:hover { background: var(--brand-hover); }
+.chat5-notice { color: var(--text-secondary); font-size: .82rem; margin: .15rem 0 .45rem; }
+.chat5-notice:empty { display: none; }
+.chat5-dialog .modal-content { color: var(--text); background: var(--surface-1); border: 1px solid var(--divider); }
+.chat5-dialog .modal-header { border-color: var(--divider); }
+.chat5-dialog .modal-title { font-size: 1.2rem; }
+.chat5-dialog .modal-body > h3 { font-size: 1rem; margin: 1.25rem 0 .6rem; }
+.chat5-dialog .modal-body > h3:first-child { margin-top: 0; }
+.chat5-dialog .modal-body > label { display: block; margin-block: .8rem .25rem; }
+.chat5-dialog .modal-body > label:first-child { margin-top: 0; }
+.chat5-dialog .modal-body > details { margin-top: 1rem; }
+#chat5TrainingStatus:empty { display: none; }
+.chat5-dialog .modal-footer { border-color: var(--divider); }
+.chat5-dialog .modal-footer small { color: var(--text-muted); }
+.chat5-dialog-links { margin-top: .75rem; }
+.chat5-detail-metadata { display: grid; grid-template-columns: auto 1fr; gap: .2rem .8rem; }
+.chat5-detail-metadata dd { margin: 0; overflow-wrap: anywhere; }
+#chat5DetailValue { margin-top: .6rem; }
+#chat5DetailStatus:empty { display: none; }
+#chat5Settings #message_history { margin-bottom: .4rem; }
+#chat5Settings #id { font-family: monospace; overflow-wrap: anywhere; }
+#chat5WritingTools .chat5-disclosure > p, #chat5WritingTools .chat5-disclosure > button,
+#chat5WritingTools .chat5-disclosure > a { margin: .4rem .8rem; }
+#loadingPopup { z-index: 1070; }
+
+@media (max-width: 640px) {
+  .chat5-workspace { --chat5-editor-height: clamp(9.75rem, calc(var(--chat5-visible-height) * .23), 12.5rem); }
+  .chat5-topline { gap: .4rem; padding-block: .4rem; }
+  .chat5-header-tools { flex-wrap: nowrap; gap: .25rem; }
+  .chat5-secondary { font-size: .77rem; padding-inline: .5rem; }
+  .chat5-header-text { flex: 1; }
+  #chat5ModelLabel { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .chat5-thread-inner { padding-block: .5rem; }
+  .chat5-hold-tools { margin-inline-start: 0; }
+  .chat5-hold-hint { padding-inline-start: .55rem; border: 0; }
+  .chat5-action[data-chat5-hold] { padding-inline: .4rem; }
+  .chat5-compose-actions { gap: .25rem; }
+  .chat5-compose-actions select { flex: 1; min-width: 6.8rem; }
+  .chat5-editor .ProseMirror { font-size: 16px; padding: .55rem .8rem; }
+  .chat5-compose-actions .chat5-action { padding-inline: .35rem; }
+  .chat5-compose-actions .chat5-wide-label { display: none; }
+  .chat5-compose-actions .btn { padding: .45rem .55rem; font-size: .85rem; }
+  .chat5-compose-actions .dropdown-toggle-split { padding-inline: .4rem; }
+  .chat5-hidden-summary-time { white-space: normal; }
+}
+.chat5-short { --chat5-editor-height: clamp(4rem, calc(var(--chat5-visible-height) * .24), 7.5rem); }
+/* Toast UI sets the mode switch's display inline. Reclaim that row above a mobile keyboard. */
+.chat5-short .toastui-editor-toolbar, .chat5-short .toastui-editor-mode-switch { display: none !important; }
+.chat5-short .chat5-topline { padding-block: .15rem; }
+.chat5-short .chat5-compose-actions { padding-block: .15rem; }
+.chat5-short .chat5-toggle, .chat5-short .chat5-composer-bar { min-height: 1.9rem; }
+.chat5-short #chat5ModelLabel { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .chat5-action.is-holding { transition: none; }
+}
+.chat5-send-controls .dropdown-menu { max-width: min(19rem, calc(100vw - 2rem)); }

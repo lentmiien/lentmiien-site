@@ -180,28 +180,47 @@ Remember to remove listeners (or scope them via Vue components) to avoid duplica
 
 ### 5. Current Pug UI Walkthrough (`views/chat5_chat.pug`)
 
-Understanding the existing page helps identify parity requirements before improving the design:
+The conversation history scrolls independently of the bottom editor. Minimize the
+editor to read, or expand it to continue the same draft. Saved chats open in
+reading mode on narrow screens. Templates and image upload are in the composer.
+Writing tools contains prompt drafting, voice input, TTS and per-send options.
 
-- **Header:** Shows title, Mongo ID, and an action button to create a knowledge entry. Conversation metadata (`conversationSource`) is embedded in data attributes.
-- **Message log (`#conversationContainer`):**
-  - Groups messages by `user_id` with horizontal separators and user labels.
-  - Bot messages add an avatar (`/i/avatar.jpg`) and get a `.chat5-message--bot` class.
-  - Each message shows a context-aware body:
-    - `text` → rendered Markdown (`m.content.html`) with copy-to-clipboard buttons.
-    - `image` → preview + caption.
-    - `tool` / `reasoning` → rendered as italic blocks.
-  - `.chat5-message--hidden` marks messages excluded from future prompts.
-- **Tabs:** `Chat`, `Settings`, `Raw`.
-  - **Chat tab:** File upload field, rich text editor (Toast UI), template picker & saver, send buttons (Append, Send & Response, Response, batch operations), and an audio placeholder.
-  - **Settings tab:** Form-driven controls for metadata (title, category, tags, summary, context prompt, reasoning/verbosity/limit toggles, optional start message ID, tools multiselect, member list).
-  - **Raw tab:** Displays raw JSON for debugging and provides a button on each message to persist it as the inclusive history start.
-- **Modal tooling:** Hidden sections exist for editing raw message arrays, toggling hide-from-bot flags, updating assistant responses, and editing text snippets.
-- **Client scripts:** Injected data (`window.chatTemplates`, `window.chatModels`) and in-page JS wiring for template selectors and warning banners.
+Settings and Add to training open dialogs. Settings includes conversation
+metadata, the message ID ordering, export, and links to voice and knowledge tools.
+Quick settings is expanded for a new conversation. Message details contains the raw fields.
+Each card offers hide/show and removal. Pointer or keyboard users hold a
+visibility or removal control for 700 ms. Release, pointer cancellation or
+moving away before completion cancels the gesture.
 
-This layout offers two key behaviours to keep in mind when designing the Vue replacement:
+The amber divider appears immediately before the inclusive context start,
+including when its message is loaded from older history. Selecting a different
+message moves the divider. Clearing the setting or removing its message clears
+the divider.
 
-1. **Sticky composition tools:** The editor and controls are near the message log, enabling quick prompt iteration.
-2. **Metadata at hand:** Category/tags/tools/members adjustments are a single tab away.
+#### Security contract for message actions
+
+The page uses the existing logged-in Chat5 zone. There are no machine principals.
+Private messages use the existing conversation membership and linked-message
+scope. The server refreshes the session principal and requires both
+`chat.conversation.read` and `chat.conversation.write`. Admin has these capabilities
+by default. Family and user need grants. All roles require membership.
+
+`POST /chat5/chat/:id/messages/:messageId/:action` takes two 24-digit hex IDs
+and one of `start`, `hide`, `show` or `remove`. The client sends the shared
+session CSRF token in a header. Query and body fields are rejected. Each action
+checks the specific message reference in the named member conversation.
+Start and removal change that conversation. Hide/show sets the existing flag
+on the linked message, which shallow copies share. Removal detaches the ID
+without deleting the message document. The existing embedding cleanup applies
+after its final reference is removed.
+
+Responses are private and uncached. Updates carry IDs and action names to the
+existing reauthorized conversation room. The page uses escaped text, safe JSON
+and the existing Markdown sanitizers. Operational errors use the shared logger
+without message content. This adds no analytics, uploads, storage location,
+external host, configuration or database migration. Negative tests cover
+missing capability, foreign objects, request method, CSRF, input validation,
+ordinary clicks and cancelled holds.
 
 ---
 
@@ -217,7 +236,7 @@ With the new history endpoint and existing real-time events, the Vue client can 
 
 ### Per-send completion windows
 
-The conversation page offers soonest (default), 2h, and 8h beside Send & Response.
+Writing tools offers soonest (default), 2h, and 8h for Send & Response.
 This transient setting affects the response requested by that send, not automatic
 titles, summaries, Batch submissions, or subsequent tool follow-ups. The server
 allowlists the two discounted values and verifies the resolved provider/model.

@@ -31,6 +31,8 @@ const trainingDataController = require('../controllers/trainingDataController');
 const Role = require('../models/role');
 const { createRequireCapabilities, PRIVATE_NO_STORE } = require('../middleware/requireCapabilities');
 const { createSessionCsrf } = require('../middleware/sessionCsrf');
+const chat5Access = require('../middleware/chat5PrivateAccess');
+const { WRITE, MIIEN_ROLE_CAPABILITY_BUNDLES } = require('../utils/miienAuthorizationPolicy');
 
 // Model cards are a shared, admin-managed catalog. Explicit grants may delegate management.
 const modelCardAccess = [
@@ -46,14 +48,14 @@ const modelCardAccess = [
     roleCapabilityBundles: { admin: ['ai.model_cards.manage'], family: [], user: [] },
   }),
 ];
-const modelCardCsrf = createSessionCsrf();
-const modelCardWrite = [...modelCardAccess, modelCardCsrf.requireToken];
+const csrf = createSessionCsrf();
+const modelCardWrite = [...modelCardAccess, csrf.requireToken];
 
 // Chat5 top page
 router.get('/', controller.index);
 
 // Manage model cards
-router.get('/ai_model_cards', ...modelCardAccess, modelCardCsrf.issueToken, controller.ai_model_cards);
+router.get('/ai_model_cards', ...modelCardAccess, csrf.issueToken, controller.ai_model_cards);
 router.post('/add_model_card', ...modelCardWrite, controller.add_model_card);
 router.post('/ai_model_cards/:id/tokens', ...modelCardWrite, controller.update_model_card_tokens);
 router.post('/ai_model_cards/:id/deprecation-date', ...modelCardWrite, controller.update_model_card_deprecation_date);
@@ -72,9 +74,12 @@ router.get('/story_mode/:id', require('../middleware/chat5PrivateAccess').page, 
 router.get('/edit_message/:id', require('../middleware/chat5PrivateAccess').messagePage, controller.edit_message);
 router.post('/update_message/:id', require('../middleware/chat5PrivateAccess').messagePage, upload.array('imgs'), controller.update_message);
 router.get('/top', require('../middleware/chat5PrivateAccess').listPage, controller.view_chat5_top);
-router.post('/training-entries', trainingDataController.createEntry);
-router.post('/training-entries/:id/delete', trainingDataController.deleteEntry);
-router.get('/chat/:id', require('../middleware/chat5PrivateAccess').page, controller.view_chat5);
+router.post('/training-entries', csrf.requireToken, trainingDataController.createEntry);
+router.post('/training-entries/:id/delete', csrf.requireToken, trainingDataController.deleteEntry);
+router.get('/chat/:id', chat5Access.page, csrf.issueToken, controller.view_chat5);
+router.post('/chat/:id/messages/:messageId/:action', chat5Access.listPage,
+  createRequireCapabilities({ capabilities: [WRITE], roleModel: Role, roleCapabilityBundles: MIIEN_ROLE_CAPABILITY_BUNDLES }),
+  csrf.requireToken, controller.changeChatMessage);
 router.get('/voice/:id', require('../middleware/chat5PrivateAccess').page, controller.view_chat5_voice);
 router.post('/chat/:id', require('../middleware/chat5PrivateAccess').page, controller.post_chat5);
 

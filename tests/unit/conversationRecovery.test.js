@@ -1348,6 +1348,38 @@ describe('ConversationService response recovery', () => {
     });
   });
 
+  test('targeted removal atomically matches member and message and preserves both neighbors', async () => {
+    const service = new ConversationService({}, {}, {});
+    const conversation = { messages: ['before', 'target', 'after'] };
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    expect(await service.changeChatMessage('conv', 'member', 'target', 'remove')).toBe(true);
+    const [scope, pipeline] = Conversation5Model.findOneAndUpdate.mock.calls[0];
+    expect(scope).toEqual({ _id: 'conv', members: 'member', messages: 'target' });
+    expect(pipeline[0].$set['metadata.startMessageId'].$cond).toEqual([
+      { $in: ['$metadata.startMessageId', { $literal: ['target'] }] }, null, '$metadata.startMessageId',
+    ]);
+    expect(conversation.messages).toEqual(['before', 'after']);
+    expect(Chat5Model.deleteOne).not.toHaveBeenCalled();
+  });
+
+  test.each(['hide', 'show', 'start', 'remove'])('%s rejects a missing or foreign conversation/message pair', async action => {
+    const service = new ConversationService({}, {}, {});
+    Conversation5Model.exists.mockResolvedValue(null);
+    Conversation5Model.updateOne.mockResolvedValue({ matchedCount: 0 });
+    Conversation5Model.findOneAndUpdate.mockResolvedValue(null);
+    expect(await service.changeChatMessage('conv', 'member', 'foreign-message', action)).toBe(false);
+    const scope = { _id: 'conv', members: 'member', messages: 'foreign-message' };
+    const query = action === 'remove' ? Conversation5Model.findOneAndUpdate : action === 'start' ? Conversation5Model.updateOne : Conversation5Model.exists;
+    expect(query.mock.calls[0][0]).toEqual(scope);
+    expect(Chat5Model.updateOne).not.toHaveBeenCalled();
+  });
+
+  test.each(['hide', 'show'])('%s sets the linked message to an explicit visibility state', async action => {
+    const service = new ConversationService({}, {}, {});
+    expect(await service.changeChatMessage('conv', 'member', 'target', action)).toBe(true);
+    expect(Chat5Model.updateOne).toHaveBeenCalledWith({ _id: 'target' }, { $set: { hideFromBot: action === 'hide' } });
+  });
+
   test('a mixed batch continues completed tools while excluding the expired human call from model input', async () => {
     const f = completionFixture('ask_lennart');
     const otherCall = { _id: 'other-call', contentType: 'function_call', content: {

@@ -9,7 +9,7 @@ function redirectToConversation(conversationId, params = {}) {
     if (value) query.set(key, value);
   });
   const qs = query.toString();
-  return `/chat5/chat/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}#pills-training`;
+  return `/chat5/chat/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}#chat5Training`;
 }
 
 exports.createEntry = async (req, res) => {

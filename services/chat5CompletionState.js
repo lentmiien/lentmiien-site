@@ -64,22 +64,26 @@ function startPendingLease(model, pending) {
 // Apply only this completion's additions/removals to the latest array. Bump the
 // version so an older Mongoose save cannot silently overwrite the atomic edit.
 async function updateConversationMessages(model, conversationId, {
-  add = [], remove = [], requiredMessageId = null,
+  add = [], remove = [], requiredMessageId = null, member,
 } = {}) {
   const additions = [...new Set(add.map(String))];
   const removals = [...new Set(remove.map(String))];
   const existing = { $ifNull: ['$messages', []] };
   return model.findOneAndUpdate({
     _id: conversationId,
+    ...(member !== undefined ? { members: member } : {}),
     ...(requiredMessageId ? { messages: String(requiredMessageId) } : {}),
   }, [{ $set: {
     messages: { $concatArrays: [
       { $filter: { input: existing, as: 'id', cond: { $not: [{ $in: ['$$id', { $literal: removals }] }] } } },
       { $filter: { input: { $literal: additions }, as: 'id', cond: { $not: [{ $in: ['$$id', existing] }] } } },
     ] },
+    ...(removals.length ? { 'metadata.startMessageId': { $cond: [
+      { $in: ['$metadata.startMessageId', { $literal: removals }] }, null, '$metadata.startMessageId',
+    ] } } : {}),
     __v: { $add: [{ $ifNull: ['$__v', 0] }, 1] },
     updatedAt: '$$NOW',
-  } }], { new: true, updatePipeline: true });
+  } }], { returnDocument: 'after', updatePipeline: true });
 }
 
 module.exports = { completionMessageId, pendingClaimFilter, completionError, assertMatched,

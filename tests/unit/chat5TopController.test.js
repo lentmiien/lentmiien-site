@@ -33,9 +33,10 @@ jest.mock('../../utils/chat5Markdown', () => ({
 }));
 
 jest.mock('../../services/messageService', () => jest.fn().mockImplementation(() => ({})));
+const mockChangeMessage = jest.fn();
 const mockList = jest.fn();
 const mockPending = jest.fn();
-jest.mock('../../services/conversationService', () => jest.fn().mockImplementation(() => ({ listUserConversations: mockList, fetchPending: mockPending })));
+jest.mock('../../services/conversationService', () => jest.fn().mockImplementation(() => ({ listUserConversations: mockList, fetchPending: mockPending, changeChatMessage: mockChangeMessage })));
 jest.mock('../../services/knowledgeService', () => jest.fn().mockImplementation(() => ({})));
 jest.mock('../../services/templateService', () => jest.fn().mockImplementation(() => ({})));
 jest.mock('../../services/ttsService', () => jest.fn().mockImplementation(() => ({})));
@@ -102,4 +103,33 @@ test('logs and forwards conversation list failures', async () => {
   expect(logger.error).toHaveBeenCalledWith('Failed to load Chat5 conversation list', {
     category: 'chat5', metadata: { errorName: 'Error' },
   });
+});
+
+const id = 'a'.repeat(24);
+const messageId = 'b'.repeat(24);
+
+test.each([
+  { params: { messageId: 'bad' } }, { params: { id: 'NEW' } }, { params: { action: 'deleteAll' } },
+  { query: { member: 'foreign' } }, { body: { messages: [] } },
+])('rejects invalid message action inputs before database work', async override => {
+  const req = { query: {}, ...override, params: { id, messageId, action: 'hide', ...override.params } };
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller.changeChatMessage(req, res);
+  expect(res.status).toHaveBeenCalledWith(400);
+  expect(mockChangeMessage).not.toHaveBeenCalled();
+});
+
+test('broadcasts committed changes only to the selected conversation and handles lost membership', async () => {
+  const room = { emit: jest.fn() };
+  const io = { to: jest.fn(() => room), conversationRoom: value => 'conversation:' + value };
+  const req = { params: { id, messageId, action: 'remove' }, user: { name: 'member' }, query: {}, app: { get: () => io } };
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  mockChangeMessage.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  await controller.changeChatMessage(req, res);
+  expect(res.status).toHaveBeenCalledWith(404);
+  expect(io.to).not.toHaveBeenCalled();
+  await controller.changeChatMessage(req, res);
+  expect(mockChangeMessage).toHaveBeenCalledWith(id, 'member', messageId, 'remove');
+  expect(io.to).toHaveBeenCalledWith('conversation:' + id);
+  expect(room.emit).toHaveBeenCalledWith('chat5-messages-removed', { conversationId: id, removedIds: [messageId] });
 });

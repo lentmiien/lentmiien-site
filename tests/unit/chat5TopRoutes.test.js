@@ -18,8 +18,11 @@ const User = require('../../models/useraccount');
 const Role = require('../../models/role');
 const controller = require('../../controllers/chat5controller');
 let server, base, principal, authenticated;
+const session = {};
+const messageAction = `/chat5/chat/${'a'.repeat(24)}/messages/${'b'.repeat(24)}/remove`;
 
 beforeEach(async () => {
+  delete session.csrfToken;
   authenticated = true;
   principal = { _id: 'a'.repeat(24), name: 'validated-owner', type_user: 'admin' };
   User.findById.mockImplementation(() => ({ select: () => ({ lean: async () => principal }) }));
@@ -28,6 +31,8 @@ beforeEach(async () => {
   app.use((req, res, next) => {
     req.user = { _id: 'a'.repeat(24), name: 'stale-session-name', type_user: 'admin' };
     req.isAuthenticated = () => authenticated;
+    req.session = session;
+    res.render = (_view, locals) => res.json({ error: locals.message });
     next();
   });
   app.use('/chat5', router);
@@ -54,4 +59,31 @@ test.each(['admin', 'family', 'user'])('list allows %s with read capability usin
   expect(await response.json()).toEqual({ user: 'validated-owner', analytics: false });
   expect(response.headers.get('cache-control')).toContain('no-store');
   expect(controller.view_chat5_top).toHaveBeenCalledTimes(1);
+});
+
+test.each(['anonymous', 'read-only', 'missing token', 'foreign origin', 'GET'])('denies message action for %s', async condition => {
+  session.csrfToken = 'x'.repeat(43);
+  if (condition === 'anonymous') authenticated = false;
+  if (condition === 'read-only') {
+    principal.type_user = 'user';
+    Role.findOne.mockResolvedValue({ permissions: ['chat.conversation.read'] });
+  }
+  const headers = { Accept: 'application/json', 'X-CSRF-Token': session.csrfToken };
+  if (condition === 'missing token') delete headers['X-CSRF-Token'];
+  if (condition === 'foreign origin') headers.Origin = 'https://other.invalid';
+  const response = await fetch(new URL(messageAction, base), { method: condition === 'GET' ? 'GET' : 'POST', headers });
+  expect(response.status).toBe(condition === 'anonymous' ? 401 : condition === 'GET' ? 404 : 403);
+  expect(controller.changeChatMessage).not.toHaveBeenCalled();
+});
+
+test.each(['admin', 'family', 'user'])('message action for authorized %s uses the refreshed identity and issued token', async role => {
+  principal.type_user = role;
+  Role.findOne.mockResolvedValue({ permissions: ['chat.conversation.read', 'chat.conversation.write'] });
+  await fetch(new URL('/chat5/chat/NEW', base));
+  expect(session.csrfToken).toHaveLength(43);
+  const response = await fetch(new URL(messageAction, base), {
+    method: 'POST', headers: { 'X-CSRF-Token': session.csrfToken },
+  });
+  expect(await response.json()).toEqual({ user: 'validated-owner', analytics: false });
+  expect(response.headers.get('cache-control')).toContain('no-store');
 });

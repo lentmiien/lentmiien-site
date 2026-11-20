@@ -1697,6 +1697,46 @@ class ConversationService {
     return { conversation, message: null };
   }
 
+  // Visibility belongs to the linked Chat5 message. Start and removal belong to its parent.
+  async changeChatMessage(conversationId, member, messageId, action) {
+    if (typeof member !== 'string' || !member.trim()) return false;
+    const scope = { _id: conversationId, members: member, messages: messageId };
+    if (action === 'start') {
+      const result = await Conversation5Model.updateOne(scope, { $set: { 'metadata.startMessageId': messageId } });
+      return result.matchedCount === 1;
+    }
+    if (action === 'hide' || action === 'show') {
+      if (!await Conversation5Model.exists(scope)) return false;
+      const result = await Chat5Model.updateOne({ _id: messageId }, { $set: { hideFromBot: action === 'hide' } });
+      return result.matchedCount === 1;
+    }
+    if (action !== 'remove') return false;
+    const updated = await updateConversationMessages(Conversation5Model, conversationId, {
+      member, requiredMessageId: messageId, remove: [messageId],
+    });
+    if (!updated) return false;
+    try {
+      await this.detachUnreferencedEmbedding(conversationId, messageId);
+    } catch (error) {
+      // Detachment is committed. Report the cleanup failure without asking the client to repeat the edit.
+      logger.error('Check embedding cleanup after Chat5 message removal', {
+        category: 'chat_embedding', metadata: { conversationId, messageId, errorName: error?.name || 'Error' },
+      });
+    }
+    return true;
+  }
+
+  async detachUnreferencedEmbedding(conversationId, messageId) {
+    if (await Conversation5Model.exists({ messages: messageId })) return;
+    const embeddingIntent = { embeddingDetachedAt: new Date(), embeddingStatus: 'delete_pending', embeddingContentHash: null };
+    const detached = await Chat5Model.updateOne({ _id: messageId, contentType: 'text' }, { $set: embeddingIntent });
+    if (detached.modifiedCount && typeof this.messageService.syncTextEmbedding === 'function') {
+      await this.messageService.syncTextEmbedding({
+        message: { _id: messageId, contentType: 'text', ...embeddingIntent }, conversationId,
+      });
+    }
+  }
+
   async removeLastVisibleMessage(conversationId) {
     const { conversation } = await this.ensureConversation5(conversationId);
     if (!conversation) throw new Error('Conversation not found in chat5 database');
@@ -1736,17 +1776,7 @@ class ConversationService {
 
     const updatedConversation = await updateConversationMessages(Conversation5Model, conversationId, { remove: removedIds });
     for (const messageId of removedIds) {
-      // Other conversations can share an existing message; detach its embedding
-      // only when the final reference has intentionally been removed.
-      if (!await Conversation5Model.exists({ messages: messageId })) {
-        const embeddingIntent = { embeddingDetachedAt: new Date(), embeddingStatus: 'delete_pending', embeddingContentHash: null };
-        const detached = await Chat5Model.updateOne({ _id: messageId, contentType: 'text' }, { $set: embeddingIntent });
-        if (detached.modifiedCount && typeof this.messageService.syncTextEmbedding === 'function') {
-          await this.messageService.syncTextEmbedding({
-            message: { _id: messageId, contentType: 'text', ...embeddingIntent }, conversationId,
-          });
-        }
-      }
+      await this.detachUnreferencedEmbedding(conversationId, messageId);
     }
 
     return {

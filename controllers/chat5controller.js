@@ -1,5 +1,8 @@
 const { AIModelCards, Chat4Model, Conversation4Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel, Chat3TemplateModel, Chat5QuickSettingModel, ChatPersonalityModel, ChatResponseTypeModel } = require('../database');
 const utils = require('../utils/utils');
+const Role = require('../models/role');
+const { hasCapabilities } = require('../utils/authorization');
+const { WRITE, MIIEN_ROLE_CAPABILITY_BUNDLES } = require('../utils/miienAuthorizationPolicy');
 const openai = require('../utils/ChatGPT');
 const anthropic = require('../utils/anthropic');
 const logger = require('../utils/logger');
@@ -696,7 +699,7 @@ exports.view_chat5 = async (req, res) => {
   const trainingEntriesPromise = id !== 'NEW' && conversationSource === 'conversation5'
     ? trainingDataService.listEntriesForConversation(id)
     : Promise.resolve([]);
-  const [templates, personalities, responseTypes, availableTools, trainingGroups, trainingEntries, quickSettings, models] = await Promise.all([
+  const [templates, personalities, responseTypes, availableTools, trainingGroups, trainingEntries, quickSettings, models, canEditChatMessages] = await Promise.all([
     templateService.getTemplates(),
     ChatPersonalityModel.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }),
     ChatResponseTypeModel.find({ isActive: true }).sort({ sortOrder: 1, label: 1 }),
@@ -705,10 +708,12 @@ exports.view_chat5 = async (req, res) => {
     trainingEntriesPromise,
     quickSettingService.listForUser(req.user.name),
     listAvailableChatModels(),
+    hasCapabilities(req.user, [WRITE], { roleModel: Role, roleCapabilityBundles: MIIEN_ROLE_CAPABILITY_BUNDLES }),
   ]);
   const ttsVoices = await loadTtsVoicesSafe();
   res.render("chat5_chat", {
     conversation: conversation || DEFAULT_CONVERSATION,
+    canEditChatMessages,
     messages,
     chat_models: models,
     templates,
@@ -819,35 +824,31 @@ exports.post_chat5 = async (req, res) => {
     generateAI: req.body.generate_ai && req.body.generate_ai === "on" ? true : false,
   });
 
-  const conversation = await Conversation5Model.findById(id);
-  const initial = await loadInitialChat5Messages(conversation);
+  return res.redirect(303, `/chat5/chat/${id}`);
+};
 
-  const [templates, personalities, responseTypes, availableTools, trainingGroups, trainingEntries, quickSettings, models] = await Promise.all([
-    templateService.getTemplates(),
-    ChatPersonalityModel.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }),
-    ChatResponseTypeModel.find({ isActive: true }).sort({ sortOrder: 1, label: 1 }),
-    toolManagerService.getAvailableTools(),
-    trainingDataService.listGroupsWithStats({ includeInactive: false }),
-    trainingDataService.listEntriesForConversation(id),
-    quickSettingService.listForUser(req.user.name),
-    listAvailableChatModels(),
-  ]);
-  const ttsVoices = await loadTtsVoicesSafe();
-  res.render("chat5_chat", {
-    conversation,
-    messages: initial.messages,
-    chat_models: models,
-    templates,
-    personalities,
-    responseTypes,
-    availableTools,
-    conversationSource: 'conversation5',
-    messageWindow: initial.messageWindow,
-    ttsVoices,
-    trainingGroups,
-    trainingEntries,
-    quickSettingOptions: quickSettings.map((setting) => serializeQuickSetting(setting, templates)),
-    currentUser: req.user.name,
-    trainingStatus: { success: '', error: '' },
-  });
+exports.changeChatMessage = async (req, res) => {
+  const { id, messageId, action } = req.params;
+  if (![id, messageId].every(value => /^[a-f0-9]{24}$/.test(value))
+    || !['start', 'hide', 'show', 'remove'].includes(action)
+    || Object.keys(req.query).length || Object.keys(req.body || {}).length) {
+    return res.status(400).json({ error: 'Invalid message action.' });
+  }
+  try {
+    const changed = await conversationService.changeChatMessage(id, req.user.name, messageId, action);
+    if (!changed) return res.status(404).json({ error: 'Message not found in this conversation.' });
+
+    const io = req.app.get('io');
+    const room = io.to(io.conversationRoom(id));
+    const payload = { conversationId: id, messageId, action };
+    if (action === 'remove') room.emit('chat5-messages-removed', { conversationId: id, removedIds: [messageId] });
+    else if (action === 'hide') room.emit('chat5-message-hidden', payload);
+    else room.emit('chat5-message-changed', payload);
+    return res.json(payload);
+  } catch (error) {
+    logger.error('Failed to apply Chat5 message action', {
+      category: 'chat5', metadata: { action, errorName: error?.name || 'Error' },
+    });
+    return res.status(503).json({ error: 'Could not confirm the message change. Reload to check its current state.' });
+  }
 };

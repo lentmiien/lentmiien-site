@@ -10,9 +10,12 @@ const DEFAULT_CHAT5_MESSAGE_BATCH_SIZE = 25;
 // Setup markdown editor
 const editor = new toastui.Editor({
   el: document.querySelector('#message'),
-  height: '500px',
+  height: 'var(--chat5-editor-height)',
+  minHeight: '0px',
+  autofocus: false,
   initialEditType: 'markdown',
-  // previewStyle: 'vertical',
+  placeholder: 'Write a message…',
+  previewStyle: 'tab',
   theme: 'dark',
 });
 // Make accessible to inline scripts
@@ -56,9 +59,7 @@ chat5MessageWindow.loadedStart = Number.isFinite(Number(chat5MessageWindow.loade
 chat5MessageWindow.loadedEnd = Number.isFinite(Number(chat5MessageWindow.loadedEnd)) ? Math.max(chat5MessageWindow.loadedStart, Math.floor(Number(chat5MessageWindow.loadedEnd))) : chat5MessageWindow.total;
 chat5MessageWindow.hasMoreOlder = chat5MessageWindow.source === 'conversation5' && chat5MessageWindow.loadedStart > 0;
 window.chat5MessageWindow = chat5MessageWindow;
-const chat5TrainingUsage = window.chat5TrainingUsage && typeof window.chat5TrainingUsage === 'object'
-  ? window.chat5TrainingUsage
-  : {};
+let chat5TrainingUsage = JSON.parse(document.getElementById('chat5TrainingEntries').dataset.usage);
 
 function getVoiceIdValue() {
   const value = ttsVoiceSelect ? ttsVoiceSelect.value : '';
@@ -123,9 +124,7 @@ function updatePromptCharCounter() {
   if (!charCounterEl) return;
   const text = editor ? editor.getMarkdown() : '';
   const length = typeof text === 'string' ? text.length : 0;
-  const voiceId = getVoiceIdValue();
-  const voiceNote = voiceId ? ` · voice ${voiceId}` : '';
-  charCounterEl.textContent = `${length} chars${voiceNote}`;
+  charCounterEl.textContent = `${length.toLocaleString()} chars`;
 }
 
 if (editor && typeof editor.on === 'function') {
@@ -302,7 +301,7 @@ function bindMessageCopyButton(btn, providedText) {
   btn.dataset.copyText = text;
   btn.dataset.copyBound = 'true';
   btn.addEventListener('click', () => {
-    copyTextToClipboard(text)
+    copyTextToClipboard(btn.dataset.copyText)
       .then(() => setCopyFeedback(btn, 'copied'))
       .catch((err) => {
         console.warn('Unable to copy message text to clipboard', err);
@@ -311,80 +310,12 @@ function bindMessageCopyButton(btn, providedText) {
   });
 }
 
-function createMessageCopyButton(text) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.classList.add('chat5-copy-button');
-  btn.setAttribute('aria-label', 'Copy message text');
-  btn.textContent = 'Copy';
-  bindMessageCopyButton(btn, text);
-  return btn;
-}
-
 function initializeMessageCopyButtons(root) {
   const scope = root || document;
   if (!scope || typeof scope.querySelectorAll !== 'function') return;
   const buttons = scope.querySelectorAll('.chat5-copy-button');
   if (!buttons.length) return;
   buttons.forEach((btn) => bindMessageCopyButton(btn));
-}
-
-function bindEmbedButton(btn) {
-  if (!btn || btn.dataset.embedBound === 'true') return;
-  const messageId = btn.getAttribute('data-message-id') || '';
-  const presetConversationId = btn.getAttribute('data-conversation-id') || '';
-  if (!messageId) return;
-
-  const defaultLabel = btn.textContent || 'Embed HQ';
-  btn.dataset.embedBound = 'true';
-
-  btn.addEventListener('click', () => {
-    if (btn.dataset.embedBusy === 'true') return;
-    const conversationId = (btn.dataset.conversationId || presetConversationId || getCurrentConversationId() || '').trim();
-    if (!conversationId || conversationId === 'NEW') {
-      alert('Please open an existing conversation before embedding this message.');
-      return;
-    }
-
-    btn.dataset.embedBusy = 'true';
-    btn.disabled = true;
-    btn.textContent = 'Queuing...';
-    socket.emit('chat5-embed-hq', { conversation_id: conversationId, message_id: messageId }, (resp) => {
-      if (!resp || resp.ok !== true) {
-        btn.textContent = 'Retry';
-        btn.disabled = false;
-        delete btn.dataset.embedBusy;
-        alert(resp && resp.message ? resp.message : 'Unable to embed this message.');
-        return;
-      }
-      btn.textContent = resp.queued ? 'Queued' : 'Embedded';
-      setTimeout(() => {
-        btn.textContent = defaultLabel;
-        btn.disabled = false;
-        delete btn.dataset.embedBusy;
-      }, 1200);
-    });
-  });
-}
-
-function createEmbedButton({ conversationId, messageId }) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.classList.add('chat5-embed-button');
-  btn.setAttribute('aria-label', 'Embed message (high quality)');
-  if (messageId) btn.setAttribute('data-message-id', messageId);
-  if (conversationId) btn.setAttribute('data-conversation-id', conversationId);
-  btn.textContent = 'Embed HQ';
-  bindEmbedButton(btn);
-  return btn;
-}
-
-function initializeEmbedButtons(root) {
-  const scope = root || document;
-  if (!scope || typeof scope.querySelectorAll !== 'function') return;
-  const buttons = scope.querySelectorAll('.chat5-embed-button');
-  if (!buttons.length) return;
-  buttons.forEach((btn) => bindEmbedButton(btn));
 }
 
 function registerCodeCopyHandlers(root) {
@@ -443,6 +374,8 @@ function sanitizeDisplayHtml(value) {
   }
   const sanitized = window.DOMPurify.sanitize(String(value || ''), {
     USE_PROFILES: { html: true },
+    ALLOW_DATA_ATTR: false,
+    FORBID_TAGS: ['form', 'button', 'input', 'select', 'textarea', 'iframe', 'object', 'embed', 'style'],
   });
   const template = document.createElement('template');
   template.innerHTML = sanitized;
@@ -516,22 +449,10 @@ function appendRenderErrorMessage(m, error) {
   const container = document.getElementById("conversationContainer");
   if (!container) return;
 
-  const messageWrapper = document.createElement('div');
-  messageWrapper.classList.add('chat5-message', 'chat5-message--render-error');
-  if (m && m._id) {
-    messageWrapper.dataset.id = m._id;
-  }
-
-  const body = document.createElement('div');
-  body.classList.add('chat5-message-body');
-  appendMessageProblem(
-    body,
-    'Unable to render one live message.',
-    `${describeMessageForError(m)}. ${error && error.message ? error.message : String(error || 'Unknown rendering error')}. Check the Raw tab for the payload.`
-  );
-
-  messageWrapper.append(body);
-  container.append(messageWrapper);
+  const entry = createMessageFrame(m || {});
+  appendMessageProblem(entry.querySelector('.chat5-message-body'), 'Unable to render one live message.',
+    `${describeMessageForError(m)}. ${error?.message || 'Unknown rendering error'}.`);
+  container.append(entry);
 }
 
 function getMessageId(m) {
@@ -542,190 +463,47 @@ function getMessageContent(m) {
   return m && m.content && typeof m.content === 'object' ? m.content : {};
 }
 
-function getStartMessageIdValue() {
-  const input = document.getElementById('startMessageId');
-  return input ? stringifyForDisplay(input.value).trim() : '';
+const workspace = document.querySelector('.chat5-workspace');
+const thread = document.getElementById('chat5Thread');
+const historyInput = document.getElementById('message_history');
+const historyIds = historyInput.defaultValue.split(/\s+/).filter(Boolean);
+let savedStartMessageId = document.getElementById('startMessageId').value.trim();
+
+function messageEntries(messageId) {
+  return document.querySelectorAll(`#conversationContainer .chat5-entry[data-id="${CSS.escape(messageId)}"]`);
 }
 
-function setStartMessageButtonState(button, startMessageId) {
-  if (!button) return;
-  const selected = stringifyForDisplay(button.dataset.chat5StartMessageId).trim() === startMessageId;
-  button.classList.toggle('btn-warning', selected);
-  button.classList.toggle('btn-outline-warning', !selected);
-  button.textContent = selected ? 'Selected start message' : 'Select start message';
-  button.setAttribute('aria-pressed', selected ? 'true' : 'false');
-
-  const idEl = document.getElementById('id');
-  button.disabled = !idEl || idEl.dataset.source !== 'conversation5';
+function setStartMarker(entry, selected) {
+  const button = entry.querySelector('[data-chat5-start-message-id]');
+  button.textContent = selected ? 'Selected start message' : 'Set as start message';
+  button.setAttribute('aria-pressed', String(selected));
+  let divider = entry.querySelector('.chat5-start-divider');
+  if (selected && !divider) {
+    divider = document.createElement('div');
+    divider.className = 'chat5-start-divider';
+    divider.setAttribute('role', 'separator');
+    divider.setAttribute('aria-label', 'Start message');
+    divider.textContent = 'Start message';
+    entry.prepend(divider);
+  } else if (!selected) {
+    divider?.remove();
+  }
 }
 
 function applyStartMessageIdToUI(value) {
-  const startMessageId = stringifyForDisplay(value).trim();
-  const input = document.getElementById('startMessageId');
-  if (input) input.value = startMessageId;
-
-  const rawValue = document.getElementById('rawStartMessageId');
-  if (rawValue) rawValue.textContent = startMessageId || 'Not set';
-
-  document.querySelectorAll('[data-chat5-start-message-id]').forEach((button) => {
-    setStartMessageButtonState(button, startMessageId);
-  });
-}
-
-function selectStartMessage(messageId) {
-  const normalizedMessageId = stringifyForDisplay(messageId).trim();
-  if (!normalizedMessageId) return;
-
-  const conversationId = requireExistingConversation('select a start message');
-  if (!conversationId) return;
-
-  const idEl = document.getElementById('id');
-  if (!idEl || idEl.dataset.source !== 'conversation5') {
-    alert('Selecting a start message is only supported for chat5 conversations.');
-    return;
+  const next = String(value || '').trim();
+  document.getElementById('startMessageId').value = next;
+  if (savedStartMessageId && savedStartMessageId !== next) {
+    messageEntries(savedStartMessageId).forEach(entry => setStartMarker(entry, false));
   }
-
-  const previousStartMessageId = getStartMessageIdValue();
-  applyStartMessageIdToUI(normalizedMessageId);
-  showLoadingPopup();
-  socket.emit('chat5-updateConversation', {
-    conversation_id: conversationId,
-    updates: { startMessageId: normalizedMessageId },
-  }, (resp) => {
-    hideLoadingPopup();
-    if (!resp || resp.ok !== true) {
-      applyStartMessageIdToUI(previousStartMessageId);
-      alert(resp && resp.message ? resp.message : 'Failed to select the start message.');
-      return;
-    }
-    applyStartMessageIdToUI(resp.conversation?.metadata?.startMessageId || '');
-  });
-}
-
-function bindStartMessageSelection() {
-  const rawList = document.getElementById('chat5RawMessageList');
-  if (!rawList || rawList.dataset.startMessageSelectionBound === 'true') {
-    applyStartMessageIdToUI(getStartMessageIdValue());
-    return;
-  }
-  rawList.dataset.startMessageSelectionBound = 'true';
-  rawList.addEventListener('click', (event) => {
-    const button = event.target && typeof event.target.closest === 'function'
-      ? event.target.closest('[data-chat5-start-message-id]')
-      : null;
-    if (!button || button.disabled || !rawList.contains(button)) return;
-    selectStartMessage(button.dataset.chat5StartMessageId);
-  });
-  applyStartMessageIdToUI(getStartMessageIdValue());
-}
-
-function appendLabeledValue(parent, label, value) {
-  const row = document.createElement('div');
-  const bold = document.createElement('b');
-  bold.textContent = `${label}: `;
-  const span = document.createElement('span');
-  span.textContent = stringifyForDisplay(value);
-  row.append(bold, span);
-  parent.append(row);
-}
-
-function createRawContentRow(messageId, content, type) {
-  const row = document.createElement('div');
-  const label = document.createElement('b');
-  label.textContent = `${type}: `;
-
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.classList.add('btn', 'btn-link');
-  button.dataset.id = messageId;
-  button.dataset.type = type;
-  button.dataset.content = stringifyForDisplay(content[type]);
-  button.textContent = 'Edit';
-  button.addEventListener('click', () => EditText(button));
-  label.append(button);
-
-  const pre = document.createElement('pre');
-  pre.id = `${messageId}${type}`;
-  pre.textContent = stringifyForDisplay(content[type]);
-
-  row.append(label, pre);
-  return row;
-}
-
-function createRawMessageElement(m, index) {
-  const messageId = getMessageId(m);
-  const wrapper = document.createElement('div');
-  wrapper.classList.add('chat5-raw-message');
-  if (messageId) wrapper.dataset.messageId = messageId;
-  if (Number.isFinite(index)) wrapper.dataset.messageIndex = String(index);
-
-  const title = document.createElement('h3');
-  title.textContent = Number.isFinite(index) ? `Message#${index}` : 'Message';
-  wrapper.append(title);
-
-  const row = document.createElement('div');
-  row.classList.add('row');
-  const metaCol = document.createElement('div');
-  metaCol.classList.add('col-3');
-  const contentCol = document.createElement('div');
-  contentCol.classList.add('col-9');
-
-  appendLabeledValue(metaCol, '_id', messageId);
-  appendLabeledValue(metaCol, 'user_id', m && m.user_id);
-  appendLabeledValue(metaCol, 'category', m && m.category);
-  appendLabeledValue(metaCol, 'tags', Array.isArray(m && m.tags) ? m.tags.join(', ') : '');
-  appendLabeledValue(metaCol, 'contentType', m && m.contentType);
-
-  const hiddenRow = document.createElement('div');
-  const hiddenLabel = document.createElement('b');
-  hiddenLabel.textContent = 'Hide from bot: ';
-  const hiddenInput = document.createElement('input');
-  hiddenInput.type = 'checkbox';
-  hiddenInput.dataset.id = messageId;
-  hiddenInput.checked = !!(m && m.hideFromBot);
-  hiddenInput.addEventListener('change', () => ToggleHideFromBot(hiddenInput));
-  hiddenRow.append(hiddenLabel, hiddenInput);
-  metaCol.append(hiddenRow);
-
-  if (messageId) {
-    const selectStartRow = document.createElement('div');
-    selectStartRow.classList.add('mt-2');
-    const selectStartButton = document.createElement('button');
-    selectStartButton.type = 'button';
-    selectStartButton.classList.add('btn', 'btn-sm');
-    selectStartButton.dataset.chat5StartMessageId = messageId;
-    setStartMessageButtonState(selectStartButton, getStartMessageIdValue());
-    selectStartRow.append(selectStartButton);
-    metaCol.append(selectStartRow);
-  }
-
-  const contentTitle = document.createElement('h4');
-  contentTitle.textContent = 'Content';
-  contentCol.append(contentTitle);
-  const content = getMessageContent(m);
-  ['text', 'image', 'audio', 'tts', 'transcript', 'revisedPrompt', 'imageQuality', 'toolOutput'].forEach((type) => {
-    contentCol.append(createRawContentRow(messageId, content, type));
-  });
-
-  row.append(metaCol, contentCol);
-  wrapper.append(row);
-  return wrapper;
-}
-
-function appendRawMessageToUI(m, { prepend = false, index } = {}) {
-  const rawList = document.getElementById('chat5RawMessageList');
-  const rawPane = document.getElementById("pills-raw");
-  const target = rawList || rawPane;
-  if (!target) return;
-  const messageId = getMessageId(m);
-  if (messageId && target.querySelector(`.chat5-raw-message[data-message-id="${messageId}"]`)) {
-    return;
-  }
-  const card = createRawMessageElement(m, index);
-  if (prepend) {
-    target.prepend(card);
-  } else {
-    target.append(card);
+  savedStartMessageId = next;
+  updateMessageLoadControls();
+  if (!next) return;
+  const entry = messageEntries(next)[0];
+  if (entry) {
+    setStartMarker(entry, true);
+    entry.closest('.chat5-hidden-group')?.setAttribute('open', '');
+    entry.closest('.chat5-history-chunk')?.setAttribute('open', '');
   }
 }
 
@@ -772,13 +550,13 @@ function setUpdateButtonState() {
   const btn = document.getElementById('updateSettingsButton');
   if (!idEl || !btn) return;
   btn.disabled = idEl.dataset.source !== 'conversation5';
-  applyStartMessageIdToUI(getStartMessageIdValue());
+  document.getElementById('chat5UpdateHistory').disabled = btn.disabled;
 }
 
 function getCurrentConversationId() {
   const idEl = document.getElementById('id');
   if (!idEl) return '';
-  return (idEl.innerHTML || '').trim();
+  return idEl.textContent.trim();
 }
 
 function requireExistingConversation(actionLabel) {
@@ -823,8 +601,10 @@ function updateMessageLoadControls() {
   const statusText = chat5MessageWindow.loading
     ? `Loading older messages... showing ${loadedCount} of ${chat5MessageWindow.total || loadedCount}`
     : `Showing ${loadedCount} of ${chat5MessageWindow.total || loadedCount} messages`;
+  const startIndex = savedStartMessageId ? historyIds.indexOf(savedStartMessageId) : -1;
+  const earlierStart = startIndex >= 0 && startIndex < chat5MessageWindow.loadedStart;
   document.querySelectorAll('[data-chat5-load-status]').forEach((status) => {
-    status.textContent = statusText;
+    status.textContent = earlierStart ? statusText + ' · Start message is in older history.' : statusText;
   });
 }
 
@@ -845,28 +625,12 @@ function updateMessageWindowFromMeta(meta) {
   chat5MessageWindow.hasMoreOlder = !!meta.hasMoreOlder;
 }
 
-function appendMessageIdToHistory(messageId) {
-  const id = stringifyForDisplay(messageId).trim();
-  if (!id) return;
-  const history = document.getElementById('message_history');
-  if (!history) return;
-  const existing = splitInputList((history.value || '').replace(/\n/g, ','));
-  if (existing.indexOf(id) >= 0) return;
-  history.value = history.value && history.value.trim().length > 0
-    ? `${history.value.trim()}\n${id}`
-    : id;
-}
-
-function removeMessageIdFromHistory(messageId) {
-  const id = stringifyForDisplay(messageId).trim();
-  if (!id) return;
-  const history = document.getElementById('message_history');
-  if (!history) return;
-  const next = (history.value || '')
-    .split('\n')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0 && entry !== id);
-  history.value = next.join('\n');
+function addHistoryId(id) {
+  if (!id || historyIds.includes(id)) return false;
+  historyIds.push(id);
+  const current = historyInput.value.trimEnd();
+  historyInput.value = current ? `${current}\n${id}` : id;
+  return true;
 }
 
 function registerLiveMessageInWindow(messageId) {
@@ -930,7 +694,17 @@ function SwitchConversation(new_id) {
   }
   socket.emit('chat5-joinConversation', {conversationId: new_id});
   document.getElementById("id").textContent = new_id;
+  document.getElementById('id').dataset.source = 'conversation5';
   chat5MessageWindow.source = 'conversation5';
+  document.getElementById('chat5KnowledgeLink').href = `/chat4/createknowledgefromchat/${encodeURIComponent(new_id)}`;
+  document.getElementById('chat5VoiceLink').href = `/chat5/voice/${encodeURIComponent(new_id)}`;
+  document.querySelector('[data-chat5-export]').action = `/chat5/chat/${encodeURIComponent(new_id)}/export`;
+  document.querySelectorAll('#chat5Training [name="conversation_id"]').forEach(input => { input.value = new_id; });
+  document.getElementById('chat5TrainingUnavailable').hidden = true;
+  document.getElementById('chat5TrainingContent').hidden = false;
+  document.getElementById('chat5QuickSettings').open = false;
+  document.getElementById('chat5NewSettingsNote')?.remove();
+  window.history.replaceState(null, '', `/chat5/chat/${encodeURIComponent(new_id)}`);
   if (window.Chat5QuickSettings && typeof window.Chat5QuickSettings.updateConversationState === 'function') {
     window.Chat5QuickSettings.updateConversationState(document);
   }
@@ -1172,36 +946,6 @@ function QueueBatch(includePrompt) {
   }
 }
 
-function HideLastMessage() {
-  const conversationId = requireExistingConversation('hide messages');
-  if (!conversationId) return;
-
-  showLoadingPopup();
-  socket.emit('chat5-hidelastmessage', { conversation_id: conversationId }, (resp) => {
-    hideLoadingPopup();
-    if (!resp || resp.ok !== true || !resp.messageId) {
-      alert(resp && resp.message ? resp.message : 'Unable to hide the last visible message.');
-      return;
-    }
-    markMessageHiddenInUI(resp.messageId);
-  });
-}
-
-function RemoveLastMessage() {
-  const conversationId = requireExistingConversation('remove messages');
-  if (!conversationId) return;
-
-  showLoadingPopup();
-  socket.emit('chat5-removelastmessage', { conversation_id: conversationId }, (resp) => {
-    hideLoadingPopup();
-    if (!resp || resp.ok !== true || !Array.isArray(resp.removedIds) || resp.removedIds.length === 0) {
-      alert(resp && resp.message ? resp.message : 'Unable to remove the last visible message.');
-      return;
-    }
-    removeMessagesFromUI(resp.removedIds);
-  });
-}
-
 function UpdateConversation(options = {}) {
   const onComplete = options && typeof options.onComplete === 'function'
     ? options.onComplete
@@ -1253,6 +997,7 @@ function UpdateConversation(options = {}) {
     }
     idEl.dataset.source = 'conversation5';
     setUpdateButtonState();
+    applyStartMessageIdToUI(resp.conversation?.metadata?.startMessageId);
     complete(true, resp);
   });
 }
@@ -1304,7 +1049,10 @@ document.getElementById('fileInput').addEventListener('change', async () => {
     } finally { window.chat5UploadBarrier.pending -= 1; announceUploadState(); }
   }
   window.chat5UploadBarrier.failed ||= hasUnacknowledgedUploads();
-  if (!window.chat5UploadBarrier.failed) input.value = '';
+  if (!window.chat5UploadBarrier.failed) {
+    input.value = '';
+    document.getElementById('localAiBatchStatus').textContent = 'Image added.';
+  }
   announceUploadState();
 });
 
@@ -1312,22 +1060,33 @@ document.getElementById('fileInput').addEventListener('change', async () => {
 function EditMessageArray() {
   showLoadingPopup();
   const conversation_id = document.getElementById("id").textContent;
-  const newArray = document.getElementById("message_history").value.split('\n');
+  const newArray = historyInput.value.split(/\s+/).filter(Boolean);
   socket.emit('chat5-editmessagearray-up', {conversation_id, newArray});
 }
 socket.on('chat5-editmessagearray-done', () => {
   hideLoadingPopup();
+  const order = historyInput.value.split(/\s+/).filter(Boolean);
+  const container = document.getElementById('conversationContainer');
+  const entries = new Map(Array.from(container.querySelectorAll('.chat5-entry'), entry => [entry.dataset.id, entry]));
+  const firstLoaded = order.findLastIndex(id => !entries.has(id)) + 1;
+  container.replaceChildren();
+  appendGroupedEntries(order.slice(firstLoaded).map(id => entries.get(id)), container);
+  historyIds.splice(0, historyIds.length, ...order);
+  Object.assign(chat5MessageWindow, { loadedStart: firstLoaded, loadedEnd: order.length, total: order.length });
+  const training = document.getElementById('chat5TrainingMessageList');
+  if (training) {
+    const options = new Map(Array.from(training.children, row => [row.dataset.messageId, row]));
+    training.replaceChildren(...order.slice(firstLoaded).map(id => options.get(id)).filter(Boolean));
+    updateTrainingIndexes();
+    updateTrainingFormState();
+  }
+  updateMessageLoadControls();
+  showEmptyHistory();
 });
 
-// Toggle hide from bot
-function ToggleHideFromBot(e) {
-  showLoadingPopup();
-  const message_id = e.dataset.id;
-  const state = e.checked;
-  socket.emit('chat5-togglehidefrombot-up', {message_id, state});
-}
-socket.on('chat5-togglehidefrombot-done', () => {
+socket.on('chat5-editmessagearray-up:error', (data) => {
   hideLoadingPopup();
+  alert(data?.message || 'Unable to update message history.');
 });
 
 // Generate title
@@ -1385,6 +1144,7 @@ socket.on('chat5-messages', ({id, messages, placeholderId} = {}) => {
     return;
   }
 
+  const followLatest = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 60;
   SwitchConversation(id);
   document.getElementById("conversation_title").textContent = document.getElementById("title").value;
   const idEl = document.getElementById("id");
@@ -1405,7 +1165,6 @@ socket.on('chat5-messages', ({id, messages, placeholderId} = {}) => {
     if (m && m.error) {
       console.error('chat5 message payload reported an error', m.error);
       appendRenderErrorMessage(m, new Error(stringifyForDisplay(m.error) || 'Message payload reported an error.'));
-      appendRawMessageToUI(m);
       continue;
     }
     try {
@@ -1413,9 +1172,9 @@ socket.on('chat5-messages', ({id, messages, placeholderId} = {}) => {
     } catch (error) {
       console.error('Unable to render chat5 message', { error, message: m });
       appendRenderErrorMessage(m, error);
-      appendRawMessageToUI(m);
     }
   }
+  if (followLatest) thread.scrollTop = thread.scrollHeight;
   hideLoadingPopup();
 });
 
@@ -1424,7 +1183,7 @@ socket.on('chat5-message-hidden', (payload) => {
   if (!currentId || !payload || !payload.conversationId) return;
   if (String(payload.conversationId) !== currentId) return;
   if (payload.messageId) {
-    markMessageHiddenInUI(payload.messageId);
+    applyMessageAction(payload.messageId, 'hide');
   }
 });
 
@@ -1435,6 +1194,10 @@ socket.on('chat5-messages-removed', (payload) => {
   if (Array.isArray(payload.removedIds) && payload.removedIds.length > 0) {
     removeMessagesFromUI(payload.removedIds);
   }
+});
+
+socket.on('chat5-message-changed', (payload) => {
+  if (payload?.conversationId === getCurrentConversationId()) applyMessageAction(payload.messageId, payload.action);
 });
 
 socket.on('chat5-conversation-settings-updated', (data) => {
@@ -1459,6 +1222,7 @@ socket.on('chat5-conversation-settings-updated', (data) => {
       modelSelect.options[0].textContent = `Use previous (${data.metadata.model})`;
     }
     modelSelect.value = data.metadata.model;
+    document.getElementById('chat5ModelLabel').textContent = modelSelect.value;
   }
 
   const reasoningSelect = document.getElementById("reasoning");
@@ -1498,33 +1262,7 @@ socket.on('chat5-conversation-settings-updated', (data) => {
 });
 
 function getMessageSender(m) {
-  return stringifyForDisplay(m && m.user_id).trim() || 'Unknown';
-}
-
-function createUserLabelNodes(sender) {
-  const hr = document.createElement('hr');
-  hr.classList.add('chat5-divider');
-  const div = document.createElement('div');
-  div.classList.add('userlabel', 'chat5-user-label');
-  div.dataset.user = sender;
-  const b = document.createElement('b');
-  b.innerText = sender;
-  div.append(b);
-  return [hr, div];
-}
-
-function getLastRenderedUser() {
-  const labels = document.querySelectorAll('#conversationContainer .userlabel');
-  if (!labels.length) return null;
-  return labels[labels.length - 1].dataset.user || null;
-}
-
-function appendUserLabelIfNeeded(target, sender, state) {
-  if (!target || !state) return;
-  if (state.lastUser === sender) return;
-  const nodes = createUserLabelNodes(sender);
-  target.append(...nodes);
-  state.lastUser = sender;
+  return stringifyForDisplay(m?.user_id).trim() || 'Unknown';
 }
 
 function formatMessageTimestamp(value) {
@@ -1538,66 +1276,60 @@ function formatMessageTimestamp(value) {
   }
 }
 
-function createHiddenMessageGroup(group, state) {
-  const details = document.createElement('details');
-  details.classList.add('chat5-hidden-group');
-  const firstHidden = group[0];
-  const lastHidden = group[group.length - 1];
-  const firstTime = formatMessageTimestamp(firstHidden && firstHidden.timestamp);
-  const lastTime = formatMessageTimestamp(lastHidden && lastHidden.timestamp);
-  const timeRange = firstTime === lastTime ? firstTime : `${firstTime} - ${lastTime}`;
-
-  const summary = document.createElement('summary');
-  summary.classList.add('chat5-hidden-summary');
-  const label = document.createElement('span');
-  label.classList.add('chat5-hidden-summary-label');
-  label.textContent = group.length === 1 ? '1 hidden message' : `${group.length} hidden messages`;
-  const time = document.createElement('span');
-  time.classList.add('chat5-hidden-summary-time');
-  time.textContent = timeRange;
-  summary.append(label, time);
-
-  const body = document.createElement('div');
-  body.classList.add('chat5-hidden-body');
-  group.forEach((msg) => appendSingleMessageToTarget(msg, body, state));
-  details.append(summary, body);
-  return details;
+function updateHiddenSummary(group) {
+  const entries = group.querySelectorAll('.chat5-entry');
+  if (!entries.length) { group.remove(); return; }
+  group.querySelector('.chat5-hidden-summary-label').textContent = entries.length === 1
+    ? '1 hidden message' : `${entries.length} hidden messages`;
+  const first = formatMessageTimestamp(entries[0].dataset.time);
+  const last = formatMessageTimestamp(entries[entries.length - 1].dataset.time);
+  group.querySelector('.chat5-hidden-summary-time').textContent = first === last ? first : `${first} – ${last}`;
 }
 
-function appendSingleMessageToTarget(m, target, state) {
-  if (!m || typeof m !== 'object') {
-    throw new Error('Message payload is not an object.');
+function appendGroupedEntries(entries, target, open = false) {
+  let group;
+  for (const entry of entries) {
+    if (!entry.querySelector('.chat5-message--hidden')) {
+      if (group) updateHiddenSummary(group);
+      group = null;
+      target.append(entry);
+      continue;
+    }
+    if (!group) {
+      group = document.createElement('details');
+      group.className = 'chat5-hidden-group';
+      // Fixed structure only. Sender, timestamp and content are assigned as text.
+      group.innerHTML = '<summary class="chat5-hidden-summary"><span class="chat5-hidden-summary-label"></span><span class="chat5-hidden-summary-time"></span></summary><div class="chat5-hidden-body"></div>';
+      group.open = open;
+      target.append(group);
+    }
+    if (entry.querySelector('.chat5-start-divider')) group.open = true;
+    group.lastElementChild.append(entry);
   }
-  const sender = getMessageSender(m);
-  appendUserLabelIfNeeded(target, sender, state);
-  const element = createMessageElement(m);
-  target.append(element);
-  registerCodeCopyHandlers(element);
-  enhanceTables(element);
+  if (group) updateHiddenSummary(group);
 }
 
-function appendMessageListToTarget(messages, target, state) {
-  if (!Array.isArray(messages) || !target) return;
-  let hiddenBuffer = [];
-  messages.forEach((msg, index) => {
-    if (msg && msg.hideFromBot) {
-      hiddenBuffer.push(msg);
-      const next = messages[index + 1];
-      if (!(next && next.hideFromBot)) {
-        target.append(createHiddenMessageGroup(hiddenBuffer, state));
-        hiddenBuffer = [];
-      }
-      return;
-    }
-    if (hiddenBuffer.length > 0) {
-      target.append(createHiddenMessageGroup(hiddenBuffer, state));
-      hiddenBuffer = [];
-    }
-    appendSingleMessageToTarget(msg, target, state);
-  });
-  if (hiddenBuffer.length > 0) {
-    target.append(createHiddenMessageGroup(hiddenBuffer, state));
-  }
+function setMessageVisibility(entry, hidden) {
+  const card = entry.querySelector('.chat5-message');
+  if (card.classList.contains('chat5-message--hidden') === hidden) return;
+  card.classList.toggle('chat5-message--hidden', hidden);
+  card.querySelector('.chat5-hidden-label').hidden = !hidden;
+  const button = card.querySelector('[data-chat5-hold]:not([data-chat5-hold="remove"])');
+  button.dataset.chat5Hold = hidden ? 'show' : 'hide';
+  button.textContent = hidden ? 'Show this message' : 'Hide this message';
+
+  // Only regroup the affected run. Entries keep their own controls, details and order.
+  const anchor = entry.closest('.chat5-hidden-group') || entry;
+  const run = [anchor];
+  if (anchor.previousElementSibling?.matches('.chat5-hidden-group')) run.unshift(anchor.previousElementSibling);
+  if (anchor.nextElementSibling?.matches('.chat5-hidden-group')) run.push(anchor.nextElementSibling);
+  const marker = document.createComment('');
+  run[0].before(marker);
+  const entries = run.flatMap(node => node === entry ? [entry] : Array.from(node.querySelectorAll('.chat5-entry')));
+  const fragment = document.createDocumentFragment();
+  appendGroupedEntries(entries, fragment, run.some(node => node.open));
+  run.filter(node => node !== entry).forEach(node => node.remove());
+  marker.replaceWith(fragment);
 }
 
 function trainingText(m) {
@@ -1729,8 +1461,61 @@ function updateTrainingFormState() {
     empty.classList.toggle('d-none', count > 0);
   }
   if (submit) {
-    submit.disabled = !groupSelect || groupSelect.disabled || count < 2;
+    submit.disabled = !groupSelect?.value || count < 2;
   }
+}
+
+// Follow the existing training form redirect but refresh only the dialog. Keep the
+// live thread, older message selections and editor instance in this document.
+function bindTrainingForms() {
+  const dialog = document.getElementById('chat5Training');
+  const status = document.getElementById('chat5TrainingStatus');
+  dialog.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (dialog.hasAttribute('aria-busy')) return;
+    const form = event.target;
+    dialog.setAttribute('aria-busy', 'true');
+    status.className = 'text-muted';
+    status.textContent = 'Saving…';
+    try {
+      const response = await fetch(form.action, {
+        method: 'POST', body: new URLSearchParams(new FormData(form)), credentials: 'same-origin',
+      });
+      const url = new URL(response.url);
+      if (!response.ok || url.origin !== location.origin || url.pathname !== `/chat5/chat/${getCurrentConversationId()}`) {
+        throw new Error();
+      }
+      if (url.searchParams.has('training_error')) {
+        status.className = 'text-danger';
+        status.textContent = url.searchParams.get('training_error');
+        return;
+      }
+      const result = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const entries = result.querySelector('#chat5TrainingContent > #chat5TrainingEntries');
+      const groups = result.getElementById('trainingGroupId');
+      if (!entries || !groups || !url.searchParams.has('training_success')) throw new Error();
+
+      chat5TrainingUsage = JSON.parse(entries.dataset.usage);
+      document.getElementById('chat5TrainingEntries').replaceWith(entries);
+      document.getElementById('trainingGroupId').replaceWith(groups);
+      if (form.matches('.chat5-training-form')) form.reset();
+      dialog.querySelectorAll('.chat5-training-message-option').forEach(row => {
+        const usage = getTrainingUsage(row.dataset.messageId);
+        row.classList.toggle('chat5-training-message-option--in-training', !!usage);
+        row.querySelector('.chat5-training-usage-badge')?.remove();
+        if (usage) row.querySelector('.chat5-training-message-preview strong').parentElement.append(createTrainingUsageBadge(usage));
+      });
+      updateTrainingFormState();
+      status.className = 'text-success';
+      status.textContent = url.searchParams.get('training_success');
+    } catch {
+      status.className = 'text-danger';
+      status.textContent = 'Could not confirm the training change. Check the saved entries before retrying.';
+    } finally {
+      dialog.removeAttribute('aria-busy');
+      status.scrollIntoView({ block: 'nearest' });
+    }
+  });
 }
 
 function appendTrainingMessages(messages, { prepend = false, startIndex = 0 } = {}) {
@@ -1752,157 +1537,130 @@ function appendTrainingMessages(messages, { prepend = false, startIndex = 0 } = 
 }
 
 function prependLoadedMessages(messages, startIndex) {
-  if (!Array.isArray(messages) || messages.length === 0) return;
+  if (!messages.length) return;
   const container = document.getElementById('conversationContainer');
-  if (!container) return;
-
-  const empty = document.getElementById('chat5EmptyMessages');
-  if (empty) empty.remove();
-
-  const anchor = container.firstElementChild;
-  const anchorTop = anchor ? anchor.getBoundingClientRect().top : null;
+  document.getElementById('chat5EmptyMessages')?.remove();
   const fragment = document.createDocumentFragment();
-  appendMessageListToTarget(messages, fragment, { lastUser: null });
+  appendGroupedEntries(messages.map(createMessageElement), fragment);
+  const anchor = container.firstElementChild;
+  const top = anchor?.getBoundingClientRect().top;
   container.prepend(fragment);
-  if (anchor && anchorTop !== null) {
-    const nextTop = anchor.getBoundingClientRect().top;
-    window.scrollBy(0, nextTop - anchorTop);
-  }
-
+  if (anchor) thread.scrollTop += anchor.getBoundingClientRect().top - top;
   appendTrainingMessages(messages, { prepend: true, startIndex });
-  const rawList = document.getElementById('chat5RawMessageList');
-  if (rawList) {
-    const rawFragment = document.createDocumentFragment();
-    messages.forEach((m, offset) => {
-      const messageId = getMessageId(m);
-      if (!messageId || rawList.querySelector(`.chat5-raw-message[data-message-id="${messageId}"]`)) return;
-      rawFragment.append(createRawMessageElement(m, startIndex + offset));
-    });
-    rawList.prepend(rawFragment);
-  }
 }
 
 function AddMessageToUI(m) {
-  if (!m || typeof m !== 'object') {
-    throw new Error('Message payload is not an object.');
-  }
+  const id = getMessageId(m);
+  if (id && messageEntries(id).length) return;
+  document.getElementById('chat5EmptyMessages')?.remove();
   const container = document.getElementById('conversationContainer');
-  if (!container) return;
-  const empty = document.getElementById('chat5EmptyMessages');
-  if (empty) empty.remove();
+  appendGroupedEntries([createMessageElement(m)], container);
+  appendTrainingMessages([m], { startIndex: chat5MessageWindow.loadedEnd });
+  if (addHistoryId(id)) registerLiveMessageInWindow(id);
+}
 
-  const fragment = document.createDocumentFragment();
-  appendMessageListToTarget([m], fragment, { lastUser: getLastRenderedUser() });
-  container.append(fragment);
-  appendRawMessageToUI(m, { index: chat5MessageWindow.loadedEnd });
-  appendTrainingMessages([m], { prepend: false, startIndex: chat5MessageWindow.loadedEnd });
-  appendMessageIdToHistory(getMessageId(m));
-  registerLiveMessageInWindow(getMessageId(m));
+function showEmptyHistory() {
+  const container = document.getElementById('conversationContainer');
+  if (historyIds.length || container.querySelector('.chat5-entry, #chat5EmptyMessages')) return;
+  const notice = document.createElement('p');
+  notice.id = 'chat5EmptyMessages';
+  notice.className = 'text-muted';
+  notice.textContent = 'No messages yet.';
+  container.append(notice);
+}
+
+function updateTrainingIndexes() {
+  const indexes = new Map(historyIds.map((id, index) => [id, index]));
+  document.querySelectorAll('.chat5-training-message-option').forEach(row => {
+    const index = indexes.get(row.dataset.messageId);
+    if (index === undefined) return;
+    row.dataset.messageIndex = index;
+    const label = row.querySelector('strong');
+    label.textContent = label.textContent.replace(/^#\d+ /, `#${index} `);
+  });
 }
 
 function removeMessageFromUI(messageId) {
   if (!messageId) return;
-  const container = document.getElementById('conversationContainer');
-  if (container) {
-    const element = container.querySelector(`.chat5-message[data-id="${messageId}"]`);
-    if (element) {
-      const hiddenBody = element.closest('.chat5-hidden-body');
-      element.remove();
-      if (hiddenBody && hiddenBody.querySelectorAll('.chat5-message').length === 0) {
-        const hiddenGroup = hiddenBody.closest('.chat5-hidden-group');
-        if (hiddenGroup) {
-          hiddenGroup.remove();
-        }
-      }
-    }
-  }
-  const rawEntry = document.querySelector(`.chat5-raw-message[data-message-id="${messageId}"]`);
-  if (rawEntry) {
-    rawEntry.remove();
-  }
-  const trainingEntry = document.querySelector(`.chat5-training-message-option[data-message-id="${messageId}"]`);
-  if (trainingEntry) {
-    trainingEntry.remove();
-    updateTrainingFormState();
-  }
-  removeMessageIdFromHistory(messageId);
-  if (chat5MessageWindow.source === 'conversation5' && chat5MessageWindow.total > 0) {
-    chat5MessageWindow.total -= 1;
-    chat5MessageWindow.loadedEnd = Math.max(chat5MessageWindow.loadedStart, chat5MessageWindow.loadedEnd - 1);
+  messageEntries(messageId).forEach(entry => {
+    const group = entry.closest('.chat5-hidden-group');
+    entry.remove();
+    if (group) updateHiddenSummary(group);
+  });
+  document.querySelectorAll(`.chat5-training-message-option[data-message-id="${CSS.escape(messageId)}"]`)
+    .forEach(row => row.remove());
+  if (messageId === savedStartMessageId) applyStartMessageIdToUI('');
+  const removedBeforeWindow = historyIds.slice(0, chat5MessageWindow.loadedStart).filter(id => id === messageId).length;
+  const remaining = historyIds.filter(id => id !== messageId);
+  const removed = historyIds.length - remaining.length;
+  if (removed) {
+    historyIds.splice(0, historyIds.length, ...remaining);
+    historyInput.value = historyInput.value.split('\n').filter(line => line.trim() !== messageId).join('\n');
+    chat5MessageWindow.total = Math.max(0, chat5MessageWindow.total - removed);
+    chat5MessageWindow.loadedStart = Math.max(0, chat5MessageWindow.loadedStart - removedBeforeWindow);
+    chat5MessageWindow.loadedEnd = Math.max(chat5MessageWindow.loadedStart, chat5MessageWindow.loadedEnd - removed);
     updateMessageLoadControls();
+    updateTrainingIndexes();
   }
+  updateTrainingFormState();
+  showEmptyHistory();
 }
 
 function removeMessagesFromUI(messageIds) {
-  if (!Array.isArray(messageIds)) return;
-  messageIds.forEach((id) => removeMessageFromUI(id));
+  messageIds.forEach(removeMessageFromUI);
 }
 
-function setRawMessageHiddenState(messageId, hidden) {
-  const rawEntry = document.querySelector(`.chat5-raw-message[data-message-id="${messageId}"]`);
-  if (!rawEntry) return;
-  const checkbox = rawEntry.querySelector(`input[type="checkbox"][data-id="${messageId}"]`);
-  if (checkbox) {
-    checkbox.checked = !!hidden;
+function createMessageFrame(m) {
+  const entry = document.getElementById('chat5MessageFrame').content.firstElementChild.cloneNode(true);
+  const messageId = getMessageId(m);
+  const sender = getMessageSender(m);
+  entry.dataset.id = messageId;
+  entry.dataset.time = m.timestamp || '';
+  entry.dataset.category = m.category || '';
+  entry.dataset.tags = Array.isArray(m.tags) ? m.tags.join(', ') : '';
+  entry.dataset.type = m.contentType || '';
+  const fields = JSON.parse(entry.dataset.fields);
+  for (const key of Object.keys(fields)) fields[key] = stringifyForDisplay(m.content?.[key]);
+  entry.dataset.fields = JSON.stringify(fields);
+  const card = entry.querySelector('.chat5-message');
+  if (sender.toUpperCase() === 'BOT') {
+    card.classList.add('chat5-message--bot');
+    const avatar = document.createElement('img');
+    avatar.className = 'chat5-avatar';
+    avatar.src = '/i/avatar.jpg';
+    avatar.alt = '';
+    card.querySelector('header').prepend(avatar);
   }
-}
-
-function markMessageHiddenInUI(messageId) {
-  if (!messageId) return;
-  const container = document.getElementById('conversationContainer');
-  if (container) {
-    const element = container.querySelector(`.chat5-message[data-id="${messageId}"]`);
-    if (element) {
-      element.classList.add('chat5-message--hidden');
-    }
+  entry.querySelector('.chat5-sender').textContent = sender;
+  entry.querySelector('time').textContent = formatMessageTimestamp(m.timestamp);
+  const copy = entry.querySelector('.chat5-copy-button');
+  const copyText = resolveMessageCopySource(m);
+  copy.hidden = !copyText;
+  if (copyText) bindMessageCopyButton(copy, copyText);
+  const start = entry.querySelector('[data-chat5-start-message-id]');
+  start.dataset.chat5StartMessageId = messageId;
+  card.classList.toggle('chat5-message--hidden', !!m.hideFromBot);
+  entry.querySelector('.chat5-hidden-label').hidden = !m.hideFromBot;
+  const visibility = entry.querySelector('[data-chat5-hold="hide"]');
+  if (m.hideFromBot) {
+    visibility.dataset.chat5Hold = 'show';
+    visibility.textContent = 'Show this message';
   }
-  setRawMessageHiddenState(messageId, true);
+  const disabled = !messageId || workspace.dataset.canEdit !== 'true' || chat5MessageWindow.source !== 'conversation5';
+  entry.querySelectorAll('[data-chat5-hold], [data-chat5-start-message-id]').forEach(button => { button.disabled = disabled; });
+  if (messageId && savedStartMessageId === messageId) setStartMarker(entry, true);
+  return entry;
 }
 
 function createMessageElement(m) {
-  if (!m || typeof m !== 'object') {
-    throw new Error('Message payload is not an object.');
-  }
-  const content = m.content && typeof m.content === 'object' ? m.content : {};
+  const entry = createMessageFrame(m);
+  renderMessageBody(entry.querySelector('.chat5-message-body'), m);
+  return entry;
+}
+
+function renderMessageBody(body, m) {
+  const content = getMessageContent(m);
   const messageLabel = describeMessageForError(m);
-
-  const messageWrapper = document.createElement('div');
-  messageWrapper.classList.add('chat5-message');
-  if (m._id) {
-    messageWrapper.dataset.id = m._id;
-  }
-  if (m.hideFromBot) {
-    messageWrapper.classList.add('chat5-message--hidden');
-  }
-  const isBot = typeof m.user_id === 'string' && m.user_id.toUpperCase() === 'BOT';
-  if (isBot) {
-    messageWrapper.classList.add('chat5-message--bot');
-    const avatar = document.createElement('img');
-    avatar.classList.add('chat5-avatar');
-    avatar.src = '/i/avatar.jpg';
-    avatar.alt = 'Bot avatar';
-    messageWrapper.appendChild(avatar);
-  }
-
-  const body = document.createElement('div');
-  body.classList.add('chat5-message-body');
-
-  const actions = document.createElement('div');
-  actions.classList.add('chat5-message-actions');
-
-  const copyText = resolveMessageCopySource(m);
-  if (copyText) {
-    const copyBtn = createMessageCopyButton(copyText);
-    actions.appendChild(copyBtn);
-  }
-  if (m.contentType === "text" && m._id) {
-    const embedBtn = createEmbedButton({ conversationId: getCurrentConversationId(), messageId: m._id });
-    actions.appendChild(embedBtn);
-  }
-  if (actions.children.length > 0) {
-    messageWrapper.appendChild(actions);
-  }
-
   if (m.contentType === "text") {
     const textBlock = document.createElement('div');
     textBlock.classList.add('chat5-message-text');
@@ -2037,8 +1795,8 @@ function createMessageElement(m) {
     );
   }
 
-  messageWrapper.appendChild(body);
-  return messageWrapper;
+  registerCodeCopyHandlers(body);
+  enhanceTables(body);
 }
 
 const loadingPopup = document.getElementById("loadingPopup");
@@ -2053,35 +1811,236 @@ function hideLoadingPopup() {
   loadingPopup.style.display = 'none';
 }
 
-const myModal = new bootstrap.Modal(document.getElementById('editTextModal'));
-
-function EditText(e) {
-  document.getElementById("text_to_edit_id").value = e.dataset.id;
-  document.getElementById("text_to_edit_type").value = e.dataset.type;
-  document.getElementById("text_to_edit").value = e.dataset.content;
-  myModal.show();
+function applyMessageAction(messageId, action) {
+  if (!messageId) return;
+  if (action === 'start') applyStartMessageIdToUI(messageId);
+  else if (action === 'remove') removeMessageFromUI(messageId);
+  else if (action === 'hide' || action === 'show') {
+    messageEntries(messageId).forEach(entry => setMessageVisibility(entry, action === 'hide'));
+  }
 }
 
-function SaveText() {
-  const data = {
-    message_id: document.getElementById("text_to_edit_id").value,
-    type: document.getElementById("text_to_edit_type").value,
-    value: document.getElementById("text_to_edit").value,
-  };
-  socket.emit('chat5-edittext-up', data);
-  const rawValue = document.getElementById(`${data.message_id}${data.type}`);
-  if (rawValue) rawValue.textContent = data.value;
-  myModal.hide();
+async function changeMessage(button, action) {
+  const entry = button.closest('.chat5-entry');
+  if (!entry || button.disabled || entry.hasAttribute('aria-busy')) return;
+  if (action === 'start' && entry.dataset.id === savedStartMessageId) return;
+  const hadFocus = entry.contains(document.activeElement);
+  const neighbor = entry.nextElementSibling || entry.previousElementSibling;
+  const conversationId = getCurrentConversationId();
+  const messageId = entry.dataset.id;
+  const status = document.getElementById('chat5ActionStatus');
+  entry.setAttribute('aria-busy', 'true');
+  status.textContent = '';
+  try {
+    const response = await fetch(`/chat5/chat/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/${action}`, {
+      method: 'POST', headers: { Accept: 'application/json', 'X-CSRF-Token': workspace.dataset.csrf },
+      credentials: 'same-origin', redirect: 'error',
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || 'Unable to change this message. Check your access and try again.');
+    }
+    const saved = await response.json();
+    if (saved.conversationId !== conversationId || saved.messageId !== messageId || saved.action !== action) {
+      throw new Error('Could not confirm the message change. Reload to check its current state.');
+    }
+    if (getCurrentConversationId() !== conversationId) return;
+    applyMessageAction(messageId, action);
+    if (hadFocus && document.activeElement === document.body) {
+      const group = entry.closest('.chat5-hidden-group:not([open])');
+      const focusTarget = group?.querySelector('summary') || (button.isConnected ? button : null)
+        || neighbor?.querySelector('summary, .chat5-inspect') || document.getElementById('chat5ComposerToggle');
+      focusTarget.focus({ preventScroll: true });
+    }
+    status.textContent = {
+      start: 'Start message set.', hide: 'Message hidden from the model.',
+      show: 'Message shown to the model.', remove: 'Message removed from this conversation.',
+    }[action];
+  } catch (error) {
+    status.textContent = error instanceof TypeError
+      ? 'Could not confirm the message change. Check your connection and reload.' : error.message;
+  } finally {
+    entry.removeAttribute('aria-busy');
+  }
 }
 
-socket.on('chat5-edittext-done', (data = {}) => {
-  if (data.type !== 'text' || typeof data.html !== 'string') return;
-  const textOutput = document.getElementById(`${data.messageId}textout`);
-  if (!textOutput) return;
-  textOutput.innerHTML = sanitizeDisplayHtml(data.html);
-  registerCodeCopyHandlers(textOutput);
-  enhanceTables(textOutput);
-});
+function bindHoldActions(container) {
+  let hold;
+  function cancel() {
+    if (!hold) return;
+    clearTimeout(hold.timer);
+    hold.button.classList.remove('is-holding');
+    hold = null;
+  }
+  function begin(button, gesture) {
+    cancel();
+    if (!button || button.disabled || button.closest('[aria-busy="true"]')) return;
+    const action = button.dataset.chat5Hold;
+    button.classList.add('is-holding');
+    hold = { ...gesture, button, scrollTop: thread.scrollTop, timer: setTimeout(() => {
+      cancel();
+      if (button.isConnected && button.dataset.chat5Hold === action) changeMessage(button, action);
+    }, 700) };
+  }
+  container.addEventListener('pointerdown', event => {
+    if (event.button === 0 && event.isPrimary !== false) {
+      begin(event.target.closest('[data-chat5-hold]'), { pointer: event.pointerId, x: event.clientX, y: event.clientY });
+    }
+  });
+  container.addEventListener('pointermove', event => {
+    if (hold && event.pointerId === hold.pointer && Math.hypot(event.clientX - hold.x, event.clientY - hold.y) > 10) cancel();
+  });
+  container.addEventListener('pointerout', event => {
+    if (hold && event.pointerId === hold.pointer && !hold.button.contains(event.relatedTarget)) cancel();
+  });
+  window.addEventListener('pointerup', cancel);
+  window.addEventListener('pointercancel', cancel);
+  container.addEventListener('lostpointercapture', cancel);
+  container.addEventListener('contextmenu', event => {
+    if (event.target.closest('[data-chat5-hold]')) event.preventDefault();
+  });
+  container.addEventListener('keydown', event => {
+    const button = event.target.closest('[data-chat5-hold]');
+    if (!button || !['Enter', ' '].includes(event.key)) return;
+    event.preventDefault();
+    if (!event.repeat) begin(button, { key: event.key });
+  });
+  window.addEventListener('keyup', event => { if (hold?.key === event.key) cancel(); });
+  container.addEventListener('focusout', event => { if (event.target === hold?.button) cancel(); });
+  window.addEventListener('blur', cancel);
+  document.addEventListener('visibilitychange', cancel);
+  thread.addEventListener('scroll', () => {
+    if (hold && !hold.key && thread.scrollTop !== hold.scrollTop) cancel();
+  }, { passive: true });
+}
+
+function initializeMessageDetails() {
+  const dialog = document.getElementById('chat5MessageDetails');
+  const field = document.getElementById('chat5DetailField');
+  const value = document.getElementById('chat5DetailValue');
+  const save = document.getElementById('chat5SaveField');
+  const status = document.getElementById('chat5DetailStatus');
+  const editable = ['text', 'transcript', 'tts', 'revisedPrompt', 'toolOutput'];
+  let entry;
+  let pending;
+
+  function showField() {
+    value.value = JSON.parse(entry.dataset.fields)[field.value];
+    value.readOnly = !editable.includes(field.value) || chat5MessageWindow.source !== 'conversation5';
+    save.disabled = value.readOnly || !!pending;
+    status.textContent = value.readOnly ? 'Read-only field.' : '';
+  }
+  dialog.addEventListener('show.bs.modal', event => {
+    entry = event.relatedTarget.closest('.chat5-entry');
+    const { id, type, category, tags } = entry.dataset;
+    const list = document.getElementById('chat5DetailMetadata');
+    list.replaceChildren();
+    for (const [term, description] of Object.entries({
+      ID: id, Sender: entry.querySelector('.chat5-sender').textContent, Type: type, Category: category, Tags: tags,
+    })) {
+      const label = document.createElement('dt');
+      const text = document.createElement('dd');
+      label.textContent = term;
+      text.textContent = description || '—';
+      list.append(label, text);
+    }
+    field.value = ({ image: 'revisedPrompt', audio: 'transcript', tool: 'toolOutput' })[type] || 'text';
+    showField();
+  });
+  field.addEventListener('change', showField);
+  save.addEventListener('click', () => {
+    if (save.disabled || !entry?.isConnected) return;
+    pending = { entry, type: field.value, value: value.value };
+    save.disabled = true;
+    status.textContent = 'Saving…';
+    socket.emit('chat5-edittext-up', { message_id: entry.dataset.id, type: pending.type, value: pending.value });
+  });
+
+  socket.on('chat5-edittext-done', (data = {}) => {
+    if (!pending || data.messageId !== pending.entry.dataset.id || data.type !== pending.type) return;
+    const updated = pending.entry;
+    const fields = JSON.parse(updated.dataset.fields);
+    fields[data.type] = pending.value;
+    updated.dataset.fields = JSON.stringify(fields);
+    const textOutput = updated.querySelector('.chat5-message-text, .chat5-message-reasoning');
+    if (data.type === 'text' && textOutput && typeof data.html === 'string') {
+      textOutput.innerHTML = sanitizeDisplayHtml(data.html);
+      registerCodeCopyHandlers(textOutput);
+      enhanceTables(textOutput);
+    }
+    if (['audio', 'image', 'tool'].includes(updated.dataset.type)) {
+      const body = updated.querySelector('.chat5-message-body');
+      body.replaceChildren();
+      renderMessageBody(body, { _id: data.messageId, user_id: updated.querySelector('.chat5-sender').textContent,
+        contentType: updated.dataset.type, content: fields });
+    }
+    const copy = updated.querySelector('.chat5-copy-button');
+    const copyText = fields.text || fields.transcript || fields.revisedPrompt || fields.toolOutput;
+    if (!updated.dataset.type.startsWith('function_call')) {
+      copy.hidden = !copyText;
+      copy.dataset.copyText = copyText;
+      if (copyText) bindMessageCopyButton(copy, copyText);
+    }
+    pending = null;
+    save.disabled = value.readOnly;
+    if (entry === updated && field.value === data.type) status.textContent = 'Field saved.';
+  });
+  function editFailed() {
+    if (!pending) return;
+    pending = null;
+    save.disabled = value.readOnly;
+    status.textContent = 'Could not confirm the edit. Reload to check the saved field.';
+  }
+  socket.on('chat5-edittext-up:error', editFailed);
+  socket.on('disconnect', editFailed);
+}
+
+function bindChatControls() {
+  const container = document.getElementById('conversationContainer');
+  container.addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (button?.matches('[data-chat5-start-message-id]')) changeMessage(button, 'start');
+  });
+  bindHoldActions(container);
+  bindTrainingForms();
+  initializeMessageDetails();
+
+  const toggle = document.getElementById('chat5ComposerToggle');
+  const composerBody = document.getElementById('chat5ComposerBody');
+  function expandComposer(expand) {
+    const atEnd = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 5;
+    composerBody.hidden = !expand;
+    toggle.setAttribute('aria-expanded', String(expand));
+    document.getElementById('chat5ToggleLabel').textContent = expand ? 'Minimize editor' : 'Write a message';
+    if (atEnd) thread.scrollTop = thread.scrollHeight;
+  }
+  if (window.matchMedia?.('(max-width: 640px)').matches && getCurrentConversationId() !== 'NEW') expandComposer(false);
+  toggle.addEventListener('click', () => {
+    const expand = composerBody.hidden;
+    expandComposer(expand);
+    if (expand) editor.focus();
+  });
+  const viewport = window.visualViewport;
+  if (viewport) {
+    // Mobile keyboards can shrink the visual viewport while leaving the layout viewport full height.
+    const resize = () => {
+      if (viewport.scale !== 1) return;
+      workspace.style.setProperty('--chat5-keyboard', `${Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)}px`);
+      workspace.style.setProperty('--chat5-visible-height', `${viewport.height}px`);
+      workspace.classList.toggle('chat5-short', viewport.height < 520);
+    };
+    viewport.addEventListener('resize', resize);
+    viewport.addEventListener('scroll', resize);
+    resize();
+  }
+  document.getElementById('chat5AddImage').addEventListener('click', () => document.getElementById('fileInput').click());
+  document.getElementById('chat5UpdateHistory').addEventListener('click', EditMessageArray);
+  const settings = document.getElementById('chat5Settings');
+  document.getElementById('updateSettingsButton').addEventListener('click', () => UpdateConversation({
+    onComplete(ok) { if (ok) bootstrap.Modal.getInstance(settings)?.hide(); },
+  }));
+  thread.scrollTop = thread.scrollHeight;
+}
 
 function initializeDraftingTool() {
   const personalitySelect = document.getElementById('draftPersonalitySelect');
@@ -2183,11 +2142,10 @@ document.addEventListener('DOMContentLoaded', setUpdateButtonState);
 document.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById('conversationContainer');
   initializeMessageCopyButtons(container);
-  initializeEmbedButtons(container);
   registerCodeCopyHandlers(container);
   enhanceTables(container);
   bindMessageLoadControls();
-  bindStartMessageSelection();
+  bindChatControls();
   updateTrainingFormState();
 });
 document.addEventListener('DOMContentLoaded', initializeDraftingTool);
