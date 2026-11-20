@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Civilization — 4X Strategy (1991-style)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="topbar">
+  <div id="title">⚔ CIVILIZATION</div>
+  <div id="turninfo">—</div>
+  <div id="topbuttons">
+    <button id="btn-endturn" title="End Turn (Enter)">End Turn ➤</button>
+    <button id="btn-sound" title="Toggle sound">🔊</button>
+    <button id="btn-help">Help</button>
+    <button id="btn-newgame">New Game</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="leftpanel">
+    <h3>Selection</h3>
+    <div id="selbox"></div>
+  </div>
+
+  <div id="mapwrap"><canvas id="map"></canvas></div>
+
+  <div id="rightpanel">
+    <h3>Empire</h3>
+    <div id="statsbox"></div>
+    <h3>World Rankings</h3>
+    <div id="rankbox"></div>
+    <h3>Technology</h3>
+    <div id="techbox"></div>
+    <h3>Diplomacy</h3>
+    <div id="diplobox"></div>
+  </div>
+</div>
+
+<div id="logbar"><div id="loglist"></div></div>
+
+<!-- New game overlay -->
+<div id="overlay">
+  <div class="dialog">
+    <h1>⚔ CIVILIZATION</h1>
+    <p class="dim">Build your empire from 4000 BC to the modern age.<br>
+    A 4X strategy game inspired by the classics.</p>
+    <label>World seed <input type="text" id="seed"></label>
+    <label>Rivals
+      <select id="aicount">
+        <option value="2">2</option>
+        <option value="3" selected>3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+      </select>
+    </label>
+    <label>Difficulty
+      <select id="difficulty">
+        <option value="easy">Easy — gentle rivals</option>
+        <option value="normal" selected>Normal</option>
+        <option value="hard">Hard — aggressive rivals</option>
+      </select>
+    </label>
+    <label>Map size
+      <select id="mapsize">
+        <option value="24">Small (24×24)</option>
+        <option value="32" selected>Standard (32×32)</option>
+        <option value="44">Large (44×44)</option>
+        <option value="56">Giant (56×56)</option>
+        <option value="64">Colossal (64×64)</option>
+      </select>
+    </label>
+    <button id="btn-start">▶ Begin Civilization</button>
+  </div>
+</div>
+
+<!-- Victory / defeat overlay -->
+<div id="winoverlay" hidden>
+  <div class="dialog">
+    <h1 id="wintitle">VICTORY!</h1>
+    <p id="winmsg"></p>
+    <button id="btn-win-newgame">New Game</button>
+  </div>
+</div>
+
+<!-- Help overlay -->
+<div id="helpoverlay" hidden>
+  <div class="dialog">
+    <h1>How to Play</h1>
+    <ul>
+      <li><b>Expand:</b> move a <b>Settler</b> to open land, then press <b>Found City</b>.</li>
+      <li><b>Develop:</b> cities produce food (growth), shields (build units &amp; buildings) and science (research).</li>
+      <li><b>Conquer:</b> select a military unit, click a blue tile to move, or click an enemy unit to attack. Attacking starts a war — or declare one in Diplomacy.</li>
+      <li><b>Research:</b> click an available tech in the Technology panel to research it next. Techs unlock new units and buildings. The panel has three display modes — <b>HIDDEN</b> (only era titles; click one to expand its tech list), <b>SELECTABLE</b> (only the techs you can research now) and <b>ALL</b> (the entire tree).</li>
+      <li><b>Win:</b> destroy every other civilization's cities. If you lose all yours, your civilization falls.</li>
+      <li><b>Gold</b> flows in from gold resources and markets. While at peace, a rival can be offered a <b>100-gold gift</b> (Diplomacy) — gift-giving makes them considerably less likely to declare war on you.</li>
+      <li><b>Domains:</b> land units cannot enter water; ships cannot enter land; only planes fly over everything. Mountains block land &amp; sea — only planes cross them.</li>
+      <li><b>Crossing the sea:</b> the <b>Ship</b>, <b>Transport Ship</b>, <b>War Galley</b> and <b>Carrack</b> carry one land unit. Select a land unit standing on the coast next to a friendly transport — its panel shows a <b>⛴ Board</b> button (you can also click the highlighted blue water tile). Then sail the ship across and use <b>⚓ Disembark</b> (or click a highlighted shore tile) to step ashore. A passenger cannot fight or found cities while aboard, and is lost if the ship sinks. When a unit is aboard, clicking the stack selects the <b>boat</b> first, so you can keep sailing it.</li>
+      <li><b>Stacking:</b> your units may share a square (including your own city). When several are stacked, use the <i>“Units here”</i> list to pick one — carrier ships are listed first.</li>
+      <li><b>Roads:</b> select a <b>Settler</b> (or an <b>Engineer</b>, once unlocked) and press <b>⛏ Build Road</b> to lay a road on that tile. Roads cut land movement cost to 1, so your army moves faster along them.</li>
+      <li><b>Wonders:</b> the Great Pyramid, Great Wall, Colossus, Hanging Gardens, Moai, Lighthouse of Alexandria and National Museum can each be built <b>once per game</b>. The first city to finish one claims it, and its bonus then applies to <b>all</b> of your cities. Claimed wonders are greyed out in other cities.</li>
+      <li><b>Production carry-over:</b> if you switch a city's production, the <b>shields already invested are kept</b> and applied to the new item — a Settler at 15/30 becomes a Warrior at 15/18. If the carried shields already exceed the new item's cost, it <b>finishes at the end of this turn</b> and the excess is discarded — but until the turn ends you may still switch to something more expensive to keep them.</li>
+      <li><b>Rankings:</b> the World Rankings panel shows which civilization is leading (cities, units, techs, wonders).</li>
+      <li><b>Hover</b> any explored tile to see what that terrain does (yields, movement cost, defense).</li>
+      <li><b>Sound:</b> the 🔊 button in the top bar toggles the retro bleeps.</li>
+      <li>Drag the map to pan, mouse wheel to zoom, <b>Enter</b> to end the turn.</li>
+    </ul>
+    <button id="help-close">Close</button>
+  </div>
+</div>
+
+<!-- terrain hover tooltip -->
+<div id="tooltip" style="display:none"></div>
+
+<script src="js/data.js"></script>
+<script src="js/mapgen.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/render.js"></script>
+<script src="js/sound.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

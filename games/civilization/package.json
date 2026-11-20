@@ -1,0 +1,20 @@
+{
+  "name": "civilization",
+  "version": "1.0.0",
+  "description": "Civilization-inspired 4X browser game",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node test/smoke.js",
+    "test:browser": "node test/browser-test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "playwright": "^1.63.0"
+  }
+}
