@@ -1,3 +1,4 @@
+const imageProcessingNotice = require('../../utils/imageProcessingNotice');
 const { randomUUID } = require('crypto');
 const { CAP, problem, digest, windowAt, runWire, safeReplacement } = require('./policy');
 const { config } = require('./gateway');
@@ -511,6 +512,8 @@ class Worker {
               if (raw?.done !== true || typeof raw.message?.content !== 'string' || !raw.message.content.trim()
                 || (raw.message.tool_calls && (!Array.isArray(raw.message.tool_calls) || raw.message.tool_calls.length)) || Buffer.byteLength(JSON.stringify(raw)) > 2097152) throw problem('malformed_successful_text_result');
               result = { text: raw.message.content, ...(typeof raw.message.thinking === 'string' ? { thinking: raw.message.thinking } : {}) };
+              const notice = imageProcessingNotice(raw.image_processing);
+              if (notice) result.imageProcessingNotice = notice;
             } else result = job.type === 'comfy.workflow' ? await require('./outputs').collect(this.gateway, this.db, job, op) : await importImage(this.gateway, job, op);
           }
           if (job.type === 'comfy.workflow') {

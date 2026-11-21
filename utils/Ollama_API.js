@@ -8,6 +8,8 @@ const { createApiDebugLogger } = require('./apiDebugLogger');
 const ToolManagerService = require('../services/toolManagerService');
 const { sliceMessagesFromConfiguredStart } = require('./chat5MessageSelection');
 
+const imageProcessingNotice = require('./imageProcessingNotice');
+
 const JS_FILE_NAME = 'utils/Ollama_API.js';
 const DEFAULT_BASE_URL = 'http://192.168.0.20:8080';
 const DEFAULT_WEBHOOK_BASE_URL = 'https://my.lentmiien.com/';
@@ -634,6 +636,14 @@ const convertMessagesForGatewayToolRoleFallback = (messages) => {
     }
     return buildGatewayToolResultFallbackMessage(message);
   });
+};
+
+const getVllmImageLimits = async () => {
+  const { data } = await httpClient.get(MODELS_ENDPOINT, {
+    timeout: 1500, maxRedirects: 0, maxContentLength: 1024 * 1024,
+  });
+  const models = Array.isArray(data?.models) ? data.models : [];
+  return models.find(model => model?.id === 'qwen3.8:27b-vllm')?.limits;
 };
 
 const loadModelList = async () => {
@@ -1718,6 +1728,8 @@ const convertResponseBody = async (response, options = {}) => {
     outputs.push(createOllamaTextOutput(assistantText, false));
   }
 
+  const notice = imageProcessingNotice(response?.image_processing);
+  if (notice && outputs.length) outputs.at(-1).content.imageProcessingNotice = notice;
   return outputs;
 };
 
@@ -2321,6 +2333,7 @@ const getCachedDefaultModel = () => cachedDefaultModel;
 
 module.exports = {
   loadModelList,
+  getVllmImageLimits,
   getCachedModels,
   getCachedDefaultModel,
   isModelAvailable,

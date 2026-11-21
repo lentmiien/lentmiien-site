@@ -14,6 +14,7 @@ const Chat5 = new mongoose.Schema({
     transcript: String,
     revisedPrompt: String,
     imageQuality: String,
+    imageProcessingNotice: String,
     toolOutput: String,
     outputId: String,
     responseId: String,

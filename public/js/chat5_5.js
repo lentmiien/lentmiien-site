@@ -1222,6 +1222,7 @@ socket.on('chat5-conversation-settings-updated', (data) => {
       modelSelect.options[0].textContent = `Use previous (${data.metadata.model})`;
     }
     modelSelect.value = data.metadata.model;
+    syncImageLimits();
     document.getElementById('chat5ModelLabel').textContent = modelSelect.value;
   }
 
@@ -1630,6 +1631,11 @@ function createMessageFrame(m) {
     avatar.src = '/i/avatar.jpg';
     avatar.alt = '';
     card.querySelector('header').prepend(avatar);
+  }
+  if (m.content?.imageProcessingNotice) {
+    const notice = document.createElement('small');
+    notice.textContent = m.content.imageProcessingNotice;
+    card.querySelector('.chat5-message-actions').before(notice);
   }
   entry.querySelector('.chat5-sender').textContent = sender;
   entry.querySelector('time').textContent = formatMessageTimestamp(m.timestamp);
@@ -2137,6 +2143,13 @@ socket.on('welcome', () => {
     socket.emit('chat5-joinConversation', {conversationId: conversation_id});
   }
 });
+
+function syncImageLimits() {
+  const selected = document.getElementById('model')?.value === 'qwen3.8:27b-vllm';
+  document.querySelectorAll('[data-vllm-image-limits]').forEach(notice => { notice.hidden = !selected; });
+}
+document.getElementById('model')?.addEventListener('change', syncImageLimits);
+syncImageLimits();
 
 document.addEventListener('DOMContentLoaded', setUpdateButtonState);
 document.addEventListener('DOMContentLoaded', () => {

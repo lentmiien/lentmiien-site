@@ -1,0 +1,12 @@
+mixin vllmImageLimitsNotice(visible, chat5)
+  - const limits = vllmImageLimits || {};
+  - const limit = (key, fallback) => (Number.isSafeInteger(limits[key]) && limits[key] >= 0 ? limits[key] : fallback).toLocaleString('en-US');
+  details.small(data-vllm-image-limits hidden=!visible)
+    summary Image limits · #{limit('max_images', 3)} images · #{limit('max_image_edge', 1536)} px · #{limit('max_image_bytes', 6000000)} bytes total
+    ul
+      li Up to #{limit('max_images', 3)} newest images across the full request history, including tool results.
+      li Single-frame PNG, JPEG, WebP or GIF.
+      li Up to #{limit('max_image_edge', 1536)} pixels on the longest edge and #{limit('max_image_bytes', 6000000)} file bytes combined before base64 encoding.
+    p The Gateway resizes or recompresses images to fit, preserving aspect ratio. It omits individual images over 24 MiB, 24 megapixels or a 200:1 aspect ratio and continues the turn. Text and model context limits still apply.
+    if chat5
+      p Chat5 checks the image count and combined size before sending. If the selected history exceeds either limit, exclude older image messages or upload smaller files.

@@ -4,6 +4,7 @@ block styles
   link(rel='stylesheet', href='/css/codex.css')
 
 block content
+  include ../partials/vllm_image_limits
   - const state = codexState || {};
   - const turn = state.turn || {};
   - const session = state.session || {};
@@ -128,6 +129,8 @@ block content
               h2 Add a message
               span.codex-chip(data-additional-message-state)= turn.status === 'running' ? 'Running' : 'Waiting'
             p.codex-field-help Send a course correction or missing detail to the Codex turn that is currently running.
+            if turn.model === 'qwen3.8:27b-vllm' || turn.modelProvider === 'vllm'
+              +vllmImageLimitsNotice(true)
             form#codex-additional-message-form.codex-form(method='post', data-turn-id=turn.id, data-codex-prompt-form)
               .codex-field
                 .codex-field-label-row

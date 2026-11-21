@@ -4,6 +4,7 @@ block styles
   link(rel='stylesheet', href='/css/codex.css')
 
 block content
+  include ../partials/vllm_image_limits
   - const state = codexState || {};
   - const config = state.config || {};
   - const maxPromptChars = Number(config.maxPromptChars) > 0 ? Number(config.maxPromptChars) : 20000;
@@ -106,6 +107,7 @@ block content
                     data-description=provider.description
                   )= provider.label
               small.codex-field-help(data-codex-model-provider-help) OpenAI-backed Codex profiles. Runpod choices appear only while their matching pod is running.
+              +vllmImageLimitsNotice(false)
             .codex-mode-group(role='radiogroup', aria-label='Request mode')
               label.codex-mode-option
                 input(type='radio', name='mode', value='question', checked)

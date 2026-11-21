@@ -1430,8 +1430,13 @@
 
   function syncModelProviderControls(form) {
     if (!form) return;
-    const provider = form.querySelector('[data-codex-model-provider]');
+    const provider = form.querySelector('[name="modelProvider"]');
     if (!provider) return;
+    const model = form.querySelector('[name="model"]');
+    const notice = form.querySelector('[data-vllm-image-limits]');
+    if (notice) notice.hidden = !(provider.value === 'vllm'
+      || (provider.value === 'ollama' && model?.value === 'qwen3.8:27b-vllm'));
+    if (!provider.matches('[data-codex-model-provider]')) return;
     const selectedOption = provider.options[provider.selectedIndex];
     const controlMode = selectedOption?.dataset.controlMode || (
       provider.value === 'ollama' ? 'local-model' : 'openai-profile'
@@ -1463,9 +1468,11 @@
 
   function bindModelProviderControls(scope) {
     scope.querySelectorAll('form').forEach((form) => {
-      const provider = form.querySelector('[data-codex-model-provider]');
+      const provider = form.querySelector('[name="modelProvider"]');
       if (!provider) return;
-      provider.addEventListener('change', () => syncModelProviderControls(form));
+      const sync = () => syncModelProviderControls(form);
+      form.querySelector('[name="model"]')?.addEventListener('change', sync);
+      provider.addEventListener('change', sync);
       syncModelProviderControls(form);
     });
   }

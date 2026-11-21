@@ -253,3 +253,25 @@ describe('Ollama selected-history image policy', () => {
     expect(mockPost).not.toHaveBeenCalled();
   });
 });
+
+test.each([
+  [{ resized: 2, dropped: 1 }, 'The Gateway resized 2 images and dropped 1 image for this response.'],
+  [{ resized: 0, dropped: 1 }, 'The Gateway dropped 1 image for this response.'],
+  [{ resized: 0, dropped: 0, reencoded: 1 }, undefined],
+  [{ resized: '<b>1</b>', dropped: -1 }, undefined],
+  [undefined, undefined],
+])('keeps image processing feedback separate from the assistant text', async (stats, expected) => {
+  const [output] = await api.convertResponseBody({ message: { content: 'Answer' }, image_processing: stats });
+  expect(output.content.text).toBe('Answer');
+  expect(output.content.imageProcessingNotice).toBe(expected);
+});
+
+test('looks up the selected vLLM model by its exact catalog ID', async () => {
+  const limits = { max_images: 2, max_image_edge: 1024, max_image_bytes: 4000000 };
+  mockGet.mockResolvedValue({ data: { models: [
+    { id: 'qwen3.8:27b', limits: { max_images: 1 } },
+    { id: 'qwen3.8:27b-vllm', limits },
+  ] } });
+  await expect(api.getVllmImageLimits()).resolves.toEqual(limits);
+  expect(mockGet).toHaveBeenCalledWith('/llm/models', expect.any(Object));
+});

@@ -120,3 +120,16 @@ test('automatic history refresh preserves keyboard focus while browsing session 
   intervals.get(10000)(); await flush();
   expect(calls()).toBe(before + 1);
 });
+
+test('shows Gateway image limits only while the local vLLM model is selected', () => {
+  const { win } = setup();
+  const provider = win.document.getElementById('codex-model-provider');
+  const notice = win.document.querySelector('[data-vllm-image-limits]');
+  expect(notice.hidden).toBe(true);
+  provider.value = 'vllm';
+  provider.dispatchEvent(new win.Event('change'));
+  expect(notice.hidden).toBe(false);
+  provider.value = 'openai';
+  provider.dispatchEvent(new win.Event('change'));
+  expect(notice.hidden).toBe(true);
+});

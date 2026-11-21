@@ -190,6 +190,11 @@ function renderMessages() {
     text.classList.add('voice-message__text');
     text.textContent = getMessageText(msg);
     wrapper.append(role, text);
+    if (msg.content?.imageProcessingNotice) {
+      const notice = document.createElement('small');
+      notice.textContent = msg.content.imageProcessingNotice;
+      wrapper.appendChild(notice);
+    }
     messageContainer.appendChild(wrapper);
   });
 }
@@ -233,6 +238,13 @@ function updateConversationId(newId) {
     socket.emit('chat5-joinConversation', { conversationId: normalized });
   }
 }
+
+function syncImageLimits() {
+  const notice = document.querySelector('[data-vllm-image-limits]');
+  if (notice) notice.hidden = document.getElementById('voiceModel')?.value !== 'qwen3.8:27b-vllm';
+}
+document.getElementById('voiceModel')?.addEventListener('change', syncImageLimits);
+syncImageLimits();
 
 function updateModelLabel(modelName) {
   if (modelLabel) {
@@ -288,6 +300,7 @@ function populateSettingsForm() {
   }
   if (modelSelect && state.settings.model) {
     modelSelect.value = state.settings.model;
+    syncImageLimits();
   }
   if (reasoningSelect && state.settings.reasoning) {
     reasoningSelect.value = state.settings.reasoning;

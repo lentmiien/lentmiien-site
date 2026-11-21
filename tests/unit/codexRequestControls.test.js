@@ -737,3 +737,11 @@ describe('Codex focused process details', () => {
     expect(canSubmitAdditionalMessage({ status: 'running', canAddMessage: false })).toBe(false);
   });
 });
+
+test('uses the vLLM catalog limits in the Codex request form', () => {
+  const html = renderCodexView('index', {}, {
+    vllmImageLimits: { max_images: 2, max_image_edge: 1024, max_image_bytes: 5000000 },
+  });
+  expect(html).toContain('2 images · 1,024 px · 5,000,000 bytes total');
+  expect(html).toContain('including tool results');
+});

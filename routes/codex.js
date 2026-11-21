@@ -1,3 +1,4 @@
+const vllmImageLimits = require('../middleware/vllmImageLimits');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 
@@ -41,9 +42,9 @@ router.use((_req, res, next) => {
 });
 router.use(csrf.issueToken);
 
-router.get('/', controller.renderHome);
-router.get('/sessions/:sessionId', controller.renderSession);
-router.get('/turns/:turnId', controller.renderTurn);
+router.get('/', vllmImageLimits, controller.renderHome);
+router.get('/sessions/:sessionId', vllmImageLimits, controller.renderSession);
+router.get('/turns/:turnId', vllmImageLimits, controller.renderTurn);
 router.get('/templates', controller.renderPromptTemplates);
 router.get('/workspaces', requireAdmin, controller.renderWorkspaces);
 router.get('/profiles', requireAdmin, controller.renderProfiles);

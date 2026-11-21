@@ -15,8 +15,8 @@ let dom, doc, handlers, socket;
 const entry = n => doc.querySelector(`.chat5-entry[data-id="${id(n)}"]`);
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-async function openChat({ start = id(2), saved = true, phone = false, canEdit = true } = {}) {
-  const messages = saved ? [message(2), message(3)] : [];
+async function openChat({ start = id(2), saved = true, phone = false, canEdit = true, model = 'test', replies = [message(2), message(3)] } = {}) {
+  const messages = saved ? replies : [];
   const messageWindow = {
     source: saved ? 'conversation5' : 'unsaved', loadedStart: saved ? 1 : 0, loadedEnd: saved ? 3 : 0,
     total: saved ? 3 : 0, hasMoreOlder: saved, batchSize: 25,
@@ -26,7 +26,7 @@ async function openChat({ start = id(2), saved = true, phone = false, canEdit = 
     canEditChatMessages: canEdit, conversationSource: messageWindow.source, messageWindow, messages,
     conversation: { _id: saved ? conversationId : 'NEW', title: 'Test', members: ['member'], tags: [],
       messages: saved ? [id(1), id(2), id(3)] : [],
-      metadata: { model: 'test', maxMessages: 25, startMessageId: start, tools: [] } },
+      metadata: { model, maxMessages: 25, startMessageId: start, tools: [] } },
     chat_models: [], templates: [], personalities: [], responseTypes: [], trainingGroups: [{ groupId: 'training' }], ttsVoices: {},
   });
   dom = new JSDOM(html, { url: 'https://chat.test/chat5/chat/' + (saved ? conversationId : 'NEW'), runScripts: 'outside-only' });
@@ -181,4 +181,36 @@ test('saving a training entry refreshes the dialog and preserves the current dra
   expect(doc.querySelector('.chat5-training-message-option .chat5-training-usage-badge').textContent).toContain('prompt');
   expect(entry(1)).not.toBeNull();
   expect(win.editor.getMarkdown()).toBe('Unsaved reply');
+});
+
+test('image limits track model selection and processing notices stay on the affected reply', async () => {
+  const win = await openChat();
+  const notices = [...doc.querySelectorAll('[data-vllm-image-limits]')];
+  const model = doc.getElementById('model');
+  expect(notices).toHaveLength(2);
+  expect(notices.every(notice => notice.hidden)).toBe(true);
+  model.add(new win.Option('Local vLLM', 'qwen3.8:27b-vllm'));
+  model.value = 'qwen3.8:27b-vllm';
+  model.dispatchEvent(new win.Event('change'));
+  expect(notices.every(notice => !notice.hidden && notice.textContent.includes('6,000,000'))).toBe(true);
+  model.selectedIndex = 0;
+  model.dispatchEvent(new win.Event('change'));
+  expect(notices.every(notice => notice.hidden)).toBe(true);
+
+  const reply = message(4);
+  reply.user_id = 'bot';
+  reply.content.imageProcessingNotice = 'The Gateway resized 1 image for this response.';
+  handlers.get('chat5-messages')({ id: conversationId, messages: [reply] });
+  expect(entry(4).textContent).toContain(reply.content.imageProcessingNotice);
+  expect(entry(4).querySelector('.chat5-message-text').textContent).toBe('Message 4');
+});
+
+test('renders saved processing feedback and image limits on reopening a vLLM conversation', async () => {
+  const reply = message(2);
+  reply.user_id = 'bot';
+  reply.content.imageProcessingNotice = 'The Gateway dropped 2 images for this response.';
+  await openChat({ model: 'qwen3.8:27b-vllm', replies: [reply, message(3)] });
+  expect(entry(2).textContent).toContain(reply.content.imageProcessingNotice);
+  expect(doc.querySelector('#chat5Composer [data-vllm-image-limits]').hidden).toBe(false);
+  expect(entry(3).textContent).not.toContain(reply.content.imageProcessingNotice);
 });

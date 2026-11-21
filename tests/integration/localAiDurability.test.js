@@ -525,10 +525,16 @@ suite('standalone Mongo + real HTTP fake Gateway durable integration', () => {
     const job = await enqueue('chat', payload); expect(job.request.messages.filter(m => m.role !== 'system').map(m => m.content)).toEqual(['history', 'new prompt']);
     expect(job.request.messages[0].content).toContain('You are talking to owner.');
     await service.project(job); expect((await Conversation.findById(conv._id)).messages).toHaveLength(3);
-    await tick(); complete([...runs.values()][0]); await tick(); await service.project(await load(job._id));
+    await tick();
+    complete([...runs.values()][0], { done: true, message: { content: 'finished' }, image_processing: { resized: 1, dropped: 2 } });
+    await tick();
+    await service.project(await load(job._id));
     expect(await Message.countDocuments({ localBatchJobId: job._id })).toBe(2); expect((await Message.findById(job.projection.responseId)).content.text).toBe('finished');
     await service.project(job); // stale acceptance must not overwrite a completed response
-    expect((await Message.findById(job.projection.responseId)).content.text).toBe('finished');
+    expect((await Message.findById(job.projection.responseId)).content).toMatchObject({
+      text: 'finished',
+      imageProcessingNotice: 'The Gateway resized 1 image and dropped 2 images for this response.',
+    });
     await Conversation.updateOne({ _id: conv._id }, { $set: { 'metadata.tools': ['tool'] } });
     await expect(service.submit(actor, 'tool', payload)).rejects.toMatchObject({ code: 'batch_tools_unsupported' });
     await Conversation.updateOne({ _id: conv._id }, { $set: { 'metadata.tools': [] } });

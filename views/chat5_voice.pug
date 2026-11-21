@@ -1,9 +1,11 @@
 extends layout
 
 block content
+  include partials/vllm_image_limits
   - const conversationId = conversation && conversation._id ? conversation._id.toString() : 'NEW';
   - const conversationTitle = conversation && conversation.title ? conversation.title : 'NEW';
   - const meta = conversation && conversation.metadata ? conversation.metadata : {};
+  - const showImageLimits = meta.model === 'qwen3.8:27b-vllm';
   - const initialMessages = Array.isArray(messages) ? messages : [];
   h2.chat5-title Voice chat (chat5)
   p#id.chat5-meta(data-source=conversationSource)= conversationId
@@ -27,6 +29,8 @@ block content
               .voice-message(class=isBot ? 'voice-message--bot' : 'voice-message--user', data-id=m._id || '')
                 span.voice-message__role= isBot ? 'Bot' : (m.user_id || 'User')
                 p.voice-message__text= trimmedText
+                if m.content.imageProcessingNotice
+                  small= m.content.imageProcessingNotice
             else
               // Skip messages without displayable text
         else
@@ -71,6 +75,7 @@ block content
                 option(value=meta.model)= `Use current (${meta.model})`
               each m in chat_models
                 option(value=m.api_model selected=(m.api_model === meta.model))= m.model_name
+            +vllmImageLimitsNotice(showImageLimits, true)
           .mb-3
             label.form-label(for='voiceReasoning') Reasoning effort
             - const reasoningValue = meta.reasoning || 'medium';

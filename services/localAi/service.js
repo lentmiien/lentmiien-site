@@ -225,9 +225,11 @@ class LocalAiService {
     }
     const complete = job.result?.text && job.state === 'succeeded';
     const text = complete ? job.result.text : `Local AI batch ${job.state}. Independent frozen snapshot. [View job](/local-ai/queue/${job._id})`;
+    const content = { text };
+    if (complete && job.result.imageProcessingNotice) content.imageProcessingNotice = job.result.imageProcessingNotice;
     try {
       await Message.updateOne({ _id: responseId, $or: [{ localBatchVersion: { $lte: job.version } }, { localBatchVersion: { $exists: false } }] },
-        { $set: { user_id: 'bot', category: 'local-ai-batch', tags: [], contentType: 'text', content: { text }, hideFromBot: !complete, embeddingRequested: false, localBatchJobId: job._id, localBatchVersion: job.version } }, { upsert: true, writeConcern: { w: 'majority', j: true } });
+        { $set: { user_id: 'bot', category: 'local-ai-batch', tags: [], contentType: 'text', content, hideFromBot: !complete, embeddingRequested: false, localBatchJobId: job._id, localBatchVersion: job.version } }, { upsert: true, writeConcern: { w: 'majority', j: true } });
     } catch (error) {
       // A newer publication won the deterministic ID. Never overwrite it with an old queued projection.
       if (error.code !== 11000) throw error;

@@ -6,6 +6,8 @@ block styles
   link(rel="stylesheet", href="/css/chat5_chat.css")
 
 block content
+  include partials/vllm_image_limits
+  - const showImageLimits = conversation.metadata.model === 'qwen3.8:27b-vllm';
   - const personaOptions = Array.isArray(personalities) ? personalities : [];
   - const responseTypeOptions = Array.isArray(responseTypes) ? responseTypes : [];
   - const availableToolOptions = typeof availableTools !== 'undefined' && Array.isArray(availableTools) ? availableTools : [];
@@ -220,6 +222,8 @@ block content
           button.chat5-action.chat5-inspect(type='button', aria-label='Message details', data-bs-toggle='modal', data-bs-target='#chat5MessageDetails') Details
         .chat5-message-body
           block
+        if content.imageProcessingNotice
+          small= content.imageProcessingNotice
         .chat5-message-actions
           button.chat5-copy-button(type='button', aria-label='Copy message text', data-copy-text=copy, hidden=!copy) Copy
           button.chat5-action(type='button', data-chat5-start-message-id=id, aria-pressed=selected ? 'true' : 'false', disabled=!canChangeMessage)= selected ? 'Selected start message' : 'Set as start message'
@@ -437,6 +441,7 @@ block content
                   li
                     button#generateTtsBtn.dropdown-item(type='button') Generate TTS audio
                   li#localAiBatchReason.small.text-muted.px-3(hidden)
+          +vllmImageLimitsNotice(showImageLimits, true)
           p#completionWindowNotice.chat5-notice(role='status')
           p#localAiBatchStatus.chat5-notice(role='status')
         p#chat5ActionStatus.chat5-notice(role='status')
@@ -477,6 +482,7 @@ block content
       option(value=conversation.metadata.model) Use previous (#{conversation.metadata.model})
       each m in chat_models
         option(value=m.api_model)= m.model_name
+    +vllmImageLimitsNotice(showImageLimits, true)
     label.chat5-input-label(for="maxMessages") Max messages
     input#maxMessages.form-control(type="number", min="1", value=conversation.metadata.maxMessages)
     label.chat5-input-label(for="startMessageId") Start message ID (optional)

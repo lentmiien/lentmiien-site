@@ -4,6 +4,7 @@ block styles
   link(rel='stylesheet', href='/css/codex.css')
 
 block content
+  include ../partials/vllm_image_limits
   - const state = codexState || {};
   - const session = state.session || {};
   - const workspace = state.workspace || {};
@@ -206,6 +207,9 @@ block content
                 label Runpod model provider
                 strong= sessionProviderLabel
                 small.codex-field-help= `Provider is locked to the ${sessionProviderLabel} profile for this session. Its Runpod pod must remain running.`
+            if sessionProvider === 'vllm' || sessionProvider === 'ollama'
+              - const showImageLimits = sessionProvider === 'vllm' || selectedLocalModel === 'qwen3.8:27b-vllm';
+              +vllmImageLimitsNotice(showImageLimits)
             .codex-field
               .codex-field-label-row
                 label(for='codex-followup-prompt') Prompt
