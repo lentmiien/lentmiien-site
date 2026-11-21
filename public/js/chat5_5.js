@@ -2032,7 +2032,8 @@ function bindChatControls() {
     const resize = () => {
       if (viewport.scale !== 1) return;
       workspace.style.setProperty('--chat5-keyboard', `${Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)}px`);
-      workspace.style.setProperty('--chat5-visible-height', `${viewport.height}px`);
+      document.documentElement.style.setProperty('--chat5-visible-height', `${viewport.height}px`);
+      document.documentElement.style.setProperty('--chat5-visible-top', `${viewport.offsetTop}px`);
       workspace.classList.toggle('chat5-short', viewport.height < 520);
     };
     viewport.addEventListener('resize', resize);

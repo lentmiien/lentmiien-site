@@ -1,7 +1,8 @@
+:root { --chat5-visible-height: 100dvh; }
+
 .chat5-workspace {
   --chat5-width: 68rem;
   --chat5-gutter: clamp(.75rem, 3vw, 2rem);
-  --chat5-visible-height: 100dvh;
   --chat5-editor-height: clamp(8rem, calc(var(--chat5-visible-height) * .23), 13.5rem);
   position: fixed;
   inset: var(--nav-clearance) 0 var(--chat5-keyboard, 0px);
@@ -204,7 +205,21 @@
 .chat5-send-controls .btn-primary:hover { background: var(--brand-hover); }
 .chat5-notice { color: var(--text-secondary); font-size: .82rem; margin: .15rem 0 .45rem; }
 .chat5-notice:empty { display: none; }
-.chat5-dialog .modal-content { color: var(--text); background: var(--surface-1); border: 1px solid var(--divider); }
+.chat5-dialog {
+  top: var(--chat5-visible-top, 0px);
+  height: var(--chat5-visible-height);
+}
+/* The shared image viewer also styles .modal-content. Keep these forms in
+   Bootstrap's bounded flex column so only the body scrolls. */
+.chat5-dialog .modal-content {
+  display: flex;
+  width: 100%;
+  margin: 0;
+  color: var(--text);
+  background: var(--surface-1);
+  border: 1px solid var(--divider);
+}
+.chat5-dialog .modal-body { min-height: 0; overscroll-behavior-y: contain; }
 .chat5-dialog .modal-header { border-color: var(--divider); }
 .chat5-dialog .modal-title { font-size: 1.2rem; }
 .chat5-dialog .modal-body > h3 { font-size: 1rem; margin: 1.25rem 0 .6rem; }
