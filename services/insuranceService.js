@@ -72,23 +72,60 @@ function invoices(actor, { ids, owner } = {}) {
   ];
 }
 
-async function list(actor, { view, date, owner, offset }, size = PAGE_SIZE) {
-  const pipeline = invoices(actor, { owner });
-  if (view === 'batches') {
-    pipeline.push({ $match: { status: 'completed' } },
-      { $group: { _id: { date: '$submittedOn', owner: '$ownerId' }, count: { $sum: 1 } } },
-      { $project: { ownerId: '$_id.owner', submittedOn: '$_id.date', count: 1 } },
-      { $sort: { submittedOn: -1, ownerId: 1 } });
-  } else {
-    pipeline.push({ $match: date ? { status: 'completed', submittedOn: date } : { status: view } },
-      { $sort: { date: 1, _id: 1 } });
+function monthlyTotals(dateField) {
+  return [
+    { $group: {
+      _id: { month: { $substrCP: [dateField, 0, 7] }, currency: { $ifNull: ['$currency', null] } },
+      count: { $sum: 1 },
+      missing: { $sum: { $cond: [{ $isNumber: '$amount' }, 0, 1] } },
+      total: { $sum: { $toDecimal: { $toString: '$amount' } } },
+    } },
+    { $sort: { '_id.month': -1, '_id.currency': 1 } },
+  ];
+}
+
+function summarize(monthly) {
+  let count = 0;
+  const months = new Map();
+  for (const { _id, total, count: entries, missing } of monthly) {
+    const month = _id.month || 'Undated';
+    if (!months.has(month)) months.set(month, { month, totals: [], missing: 0 });
+    const row = months.get(month);
+    count += entries;
+    row.missing += missing;
+    if (entries > missing) row.totals.push({ amount: total.toString(), currency: _id.currency });
   }
-  const found = await Group.aggregate([...pipeline, { $skip: offset }, { $limit: size + 1 }]).option(queryLimit);
+  return { count, months: [...months.values()] };
+}
+
+async function list(actor, { view, date, owner, offset, includeSummary = false }, size = PAGE_SIZE) {
+  const batches = view === 'batches';
+  const status = batches || view === 'batch' ? 'completed' : view;
+  const pipeline = [...invoices(actor, { owner }), { $match: date ? { status, submittedOn: date } : { status } }];
+  const groupBatches = { $group: { _id: { date: '$submittedOn', owner: '$ownerId' }, count: { $sum: 1 } } };
+  const page = batches ? [
+    groupBatches,
+    { $project: { ownerId: '$_id.owner', submittedOn: '$_id.date', count: 1 } },
+    { $sort: { submittedOn: -1, ownerId: 1 } },
+  ] : [{ $sort: { date: 1, _id: 1 } }];
+  page.push({ $skip: offset }, { $limit: size + 1 });
+
+  let found, summary;
+  if (includeSummary) {
+    const facet = { page, monthly: monthlyTotals(batches ? '$submittedOn' : '$date') };
+    if (batches) facet.batchCount = [groupBatches, { $count: 'count' }];
+    const [result] = await Group.aggregate([...pipeline, { $facet: facet }]).option(queryLimit);
+    found = result.page;
+    summary = summarize(result.monthly);
+    if (batches) summary.batchCount = result.batchCount[0]?.count || 0;
+  } else {
+    found = await Group.aggregate([...pipeline, ...page]).option(queryLimit);
+  }
   const rows = found.slice(0, size);
   const names = await User.find({ _id: { $in: rows.map(row => row.ownerId) } }).select('_id name').lean();
   const owners = new Map(names.map(u => [String(u._id), u.name]));
   for (const row of rows) row.ownerName = owners.get(String(row.ownerId)) || 'Unavailable account';
-  return { rows, more: found.length > size };
+  return { rows, more: found.length > size, summary };
 }
 
 const transitions = { unreviewed: ['processing', 'dismissed', 'expired'], processing: ['completed', 'expired'] };

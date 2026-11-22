@@ -20,6 +20,6 @@ In the archive, **Date and storage filters** can combine a text search with an i
 
 Run the standalone MongoDB integration coverage with `DOCUMENT_VAULT_TEST_MONGO_URI=mongodb://127.0.0.1:PORT/document_vault_test npm test -- tests/integration/documentVault.test.js --coverage=false`. The suite creates and drops a uniquely named test database and uses local HTTP fixtures for the two model services.
 
-Review suggests the document year, the owner’s uppercase name as a folder prefix, and Q1–Q4 from the document month. Correcting the date updates untouched suggestions. Choose **Use Other** or type over any suggestion. Filed location corrections use the saved values.
+Review suggests the document year, the owner’s uppercase name as a folder prefix, and a group label of **Other**. With **Invoice** enabled, the suggested group is Q1–Q4 from the document month. Changing the date or Invoice switch updates untouched suggestions. Choose **Use Other** or type over any suggestion. Filed location corrections use the saved values.
 
 Filed pages lock 90 elapsed days after their upload timestamp. This covers location edits, page redos and changes to a filed group description. Initial filing remains available for older uploads still awaiting their first review. If a new redo is unfinished at expiry, the vault restores its last filed data. A redo already in progress before this update has no such checkpoint; finish reviewing it within its original upload window. Insurance can continue processing a filed invoice independently after the lock.

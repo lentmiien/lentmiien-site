@@ -140,9 +140,11 @@ suite('Document vault with standalone MongoDB', () => {
       const warning = doc.querySelector('#invoice-warning');
       expect(doc.querySelector('#tags').value).toBe('museum');
       expect(toggle.checked).toBe(tagged);
+      expect(doc.querySelector('#groupLabel').value).toBe(tagged ? 'Q3' : 'Other');
       expect(total.required).toBe(tagged);
       expect(warning.hidden).toBe(!mismatch);
       toggle.click();
+      expect(doc.querySelector('#groupLabel').value).toBe(tagged ? 'Other' : 'Q3');
       expect(total.required).toBe(!tagged);
       expect(warning.hidden).toBe(mismatch);
       expect(total.value).toBe('500');
@@ -224,6 +226,8 @@ suite('Document vault with standalone MongoDB', () => {
       const set = (id, value) => { field(id).value = value; field(id).dispatchEvent(new dom.window.Event('input')); };
       expect(field('yearLabel').value).toBe('2026');
       expect(field('folderId').value).toBe('OWNER');
+      expect(field('groupLabel').value).toBe('Other');
+      field('invoice').click();
       expect(field('groupLabel').value).toBe('Q3');
       set('date', '2025-03-31');
       expect(field('yearLabel').value).toBe('2025');
@@ -235,6 +239,9 @@ suite('Document vault with standalone MongoDB', () => {
       expect(field('groupLabel').value).toBe('Other');
       expect(field('yearLabel').value).toBe('FY25');
       expect(field('folderId').value).toBe('OWNER2');
+      set('groupLabel', 'Personal');
+      field('invoice').click();
+      expect(field('groupLabel').value).toBe('Personal');
     } finally { dom.window.close(); }
   });
 
@@ -254,6 +261,36 @@ suite('Document vault with standalone MongoDB', () => {
     const html = await (await request('owner', target)).text();
     expect(html).toContain('Filed document locked');
     expect(html).not.toContain('Edit storage location');
+  });
+
+  test('Insurance monthly totals cover all visible invoices across results pages', async () => {
+    const group = { ownerId: users.owner._id, uploaderId: users.clerk._id, viewerIds: [users.reader._id], state: 'ready' };
+    const invoice = { ...answer, tags: ['invoice'], state: 'stored', filename: 'receipt.png', totalAmount: 0.1, currency: 'USD' };
+    await Group.create([
+      ...[0, 1].map(() => ({ ...group, pages: Array.from({ length: 12 }, () => invoice) })),
+      { ...group, pages: [
+        { ...invoice, totalAmount: 400, currency: 'JPY' },
+        { ...invoice, totalAmount: 0, currency: null, documentDate: '2026-09-01' },
+        { ...invoice, totalAmount: null, currency: null, documentDate: null },
+      ] },
+      { ...group, viewerIds: [], pages: [invoice] },
+    ]);
+    for (const offset of [0, 24]) {
+      const page = await request('reader', '/insurance/?offset=' + offset);
+      expect(page.status).toBe(200);
+      const dom = new (require('jsdom').JSDOM)(await page.text());
+      try {
+        const summary = dom.window.document.querySelector('.insurance-summary');
+        expect(summary.querySelector('strong').textContent).toBe('27 invoices');
+        expect(Array.from(summary.querySelectorAll('dl > div'), row => [
+          row.querySelector('dt').textContent, ...Array.from(row.querySelectorAll('dd > div'), el => el.textContent),
+        ])).toEqual([
+          ['2026-09', '0 (currency unspecified)'],
+          ['2026-08', '400 JPY', '2.4 USD'],
+          ['Undated', '1 without a receipt total'],
+        ]);
+      } finally { dom.window.close(); }
+    }
   });
 
   test('Insurance delegates triage, expiration and dated batches through current vault membership', async () => {
@@ -294,6 +331,10 @@ suite('Document vault with standalone MongoDB', () => {
     try {
       dom.window.eval(require('fs').readFileSync(path.resolve(__dirname, '../../public/js/insurance.js'), 'utf8'));
       const doc = dom.window.document;
+      const summary = doc.querySelector('.insurance-summary');
+      expect(summary.querySelector('strong').textContent).toBe('2 invoices');
+      expect(summary.querySelector('dt').textContent).toBe('2026-08');
+      expect(summary.querySelector('dd').textContent).toBe('1,000 JPY');
       expect(doc.querySelector('#submit-claims button').disabled).toBe(true);
       doc.querySelector('[data-select-all] input').click();
       expect(doc.querySelectorAll('[name="ids"]:checked')).toHaveLength(2);
@@ -323,6 +364,10 @@ suite('Document vault with standalone MongoDB', () => {
     await service.transition(users.reader._id, [secondId], 'processing', 'completed', '2026-11-20');
     const list = await service.list(users.reader._id, { view: 'batches', offset: 0 });
     expect(list.rows.map(row => row.count).sort()).toEqual([1, 2]);
+    const batches = await (await request('reader', '/insurance/batches')).text();
+    expect(batches).toContain('2 batches · 3 invoices');
+    expect(batches).toContain('<dt>2026-11</dt>');
+    expect(batches).toContain('1,500 JPY');
     expect(await (await request('reader', '/insurance/batch' + batch)).text()).not.toContain('Second owner');
     await Group.updateOne({ _id: otherGroup._id }, { $set: { 'pages.0.tags': [] } });
     await Group.updateOne({ _id: group._id }, { $set: { viewerIds: [] } });

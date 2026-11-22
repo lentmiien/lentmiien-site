@@ -50,7 +50,8 @@ function createRouter() {
       }
       const allScans = download === 'all';
       if (allScans) options.offset = 0;
-      const data = await claims.list(req.user._id, { ...options, view }, allScans ? MAX_ZIP_SCANS : PAGE_SIZE);
+      const includeSummary = !download && view !== 'batch';
+      const data = await claims.list(req.user._id, { ...options, view, includeSummary }, allScans ? MAX_ZIP_SCANS : PAGE_SIZE);
       if (download) {
         if (allScans && data.more) throw new VaultError(422, 'This selection exceeds 128 scans. Download each results page separately.');
         if (!data.rows.length) throw new VaultError(404, 'No scans are available for this selection.');

@@ -2,6 +2,8 @@
 
 Open **Insurance** at `/insurance/` to triage filed Document vault pages tagged “invoice”. Each page has one shared claim record. Move an unreviewed invoice to insurance processing or choose no further action. In Processing, open the scans for the next claim, select the invoices submitted together, enter the submission date and mark them completed. Submitted batches are grouped by owner and submission date. Processing and batch views offer individual scans and ZIP downloads for the whole selection (up to 128 scans per ZIP) or individual results pages. The active queues exclude completed, dismissed and expired invoices. Reviewers can mark an invoice expired from either active list. Expiration is a manual decision and does not create a submission batch.
 
+The unreviewed and processing summaries show invoice counts and totals by document month across all results. Submitted batches show batch and invoice counts, with totals by submission month. Each currency has its own total. Undated invoices and missing receipt totals are identified in the summary.
+
 ## Access and storage
 
 This is a logged-in tool for sensitive documents. Owners and named viewers use the vault’s `vault.documents.read` capability and current document membership. Named viewers act on behalf of the owner, including when they only hold vault read access. Administrators have no document override. Listings, submission dates and changes use the current source page, filed state, tag and viewer list. Original scans use the vault’s private image route. The vault’s filing deadline applies to vault edits; claim processing has its own timeline.

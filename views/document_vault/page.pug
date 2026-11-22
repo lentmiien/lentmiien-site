@@ -90,10 +90,10 @@ block content
               option(value='') Choose a disposition
               option(value='keep', selected=paper.decision === 'keep') Keep in storage
               option(value='dispose', selected=paper.decision === 'dispose') Dispose of paper copy
-          #storage-location
+          #storage-location(data-saved-group=paper.groupLabel || null)
             - const month = Number((page.documentDate || '').slice(5, 7))
             - const quarter = month ? 'Q' + Math.ceil(month / 3) : ''
-            +storageFields({ yearLabel: paper.yearLabel || (page.documentDate || '').slice(0, 4), folderId: paper.folderId || (ownerName === 'Unavailable account' ? '' : ownerName.toUpperCase()).slice(0, 80), groupLabel: paper.groupLabel || quarter }, false)
+            +storageFields({ yearLabel: paper.yearLabel || (page.documentDate || '').slice(0, 4), folderId: paper.folderId || (ownerName === 'Unavailable account' ? '' : ownerName.toUpperCase()).slice(0, 80), groupLabel: paper.groupLabel || (invoice ? quarter : 'Other') }, false)
             button.secondary#group-other(type='button') Use Other
           button.primary(type='submit') Save review and continue
       else

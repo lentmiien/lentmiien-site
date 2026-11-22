@@ -31,6 +31,24 @@ html(lang='en')
               a.action.secondary(href=here + '/all-scans.zip' + (suffix ? '?' + suffix.slice(1) : '')) Download all scans (.zip)
               if offset || more
                 a(href=here + '/scans.zip?offset=' + offset + suffix) Download this page
+        if summary
+          section.insurance-summary(aria-label='Invoice summary')
+            strong
+              if view === 'batches'
+                | #{summary.batchCount} #{summary.batchCount === 1 ? 'batch' : 'batches'} ·#{' '}
+              | #{summary.count} #{summary.count === 1 ? 'invoice' : 'invoices'}
+            if summary.months.length
+              span= view === 'batches' ? 'Totals by submission month' : 'Totals by document month'
+              - const format = new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 })
+              dl
+                each row in summary.months
+                  div
+                    dt= row.month
+                    dd
+                      each total in row.totals
+                        div= format.format(total.amount) + ' ' + (total.currency || '(currency unspecified)')
+                      if row.missing
+                        div #{row.missing} without a receipt total
         if !rows.length
           p.empty= ({unreviewed:'No invoices awaiting review.', processing:'No invoices awaiting submission.', batches:'No submitted batches.', batch:'No invoices in this batch.'})[view]
         else if view === 'batches'
