@@ -1,0 +1,30 @@
+extends ../document_vault_layout
+
+block content
+  header.section-head
+    h1 Duplicate review
+    p Compare the newly reviewed page with an earlier document for the same owner.
+  section.panel
+    h2 OCR overlap decisions
+    p.hint Non-invoice pages qualify at #{threshold}% overlap. Each decision counts one pair.
+    if stats.length
+      dl.facts
+        each stat in stats
+          dt= stat._id === 'unique' ? 'Marked unique' : 'Deleted as duplicate'
+          dd #{stat.count} comparisons · average #{stat.mean.toFixed(1)}% · range #{stat.min.toFixed(1)}–#{stat.max.toFixed(1)}%
+    else
+      p No OCR overlap decisions yet.
+  if rows.length
+    ul
+      each row in rows
+        li
+          a(href=base + '/duplicates/' + row._id)= row.title || 'Untitled page'
+          |  · #{row.date}
+  else
+    p.empty No possible duplicates awaiting review.
+  if offset || more
+    nav.pager(aria-label='Results pages')
+      if offset
+        a(href=base + '/duplicates?offset=' + Math.max(0, offset - pageSize)) Previous
+      if more
+        a(href=base + '/duplicates?offset=' + (offset + pageSize)) Next

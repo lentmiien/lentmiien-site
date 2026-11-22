@@ -68,6 +68,8 @@ block content
               tr
                 td
                   a.doc-link(href=base + '/pages/' + row._id)= row.title || row.filename
+                  if archive && row.duplicateStatus === 'possible_duplicate'
+                    small Possible duplicate
                   if archive && row.description
                     .excerpt= row.description
                   else if row.title

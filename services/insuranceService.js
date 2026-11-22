@@ -6,7 +6,7 @@ const { VaultError, PAGE_SIZE } = require('./documentVault/policy');
 const logger = require('../utils/logger');
 
 const invoiceTag = /^invoice$/i;
-const filedInvoice = { state: 'stored', tags: invoiceTag };
+const filedInvoice = { state: 'stored', tags: invoiceTag, duplicateStatus: null };
 const queryLimit = { maxTimeMS: 10000 };
 
 async function register(rows) {
@@ -24,9 +24,9 @@ async function syncChunk(after) {
   const filter = { state: 'ready', pages: { $elemMatch: filedInvoice } };
   if (after) filter._id = { $gt: after };
   const groups = await Group.find(filter).sort({ _id: 1 }).limit(32)
-    .select('pages._id pages.state pages.tags').maxTimeMS(10000).lean();
+    .select('pages._id pages.state pages.tags pages.duplicateStatus').maxTimeMS(10000).lean();
   const rows = groups.flatMap(group => group.pages.filter(page =>
-    page.state === 'stored' && page.tags?.some(tag => invoiceTag.test(tag))
+    page.state === 'stored' && !page.duplicateStatus && page.tags?.some(tag => invoiceTag.test(tag))
   ).map(page => ({ _id: page._id, groupId: group._id })));
   const existing = new Set((await Claim.find({ _id: { $in: rows.map(row => row._id) } }).select('_id').lean()).map(row => String(row._id)));
   await register(rows.filter(row => !existing.has(String(row._id))));
@@ -56,7 +56,7 @@ function invoices(actor, { ids, owner } = {}) {
   const principal = new Types.ObjectId(String(actor));
   const scope = { state: 'ready', $or: [{ ownerId: principal }, { viewerIds: principal }], pages: { $elemMatch: filedInvoice } };
   if (owner) scope.ownerId = new Types.ObjectId(owner);
-  const pageFilter = { 'pages.state': 'stored', 'pages.tags': invoiceTag };
+  const pageFilter = { 'pages.state': 'stored', 'pages.tags': invoiceTag, 'pages.duplicateStatus': null };
   if (ids) {
     const inIds = { $in: ids.map(id => new Types.ObjectId(id)) };
     scope['pages._id'] = inIds;

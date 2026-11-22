@@ -17,7 +17,7 @@ html(lang='en')
           span.drawer-icon(aria-hidden='true')
           | Document vault
         nav.tabs(aria-label='Document vault')
-          each tab in [{key:'archive', text:'Archive', href:'/', show:true}, {key:'upload', text:'Upload', href:'/upload', show:intake}, {key:'queue', text:'Work queue', href:'/queue', show:review}, {key:'review', text:'Review', href:'/review', show:review}]
+          each tab in [{key:'archive', text:'Archive', href:'/', show:true}, {key:'upload', text:'Upload', href:'/upload', show:intake}, {key:'queue', text:'Work queue', href:'/queue', show:review}, {key:'review', text:'Review', href:'/review', show:review}, {key:'duplicates', text:'Duplicate review', href:'/duplicates', show:review}]
             if tab.show
               a(href=base + tab.href, aria-current=tab.key === section ? 'page' : null)= tab.text
       if notice

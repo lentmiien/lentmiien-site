@@ -28,6 +28,10 @@ const page = new Schema({
   },
   // Kept only while reprocessing a filed page, for restoration at the edit deadline.
   beforeRedo: Schema.Types.Mixed,
+  duplicateStatus: { type: String, enum: ['checking', 'possible_duplicate'] },
+  duplicateReviewedAt: Date,
+  duplicateThrough: Date,
+  duplicateAfter: id,
   failedStage: String,
   failedReply,
   issue: String,
@@ -49,6 +53,7 @@ const group = new Schema({
   state: { type: String, enum: ['uploading', 'ready', 'discarding'], default: 'uploading' },
   pages: [page],
   jobs: [job],
+  duplicateEffects: { type: [new Schema({ overlap: Number, outcome: String, removePage: id })], default: undefined },
   nextJobAt: Date,
   description: String,
   beforeRedoDescription: String,
@@ -63,9 +68,13 @@ group.index({ state: 1, nextJobAt: 1 });
 group.index({ 'pages._id': 1 });
 for (const field of ['ownerId', 'uploaderId', 'viewerIds']) group.index({ [field]: 1, state: 1, _id: -1 });
 
+group.index({ ownerId: 1, 'pages.documentDate': 1 });
+group.index({ 'pages.duplicateStatus': 1 }, { sparse: true });
+
 const scan = new Schema({
   groupId: { type: id, required: true, index: true },
   mime: { type: String, required: true },
+  preview: { type: Buffer, select: false },
   bytes: { type: Buffer, required: true, select: false },
 });
 const queue = new Schema({
@@ -86,6 +95,9 @@ const queue = new Schema({
 }, { versionKey: false });
 
 module.exports = {
+  DuplicateFeedback: mongoose.model('DocumentVaultDuplicateFeedback', new Schema({
+    overlap: { type: Number, required: true }, outcome: { type: String, enum: ['unique', 'duplicate'], required: true },
+  }, { collection: 'documentvaultduplicatefeedback', versionKey: false })),
   Group: mongoose.model('DocumentVaultGroup', group),
   Scan: mongoose.model('DocumentVaultScan', scan),
   Queue: mongoose.model('DocumentVaultQueue', queue),

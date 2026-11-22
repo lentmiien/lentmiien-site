@@ -6,6 +6,7 @@ const logger = require('../../utils/logger');
 const { READ, REVIEW, INTAKE, BUNDLES, sameId, VaultError } = require('./policy');
 const { finishJob, isOperator, filingLocked } = require('./workflow');
 const { mutate, cleanInterruptedUploads, restoreExpiredRedos } = require('./repository');
+const duplicates = require('./duplicates');
 const providers = require('./providers');
 const { VaultReplyError } = require('./content');
 
@@ -82,6 +83,11 @@ class VaultWorker {
         await cleanInterruptedUploads();
         await restoreExpiredRedos();
         this.lastCleanup = this.now();
+        try { await duplicates.recover(); }
+        catch (error) {
+          logger.warning('Document vault duplicate review recovery deferred; check database availability',
+            meta('duplicate-review', { errorName: error.name }));
+        }
       }
       await this.runOne();
     } catch (error) {

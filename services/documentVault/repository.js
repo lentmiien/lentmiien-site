@@ -5,7 +5,7 @@ const User = require('../../models/useraccount');
 const logger = require('../../utils/logger');
 const { MAX_PAGES, MAX_BATCH, INTAKE, PAGE_SIZE, VaultError, validId, sameId } = require('./policy');
 const { enqueue, syncNextJob, canRead, canManage, isFiled, filingLocked, EDIT_WINDOW, restoreExpired } = require('./workflow');
-const { validateScan } = require('./scans');
+const { validateScan, makePreview } = require('./scans');
 
 const missing = () => new VaultError(404, 'Document not found.');
 const operatorScope = id => ({ $or: [{ ownerId: id }, { uploaderId: id }] });
@@ -84,6 +84,7 @@ async function upload(actorId, ownerId, viewers, files, uploadKey) {
   function previousUpload(previous) {
     if (previous?.uploadDigest !== uploadDigest) throw new VaultError(409, 'This form was used for a different batch. Open a new upload form.');
     if (previous.state !== 'ready') throw new VaultError(409, 'This upload is still being received. Try again shortly.');
+    if (!previous.pages.length) throw new VaultError(409, 'This batch was deleted. Open a new upload form.');
     return String(previous.pages[0]._id);
   }
   const previous = await lookup();
@@ -92,8 +93,10 @@ async function upload(actorId, ownerId, viewers, files, uploadKey) {
     throw new VaultError(429, 'Your intake queue is full. Try again after some batches have finished.');
   }
   const group = new Group({ uploaderId: actorId, ownerId, viewerIds, uploadKey, uploadDigest });
+  const previews = [];
   for (const file of files) {
     const filename = await validateScan(file);
+    previews.push(await makePreview(file.buffer));
     group.pages.push({ filename });
     enqueue(group, 'ocr', actorId, group.pages.at(-1)._id, true, INTAKE);
   }
@@ -104,7 +107,7 @@ async function upload(actorId, ownerId, viewers, files, uploadKey) {
   }
   try {
     await Scan.insertMany(group.pages.map((page, index) => ({
-      _id: page._id, groupId: group._id, mime: files[index].mimetype, bytes: files[index].buffer,
+      _id: page._id, groupId: group._id, mime: files[index].mimetype, preview: previews[index], bytes: files[index].buffer,
     })));
     // Only this atomic publication makes the entire batch visible and runnable.
     const published = await Group.updateOne({ _id: group._id, state: 'uploading' },
@@ -172,7 +175,7 @@ async function list(section, userId, { q = '', offset = 0, filters = {} } = {}) 
   const rows = await Group.aggregate([...pipeline,
     { $sort: { _id: archive ? -1 : 1, position: 1 } }, { $skip: offset }, { $limit: PAGE_SIZE + 1 },
     { $project: { _id: '$pages._id', groupId: '$_id', position: 1, title: '$pages.title', filename: '$pages.filename', date: '$pages.documentDate',
-      description: '$pages.description', tags: '$pages.tags', state: stateProjection, issue: '$pages.issue', failedStage: '$pages.failedStage',
+      description: '$pages.description', tags: '$pages.tags', duplicateStatus: '$pages.duplicateStatus', state: stateProjection, issue: '$pages.issue', failedStage: '$pages.failedStage',
       summaryState: 1, totalAmount: '$pages.totalAmount', currency: '$pages.currency', physical: '$pages.physical' } },
   ]).option(options);
   return { rows: rows.slice(0, PAGE_SIZE), more: rows.length > PAGE_SIZE };
@@ -200,11 +203,29 @@ async function detail(pageId, userId, review = false) {
     ] : []),
   };
 }
-async function image(pageId, userId) {
+const previewJobs = new Map();
+async function image(pageId, userId, preview = false) {
   const group = await Group.findOne(pageScope(pageId, userId)).select('_id').lean();
   if (!group) throw missing();
-  const scan = await Scan.findOne({ _id: pageId, groupId: group._id }).select('+bytes');
-  if (!scan) throw new Error('Missing archived scan.');
-  return scan;
+  const filter = { _id: pageId, groupId: group._id };
+  if (!preview) {
+    const scan = await Scan.findOne(filter).select('+bytes');
+    if (!scan) throw new Error('Missing archived scan.');
+    return scan;
+  }
+  const cached = await Scan.findOne(filter).select('preview');
+  if (cached?.preview) return { mime: 'image/jpeg', bytes: cached.preview };
+  if (previewJobs.has(pageId)) return previewJobs.get(pageId);
+  if (previewJobs.size >= 4) throw new VaultError(429, 'Preview generation is busy. Refresh in a moment.');
+  const generate = async () => {
+    const scan = await Scan.findOne(filter).select('+bytes');
+    if (!scan) throw new Error('Missing archived scan.');
+    const bytes = await makePreview(scan.bytes);
+    await Scan.updateOne(filter, { $set: { preview: bytes } });
+    return { mime: 'image/jpeg', bytes };
+  };
+  previewJobs.set(pageId, generate());
+  try { return await previewJobs.get(pageId); }
+  finally { previewJobs.delete(pageId); }
 }
 module.exports = { upload, directory, list, detail, image, mutate, pageScope, cleanInterruptedUploads, restoreExpiredRedos };

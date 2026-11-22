@@ -80,6 +80,10 @@ function reviewPage(group, page, actorId, revision, fields, summaryEdit) {
   const changed = fields.description !== page.description;
   page.set(fields);
   page.beforeRedo = undefined;
+  page.duplicateReviewedAt = new Date();
+  page.duplicateThrough = undefined;
+  page.duplicateAfter = undefined;
+  page.duplicateStatus = 'checking';
   page.state = 'approved';
   page.revision++;
   if (summaryEdit) {
@@ -188,4 +192,4 @@ function finishJob(group, id, outcome, result) {
   syncNextJob(group);
 }
 
-module.exports = { EDIT_WINDOW, restoreExpired, filingLocked, isFiled, isOperator, canManage, canRead, enqueue, syncNextJob, reviewPage, editLocation, redoPage, redoGroup, finishJob };
+module.exports = { refreshSummary, EDIT_WINDOW, restoreExpired, filingLocked, isFiled, isOperator, canManage, canRead, enqueue, syncNextJob, reviewPage, editLocation, redoPage, redoGroup, finishJob };

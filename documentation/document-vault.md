@@ -23,3 +23,13 @@ Run the standalone MongoDB integration coverage with `DOCUMENT_VAULT_TEST_MONGO_
 Review suggests the document year, the owner’s uppercase name as a folder prefix, and a group label of **Other**. With **Invoice** enabled, the suggested group is Q1–Q4 from the document month. Changing the date or Invoice switch updates untouched suggestions. Choose **Use Other** or type over any suggestion. Filed location corrections use the saved values.
 
 Filed pages lock 90 elapsed days after their upload timestamp. This covers location edits, page redos and changes to a filed group description. Initial filing remains available for older uploads still awaiting their first review. If a new redo is unfinished at expiry, the vault restores its last filed data. A redo already in progress before this update has no such checkpoint; finish reviewing it within its original upload window. Insurance can continue processing a filed invoice independently after the lock.
+
+Page previews are private JPEGs fitted within 1200 × 1600 pixels. New uploads save the preview alongside the original. Older scans generate it on first preview. Full-size links, model inputs and Insurance scan downloads use the original bytes.
+
+## Duplicate review
+
+Saving a review checks earlier reviewed pages for the same owner and document date, including existing archive entries. Invoices match other invoices with the same recorded amount. Other pages match at 85% OCR overlap or higher, using multiset Sørensen–Dice similarity on adjacent Unicode characters after NFKC normalization, case folding to lowercase and removal of spaces and punctuation. Missing dates, invoice amounts or usable OCR cannot establish their respective matches.
+
+Open **Duplicate review** to compare each flagged page with an earlier match. The owner or a named viewer with review capability must have access to both pages. Marking a pair unique advances to any remaining matches. Confirming deletion removes the newly reviewed page, its private images and its Insurance reference. The existing filed-page deletion deadline applies. Insurance waits until the check and any duplicate review finish. Existing filed documents serve as comparison sources without a retroactive review queue.
+
+The duplicate review page shows aggregate OCR comparison counts and overlap statistics across the vault. Its feedback collection stores the unrounded percentage and unique/duplicate outcome under an independent row ID. It contains no user, page or scan references. Invoice decisions do not contribute OCR samples. Page decisions use session CSRF protection and revision checks. Interrupted checks and feedback or scan cleanup resume during worker maintenance.

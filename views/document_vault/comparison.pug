@@ -1,0 +1,36 @@
+extends ../document_vault_layout
+
+block content
+  mixin scan(id, label, title)
+    section.panel.scan-panel
+      h2= label
+      a(href=base + '/pages/' + id)= title || 'Document details'
+      .scan-frame
+        a(href=base + '/pages/' + id + '/image', target='_blank', rel='noreferrer')
+          img(src=base + '/pages/' + id + '/preview', alt=label + ' — open full size')
+  header.section-head
+    a(href=base + '/duplicates') Duplicate review
+    h1 Compare documents
+    if match && !match.restricted
+      p= match.score == null ? 'Invoice match · same owner, date and total (' + page.documentDate + ', ' + page.totalAmount + ')' : 'Same owner and date · OCR overlap ' + match.score.toFixed(2) + '%'
+  if match && match.restricted
+    p.banner.warn The owner can review this match. Both documents must be accessible to compare them.
+  else
+    .document-layout
+      +scan(page._id, 'Newly reviewed page', page.title)
+      if match
+        +scan(match.id, 'Earlier document', match.title)
+    if !match
+      p.banner The earlier document no longer matches. You can clear the flag.
+    form.panel(method='post', action=base + '/duplicates/' + page._id)
+      input(type='hidden', name='_csrf', value=csrfToken)
+      input(type='hidden', name='revision', value=page.revision)
+      input(type='hidden', name='match', value=match ? match.id + '/' + match.revision : '')
+      button.primary(type='submit', name='outcome', value='unique')= match ? 'Mark unique against this match' : 'Keep as unique'
+      if match && !locked
+        details
+          summary Delete as duplicate
+          p Permanently delete the newly reviewed page and its scan. The earlier document stays in the vault.
+          button.secondary(type='submit', name='outcome', value='duplicate') Confirm deletion of newly reviewed page
+      if locked
+        p Filed document locked · 90 days since upload.

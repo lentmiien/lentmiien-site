@@ -36,4 +36,9 @@ async function validateScan(file) {
   }
   return path.basename(file.originalname).replace(/[\x00-\x1f\x7f]/gu, '').slice(0, 200) || 'Scan';
 }
-module.exports = { validateScan };
+function makePreview(bytes) {
+  return sharp(bytes, { limitInputPixels: MAX_PIXELS }).timeout({ seconds: 15 }).autoOrient()
+    .resize({ width: 1200, height: 1600, fit: 'inside', withoutEnlargement: true })
+    .flatten({ background: '#fff' }).jpeg({ quality: 65, mozjpeg: true }).toBuffer();
+}
+module.exports = { validateScan, makePreview };

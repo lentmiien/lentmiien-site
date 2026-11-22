@@ -13,6 +13,8 @@ const queue = require('../services/documentVault/worker');
 const workflow = require('../services/documentVault/workflow');
 const { reviewFields, isInvoiceTag, physicalLocation, archiveFilters } = require('../services/documentVault/content');
 
+const duplicates = require('../services/documentVault/duplicates');
+
 const base = '/document-vault';
 const mutationForm = express.urlencoded({ extended: false, limit: '420kb', parameterLimit: 18 });
 const smallForm = express.urlencoded({ extended: false, limit: '2kb', parameterLimit: 4 });
@@ -112,8 +114,8 @@ function createRouter({ repository = repo, queueService = queue, roleModel = Rol
     const detail = await repository.detail(req.params.id, req.user._id, res.locals.review);
     res.render('document_vault/page', { ...detail, isInvoiceTag, section: detail.filed ? 'archive' : detail.page.state === 'review' ? 'review' : 'queue' });
   });
-  router.get('/pages/:id/image', async (req, res) => {
-    const scan = await repository.image(req.params.id, req.user._id);
+  router.get(['/pages/:id/image', '/pages/:id/preview'], async (req, res) => {
+    const scan = await repository.image(req.params.id, req.user._id, req.path.endsWith('/preview'));
     res.set({ 'Content-Type': scan.mime, 'Content-Disposition': 'inline; filename="scan.' + scan.mime.split('/')[1] + '"', 'Content-Security-Policy': "default-src 'none'; sandbox" });
     res.send(scan.bytes);
   });
@@ -131,6 +133,23 @@ function createRouter({ repository = repo, queueService = queue, roleModel = Rol
     res.redirect(303, base + '/pages/' + req.params.id + '?notice=location');
   });
 
+  router.use('/duplicates', requireCap(REVIEW), pageThrottle);
+  router.get('/duplicates', async (req, res) => {
+    const offset = integer(req.query.offset ?? '0');
+    if (offset > 100000) throw new VaultError(422, 'Invalid page number.');
+    const data = await duplicates.listing(req.user._id, offset);
+    res.render('document_vault/duplicates', { section: 'duplicates', ...data, offset, pageSize: PAGE_SIZE, threshold: duplicates.THRESHOLD });
+  });
+  router.get('/duplicates/:id', async (req, res) => {
+    const { group, page, match } = await duplicates.comparison(req.params.id, req.user._id);
+    res.render('document_vault/comparison', { section: 'duplicates', page, match, locked: workflow.filingLocked(group, page) });
+  });
+  router.post('/duplicates/:id', smallForm, csrf.requireToken, async (req, res) => {
+    allowFields(req.body, ['revision', 'match', 'outcome']);
+    await duplicates.decide(req.params.id, req.user._id, req.body);
+    res.redirect(303, base + '/duplicates');
+  });
+
   router.use('/pages/:id', requireCap(REVIEW), pageThrottle);
   async function changePage(req, change) {
     const { id } = req.params;
@@ -142,7 +161,13 @@ function createRouter({ repository = repo, queueService = queue, roleModel = Rol
     const fields = reviewFields(req.body);
     const summaryEdit = req.body.groupDescription
       ? { text: req.body.groupDescription, revision: integer(req.body.groupRevision) } : null;
-    await changePage(req, (group, page, actor) => workflow.reviewPage(group, page, actor, integer(req.body.revision), fields, summaryEdit));
+    const saved = await changePage(req, (group, page, actor) => workflow.reviewPage(group, page, actor, integer(req.body.revision), fields, summaryEdit));
+    try { await duplicates.check(saved, saved.pages.id(req.params.id)); }
+    catch (error) {
+      logger.warning('Document vault review saved; duplicate check deferred to worker recovery', {
+        category: 'document_vault', metadata: { errorName: error.name },
+      });
+    }
     res.redirect(303, base + '/review/next?notice=filed');
   });
   router.post('/pages/:id/redo', smallForm, csrf.requireToken, async (req, res) => {

@@ -79,7 +79,7 @@ suite('Document vault with standalone MongoDB', () => {
   beforeEach(async () => {
     calls = [];
     responseMode = 'ok';
-    await Promise.all([Group.deleteMany({}), Scan.deleteMany({}), Queue.deleteMany({}), AppSetting.deleteMany({}), require('../../models/insurance_claim').deleteMany({})]);
+    await Promise.all([require('../../models/document_vault').DuplicateFeedback.deleteMany({}), Group.deleteMany({}), Scan.deleteMany({}), Queue.deleteMany({}), AppSetting.deleteMany({}), require('../../models/insurance_claim').deleteMany({})]);
   });
   afterAll(async () => {
     await Promise.all([close(site), close(gateway)]);
@@ -261,6 +261,104 @@ suite('Document vault with standalone MongoDB', () => {
     const html = await (await request('owner', target)).text();
     expect(html).toContain('Filed document locked');
     expect(html).not.toContain('Edit storage location');
+  });
+
+  test('serves private smaller previews for new and previously uploaded scans and preserves original bytes', async () => {
+    const group = await upload(1);
+    const id = group.pages[0]._id;
+    expect((await Scan.findById(id).select('preview')).preview).toBeInstanceOf(Buffer);
+    const original = await sharp({ create: { width: 2400, height: 3200, channels: 3, background: 'white' } }).jpeg().toBuffer();
+    await Scan.updateOne({ _id: id }, { $set: { bytes: original, mime: 'image/jpeg' }, $unset: { preview: 1 } });
+    expect((await request('viewer', '/pages/' + id + '/preview')).status).toBe(404);
+    const response = await request('owner', '/pages/' + id + '/preview');
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    const bytes = Buffer.from(await response.arrayBuffer());
+    expect(await sharp(bytes).metadata()).toMatchObject({ width: 1200, height: 1600, format: 'jpeg' });
+    expect(bytes.length).toBeLessThan(original.length);
+    expect((await Scan.findById(id).select('preview')).preview.equals(bytes)).toBe(true);
+    expect(Buffer.from(await (await request('owner', '/pages/' + id + '/image')).arrayBuffer()).equals(original)).toBe(true);
+  });
+
+  test('excludes unrelated dates, owners, amounts, tags, drafts and low OCR overlap', async () => {
+    const duplicates = require('../../services/documentVault/duplicates');
+    const base = { ownerId: users.owner._id, uploaderId: users.clerk._id, state: 'ready', summaryState: 'ready' };
+    const page = { ...answer, state: 'stored', filename: 'scan.png', ocrText: '領収証 入場料金' };
+    const invoice = { ...page, tags: ['invoice'] };
+    await Group.create({ ...base, pages: [
+      { ...invoice, totalAmount: page.totalAmount + 1 },
+      { ...invoice, documentDate: '2026-01-01' }, { ...invoice, state: 'review' },
+      { ...page, ocrText: 'entirely different text' },
+    ] });
+    await Group.create({ ...base, ownerId: users.viewer._id, pages: [page, invoice] });
+    const group = await Group.create({ ...base, pages: [invoice, page].map(p => ({
+      ...p, duplicateStatus: 'checking', duplicateReviewedAt: new Date(),
+    })) });
+    await duplicates.recover();
+    expect((await Group.findById(group._id)).pages.every(p => !p.duplicateStatus)).toBe(true);
+  });
+
+  test('concurrent matching reviews retain an earlier copy and preserve siblings after deletion', async () => {
+    const duplicates = require('../../services/documentVault/duplicates');
+    const base = { ownerId: users.owner._id, uploaderId: users.clerk._id, state: 'ready', summaryState: 'ready' };
+    const first = { ...answer, tags: ['invoice'], state: 'stored', filename: 'one.png',
+      duplicateStatus: 'checking', duplicateReviewedAt: new Date() };
+    const group = await Group.create({ ...base, pages: [first, first, { ...answer, state: 'stored', filename: 'three.png' }] });
+    const [a, b] = group.pages;
+    await Promise.all([duplicates.check(group, a), duplicates.check(group, b)]);
+    const actor = users.owner._id;
+    expect((await duplicates.comparison(String(a._id), actor)).match).toBeNull();
+    expect((await duplicates.comparison(String(b._id), actor)).match.id).toBe(String(a._id));
+    await duplicates.decide(String(b._id), actor, { outcome: 'duplicate', match: a._id + '/0', revision: '0' });
+    await duplicates.decide(String(a._id), actor, { outcome: 'unique', match: '', revision: '0' });
+    const kept = await Group.findById(group._id);
+    expect(kept.pages.map(p => p.filename)).toEqual(['one.png', 'three.png']);
+    expect(kept.jobs.map(job => job.kind)).toEqual(['group']);
+  });
+
+  test.each([true, false])('checks reviewed duplicates, scopes comparisons and records only OCR decisions (invoice=%s)', async invoice => {
+    const { DuplicateFeedback } = require('../../models/document_vault');
+    const insurance = require('../../services/insuranceService');
+    const Claim = require('../../models/insurance_claim');
+    const base = { ownerId: users.owner._id, uploaderId: users.clerk._id, state: 'ready', summaryState: 'ready' };
+    const original = { ...answer, filename: 'original.png', title: 'Earlier page', ocrText: '令和六年 七月二日 診療費を受け取りました',
+      tags: invoice ? ['invoice'] : [], state: 'stored' };
+    const source = await Group.create({ ...base, pages: [original, original] });
+    const fresh = await Group.create({ ...base, viewerIds: [users.viewer._id], pages: [{ ...original, state: 'review' }] });
+    const id = fresh.pages[0]._id;
+    const path = '/duplicates/' + id;
+    await Scan.create({ _id: id, groupId: fresh._id, mime: 'image/png', bytes: scan });
+    expect((await filePage(fresh.pages[0], invoice ? { invoice: 'on' } : {})).status).toBe(303);
+    const flagged = (await Group.findById(fresh._id)).pages[0];
+    expect(flagged.duplicateStatus).toBe('possible_duplicate');
+    expect((await request('admin', path)).status).toBe(404);
+    expect(await (await request('viewer', path)).text()).not.toContain(String(source.pages[0]._id));
+    const body = new URLSearchParams({ revision: String(flagged.revision), outcome: 'unique', match: source.pages[0]._id + '/0' });
+    expect((await request('viewer', path, body)).status).toBe(403);
+    expect((await request('owner', path, body, false)).status).toBe(403);
+    if (invoice) {
+      await insurance.syncChunk();
+      expect(await Claim.exists({ _id: id })).toBeNull();
+      expect((await insurance.list(users.viewer._id, { view: 'unreviewed', offset: 0 })).rows).toHaveLength(0);
+    }
+    expect(await (await request('owner', path)).text()).toContain('Earlier page');
+    expect((await request('owner', path, body)).status).toBe(303);
+    expect((await request('owner', path, body)).status).toBe(409);
+    body.set('match', source.pages[1]._id + '/0');
+    body.set('revision', String(flagged.revision + 1));
+    body.set('outcome', invoice ? 'unique' : 'duplicate');
+    expect((await request('owner', path, body)).status).toBe(303);
+    if (invoice) {
+      await insurance.syncChunk();
+      expect(await Claim.exists({ _id: id })).toBeTruthy();
+      expect(await DuplicateFeedback.countDocuments()).toBe(0);
+    } else {
+      expect(await Scan.exists({ _id: id })).toBeNull();
+      expect(await Group.exists({ _id: fresh._id })).toBeNull();
+      expect((await Group.findById(source._id)).pages).toHaveLength(2);
+      const feedback = await DuplicateFeedback.find().select('-_id').sort({ outcome: 1 }).lean();
+      expect(feedback).toEqual([{ overlap: 100, outcome: 'duplicate' }, { overlap: 100, outcome: 'unique' }]);
+      expect(await (await request('owner', '/duplicates')).text()).toContain('average 100.0%');
+    }
   });
 
   test('Insurance monthly totals cover all visible invoices across results pages', async () => {

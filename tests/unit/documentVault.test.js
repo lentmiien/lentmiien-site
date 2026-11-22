@@ -215,3 +215,15 @@ test('a redo left in review at the upload deadline restores the previously filed
     expect(group.jobs).toHaveLength(0);
   } finally { clock.mockRestore(); }
 });
+
+test('OCR overlap normalizes Japanese spacing and weights repeated pairs at the 85 percent boundary', () => {
+  const { overlap, characterPairs, THRESHOLD } = require('../../services/documentVault/duplicates');
+  const score = (a, b) => overlap(characterPairs(a), characterPairs(b));
+  expect(score('領　収　証：ＡＢＣ', '領収証abc')).toBe(100);
+  expect(score('   ', '   ')).toBe(0);
+  expect(score('領', '証')).toBe(0);
+  expect(score('aaaa', 'aa')).toBe(50);
+  const left = 'abcdefghijklmnopqrstu';
+  expect(score(left, 'abcdefghijklmnopqrXYZ')).toBe(THRESHOLD);
+  expect(score(left, 'abcdefghijklmnopqWXYZ')).toBeLessThan(THRESHOLD);
+});

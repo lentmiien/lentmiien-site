@@ -30,6 +30,11 @@ block content
     p.page-count Page #{position} of #{pageCount}
     h1= page.title || page.filename
     p= filed ? 'Filed document' : stateLabel(Object.assign({}, page, {summaryState}))
+  if page.duplicateStatus === 'possible_duplicate'
+    .banner.warn
+      | Possible duplicate.#{' '}
+      if review && filed
+        a(href=base + '/duplicates/' + page._id) Compare documents
   if locked
     p.banner Filed document locked · 90 days since upload.
   if page.issue || summaryIssue
@@ -43,7 +48,7 @@ block content
         h2 Scan
         a(href=target + '/image', target='_blank', rel='noreferrer') Open full size
       .scan-frame
-        img(src=target + '/image', alt='Scanned page ' + position)
+        img(src=target + '/preview', alt='Scanned page ' + position)
       details.source
         summary Original OCR text
         pre= page.ocrText == null ? 'OCR has not finished.' : page.ocrText
