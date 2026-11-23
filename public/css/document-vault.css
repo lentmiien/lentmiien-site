@@ -140,4 +140,4 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .insurance .claim-section, .insurance .claim-notes { margin: 1.5rem 0; }
 .insurance .claim-section h2 { margin-bottom: .65rem; }
 .insurance .plan-editor, .insurance .claim-notes { max-width: 42rem; }
-.insurance .claim-facts dd, .insurance .claim-text { white-space: pre-wrap; }
+.insurance .claim-text { white-space: pre-wrap; }

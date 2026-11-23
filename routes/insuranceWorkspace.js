@@ -1,4 +1,5 @@
 const express = require('express');
+const { renderMarkdownSafe } = require('../utils/chat5Markdown');
 const { z } = require('zod');
 const service = require('../services/insuranceBatches');
 const legacy = require('../services/insuranceLegacyNotes');
@@ -55,7 +56,7 @@ module.exports = function workspace({ csrf, sendZip, limit }) {
       next();
     }];
   const admin = [(req, res, next) => req.user.type_user === 'admin' ? next() : next(new VaultError(403, 'Administrator access required.')), cap(manage)];
-  const render = (res, view, data) => res.render('insurance', { view, pageSize: PAGE_SIZE, ...data });
+  const render = (res, view, data) => res.render('insurance', { view, pageSize: PAGE_SIZE, renderMarkdownSafe, ...data });
   router.param('id', (req, res, next, value) => { parse(id, value); next(); });
   router.get('/plans', async (req, res) => {
     const start = parse(offset, req.query.offset);

@@ -25,10 +25,10 @@ mixin planFacts(p, reveal)
       dd= [p.monthlyCost,p.currency].filter(Boolean).join(' ')
     if p.coverage
       dt Coverage
-      dd= p.coverage
+      dd!= renderMarkdownSafe(p.coverage)
     if p.instructions
       dt How to claim
-      dd= p.instructions
+      dd!= renderMarkdownSafe(p.instructions)
     if p.claimUrl
       dt Claim website
       dd

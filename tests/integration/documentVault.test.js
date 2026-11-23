@@ -409,8 +409,8 @@ suite('Document vault with standalone MongoDB', () => {
       await Scan.insertMany(doc.pages.map(p => ({ _id: p._id, groupId: doc._id, mime: 'image/png', bytes: scan })));
     }
     const plan = { name: 'Health cover', company: 'Example Health', ownerId: String(users.owner._id),
-      startDate: '2025-01-01', monthlyCost: '4500', currency: 'JPY', coverage: 'Hospital stays',
-      number: 'POL-987654', instructions: 'Upload scans and complete the online form.', claimUrl: 'https://example.invalid/claims' };
+      startDate: '2025-01-01', monthlyCost: '4500', currency: 'JPY', coverage: '**Hospital stays**',
+      number: 'POL-987654', instructions: '1. Upload scans\n2. Complete the online form.', claimUrl: 'https://example.invalid/claims' };
     expect((await get('viewer', '/plans')).status).toBe(403);
     expect((await post('delegate', '/plans', plan)).status).toBe(403);
     expect((await post('admin', '/plans', plan, false)).status).toBe(403);
@@ -425,6 +425,12 @@ suite('Document vault with standalone MongoDB', () => {
       expect(html).toContain('Health cover');
       expect(html).not.toContain(plan.number);
     }
+    const assertMarkdown = html => {
+      const facts = require('jsdom').JSDOM.fragment(html).querySelector('.claim-facts');
+      expect(facts.querySelector('strong').textContent).toBe('Hospital stays');
+      expect(Array.from(facts.querySelectorAll('ol li'), li => li.textContent)).toEqual(['Upload scans', 'Complete the online form.']);
+    };
+    assertMarkdown(await (await get('delegate', planPath)).text());
     expect(await (await get('delegate', planPath + '/number')).text()).toContain(plan.number);
     expect((await get('viewer', planPath + '/number')).status).toBe(403);
     await service.transition(users.delegate._id, ids, 'unreviewed', 'processing');
@@ -445,6 +451,7 @@ suite('Document vault with standalone MongoDB', () => {
     expect(processing.rows.map(p => String(p._id))).toEqual([ids[1]]);
     expect((await change({ action: 'add', kind: 'support', pageId: attachment })).status).toBe(303);
     expect((await change({ action: 'details', notes: 'Prepare claim', planId })).status).toBe(303);
+    assertMarkdown(await (await get('delegate', path)).text());
     expect((await post('delegate', path, { action: 'discard', revision: '0' })).status).toBe(409);
     expect((await change({ action: 'submit', planId: '', submittedOn: '2026-11-22', notes: '' })).status).toBe(422);
     expect((await change({ action: 'submit', planId, submittedOn: '2026-11-22', notes: 'Sent via portal' })).status).toBe(303);
@@ -454,6 +461,7 @@ suite('Document vault with standalone MongoDB', () => {
     expect((await change({ action: 'followUp', notes: 'Paid in full' })).status).toBe(303);
     const history = await (await get('delegate', path)).text();
     for (const value of ['Health cover', 'Medical referral', 'Paid in full', 'Sent via portal']) expect(history).toContain(value);
+    assertMarkdown(history);
     expect(history).not.toContain(plan.number);
     expect(history).not.toContain('Replacement plan');
     expect(await (await get('delegate', path + '/number')).text()).toContain(plan.number);
