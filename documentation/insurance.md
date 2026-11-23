@@ -1,6 +1,6 @@
 # Insurance
 
-Open **Insurance** at `/insurance/`. Unreviewed shows stored Document Vault invoices once duplicate review clears. Move eligible invoices to Processing. Choose No further action or Expired to remove an invoice from the active queues.
+Open **Insurance** at `/insurance/`. Unreviewed shows stored Document Vault invoices once duplicate review clears. Move eligible invoices to Processing. In Unreviewed or Processing, choose **No further action** if an invoice does not need a claim, or **Expired** if it is too old to claim.
 
 ## Plan library
 
@@ -18,6 +18,6 @@ Existing unreviewed and processing items continue in their queues. Previously co
 
 Insurance is a logged-in feature for sensitive family records. Existing invoice triage requires vault read capability and current vault owner/viewer access. The plan library is household-wide, with `insurance.plans.read` for admin and family accounts and `insurance.plans.manage` for administrators. Batch preparation, submission and follow-up require admin or family account type, `insurance.batches.manage`, and owner or viewer access. There is no administrative override for source documents or batches. A delegate must have access to **every** attached source group to access a batch or its notes. Drafts with no invoices retain an invoice group for authorization. Invoices must have the batch owner. Supporting documents may also come from other owners if shared with both the policyholder and the preparer. External supporting documents retain their vault access requirements. Invoice eligibility is checked again at submission.
 
-Private MongoDB collections `insuranceclaims`, `insuranceplans` and `insurancebatches` are excluded from the generic database viewer. The importer only creates missing invoice references. Explicit batches store membership in one document with a unique invoice membership index. Membership determines whether a processing invoice belongs to a draft, was submitted, or was subsequently expired. Removing draft membership returns the invoice to Processing. Revision-checked atomic writes support standalone MongoDB. Back up all three collections with the vault.
+Private MongoDB collections `insuranceclaims`, `insuranceplans` and `insurancebatches` are excluded from the generic database viewer. The importer only creates missing invoice references. Explicit batches store membership in one document with a unique invoice membership index. Membership determines whether a processing invoice belongs to a draft, was submitted, or was subsequently dismissed or marked expired. Removing draft membership returns the invoice to Processing. Revision-checked atomic writes support standalone MongoDB. Back up all three collections with the vault.
 
 Browser mutations use bounded, rate-limited CSRF-protected POSTs. Views use escaped content, private no-store responses and no analytics. Claim instructions accept HTTPS links and the server does not contact insurers. Each draft holds up to 128 scans, with paginated document pickers. Content-free operational errors go through the application logger.

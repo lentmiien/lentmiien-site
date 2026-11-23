@@ -110,7 +110,7 @@ async function list(actor, { view, date, owner, offset, includeSummary = false, 
   return { rows, more: found.length > size, summary };
 }
 
-const transitions = { unreviewed: ['processing', 'dismissed', 'expired'], processing: ['expired'] };
+const transitions = { unreviewed: ['processing', 'dismissed', 'expired'], processing: ['dismissed', 'expired'] };
 async function transition(actor, ids, prior, status) {
   if (!transitions[prior]?.includes(status)) throw new VaultError(422, 'Choose an available action for this invoice.');
   const rows = await Group.aggregate(invoices(actor, { ids })).option(queryLimit);
@@ -119,7 +119,7 @@ async function transition(actor, ids, prior, status) {
   if (prior === 'unreviewed') await register(rows);
   if (prior === 'processing') {
     await Batch.init();
-    await Batch.create({ status: 'expired', ownerId: rows[0].ownerId, invoiceIds: ids });
+    await Batch.create({ status, ownerId: rows[0].ownerId, invoiceIds: ids });
     return;
   }
   const changes = { status, updatedBy: actor };

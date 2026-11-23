@@ -10,7 +10,7 @@ const plan = new Schema({ ownerId: { type: id, required: true }, ...planFields }
 plan.index({ ownerId: 1, name: 1 });
 const item = new Schema({ pageId: id, groupId: id, ownerId: id, title: String, date: String, amount: Number, currency: String }, { _id: false });
 const batch = new Schema({
-  ownerId: { type: id, required: true }, status: { type: String, enum: ['draft', 'submitted', 'expired', 'legacy'], required: true },
+  ownerId: { type: id, required: true }, status: { type: String, enum: ['draft', 'submitted', 'dismissed', 'expired', 'legacy'], required: true },
   invoiceIds: [id], supportingIds: [id], groupIds: [id], anchorGroupId: id, externalGroupIds: [id], planId: id,
   invoices: [item], supporting: [item], plan: new Schema(planFields, { _id: false }),
   notes: String, followUp: String, submittedOn: String, legacyKey: String,

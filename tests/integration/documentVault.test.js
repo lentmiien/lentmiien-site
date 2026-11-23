@@ -513,7 +513,9 @@ suite('Document vault with standalone MongoDB', () => {
     expect((await act('reader', [0], 'unreviewed', 'processing', null, false)).status).toBe(403);
     expect((await act('reader', [0], 'unreviewed', 'completed', '2026-11-20')).status).toBe(422);
     expect((await act('reader', [0, 1, 2], 'unreviewed', 'processing')).status).toBe(303);
-    expect((await act('owner', [3], 'unreviewed', 'expired')).status).toBe(303);
+    expect((await act('owner', [3], 'unreviewed', 'processing')).status).toBe(303);
+    expect((await act('reader', [3], 'processing', 'dismissed')).status).toBe(303);
+    expect(await require('../../models/insurance_batch').Batch.exists({ invoiceIds: ids[3], status: 'dismissed' })).toBeTruthy();
     expect((await act('reader', [4], 'unreviewed', 'dismissed')).status).toBe(303);
     expect((await act('reader', [2], 'processing', 'expired')).status).toBe(303);
     expect((await act('reader', [2], 'processing', 'completed', '2026-11-20')).status).toBe(422);
@@ -526,6 +528,7 @@ suite('Document vault with standalone MongoDB', () => {
       expect(summary.querySelector('strong').textContent).toBe('2 invoices');
       expect(summary.querySelector('dt').textContent).toBe('2026-08');
       expect(summary.querySelector('dd').textContent).toBe('1,000 JPY');
+      expect(doc.querySelectorAll('button[value="dismissed"]')).toHaveLength(2);
       expect(doc.querySelector('#submit-claims button').disabled).toBe(true);
       doc.querySelector('[data-select-all] input').click();
       expect(doc.querySelectorAll('[name="ids"]:checked')).toHaveLength(2);

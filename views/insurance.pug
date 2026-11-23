@@ -110,7 +110,7 @@ html(lang='en')
                           input(type='hidden', name='from', value=view)
                           if view === 'unreviewed'
                             button.primary(type='submit', name='status', value='processing') Insurance processing
-                            button.secondary(type='submit', name='status', value='dismissed') No further action
+                          button.secondary(type='submit', name='status', value='dismissed') No further action
                           button.secondary(type='submit', name='status', value='expired') Expired
         if view === 'batch' && legacyNotes
           form.fields.claim-notes(method='post', action='/insurance/legacy-notes')
