@@ -16,6 +16,7 @@ const {
   getMinuteLoggerNamedLocationAnalytics,
   parseBatteryPercent,
   parseBatteryTempC,
+  nameIgnoredMinuteLoggerLocationGroup,
   updateMinuteLoggerLocationGroupIgnoredStatus,
   updateMinuteLoggerLocationGroupSettings,
 } = require('../services/minuteLoggerService');
@@ -141,12 +142,6 @@ function parseFeedback(query = {}) {
     status: status === 'success' ? 'success' : 'error',
     message,
   };
-}
-
-function redirectWithFeedback(res, status, message, path = '/admin/minute-logger') {
-  return res.redirect(
-    `${path}?status=${encodeURIComponent(status)}&message=${encodeURIComponent(message)}`
-  );
 }
 
 function clamp(value, min, max) {
@@ -579,10 +574,14 @@ function mapIgnoredLocationGroup(row = {}) {
 }
 
 function buildIgnoredLocationGroupsViewModel(data = {}, options = {}) {
-  const groups = (Array.isArray(data.groups) ? data.groups : []).map(mapIgnoredLocationGroup);
+  const groups = (Array.isArray(data.groups) ? data.groups : [])
+    .map(mapIgnoredLocationGroup)
+    .sort((left, right) => right.minutes - left.minutes);
 
   return {
     pageTitle: 'Minute Logger Ignored Location Groups',
+    gtag: false,
+    reviewIndex: Math.min(reviewPosition(options.position), groups.length - 1),
     feedback: options.feedback || null,
     loadError: options.loadError || null,
     generatedAtDisplay: formatDateTime(data.generatedAt || new Date()),
@@ -1393,12 +1392,12 @@ exports.dashboard = async (req, res) => {
 const unnamedGroupsPath = '/admin/minute-logger/unnamed';
 
 function reviewPosition(value) {
-  return typeof value === 'string' && /^\d{1,3}$/.test(value) ? Number(value) : 0;
+  return typeof value === 'string' && /^\d{1,9}$/.test(value) ? Number(value) : 0;
 }
 
-function redirectToReview(req, res, status, message) {
+function redirectToReview(req, res, status, message, path = unnamedGroupsPath) {
   const query = new URLSearchParams({ status, message, position: reviewPosition(req.body?.position) });
-  return res.redirect(`${unnamedGroupsPath}?${query}#review`);
+  return res.redirect(`${path}?${query}#review`);
 }
 
 exports.unnamedLocationGroups = async (req, res) => {
@@ -1427,6 +1426,7 @@ exports.ignoredLocationGroups = async (req, res) => {
     const ignoredGroups = await getMinuteLoggerIgnoredLocationGroups();
 
     return res.render('admin_minute_logger_ignored_locations', buildIgnoredLocationGroupsViewModel(ignoredGroups, {
+      position: req.query?.position,
       feedback: parseFeedback(req.query),
     }));
   } catch (error) {
@@ -1490,6 +1490,23 @@ exports.ignoreLocationGroup = async (req, res) => {
   }
 };
 
+exports.nameIgnoredLocationGroup = async (req, res) => {
+  const path = '/admin/minute-logger/ignored';
+  try {
+    await nameIgnoredMinuteLoggerLocationGroup(req.body, { updatedBy: req.user.name });
+    return redirectToReview(req, res, 'success', 'Named location saved.', path);
+  } catch (error) {
+    if (error instanceof MinuteLoggerLocationGroupSettingsError) {
+      return redirectToReview(req, res, 'error', error.message, path);
+    }
+    logger.error('Failed to name ignored minute logger location group', {
+      category: 'minute-logger',
+      metadata: { errorName: error.name },
+    });
+    return redirectToReview(req, res, 'error', 'Unable to save named location.', path);
+  }
+};
+
 exports.unignoreLocationGroup = async (req, res) => {
   const redirectPath = '/admin/minute-logger/ignored';
 
@@ -1509,17 +1526,17 @@ exports.unignoreLocationGroup = async (req, res) => {
       },
     });
 
-    return redirectWithFeedback(res, 'success', 'Location group removed from ignore list.', redirectPath);
+    return redirectToReview(req, res, 'success', 'Location group removed from ignore list.', redirectPath);
   } catch (error) {
     if (error instanceof MinuteLoggerLocationGroupSettingsError) {
-      return redirectWithFeedback(res, 'error', error.message, redirectPath);
+      return redirectToReview(req, res, 'error', error.message, redirectPath);
     }
 
     logger.error('Failed to remove minute logger location group from ignore list', {
       category: 'minute-logger',
       metadata: { error: error.message },
     });
-    return redirectWithFeedback(res, 'error', 'Unable to update ignore list.', redirectPath);
+    return redirectToReview(req, res, 'error', 'Unable to update ignore list.', redirectPath);
   }
 };
 

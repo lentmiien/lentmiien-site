@@ -3,6 +3,9 @@ const router = require('../../routes/minuteLoggerLocationReview');
 const controller = require('../../controllers/minuteLoggerAdminController');
 
 jest.mock('../../controllers/minuteLoggerAdminController', () => ({
+  nameIgnoredLocationGroup: jest.fn((_req, res) => res.sendStatus(204)),
+  unignoreLocationGroup: jest.fn((_req, res) => res.sendStatus(204)),
+  ignoredLocationGroups: jest.fn((_req, res) => res.send(res.locals.csrfToken)),
   unnamedLocationGroups: jest.fn((_req, res) => res.send(res.locals.csrfToken)),
   ignoreLocationGroup: jest.fn((_req, res) => res.sendStatus(204)),
   updateLocationGroupSettings: jest.fn((_req, res) => res.sendStatus(204)),
@@ -27,14 +30,14 @@ beforeAll(async () => {
 });
 afterAll(() => new Promise(resolve => server.close(resolve)));
 
-test('denies review access without the management capability', async () => {
-  const response = await fetch(base + '/unnamed', { headers: { 'test-role': 'family' } });
+test.each(['/unnamed', '/ignored'])('%s denies access without the management capability', async path => {
+  const response = await fetch(base + path, { headers: { 'test-role': 'family' } });
   expect(response.status).toBe(403);
   expect(controller.unnamedLocationGroups).not.toHaveBeenCalled();
 });
 
-test.each(['/location-groups', '/location-groups/ignore'])('%s requires the capability and session CSRF token', async path => {
-  const review = await fetch(base + '/unnamed');
+test.each(['/location-groups', '/location-groups/ignore', '/location-groups/name-ignored', '/location-groups/unignore'])('%s requires the capability and session CSRF token', async path => {
+  const review = await fetch(base + '/ignored');
   expect(review.headers.get('cache-control')).toContain('no-store');
   const body = new URLSearchParams({ _csrf: await review.text() });
   const url = base + path;

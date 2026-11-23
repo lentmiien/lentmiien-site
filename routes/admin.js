@@ -316,11 +316,9 @@ router.post('/device-usage/reward-suggestions', deviceUsageAdminController.saveR
 router.post('/device-usage/reward-suggestions/delete', deviceUsageAdminController.deleteRewardSuggestion);
 router.use('/minute-logger', require('./minuteLoggerLocationReview'));
 router.get('/minute-logger/daily/:dateKey', minuteLoggerAdminController.dailyAnalytics);
-router.get('/minute-logger/ignored', minuteLoggerAdminController.ignoredLocationGroups);
 router.get('/minute-logger/locations', minuteLoggerAdminController.namedLocationAnalytics);
 router.get('/minute-logger/battery', minuteLoggerAdminController.batteryDashboard);
 router.get('/minute-logger', minuteLoggerAdminController.dashboard);
-router.post('/minute-logger/location-groups/unignore', minuteLoggerAdminController.unignoreLocationGroup);
 router.get('/database_usage', controller.database_usage);
 router.post('/chat5-cleanup', controller.cleanup_chat5_databases);
 router.get('/database-viewer', controller.database_viewer_page);

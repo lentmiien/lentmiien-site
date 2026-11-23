@@ -858,8 +858,26 @@ body,
   border-collapse: collapse;
 }
 
-.minute-logger-table--ignored {
-  min-width: 920px;
+.minute-logger-ignored-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  background: var(--surface-2);
+}
+
+.minute-logger-ignored-group summary {
+  padding: 0.35rem 0;
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.minute-logger-ignored-group summary span {
+  float: right;
+  color: var(--text-secondary);
+}
+
+.minute-logger-ignored-group form {
+  margin-top: 0.8rem;
 }
 
 .minute-logger-table th,

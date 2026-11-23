@@ -4,6 +4,9 @@ block styles
   link(rel='stylesheet', href='/css/minute_logger_admin.css')
 
 block content
+  mixin reviewFeedback
+    #review.minute-logger-alert(class=`minute-logger-alert--${feedback.status}`, role='status', tabindex='-1')= feedback.message
+
   -
     const ignoredGroups = Array.isArray(groups) ? groups : [];
 
@@ -12,7 +15,7 @@ block content
       .minute-logger-hero__content
         p.minute-logger-eyebrow Location Groups
         h1.minute-logger-title Ignored Groups
-        p.minute-logger-subtitle Restore an ignored group to make it available for review again.
+        p.minute-logger-subtitle Open a group to name the location or return it to unnamed groups.
         dl.minute-logger-hero__meta
           div
             dt Endpoint
@@ -32,9 +35,6 @@ block content
           a.minute-logger-refresh(href='/admin/minute-logger/locations') Location Analytics
           a.minute-logger-refresh(href='/admin/minute-logger/battery') Battery Tracker
 
-    if feedback
-      .minute-logger-alert(class=`minute-logger-alert--${feedback.status}`)= feedback.message
-
     if loadError
       .minute-logger-alert.minute-logger-alert--error= loadError
     else
@@ -43,38 +43,54 @@ block content
           div
             h2 Ignored Location Groups
         if ignoredGroups.length
-          .minute-logger-table-wrap
-            table.minute-logger-table.minute-logger-table--ignored
-              thead
-                tr
-                  th Group
-                  th Center
-                  th Retained
-                  th Devices
-                  th Packages
-                  th Last Seen
-                  th Ignored At
-                  th Ignored By
-                  th Actions
-              tbody
-                each group in ignoredGroups
-                  tr
-                    td
-                      code= group.groupKey
-                    td
+          .minute-logger-location-list
+            each group, index in ignoredGroups
+              if feedback && index === reviewIndex
+                +reviewFeedback
+              details.minute-logger-ignored-group
+                summary
+                  strong= group.groupKey
+                  span #{group.minutesDisplay} retained
+                dl.minute-logger-location-summary
+                  div
+                    dt Center
+                    dd
                       if group.mapUrl
                         a.minute-logger-location-link(href=group.mapUrl, target='_blank', rel='noopener noreferrer')= group.coordinateDisplay
                       else
                         = group.coordinateDisplay
-                    td= group.minutesDisplay
-                    td= group.deviceCountDisplay
-                    td= group.packageCountDisplay
-                    td= group.lastSeenDisplay
-                    td= group.updatedAtDisplay
-                    td= group.updatedByDisplay
-                    td
-                      form.minute-logger-inline-form(method='post', action='/admin/minute-logger/location-groups/unignore')
-                        input(type='hidden', name='groupKey', value=group.groupKey)
-                        button.minute-logger-location-form__button(type='submit') Remove
+                  div
+                    dt Devices
+                    dd= group.deviceCountDisplay
+                  div
+                    dt Packages
+                    dd= group.packageCountDisplay
+                  div
+                    dt Last seen
+                    dd= group.lastSeenDisplay
+                  div
+                    dt Ignored at
+                    dd= group.updatedAtDisplay
+                  div
+                    dt Ignored by
+                    dd= group.updatedByDisplay
+                form.minute-logger-location-form(method='post', action='/admin/minute-logger/location-groups/name-ignored')
+                  input(type='hidden', name='position', value=index)
+                  input(type='hidden', name='_csrf', value=csrfToken)
+                  input(type='hidden', name='groupKey', value=group.groupKey)
+                  label.minute-logger-location-form__field
+                    span Location name
+                    input(type='text', name='name', maxlength='80', required, pattern='.*\\S.*')
+                  label.minute-logger-location-form__check
+                    input(type='checkbox', name='hideCoordinates', value='on')
+                    span Hide coordinates
+                  button.minute-logger-location-form__button(type='submit') Save named location
+                form.minute-logger-inline-form(method='post', action='/admin/minute-logger/location-groups/unignore')
+                  input(type='hidden', name='position', value=index)
+                  input(type='hidden', name='_csrf', value=csrfToken)
+                  input(type='hidden', name='groupKey', value=group.groupKey)
+                  button.minute-logger-location-form__button.minute-logger-location-form__button--muted(type='submit') Return to unnamed groups
         else
+          if feedback
+            +reviewFeedback
           p.minute-logger-empty No ignored location groups.

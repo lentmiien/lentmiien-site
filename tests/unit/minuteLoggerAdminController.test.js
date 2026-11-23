@@ -601,8 +601,9 @@ describe('minuteLoggerAdminController.ignoredLocationGroups', () => {
       endpointPath: '/secret-minute-logger',
       generatedAt: new Date('2026-06-07T03:00:00.000Z'),
       rawRetentionDays: 60,
-      ignoredGroupCount: 1,
+      ignoredGroupCount: 2,
       groups: [
+        { groupKey: '1.000,2.000', minutes: 2 },
         {
           groupKey: '35.461,139.541',
           latitude: 35.46125,
@@ -625,7 +626,7 @@ describe('minuteLoggerAdminController.ignoredLocationGroups', () => {
       'admin_minute_logger_ignored_locations',
       expect.objectContaining({
         endpointPath: '/secret-minute-logger',
-        ignoredGroupCountDisplay: '1',
+        ignoredGroupCountDisplay: '2',
         groups: [
           expect.objectContaining({
             groupKey: '35.461,139.541',
@@ -636,6 +637,7 @@ describe('minuteLoggerAdminController.ignoredLocationGroups', () => {
             updatedByDisplay: 'admin-user',
             mapUrl: expect.stringContaining('35.46125%2C139.54145'),
           }),
+          expect.objectContaining({ minutesDisplay: '2 min' }),
         ],
       })
     );
@@ -714,7 +716,7 @@ describe('minuteLoggerAdminController.ignoredLocationGroups', () => {
       }
     );
     expect(res.redirect).toHaveBeenCalledWith(
-      '/admin/minute-logger/ignored?status=success&message=Location%20group%20removed%20from%20ignore%20list.'
+      '/admin/minute-logger/ignored?status=success&message=Location+group+removed+from+ignore+list.&position=0#review'
     );
   });
 });

@@ -19,6 +19,7 @@ const {
   summarizeBatteryReadings,
   summarizeLocationGroups,
   summarizeTimeBuckets,
+  nameIgnoredMinuteLoggerLocationGroup,
   updateMinuteLoggerLocationGroupIgnoredStatus,
   updateMinuteLoggerLocationGroupSettings,
 } = require('../../services/minuteLoggerService');
@@ -1554,12 +1555,34 @@ describe('minuteLoggerService', () => {
     expect(settingsModel.deleteOne).toHaveBeenCalledWith({
       endpointPath: '/secret-minute-logger',
       groupKey: '35.461,139.541',
+      ignored: true,
     });
     expect(settingsModel.findOneAndUpdate).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       groupKey: '35.461,139.541',
       ignored: false,
     });
+  });
+
+  test('names only a currently ignored group and rejects empty or stale submissions', async () => {
+    const groupKey = '35.461,139.541';
+    const endpointPath = '/fixture';
+    const settingsModel = { findOneAndUpdate: jest.fn() };
+    const options = { endpointPath, settingsModel, updatedBy: 'fixture-admin' };
+    await expect(nameIgnoredMinuteLoggerLocationGroup({ groupKey, name: ' ' }, options))
+      .rejects.toThrow(MinuteLoggerLocationGroupSettingsError);
+    expect(settingsModel.findOneAndUpdate).not.toHaveBeenCalled();
+
+    settingsModel.findOneAndUpdate.mockReturnValueOnce(createLeanQuery({ groupKey, name: 'Park' }))
+      .mockReturnValueOnce(createLeanQuery(null));
+    const input = { groupKey, name: ' Park ', hideCoordinates: 'on' };
+    await expect(nameIgnoredMinuteLoggerLocationGroup(input, options)).resolves.toMatchObject({ name: 'Park' });
+    expect(settingsModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { endpointPath, groupKey, ignored: true },
+      { $set: { name: 'Park', hideCoordinates: true, ignored: false, updatedBy: 'fixture-admin' } },
+      { new: true, runValidators: true }
+    );
+    await expect(nameIgnoredMinuteLoggerLocationGroup(input, options)).rejects.toThrow('no longer ignored');
   });
 
   test('getMinuteLoggerIgnoredLocationGroups returns ignored groups with retained stats', async () => {

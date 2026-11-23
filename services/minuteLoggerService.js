@@ -2454,6 +2454,30 @@ async function updateMinuteLoggerLocationGroupSettings(input = {}, options = {})
   return normalizeLocationGroupSetting(updated);
 }
 
+async function nameIgnoredMinuteLoggerLocationGroup(input = {}, options = {}) {
+  const settingsModel = options.settingsModel || MinuteLoggerLocationGroup;
+  const endpointPath = options.endpointPath || ensureMinuteLoggerPath();
+  const groupKey = normalizeLocationGroupKey(input.groupKey);
+  const name = typeof input.name === 'string' ? input.name.trim() : '';
+  if (!name || name.length > MINUTE_LOGGER_LOCATION_GROUP_NAME_MAX_LENGTH) {
+    throw new MinuteLoggerLocationGroupSettingsError('Enter a location name of 1 to 80 characters.');
+  }
+  const updated = await leanExec(settingsModel.findOneAndUpdate(
+    { endpointPath, groupKey, ignored: true },
+    { $set: {
+      name: normalizeLocationGroupName(name),
+      hideCoordinates: parseBooleanInput(input.hideCoordinates),
+      ignored: false,
+      updatedBy: options.updatedBy,
+    } },
+    { new: true, runValidators: true }
+  ));
+  if (!updated) {
+    throw new MinuteLoggerLocationGroupSettingsError('This group is no longer ignored.');
+  }
+  return normalizeLocationGroupSetting(updated);
+}
+
 async function updateMinuteLoggerLocationGroupIgnoredStatus(input = {}, options = {}) {
   const settingsModel = options.settingsModel || MinuteLoggerLocationGroup;
   const endpointPath = options.endpointPath || ensureMinuteLoggerPath();
@@ -2497,7 +2521,7 @@ async function updateMinuteLoggerLocationGroupIgnoredStatus(input = {}, options 
 
   if (!existing || (!existingName && !existingHideCoordinates)) {
     if (typeof settingsModel.deleteOne === 'function') {
-      await leanExec(settingsModel.deleteOne({ endpointPath, groupKey }));
+      await leanExec(settingsModel.deleteOne({ endpointPath, groupKey, ignored: true }));
     }
     return normalizeLocationGroupSetting({ endpointPath, groupKey });
   }
@@ -3615,6 +3639,7 @@ module.exports = {
   summarizeBatteryReadings,
   summarizeLocationGroups,
   summarizeTimeBuckets,
+  nameIgnoredMinuteLoggerLocationGroup,
   updateMinuteLoggerLocationGroupIgnoredStatus,
   updateMinuteLoggerLocationGroupSettings,
 };

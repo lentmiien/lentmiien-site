@@ -10,10 +10,14 @@ const manageMinuteLocations = createRequireCapabilities({
   roleCapabilityBundles: { admin: ['minute_logger.locations.manage'] },
 });
 const minuteLocationCsrf = createSessionCsrf();
-router.get('/unnamed', manageMinuteLocations, minuteLocationCsrf.issueToken, (req, res) => {
+router.use(['/unnamed', '/ignored'], manageMinuteLocations, minuteLocationCsrf.issueToken, (_req, res, next) => {
   res.set('Cache-Control', 'private, no-store');
-  return controller.unnamedLocationGroups(req, res);
+  next();
 });
+router.get('/unnamed', controller.unnamedLocationGroups);
+router.get('/ignored', controller.ignoredLocationGroups);
+router.post('/location-groups/name-ignored', manageMinuteLocations, minuteLocationCsrf.requireToken, controller.nameIgnoredLocationGroup);
+router.post('/location-groups/unignore', manageMinuteLocations, minuteLocationCsrf.requireToken, controller.unignoreLocationGroup);
 router.post('/location-groups/ignore', manageMinuteLocations, minuteLocationCsrf.requireToken, controller.ignoreLocationGroup);
 router.post('/location-groups', manageMinuteLocations, minuteLocationCsrf.requireToken, controller.updateLocationGroupSettings);
 
