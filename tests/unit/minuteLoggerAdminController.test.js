@@ -10,6 +10,7 @@ jest.mock('../../services/minuteLoggerService', () => ({
   getMinuteLoggerBatteryDashboard: jest.fn(),
   getMinuteLoggerDailyAnalytics: jest.fn(),
   getMinuteLoggerDashboard: jest.fn(),
+  getMinuteLoggerUnnamedLocationGroups: jest.fn(),
   getMinuteLoggerIgnoredLocationGroups: jest.fn(),
   getMinuteLoggerNamedLocationAnalytics: jest.fn(),
   parseBatteryPercent: jest.fn((value) => {
@@ -51,6 +52,7 @@ const {
   getMinuteLoggerBatteryDashboard,
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
+  getMinuteLoggerUnnamedLocationGroups,
   getMinuteLoggerIgnoredLocationGroups,
   getMinuteLoggerNamedLocationAnalytics,
   updateMinuteLoggerLocationGroupIgnoredStatus,
@@ -403,6 +405,12 @@ describe('minuteLoggerAdminController.dashboard', () => {
 
     await controller.dashboard({ query: {} }, res);
 
+    expect(getMinuteLoggerDashboard).toHaveBeenCalledWith({ includeReviewGroups: false });
+    const html = require('pug').renderFile(
+      require('path').join(__dirname, '../../views/admin_minute_logger.pug'), res.render.mock.calls[0][1]
+    );
+    expect(html).toContain('href="/admin/minute-logger/unnamed"');
+    expect(html).not.toContain('action="/admin/minute-logger/location-groups"');
     expect(res.render).toHaveBeenCalledWith(
       'admin_minute_logger',
       expect.objectContaining({
@@ -453,31 +461,6 @@ describe('minuteLoggerAdminController.dashboard', () => {
               averageDailyMinutesDisplay: '0.4 min/day',
               totalMinutesDisplay: '24 min retained',
               groupCountDisplay: '1',
-            }),
-          ],
-          groups: [
-            expect.objectContaining({
-              groupKey: '35.461,139.541',
-              name: '',
-              hideCoordinates: false,
-              suggestedName: 'Home',
-              suggestedHideCoordinates: true,
-              suggestionDisplay: 'Suggested: Home - 84 m away',
-              titleDisplay: '35.461,139.541',
-              minutes: 12,
-              coordinateDisplay: '35.46125, 139.54150',
-              pointSampleCountDisplay: '2',
-              preview: expect.objectContaining({
-                width: 160,
-                height: 120,
-                pointCount: 2,
-                points: expect.arrayContaining([
-                  expect.objectContaining({
-                    x: expect.any(Number),
-                    y: expect.any(Number),
-                  }),
-                ]),
-              }),
             }),
           ],
         }),
@@ -603,7 +586,7 @@ describe('minuteLoggerAdminController.dashboard', () => {
       }
     );
     expect(res.redirect).toHaveBeenCalledWith(
-      '/admin/minute-logger?status=success&message=Location%20group%20saved.'
+      '/admin/minute-logger/unnamed?status=success&message=Location+group+saved.&position=0#review'
     );
   });
 });
@@ -667,6 +650,7 @@ describe('minuteLoggerAdminController.ignoredLocationGroups', () => {
 
     await controller.ignoreLocationGroup({
       body: {
+        position: '8',
         groupKey: '35.461,139.541',
       },
       user: { name: 'admin-user' },
@@ -692,7 +676,7 @@ describe('minuteLoggerAdminController.ignoredLocationGroups', () => {
       }
     );
     expect(res.redirect).toHaveBeenCalledWith(
-      '/admin/minute-logger?status=success&message=Location%20group%20ignored.'
+      '/admin/minute-logger/unnamed?status=success&message=Location+group+ignored.&position=8#review'
     );
   });
 
@@ -1097,5 +1081,72 @@ describe('minuteLoggerAdminController.namedLocationAnalytics', () => {
         ],
       })
     );
+  });
+});
+
+describe('unnamed location review', () => {
+  const pug = require('pug');
+  const path = require('path');
+  const render = pug.compileFile(path.join(__dirname, '../../views/admin_minute_logger_unnamed_locations.pug'));
+
+  test('returns to the last remaining group when the reviewed position disappears', async () => {
+    getMinuteLoggerUnnamedLocationGroups.mockResolvedValue(createDashboard().locationStats);
+    const res = createResponse();
+    await controller.unnamedLocationGroups({
+      query: { status: 'success', message: 'Location group saved.', position: '1' },
+    }, res);
+    const [view, locals] = res.render.mock.calls[0];
+    expect(view).toBe('admin_minute_logger_unnamed_locations');
+    expect(locals.reviewIndex).toBe(0);
+    expect(locals.locationStats.groups).toEqual([
+      expect.objectContaining({
+        groupKey: '35.461,139.541',
+        name: '',
+        hideCoordinates: false,
+        suggestedName: 'Home',
+        suggestedHideCoordinates: true,
+        suggestionDisplay: 'Suggested: Home - 84 m away',
+        titleDisplay: '35.461,139.541',
+        minutes: 12,
+        coordinateDisplay: '35.46125, 139.54150',
+        pointSampleCountDisplay: '2',
+        preview: expect.objectContaining({
+          width: 160,
+          height: 120,
+          pointCount: 2,
+          points: expect.arrayContaining([
+            expect.objectContaining({
+              x: expect.any(Number),
+              y: expect.any(Number),
+            }),
+          ]),
+        }),
+      }),
+    ]);
+    const html = render({ ...locals, csrfToken: 'session-token' });
+    expect(html).toContain('id="review"');
+    expect(html).toContain('name="_csrf" value="session-token"');
+    expect(html).toContain('Suggested: Home - 84 m away');
+    expect(html).toContain('name="groupKey" value="35.461,139.541"');
+    expect(html).not.toContain('name="groupKey" value="35.460,139.540"');
+  });
+
+  test('keeps the feedback target when the final group has been reviewed', async () => {
+    getMinuteLoggerUnnamedLocationGroups.mockResolvedValue({ groups: [] });
+    const res = createResponse();
+    await controller.unnamedLocationGroups({ query: { status: 'success', message: 'Location group ignored.' } }, res);
+    const html = render(res.render.mock.calls[0][1]);
+    expect(html).toContain('id="review"');
+    expect(html).toContain('No unnamed groups meet the review threshold.');
+  });
+
+  test('renders a private-data-free error when loading fails', async () => {
+    getMinuteLoggerUnnamedLocationGroups.mockRejectedValue(new Error('database detail'));
+    const res = createResponse();
+    await controller.unnamedLocationGroups({}, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    const html = render(res.render.mock.calls[0][1]);
+    expect(html).toContain('Unable to load unnamed location groups.');
+    expect(html).not.toContain('database detail');
   });
 });

@@ -1,0 +1,88 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/minute_logger_admin.css')
+
+block content
+  mixin reviewFeedback
+    #review.minute-logger-alert(class=`minute-logger-alert--${feedback.status}`, role='status', tabindex='-1')= feedback.message
+
+  .minute-logger-admin
+    header.minute-logger-hero.minute-logger-hero--compact
+      .minute-logger-hero__content
+        p.minute-logger-eyebrow Minute Logger
+        h1.minute-logger-title Unnamed Location Groups
+        p.minute-logger-subtitle Name a group to include it in location analytics, or ignore it to remove it from review.
+      .minute-logger-hero__actions
+        .minute-logger-action-stack
+          a.minute-logger-refresh(href='/admin/minute-logger') Overview
+          a.minute-logger-refresh(href='/admin/minute-logger/ignored') Ignored Groups
+
+    if loadError
+      .minute-logger-alert.minute-logger-alert--error(role='alert')= loadError
+    else
+      section.minute-logger-panel
+        header.minute-logger-panel__header
+          div
+            h2 Groups to review
+            span Last #{rawRetentionDays} days · #{locationStats.noiseThresholdDisplay} minimum
+          strong Showing #{locationStats.groups.length} of #{locationStats.unnamedGroupCountDisplay}
+        if locationStats.groups.length
+          .minute-logger-location-list
+            each group, index in locationStats.groups
+              if feedback && index === reviewIndex
+                +reviewFeedback
+              .minute-logger-rank.minute-logger-location
+                if group.preview
+                  .minute-logger-location__preview
+                    svg.minute-logger-location-map(viewBox=`0 0 ${group.preview.width} ${group.preview.height}`, role='img', aria-label=`Location point cloud for ${group.titleDisplay}`)
+                      rect.minute-logger-location-map__frame(x='1', y='1', width=(group.preview.width - 2), height=(group.preview.height - 2), rx='7')
+                      rect.minute-logger-location-map__cell(
+                        x=group.preview.rect.x
+                        y=group.preview.rect.y
+                        width=group.preview.rect.width
+                        height=group.preview.rect.height
+                        rx='5'
+                      )
+                      line.minute-logger-location-map__axis(x1=(group.preview.rect.x + (group.preview.rect.width / 2)), y1=group.preview.rect.y, x2=(group.preview.rect.x + (group.preview.rect.width / 2)), y2=(group.preview.rect.y + group.preview.rect.height))
+                      line.minute-logger-location-map__axis(x1=group.preview.rect.x, y1=(group.preview.rect.y + (group.preview.rect.height / 2)), x2=(group.preview.rect.x + group.preview.rect.width), y2=(group.preview.rect.y + (group.preview.rect.height / 2)))
+                      each point in group.preview.points
+                        circle.minute-logger-location-map__point(cx=point.x, cy=point.y, r='1.8')
+                      if group.preview.centerPoint
+                        circle.minute-logger-location-map__center(cx=group.preview.centerPoint.x, cy=group.preview.centerPoint.y, r='3.2')
+                .minute-logger-location__content
+                  .minute-logger-rank__top
+                    strong= group.titleDisplay
+                    span= group.minutesDisplay
+                  .minute-logger-rank__bar.minute-logger-rank__bar--location
+                    span(style=`--rank-width: ${group.percent}%;`)
+                  .minute-logger-rank__meta
+                    span #{group.deviceCountDisplay} devices
+                    span #{group.packageCountDisplay} packages
+                    span= group.shareDisplay
+                    span Last #{group.lastSeenDisplay}
+                    if group.preview
+                      span #{group.pointSampleCountDisplay} plotted
+                  .minute-logger-location__detail
+                    if !group.hideCoordinates
+                      span Center #{group.coordinateDisplay}
+                    if group.mapUrl
+                      a.minute-logger-location-link(href=group.mapUrl, target='_blank', rel='noopener noreferrer') Map
+                  form.minute-logger-location-form(method='post', action='/admin/minute-logger/location-groups')
+                    input(type='hidden', name='_csrf', value=csrfToken)
+                    input(type='hidden', name='position', value=index)
+                    input(type='hidden', name='groupKey', value=group.groupKey)
+                    label.minute-logger-location-form__field
+                      span Name
+                      input(type='text', name='name', required, pattern='.*\\S.*', value=(group.name || group.suggestedName), maxlength='80', placeholder=(group.suggestedName ? `Suggested: ${group.suggestedName}` : group.coordinateLabel))
+                      if group.suggestionDisplay
+                        small.minute-logger-location-form__suggestion= group.suggestionDisplay
+                    label.minute-logger-location-form__check
+                      input(type='checkbox', name='hideCoordinates', value='on', checked=(group.hideCoordinates || group.suggestedHideCoordinates))
+                      span Hide coordinates
+                    button.minute-logger-location-form__button(type='submit') Save
+                    button.minute-logger-location-form__button.minute-logger-location-form__button--muted(type='submit', formnovalidate, formaction='/admin/minute-logger/location-groups/ignore') Ignore
+        else
+          if feedback
+            +reviewFeedback
+          p.minute-logger-empty No unnamed groups meet the review threshold.

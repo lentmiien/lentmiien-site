@@ -12,6 +12,7 @@ const {
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
   getMinuteLoggerIgnoredLocationGroups,
+  getMinuteLoggerUnnamedLocationGroups,
   getMinuteLoggerNamedLocationAnalytics,
   parseBatteryPercent,
   parseBatteryTempC,
@@ -1338,7 +1339,7 @@ function buildNamedLocationAnalyticsViewModel(analytics = {}, options = {}) {
 
 exports.dashboard = async (req, res) => {
   try {
-    const dashboard = await getMinuteLoggerDashboard();
+    const dashboard = await getMinuteLoggerDashboard({ includeReviewGroups: false });
 
     return res.render('admin_minute_logger', {
       feedback: parseFeedback(req.query),
@@ -1386,6 +1387,38 @@ exports.dashboard = async (req, res) => {
       timeBucketStats: [],
       recentRequests: [],
     });
+  }
+};
+
+const unnamedGroupsPath = '/admin/minute-logger/unnamed';
+
+function reviewPosition(value) {
+  return typeof value === 'string' && /^\d{1,3}$/.test(value) ? Number(value) : 0;
+}
+
+function redirectToReview(req, res, status, message) {
+  const query = new URLSearchParams({ status, message, position: reviewPosition(req.body?.position) });
+  return res.redirect(`${unnamedGroupsPath}?${query}#review`);
+}
+
+exports.unnamedLocationGroups = async (req, res) => {
+  const page = 'admin_minute_logger_unnamed_locations';
+  const locals = { pageTitle: 'Unnamed Location Groups · Minute Logger', gtag: false };
+  try {
+    const locationStats = mapLocationStats(await getMinuteLoggerUnnamedLocationGroups());
+    return res.render(page, {
+      ...locals,
+      locationStats,
+      rawRetentionDays: MINUTE_LOGGER_RAW_RETENTION_DAYS,
+      feedback: parseFeedback(req.query),
+      reviewIndex: Math.min(reviewPosition(req.query?.position), locationStats.groups.length - 1),
+    });
+  } catch (error) {
+    logger.error('Failed to load minute logger unnamed location groups', {
+      category: 'minute-logger',
+      metadata: { errorName: error.name },
+    });
+    return res.status(500).render(page, { ...locals, loadError: 'Unable to load unnamed location groups.' });
   }
 };
 
@@ -1443,17 +1476,17 @@ exports.ignoreLocationGroup = async (req, res) => {
       },
     });
 
-    return redirectWithFeedback(res, 'success', 'Location group ignored.');
+    return redirectToReview(req, res, 'success', 'Location group ignored.');
   } catch (error) {
     if (error instanceof MinuteLoggerLocationGroupSettingsError) {
-      return redirectWithFeedback(res, 'error', error.message);
+      return redirectToReview(req, res, 'error', error.message);
     }
 
     logger.error('Failed to ignore minute logger location group', {
       category: 'minute-logger',
       metadata: { error: error.message },
     });
-    return redirectWithFeedback(res, 'error', 'Unable to ignore location group.');
+    return redirectToReview(req, res, 'error', 'Unable to ignore location group.');
   }
 };
 
@@ -1553,20 +1586,20 @@ exports.updateLocationGroupSettings = async (req, res) => {
       },
     });
 
-    return redirectWithFeedback(
-      res,
+    return redirectToReview(
+      req, res,
       'success',
       settings.name ? 'Location group saved.' : 'Location group label cleared.'
     );
   } catch (error) {
     if (error instanceof MinuteLoggerLocationGroupSettingsError) {
-      return redirectWithFeedback(res, 'error', error.message);
+      return redirectToReview(req, res, 'error', error.message);
     }
 
     logger.error('Failed to update minute logger location group settings', {
       category: 'minute-logger',
       metadata: { error: error.message },
     });
-    return redirectWithFeedback(res, 'error', 'Unable to save location group.');
+    return redirectToReview(req, res, 'error', 'Unable to save location group.');
   }
 };

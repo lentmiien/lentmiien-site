@@ -2901,6 +2901,9 @@ async function fetchLocationStats(endpointPath, options = {}) {
     limit: options.limit,
     groupFilter: (group) => !normalizeLocationGroupName(group.name) && !group.ignored,
   });
+  if (options.includeReviewGroups === false) {
+    summary.groups = [];
+  }
   const groupKeys = summary.groups.map((group) => group.groupKey).filter(Boolean);
   const pointSamplesByKey = await fetchLocationPointSamples(endpointPath, groupKeys, {
     requestModel,
@@ -3459,6 +3462,12 @@ async function getDistinctCount(model, field, match) {
   return Array.isArray(rows) ? rows.filter(Boolean).length : 0;
 }
 
+async function getMinuteLoggerUnnamedLocationGroups() {
+  return fetchLocationStats(ensureMinuteLoggerPath(), {
+    since: new Date(Date.now() - MINUTE_LOGGER_RAW_RETENTION_DAYS * DAY_MS),
+  });
+}
+
 async function getMinuteLoggerDashboard(options = {}) {
   const requestModel = options.requestModel || MinuteLoggerRequest;
   const statModel = options.statModel || MinuteLoggerStat;
@@ -3505,6 +3514,7 @@ async function getMinuteLoggerDashboard(options = {}) {
     fetchDeviceStats(endpointPath, { requestModel, since: rawWindowStart }),
     fetchBatteryStats(endpointPath, { requestModel, since: rawWindowStart }),
     fetchLocationStats(endpointPath, {
+      includeReviewGroups: options.includeReviewGroups,
       requestModel,
       since: rawWindowStart,
       last24Since: since24h,
@@ -3586,6 +3596,7 @@ module.exports = {
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
   getMinuteLoggerIgnoredLocationGroups,
+  getMinuteLoggerUnnamedLocationGroups,
   getMinuteLoggerLastKnownLocation,
   getMinuteLoggerNamedLocationAnalytics,
   getPackageName,

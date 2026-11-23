@@ -44,7 +44,7 @@ body,
 
 .minute-logger-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 360px) auto;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 360px) minmax(0, 1fr);
   gap: 1.25rem;
   align-items: stretch;
   border: 1px solid var(--ml-border);
@@ -493,15 +493,13 @@ body,
   color: var(--ml-info);
 }
 
-.minute-logger-location-table-block,
-.minute-logger-location-list-heading {
+.minute-logger-location-table-block {
   display: grid;
   gap: 0.55rem;
   margin: 0 0 1rem;
 }
 
-.minute-logger-location-table-block h3,
-.minute-logger-location-list-heading h3 {
+.minute-logger-location-table-block h3 {
   margin: 0;
   color: var(--ml-text);
   font-size: 0.96rem;
