@@ -70,7 +70,7 @@ suite('Document vault with standalone MongoDB', () => {
     site = await listen(app);
     scan = await sharp({ create: { width: 16, height: 24, channels: 3, background: 'white' } }).png().toBuffer();
     users = {};
-    for (const [name, role] of Object.entries({ clerk: 'user', owner: 'family', viewer: 'user', reader: 'other', admin: 'admin', denied: 'other' })) {
+    for (const [name, role] of Object.entries({ clerk: 'user', owner: 'family', delegate: 'family', viewer: 'user', reader: 'other', admin: 'admin', denied: 'other' })) {
       users[name] = await User.create({ name, type_user: role, email: name + '@example.invalid', hash_password: 'fixture' });
     }
     await require('../../models/role').create({ name: 'reader', type: 'user', permissions: ['vault.documents.read'] });
@@ -79,7 +79,7 @@ suite('Document vault with standalone MongoDB', () => {
   beforeEach(async () => {
     calls = [];
     responseMode = 'ok';
-    await Promise.all([require('../../models/document_vault').DuplicateFeedback.deleteMany({}), Group.deleteMany({}), Scan.deleteMany({}), Queue.deleteMany({}), AppSetting.deleteMany({}), require('../../models/insurance_claim').deleteMany({})]);
+    await Promise.all([require('../../models/insurance_batch').Batch.deleteMany({}), require('../../models/insurance_batch').Plan.deleteMany({}), require('../../models/document_vault').DuplicateFeedback.deleteMany({}), Group.deleteMany({}), Scan.deleteMany({}), Queue.deleteMany({}), AppSetting.deleteMany({}), require('../../models/insurance_claim').deleteMany({})]);
   });
   afterAll(async () => {
     await Promise.all([close(site), close(gateway)]);
@@ -391,6 +391,91 @@ suite('Document vault with standalone MongoDB', () => {
     }
   });
 
+  test('family delegates organize drafts, submit an immutable plan and document snapshot, and update only follow-up notes', async () => {
+    const { Batch } = require('../../models/insurance_batch');
+    const service = require('../../services/insuranceService');
+    const form = fields => new URLSearchParams(fields);
+    const get = (who, url) => request(who, '/insurance' + url);
+    const post = (who, url, fields, csrf) => request(who, '/insurance' + url, form(fields), csrf);
+    const group = { state: 'ready', uploaderId: users.owner._id, ownerId: users.owner._id, viewerIds: [users.delegate._id] };
+    const page = { ...answer, tags: ['invoice'], state: 'stored', filename: 'scan.png' };
+    const original = await Group.create({ ...group, pages: [page, { ...page, title: 'Second invoice' }] });
+    const supporting = await Group.create({ ...group, ownerId: users.admin._id, viewerIds: [users.owner._id, users.delegate._id],
+      pages: [{ ...page, tags: [], title: 'Medical referral' }] });
+    const unrelated = await Group.create({ ...group, ownerId: users.admin._id, pages: [page] });
+    const ids = original.pages.map(p => String(p._id));
+    const attachment = String(supporting.pages[0]._id);
+    for (const doc of [original, supporting]) {
+      await Scan.insertMany(doc.pages.map(p => ({ _id: p._id, groupId: doc._id, mime: 'image/png', bytes: scan })));
+    }
+    const plan = { name: 'Health cover', company: 'Example Health', ownerId: String(users.owner._id),
+      startDate: '2025-01-01', monthlyCost: '4500', currency: 'JPY', coverage: 'Hospital stays',
+      number: 'POL-987654', instructions: 'Upload scans and complete the online form.', claimUrl: 'https://example.invalid/claims' };
+    expect((await get('viewer', '/plans')).status).toBe(403);
+    expect((await post('delegate', '/plans', plan)).status).toBe(403);
+    expect((await post('admin', '/plans', plan, false)).status).toBe(403);
+    expect((await post('admin', '/plans', { ...plan, ownerId: String(users.viewer._id) })).status).toBe(422);
+    expect((await post('admin', '/plans', { ...plan, claimUrl: 'javascript:alert(0)' })).status).toBe(422);
+    const added = await post('admin', '/plans', plan);
+    expect(added.status).toBe(303);
+    const planPath = added.headers.get('location').replace('/insurance', '');
+    const planId = planPath.split('/').at(-1);
+    for (const route of ['/plans', planPath, planPath + '/edit']) {
+      const html = await (await get('admin', route)).text();
+      expect(html).toContain('Health cover');
+      expect(html).not.toContain(plan.number);
+    }
+    expect(await (await get('delegate', planPath + '/number')).text()).toContain(plan.number);
+    expect((await get('viewer', planPath + '/number')).status).toBe(403);
+    await service.transition(users.delegate._id, ids, 'unreviewed', 'processing');
+    const start = () => post('delegate', '/finalize', { ids: ids[0] });
+    const attempts = await Promise.all([start(), start()]);
+    expect(attempts.map(r => r.status).sort()).toEqual([303, 409]);
+    const path = attempts.find(r => r.status === 303).headers.get('location').replace('/insurance', '');
+    const batchId = path.split('/').at(-1);
+    const change = async (fields, who = 'delegate') => post(who, path, { revision: String((await Batch.findById(batchId)).__v), ...fields });
+    expect((await get('admin', path)).status).toBe(404);
+    expect(await (await get('delegate', '/finalize')).text()).toContain(answer.title);
+    expect((await get('delegate', path)).status).toBe(200);
+    expect(await (await get('delegate', path + '?kind=support&q=referral')).text()).toContain('Medical referral');
+    expect((await change({ action: 'add', kind: 'support', pageId: String(unrelated.pages[0]._id) })).status).toBe(404);
+    expect((await change({ action: 'add', kind: 'invoice', pageId: ids[1] })).status).toBe(303);
+    expect((await change({ action: 'remove', kind: 'invoice', pageId: ids[1] })).status).toBe(303);
+    const processing = await service.list(users.delegate._id, { view: 'processing', offset: 0 });
+    expect(processing.rows.map(p => String(p._id))).toEqual([ids[1]]);
+    expect((await change({ action: 'add', kind: 'support', pageId: attachment })).status).toBe(303);
+    expect((await change({ action: 'details', notes: 'Prepare claim', planId })).status).toBe(303);
+    expect((await post('delegate', path, { action: 'discard', revision: '0' })).status).toBe(409);
+    expect((await change({ action: 'submit', planId: '', submittedOn: '2026-11-22', notes: '' })).status).toBe(422);
+    expect((await change({ action: 'submit', planId, submittedOn: '2026-11-22', notes: 'Sent via portal' })).status).toBe(303);
+    expect((await post('admin', planPath, { ...plan, name: 'Replacement plan', number: '', revision: '0' })).status).toBe(303);
+    expect(await (await get('admin', planPath + '/number')).text()).toContain(plan.number);
+    expect((await change({ action: 'remove', kind: 'support', pageId: attachment })).status).toBe(409);
+    expect((await change({ action: 'followUp', notes: 'Paid in full' })).status).toBe(303);
+    const history = await (await get('delegate', path)).text();
+    for (const value of ['Health cover', 'Medical referral', 'Paid in full', 'Sent via portal']) expect(history).toContain(value);
+    expect(history).not.toContain(plan.number);
+    expect(history).not.toContain('Replacement plan');
+    expect(await (await get('delegate', path + '/number')).text()).toContain(plan.number);
+    const zip = await get('delegate', path + '/scans.zip');
+    expect(zip.status).toBe(200);
+    expect(Buffer.from(await zip.arrayBuffer()).includes(Buffer.from(attachment + '.png'))).toBe(true);
+    const other = await post('delegate', '/finalize', { ids: ids[1] });
+    const secondPath = other.headers.get('location').replace('/insurance', '');
+    expect((await post('delegate', secondPath, { action: 'submit', planId, revision: '0', notes: '', submittedOn: '2026-11-22' })).status).toBe(303);
+    const index = await (await get('delegate', '/batches')).text();
+    expect(index).toContain('2 batches · 2 invoices');
+    expect(index).toContain('1,000 JPY');
+    expect(index).toContain(path);
+    expect(index).toContain(secondPath);
+    await Group.updateOne({ _id: supporting._id }, { $set: { viewerIds: [users.owner._id] } });
+    expect((await get('delegate', path)).status).toBe(404);
+    expect((await get('delegate', path + '/number')).status).toBe(404);
+    expect((await change({ action: 'followUp', notes: 'Unavailable' })).status).toBe(404);
+    expect(await (await get('delegate', '/batches')).text()).not.toContain(path);
+    expect((await get('owner', path)).status).toBe(200);
+  });
+
   test('Insurance delegates triage, expiration and dated batches through current vault membership', async () => {
     const service = require('../../services/insuranceService');
     const Claim = require('../../models/insurance_claim');
@@ -423,8 +508,8 @@ suite('Document vault with standalone MongoDB', () => {
     expect((await act('owner', [3], 'unreviewed', 'expired')).status).toBe(303);
     expect((await act('reader', [4], 'unreviewed', 'dismissed')).status).toBe(303);
     expect((await act('reader', [2], 'processing', 'expired')).status).toBe(303);
-    expect((await act('reader', [2], 'processing', 'completed', '2026-11-20')).status).toBe(409);
-    const processing = await (await request('reader', '/insurance/processing')).text();
+    expect((await act('reader', [2], 'processing', 'completed', '2026-11-20')).status).toBe(422);
+    const processing = await (await request('owner', '/insurance/processing')).text();
     const dom = new (require('jsdom').JSDOM)(processing, { runScripts: 'outside-only' });
     try {
       dom.window.eval(require('fs').readFileSync(path.resolve(__dirname, '../../public/js/insurance.js'), 'utf8'));
@@ -444,7 +529,8 @@ suite('Document vault with standalone MongoDB', () => {
     expect(bytes.subarray(0, 2).toString()).toBe('PK');
     expect(bytes.includes(Buffer.from(ids[0] + '.png'))).toBe(true);
     expect(bytes.includes(Buffer.from(ids[2] + '.png'))).toBe(false);
-    expect((await act('reader', [0, 1], 'processing', 'completed', '2026-11-20')).status).toBe(303);
+    // Existing completed claims remain browsable after the introduction of explicit batches.
+    await Claim.updateMany({ _id: { $in: ids.slice(0, 2) } }, { status: 'completed', submittedOn: '2026-11-20', updatedBy: users.reader._id });
     await service.syncChunk();
     expect(await Claim.countDocuments({ status: 'completed', submittedOn: '2026-11-20', updatedBy: users.reader._id })).toBe(2);
     expect(await (await request('owner', '/insurance/')).text()).toContain('No invoices awaiting review');
@@ -452,6 +538,10 @@ suite('Document vault with standalone MongoDB', () => {
     expect(await (await request('owner', '/insurance/batches')).text()).toContain('2026-11-20');
     const batch = '?date=2026-11-20&owner=' + users.owner._id;
     expect(await (await request('reader', '/insurance/batch' + batch)).text()).toContain('Fixture invoice B');
+    const followUp = new URLSearchParams({ owner: String(users.owner._id), date: '2026-11-20', revision: '0', notes: 'Legacy outcome' });
+    expect((await request('owner', '/insurance/legacy-notes', followUp)).status).toBe(303);
+    expect(await (await request('owner', '/insurance/batch' + batch)).text()).toContain('Legacy outcome');
+    expect((await request('reader', '/insurance/legacy-notes', followUp)).status).toBe(403);
     const ownBatch = await request('reader', '/insurance/batch/all-scans.zip' + batch);
     expect(ownBatch.status).toBe(200);
     expect(Buffer.from(await ownBatch.arrayBuffer()).includes(Buffer.from(ids[1] + '.png'))).toBe(true);
@@ -459,7 +549,7 @@ suite('Document vault with standalone MongoDB', () => {
       viewerIds: [users.reader._id], state: 'ready', pages: [{ ...invoice, title: 'Second owner' }] });
     const secondId = String(otherGroup.pages[0]._id);
     await service.transition(users.reader._id, [secondId], 'unreviewed', 'processing');
-    await service.transition(users.reader._id, [secondId], 'processing', 'completed', '2026-11-20');
+    await Claim.updateOne({ _id: secondId }, { status: 'completed', submittedOn: '2026-11-20' });
     const list = await service.list(users.reader._id, { view: 'batches', offset: 0 });
     expect(list.rows.map(row => row.count).sort()).toEqual([1, 2]);
     const batches = await (await request('reader', '/insurance/batches')).text();

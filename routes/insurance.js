@@ -8,6 +8,7 @@ const vault = require('../services/documentVault/repository');
 const { READ, BUNDLES, PAGE_SIZE, validId, VaultError } = require('../services/documentVault/policy');
 const { createRequireCapabilities } = require('../middleware/requireCapabilities');
 const { createSessionCsrf, PRIVATE_NO_STORE } = require('../middleware/sessionCsrf');
+const batches = require('../services/insuranceBatches');
 const logger = require('../utils/logger');
 
 const MAX_ZIP_SCANS = 128;
@@ -18,9 +19,8 @@ const query = z.object({
 }).strict();
 const form = z.object({
   ids: z.union([id, z.array(id).min(1).max(PAGE_SIZE)]),
-  status: z.enum(['processing', 'dismissed', 'completed', 'expired']),
+  status: z.enum(['processing', 'dismissed', 'expired']),
   from: z.enum(['unreviewed', 'processing']),
-  submittedOn: z.iso.date().optional(),
   _csrf: z.string().optional(),
 }).strict();
 function parse(schema, input) {
@@ -31,6 +31,24 @@ function parse(schema, input) {
 const limit = max => rateLimit({ windowMs: 60000, limit: max, keyGenerator: req => String(req.user._id),
   standardHeaders: 'draft-8', legacyHeaders: false });
 
+async function sendZip(req, res, rows, filename) {
+  const { ZipArchive } = await import('archiver');
+  const zip = new ZipArchive({ store: true });
+  const cancel = new AbortController();
+  res.on('close', () => { cancel.abort(); zip.abort(); });
+  zip.on('error', () => res.destroy());
+  res.attachment(filename);
+  zip.pipe(res);
+  for (const row of rows) {
+    const scan = await vault.image(String(row._id), req.user._id);
+    cancel.signal.throwIfAborted();
+    const entry = once(zip, 'entry', { signal: cancel.signal });
+    zip.append(scan.bytes, { name: String(row._id) + '.' + scan.mime.split('/')[1] });
+    await entry;
+  }
+  await zip.finalize();
+}
+
 function createRouter() {
   const router = express.Router();
   const csrf = createSessionCsrf();
@@ -38,6 +56,8 @@ function createRouter() {
     res.set({ 'Cache-Control': PRIVATE_NO_STORE, 'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff', 'X-Robots-Tag': 'noindex, nofollow' });
     res.locals.gtag = false;
+    res.locals.familyAccess = batches.family(req.user || {});
+    res.locals.managePlans = req.user?.type_user === 'admin';
     if (!req.isAuthenticated?.() || !validId(String(req.user?._id))) return res.status(401).send('Sign in to open Insurance.');
     next();
   });
@@ -51,28 +71,16 @@ function createRouter() {
       const allScans = download === 'all';
       if (allScans) options.offset = 0;
       const includeSummary = !download && view !== 'batch';
-      const data = await claims.list(req.user._id, { ...options, view, includeSummary }, allScans ? MAX_ZIP_SCANS : PAGE_SIZE);
+      const data = await claims.list(req.user._id, { ...options, view, includeSummary, includeSubmitted: res.locals.familyAccess }, allScans ? MAX_ZIP_SCANS : PAGE_SIZE);
       if (download) {
         if (allScans && data.more) throw new VaultError(422, 'This selection exceeds 128 scans. Download each results page separately.');
         if (!data.rows.length) throw new VaultError(404, 'No scans are available for this selection.');
-        const { ZipArchive } = await import('archiver');
-        const zip = new ZipArchive({ store: true });
-        const cancel = new AbortController();
-        res.on('close', () => { cancel.abort(); zip.abort(); });
-        zip.on('error', () => res.destroy());
-        res.attachment('insurance-' + (options.date || 'processing') + '-' + (options.offset + 1) + '.zip');
-        zip.pipe(res);
-        for (const row of data.rows) {
-          const scan = await vault.image(String(row._id), req.user._id);
-          cancel.signal.throwIfAborted();
-          const entry = once(zip, 'entry', { signal: cancel.signal });
-          zip.append(scan.bytes, { name: String(row._id) + '.' + scan.mime.split('/')[1] });
-          await entry;
-        }
-        await zip.finalize();
+        await sendZip(req, res, data.rows, 'insurance-' + (options.date || 'processing') + '-' + (options.offset + 1) + '.zip');
         return;
       }
-      res.render('insurance', { ...data, ...options, view, pageSize: PAGE_SIZE });
+      const legacyNotes = view === 'batch' && res.locals.familyAccess && data.rows.length
+        ? await require('../services/insuranceLegacyNotes').read(req.user._id, options.owner, options.date) : null;
+      res.render('insurance', { legacyNotes, ...data, ...options, view, pageSize: PAGE_SIZE });
     };
   }
   router.get('/', listing('unreviewed'));
@@ -86,11 +94,12 @@ function createRouter() {
   router.get('/processing/all-scans.zip', downloadLimit, listing('processing', 'all'));
   router.get('/batch/all-scans.zip', downloadLimit, listing('batch', 'all'));
 
+  router.use(require('./insuranceWorkspace')({ csrf, sendZip, limit }));
+
   router.post('/status', limit(60), express.urlencoded({ extended: false, limit: '4kb', parameterLimit: PAGE_SIZE + 4 }), csrf.requireToken, async (req, res) => {
     const body = parse(form, req.body);
     const ids = [...new Set([body.ids].flat())];
-    if ((body.status === 'completed') !== Boolean(body.submittedOn)) throw new VaultError(422, 'Enter the date this claim was submitted.');
-    await claims.transition(req.user._id, ids, body.from, body.status, body.submittedOn);
+    await claims.transition(req.user._id, ids, body.from, body.status);
     res.redirect(303, body.from === 'processing' ? '/insurance/processing' : '/insurance/');
   });
   router.use((error, req, res, next) => {
@@ -101,6 +110,7 @@ function createRouter() {
       }
       return;
     }
+    if (error.code === 11000 || error.name === 'VersionError') error = new VaultError(409, 'Another reviewer changed this selection. Refresh to continue.');
     const status = error instanceof VaultError ? error.status : error.status === 413 ? 413 : 503;
     if (status === 503) logger.error('Insurance request failed; check vault and claim storage', {
       category: 'insurance', metadata: { errorName: error.name },

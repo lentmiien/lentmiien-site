@@ -1,12 +1,12 @@
-const { Types } = require('mongoose');
+const { invoices, invoiceTag, filedInvoice } = require('./insuranceInvoices');
+const { Batch } = require('../models/insurance_batch');
+const { visibility } = require('./insuranceBatches');
 const Claim = require('../models/insurance_claim');
 const { Group } = require('../models/document_vault');
 const User = require('../models/useraccount');
 const { VaultError, PAGE_SIZE } = require('./documentVault/policy');
 const logger = require('../utils/logger');
 
-const invoiceTag = /^invoice$/i;
-const filedInvoice = { state: 'stored', tags: invoiceTag, duplicateStatus: null };
 const queryLimit = { maxTimeMS: 10000 };
 
 async function register(rows) {
@@ -50,28 +50,6 @@ function start() {
 }
 function stop() { clearInterval(timer); timer = null; }
 
-// Every query starts from current vault membership and page eligibility.
-// A freshly filed page is actionable even before the next importer sweep.
-function invoices(actor, { ids, owner } = {}) {
-  const principal = new Types.ObjectId(String(actor));
-  const scope = { state: 'ready', $or: [{ ownerId: principal }, { viewerIds: principal }], pages: { $elemMatch: filedInvoice } };
-  if (owner) scope.ownerId = new Types.ObjectId(owner);
-  const pageFilter = { 'pages.state': 'stored', 'pages.tags': invoiceTag, 'pages.duplicateStatus': null };
-  if (ids) {
-    const inIds = { $in: ids.map(id => new Types.ObjectId(id)) };
-    scope['pages._id'] = inIds;
-    pageFilter['pages._id'] = inIds;
-  }
-  return [
-    { $match: scope }, { $unwind: '$pages' }, { $match: pageFilter },
-    { $project: { _id: '$pages._id', groupId: '$_id', ownerId: 1, title: { $ifNull: ['$pages.title', '$pages.filename'] },
-      date: '$pages.documentDate', amount: '$pages.totalAmount', currency: '$pages.currency' } },
-    { $lookup: { from: Claim.collection.name, localField: '_id', foreignField: '_id', as: 'claim' } },
-    { $set: { status: { $ifNull: [{ $first: '$claim.status' }, 'unreviewed'] }, submittedOn: { $first: '$claim.submittedOn' } } },
-    { $unset: 'claim' },
-  ];
-}
-
 function monthlyTotals(dateField) {
   return [
     { $group: {
@@ -98,15 +76,19 @@ function summarize(monthly) {
   return { count, months: [...months.values()] };
 }
 
-async function list(actor, { view, date, owner, offset, includeSummary = false }, size = PAGE_SIZE) {
+async function list(actor, { view, date, owner, offset, includeSummary = false, includeSubmitted = false }, size = PAGE_SIZE) {
   const batches = view === 'batches';
   const status = batches || view === 'batch' ? 'completed' : view;
   const pipeline = [...invoices(actor, { owner }), { $match: date ? { status, submittedOn: date } : { status } }];
-  const groupBatches = { $group: { _id: { date: '$submittedOn', owner: '$ownerId' }, count: { $sum: 1 } } };
+  if (batches && includeSubmitted) pipeline.push({ $unionWith: { coll: Batch.collection.name, pipeline: [
+    { $match: { status: 'submitted' } }, ...visibility(actor), { $unwind: '$invoices' },
+    { $project: { batchId: '$_id', ownerId: 1, submittedOn: 1, amount: '$invoices.amount', currency: '$invoices.currency', planName: '$plan.name' } },
+  ] } });
+  const groupBatches = { $group: { _id: { date: '$submittedOn', owner: '$ownerId', batch: '$batchId' }, planName: { $first: '$planName' }, count: { $sum: 1 } } };
   const page = batches ? [
     groupBatches,
-    { $project: { ownerId: '$_id.owner', submittedOn: '$_id.date', count: 1 } },
-    { $sort: { submittedOn: -1, ownerId: 1 } },
+    { $project: { ownerId: '$_id.owner', submittedOn: '$_id.date', batchId: '$_id.batch', planName: 1, count: 1 } },
+    { $sort: { submittedOn: -1, ownerId: 1, batchId: 1 } },
   ] : [{ $sort: { date: 1, _id: 1 } }];
   page.push({ $skip: offset }, { $limit: size + 1 });
 
@@ -128,15 +110,19 @@ async function list(actor, { view, date, owner, offset, includeSummary = false }
   return { rows, more: found.length > size, summary };
 }
 
-const transitions = { unreviewed: ['processing', 'dismissed', 'expired'], processing: ['completed', 'expired'] };
-async function transition(actor, ids, prior, status, submittedOn) {
+const transitions = { unreviewed: ['processing', 'dismissed', 'expired'], processing: ['expired'] };
+async function transition(actor, ids, prior, status) {
   if (!transitions[prior]?.includes(status)) throw new VaultError(422, 'Choose an available action for this invoice.');
   const rows = await Group.aggregate(invoices(actor, { ids })).option(queryLimit);
   if (rows.length !== ids.length) throw new VaultError(404, 'An invoice is no longer available.');
   if (rows.some(row => row.status !== prior)) throw new VaultError(409, 'An invoice has already moved. Refresh the list.');
   if (prior === 'unreviewed') await register(rows);
+  if (prior === 'processing') {
+    await Batch.init();
+    await Batch.create({ status: 'expired', ownerId: rows[0].ownerId, invoiceIds: ids });
+    return;
+  }
   const changes = { status, updatedBy: actor };
-  if (submittedOn) changes.submittedOn = submittedOn;
   const result = await Claim.updateMany({ _id: { $in: ids }, status: prior }, { $set: changes });
   if (result.modifiedCount !== ids.length) throw new VaultError(409, 'Another reviewer moved an invoice. Refresh the list to see the saved statuses.');
 }

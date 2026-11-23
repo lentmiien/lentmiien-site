@@ -15,12 +15,16 @@ html(lang='en')
       header.vault-header
         a.vault-name(href='/insurance/') Insurance
         nav.tabs(aria-label='Insurance')
-          each tab in [{view:'unreviewed', path:'/', label:'Unreviewed'}, {view:'processing', path:'/processing', label:'Processing'}, {view:'batches', path:'/batches', label:'Submitted batches'}]
-            a(href='/insurance' + tab.path, aria-current=view === tab.view || (view === 'batch' && tab.view === 'batches') ? 'page' : null)= tab.label
+          - const tabs = [{view:'unreviewed', path:'/', label:'Unreviewed'}, {view:'processing', path:'/processing', label:'Processing'}, ...(familyAccess ? [{view:'drafts', path:'/finalize', label:'Finalize batch'}] : []), {view:'batches', path:'/batches', label:'Submitted batches'}, ...(familyAccess ? [{view:'plans', path:'/plans', label:'Plan library'}] : [])]
+          - const active = view === 'workspace' ? (batch.status === 'draft' ? 'drafts' : 'batches') : view === 'batch' ? 'batches' : view.startsWith('plan') ? 'plans' : view
+          each tab in tabs
+            a(href='/insurance' + tab.path, aria-current=active === tab.view ? 'page' : null)= tab.label
       if view === 'error'
         .empty
           p(role='alert')= message
           a(href='/insurance/') Return to Insurance
+      else if ['workspace','drafts','plans','plan','plan-edit','number'].includes(view)
+        include insurance_workspace
       else
         - const here = '/insurance/' + (view === 'unreviewed' ? '' : view)
         - const suffix = view === 'batch' ? '&owner=' + owner + '&date=' + date : ''
@@ -63,22 +67,19 @@ html(lang='en')
                 each row in rows
                   tr
                     td
-                      a(href='/insurance/batch?owner=' + row.ownerId + '&date=' + row.submittedOn)= row.submittedOn
+                      a(href=row.batchId ? '/insurance/finalize/' + row.batchId : '/insurance/batch?owner=' + row.ownerId + '&date=' + row.submittedOn)= row.submittedOn
+                      if row.planName
+                        small= row.planName
                     td= row.ownerName
                     td= row.count
         else
-          if view === 'processing'
-            form#submit-claims.panel(method='post', action='/insurance/status')
+          if view === 'processing' && familyAccess
+            form#submit-claims.panel(method='post', action='/insurance/finalize')
               input(type='hidden', name='_csrf', value=csrfToken)
-              input(type='hidden', name='from', value='processing')
-              input(type='hidden', name='status', value='completed')
-              .fields
-                label(for='submission-date') Submission date
-                input#submission-date(type='date', name='submittedOn', required)
               label.inline-check(hidden data-select-all)
                 input(type='checkbox')
                 | Select all on this page
-              button.primary(type='submit') Mark selected invoices submitted
+              button.primary(type='submit') Create draft from selected invoices
           .table-wrap
             table
               thead
@@ -92,7 +93,7 @@ html(lang='en')
                 each row in rows
                   tr
                     td
-                      if view === 'processing'
+                      if view === 'processing' && familyAccess
                         input(type='checkbox', name='ids', value=row._id, form='submit-claims', aria-label='Select ' + row.title)
                         | #{' '}
                       a.doc-link(href='/document-vault/pages/' + row._id)= row.title
@@ -111,6 +112,15 @@ html(lang='en')
                             button.primary(type='submit', name='status', value='processing') Insurance processing
                             button.secondary(type='submit', name='status', value='dismissed') No further action
                           button.secondary(type='submit', name='status', value='expired') Expired
+        if view === 'batch' && legacyNotes
+          form.fields.claim-notes(method='post', action='/insurance/legacy-notes')
+            input(type='hidden', name='_csrf', value=csrfToken)
+            input(type='hidden', name='revision', value=legacyNotes.revision)
+            input(type='hidden', name='owner', value=owner)
+            input(type='hidden', name='date', value=date)
+            label(for='follow-up') Follow-up notes and claim outcome
+            textarea#follow-up(name='notes', rows='4', maxlength='6000')= legacyNotes.text
+            button.secondary(type='submit') Save follow-up notes
         if offset || more
           nav.pager(aria-label='Results pages')
             if offset

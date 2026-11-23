@@ -1,0 +1,194 @@
+mixin token()
+  input(type='hidden', name='_csrf', value=csrfToken)
+mixin version(value)
+  +token()
+  input(type='hidden', name='revision', value=value)
+mixin pager(path, start, more)
+  if start || more
+    nav.pager(aria-label='Results pages')
+      if start
+        a(href=path + Math.max(0, start - pageSize)) Previous
+      if more
+        a(href=path + (start + pageSize)) Next
+mixin planFacts(p, reveal)
+  dl.facts.claim-facts
+    dt Insurance company
+    dd= p.company
+    dt Policy number
+    dd
+      a(href=reveal) Reveal policy number
+    if p.startDate
+      dt Start date
+      dd= p.startDate
+    if p.monthlyCost
+      dt Monthly premium
+      dd= [p.monthlyCost,p.currency].filter(Boolean).join(' ')
+    if p.coverage
+      dt Coverage
+      dd= p.coverage
+    if p.instructions
+      dt How to claim
+      dd= p.instructions
+    if p.claimUrl
+      dt Claim website
+      dd
+        a(href=p.claimUrl, target='_blank', rel='noreferrer')= p.claimUrl
+if view === 'plans' || view === 'drafts'
+  - const library = view === 'plans'
+  header.section-head.heading-row
+    h1= library ? 'Insurance plan library' : 'Finalize batch'
+    if library && managePlans
+      a.action.primary(href='/insurance/plans/new') Add plan
+    if !library
+      a.action.secondary(href='/insurance/processing') Select invoices for a new draft
+  if rows.length
+    .table-wrap
+      table
+        thead
+          tr
+            th= library ? 'Plan' : 'Draft'
+            th Policyholder
+            th= library ? 'Insurance company' : 'Invoices'
+        tbody
+          each row in rows.slice(0, pageSize)
+            tr
+              td
+                a(href='/insurance/' + (library ? 'plans/' : 'finalize/') + row._id)= library ? row.name : row.title || 'Empty draft'
+              td= row.owner || 'Unavailable account'
+              td= library ? row.company : row.count
+  else
+    p.empty= library ? 'No insurance plans yet.' : 'No drafts awaiting submission.'
+  +pager('/insurance/' + (library ? 'plans' : 'finalize') + '?offset=', offset, rows.length > pageSize)
+else if view === 'number'
+  header.section-head
+    a(href=back) Back
+    h1= title
+  dl.facts
+    dt Policy number
+    dd= number || 'No policy number recorded'
+else if view === 'plan'
+  header.section-head.heading-row
+    div
+      h1= plan.name
+      p= ownerName
+    if managePlans
+      a.action.secondary(href='/insurance/plans/' + plan._id + '/edit') Edit plan
+  +planFacts(plan, '/insurance/plans/' + plan._id + '/number')
+else if view === 'plan-edit'
+  header.section-head
+    h1= plan._id ? 'Edit insurance plan' : 'Add insurance plan'
+  form.fields.plan-editor(method='post', action='/insurance/plans' + (plan._id ? '/' + plan._id : ''))
+    +token()
+    if plan._id
+      input(type='hidden', name='revision', value=plan.__v)
+    label(for='owner') Policyholder
+    select#owner(name='ownerId', required)
+      each account in owners
+        option(value=account._id, selected=String(account._id) === String(plan.ownerId))= account.name
+    each field in [{key:'name',label:'Plan name',required:true},{key:'company',label:'Insurance company',required:true},{key:'startDate',label:'Start date',type:'date'},{key:'monthlyCost',label:'Monthly premium',type:'number'},{key:'currency',label:'Currency (e.g. JPY)'},{key:'number',label:plan._id ? 'Replacement policy number (leave blank to keep)' : 'Policy number',type:'password'},{key:'claimUrl',label:'Claim website (HTTPS)',type:'url'}]
+      label(for=field.key)= field.label
+      input(id=field.key, type=field.type || 'text', name=field.key, value=plan[field.key], required=field.required, maxlength=field.key === 'claimUrl' ? 2000 : field.key === 'currency' ? 3 : 160, min=field.key === 'monthlyCost' ? '0' : null, step=field.key === 'monthlyCost' ? '0.0001' : null, autocomplete='off')
+    if plan._id
+      label.inline-check
+        input(type='checkbox', name='clearNumber')
+        | Clear the saved policy number
+    label(for='coverage') What the plan covers
+    textarea#coverage(name='coverage', rows='4', maxlength='6000')= plan.coverage
+    label(for='instructions') Claim instructions, required documents and follow-up
+    textarea#instructions(name='instructions', rows='5', maxlength='6000')= plan.instructions
+    button.primary(type='submit') Save plan
+else if view === 'workspace'
+  - const draft = batch.status === 'draft'
+  - const target = '/insurance/finalize/' + batch._id
+  header.section-head.heading-row
+    div
+      h1= draft ? 'Finalize batch' : 'Submitted claim'
+      p= [ownerName, batch.submittedOn].filter(Boolean).join(' · ')
+    if batch.invoiceIds.length || batch.supportingIds.length
+      a.action.secondary(href=target + '/scans.zip') Download batch scans (.zip)
+  each set in [{kind:'invoice',label:'Invoices',rows:batch.invoices},{kind:'support',label:'Supporting documents',rows:batch.supporting}]
+    section.claim-section
+      h2= set.label
+      if set.rows.length
+        .table-wrap
+          table
+            tbody
+              each row in set.rows
+                tr
+                  td
+                    a(href='/document-vault/pages/' + row.pageId)= row.title
+                    small= [row.date, row.amount == null ? '' : [row.amount,row.currency].filter(x => x != null).join(' ')].filter(Boolean).join(' · ')
+                  td
+                    a(href='/document-vault/pages/' + row.pageId + '/image', target='_blank', rel='noreferrer') Open scan
+                  if draft
+                    td
+                      form(method='post', action=target)
+                        +version(batch.__v)
+                        input(type='hidden', name='kind', value=set.kind)
+                        input(type='hidden', name='pageId', value=row.pageId)
+                        button.secondary(name='action', value='remove')= set.kind === 'invoice' ? 'Return to Processing' : 'Remove'
+      else
+        p.hint= set.kind === 'invoice' ? 'No invoices selected.' : 'No supporting documents attached.'
+  if draft
+    section.claim-section
+      h2 Add documents
+      form.search(method='get', action=target)
+        select(name='kind', aria-label='Document source')
+          option(value='invoice', selected=kind === 'invoice') Processing invoices
+          option(value='support', selected=kind === 'support') Document Vault
+        input(type='search', name='q', value=q, maxlength='160', placeholder='Search titles', aria-label='Search titles')
+        button.secondary Search
+      if choices.length
+        .table-wrap
+          table
+            tbody
+              each row in choices.slice(0,pageSize)
+                tr
+                  td
+                    a(href='/document-vault/pages/' + row._id)= row.title
+                    small= row.date || 'Undated'
+                  td
+                    form(method='post', action=target)
+                      +version(batch.__v)
+                      input(type='hidden', name='pageId', value=row._id)
+                      input(type='hidden', name='kind', value=kind)
+                      button.secondary(name='action', value='add')= kind === 'invoice' ? 'Add invoice' : 'Attach supporting document'
+      else
+        p.hint No matching documents for this policyholder.
+      +pager(target + '?kind=' + kind + '&q=' + encodeURIComponent(q) + '&offset=', offset, choices.length > pageSize)
+  section.claim-section
+    h2= draft ? 'Claim preparation' : 'Submitted details'
+    if selected
+      h3= selected.name
+      +planFacts(selected, draft ? '/insurance/plans/' + selected._id + '/number' : target + '/number')
+    if draft
+      form.fields.plan-editor(method='post', action=target)
+        +version(batch.__v)
+        label(for='planId') Insurance plan
+        select#planId(name='planId', required)
+          option(value='') Choose a plan
+          if selected
+            option(value=selected._id, selected)= selected.name + ' · ' + selected.company
+          each p in plans.slice(0,pageSize)
+            if !selected || String(selected._id) !== String(p._id)
+              option(value=p._id)= p.name + ' · ' + p.company
+        +pager(target + '?planOffset=', planOffset, plans.length > pageSize)
+        label(for='notes') Submission notes
+        textarea#notes(name='notes', rows='4', maxlength='6000')= batch.notes
+        button.secondary(type='submit', name='action', value='details', formnovalidate) Save draft details
+        label(for='submittedOn') Date submitted to insurer
+        input#submittedOn(type='date', name='submittedOn', required)
+        button.primary(type='submit', name='action', value='submit') Record submission
+      details.claim-section
+        summary Discard draft
+        form(method='post', action=target)
+          +version(batch.__v)
+          button.secondary(name='action', value='discard') Discard draft and return invoices to Processing
+    else
+      h3 Submission notes
+      p.claim-text= batch.notes || 'No submission notes.'
+      form.fields.claim-notes(method='post', action=target)
+        +version(batch.__v)
+        label(for='notes') Follow-up notes and claim outcome
+        textarea#notes(name='notes', rows='5', maxlength='6000')= batch.followUp
+        button.primary(name='action', value='followUp') Save follow-up notes

@@ -208,12 +208,13 @@ const RunpodOperationEvent = require('./models/runpod_operation_event');
 const RunpodBillingPeriod = require('./models/runpod_billing_period');
 const RunpodPodBillingPeriod = require('./models/runpod_pod_billing_period');
 
+const { Plan: InsurancePlan, Batch: InsuranceBatch } = require('./models/insurance_batch');
 const InsuranceClaim = require('./models/insurance_claim');
 const DocumentVault = require('./models/document_vault');
 
 // Export models
 module.exports = {
-  InsuranceClaim,
+  InsuranceClaim, InsurancePlan, InsuranceBatch,
   DocumentVault,
   PackingJob,
   PackingSharedCatalog,
