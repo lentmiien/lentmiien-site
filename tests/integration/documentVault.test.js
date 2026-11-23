@@ -193,6 +193,9 @@ suite('Document vault with standalone MongoDB', () => {
     expect(view.headers.get('cache-control')).toContain('no-store');
     const html = await view.text();
     expect(html).toContain('Reviewed receipt');
+    const dateLink = require('jsdom').JSDOM.fragment(html).querySelector('dd a[href*="dateFrom="]');
+    expect(dateLink.textContent).toBe(answer.documentDate);
+    expect(dateLink.getAttribute('href')).toBe('/document-vault/?q=&dateFrom=' + answer.documentDate + '&dateTo=' + answer.documentDate);
     expect(html).not.toContain('/pages/' + second);
     expect(html).not.toContain('Processing controls');
     expect((await request('viewer', '/pages/' + second + '/image')).status).toBe(404);

@@ -108,7 +108,8 @@ block content
           dd= ownerName
           if page.documentDate
             dt Document date
-            dd= page.documentDate
+            dd
+              a(href=base + '/?q=&dateFrom=' + encodeURIComponent(page.documentDate) + '&dateTo=' + encodeURIComponent(page.documentDate))= page.documentDate
           if page.tags && page.tags.length
             dt Tags
             dd.tag-list
