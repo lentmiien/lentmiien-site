@@ -1,6 +1,6 @@
 const { invoices } = require('./insuranceInvoices');
 const { Types } = require('mongoose');
-const { Plan, Batch } = require('../models/insurance_batch');
+const { Plan, Batch, ensureBatchIndexes } = require('../models/insurance_batch');
 const { Group } = require('../models/document_vault');
 const User = require('../models/useraccount');
 const { VaultError, PAGE_SIZE } = require('./documentVault/policy');
@@ -87,7 +87,7 @@ async function createDraft(actor, ids) {
   const rows = await invoiceRows(actor, ids, null, 'processing');
   if (new Set(rows.map(row => String(row.ownerId))).size !== 1) throw new VaultError(422, 'Select invoices for one policyholder per batch.');
   if (!await User.exists({ _id: rows[0].ownerId, ...accounts })) throw new VaultError(422, 'A batch needs an admin or family policyholder.');
-  await Batch.init();
+  await ensureBatchIndexes();
   return Batch.create({ status: 'draft', ownerId: rows[0].ownerId, anchorGroupId: rows[0].groupId, invoiceIds: ids,
     invoices: rows.map(item), groupIds: [...new Set(rows.map(row => String(row.groupId)))] });
 }
@@ -150,6 +150,7 @@ async function edit(actor, id, body) {
     case 'remove': changes = await draftAttachments(actor, batch, body); break;
     default: throw new VaultError(422, 'Choose an available batch action.');
   }
+  if (body.action === 'add' && body.kind === 'invoice') await ensureBatchIndexes();
   if (!(await Batch.updateOne(filter, { $set: changes, $inc: { __v: 1 } })).modifiedCount) throw conflict();
 }
 module.exports = { family, accounts, visibility, getBatch, drafts, planDirectory, savePlan, planDetail, createDraft, edit, picker };

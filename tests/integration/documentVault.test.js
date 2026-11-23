@@ -33,6 +33,10 @@ suite('Document vault with standalone MongoDB', () => {
   const oldChat = process.env.OLLAMA_BASE_URL;
   beforeAll(async () => {
     if (!/^mongodb:\/\/127\.0\.0\.1:\d+\/document_vault_test$/.test(fixture)) throw new Error('Use a disposable loopback document_vault_test fixture.');
+    // Match production: batch models are registered before the connection opens.
+    mongoose.set('bufferCommands', false);
+    require('../../models/insurance_batch');
+    await new Promise(resolve => setImmediate(resolve));
     await mongoose.connect(fixture, { dbName: 'document_vault_test_' + randomUUID().replaceAll('-', ''), bufferCommands: false });
     const api = express();
     api.get('/llm/models', (_req, res) => res.json({ models: ['qwen3.8:27b', 'alternate:12b'].map(id => ({ id, allow_images: true })) }));

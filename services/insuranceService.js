@@ -1,5 +1,5 @@
 const { invoices, invoiceTag, filedInvoice } = require('./insuranceInvoices');
-const { Batch } = require('../models/insurance_batch');
+const { Batch, ensureBatchIndexes } = require('../models/insurance_batch');
 const { visibility } = require('./insuranceBatches');
 const Claim = require('../models/insurance_claim');
 const { Group } = require('../models/document_vault');
@@ -118,7 +118,7 @@ async function transition(actor, ids, prior, status) {
   if (rows.some(row => row.status !== prior)) throw new VaultError(409, 'An invoice has already moved. Refresh the list.');
   if (prior === 'unreviewed') await register(rows);
   if (prior === 'processing') {
-    await Batch.init();
+    await ensureBatchIndexes();
     await Batch.create({ status, ownerId: rows[0].ownerId, invoiceIds: ids });
     return;
   }

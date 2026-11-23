@@ -14,9 +14,26 @@ const batch = new Schema({
   invoiceIds: [id], supportingIds: [id], groupIds: [id], anchorGroupId: id, externalGroupIds: [id], planId: id,
   invoices: [item], supporting: [item], plan: new Schema(planFields, { _id: false }),
   notes: String, followUp: String, submittedOn: String, legacyKey: String,
-}, { timestamps: true, optimisticConcurrency: true });
+}, { timestamps: true, optimisticConcurrency: true, autoCreate: false, autoIndex: false });
 // A single document write reserves or releases all selected invoices on standalone MongoDB.
 batch.index({ invoiceIds: 1 }, { unique: true, partialFilterExpression: { 'invoiceIds.0': { $exists: true } } });
 batch.index({ legacyKey: 1 }, { unique: true, sparse: true });
 batch.index({ status: 1, ownerId: 1 });
-module.exports = { Plan: mongoose.model('InsurancePlan', plan), Batch: mongoose.model('InsuranceBatch', batch) };
+const Batch = mongoose.model('InsuranceBatch', batch);
+const indexSetup = new WeakMap();
+
+// Models are loaded before MongoDB connects. Build the declared indexes on the
+// connected database, and allow a later request to retry a failed build.
+async function ensureBatchIndexes() {
+  const db = Batch.db.db;
+  if (Batch.db.readyState !== 1 || !db) throw new Error('Insurance batch storage is unavailable.');
+  if (!indexSetup.has(db)) {
+    indexSetup.set(db, Batch.createIndexes().catch(error => {
+      indexSetup.delete(db);
+      throw error;
+    }));
+  }
+  await indexSetup.get(db);
+}
+
+module.exports = { Plan: mongoose.model('InsurancePlan', plan), Batch, ensureBatchIndexes };

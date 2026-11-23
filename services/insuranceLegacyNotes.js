@@ -1,6 +1,6 @@
 const { Types } = require('mongoose');
 const Claim = require('../models/insurance_claim');
-const { Batch } = require('../models/insurance_batch');
+const { Batch, ensureBatchIndexes } = require('../models/insurance_batch');
 const { Group } = require('../models/document_vault');
 const { VaultError } = require('./documentVault/policy');
 const { visibility } = require('./insuranceBatches');
@@ -23,6 +23,7 @@ async function save(actor, owner, date, revision, notes) {
   const current = await read(actor, owner, date);
   if (!current) throw new VaultError(404, 'Batch unavailable.');
   if (revision !== current.revision) throw new VaultError(409, 'Follow-up notes changed. Refresh to continue.');
+  await ensureBatchIndexes();
   const result = await Batch.updateOne({ legacyKey: owner + '/' + date, __v: revision },
     { $set: { ownerId: owner, status: 'legacy', groupIds: current.groupIds, followUp: notes }, $inc: { __v: 1 } }, { upsert: revision === 0 });
   if (!result.modifiedCount && !result.upsertedCount) throw new VaultError(409, 'Follow-up notes changed.');
