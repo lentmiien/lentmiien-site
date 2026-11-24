@@ -186,7 +186,8 @@
   align-items: center;
   gap: .45rem;
 }
-.chat5-composer-bar { justify-content: space-between; min-height: 2.6rem; }
+.chat5-composer-bar { flex-wrap: wrap; min-height: 2.6rem; }
+#chat5CharCounter { margin-inline-start: auto; }
 .chat5-toggle { min-height: 2.25rem; padding-inline: .2rem .65rem; font-weight: 600; }
 .chat5-chevron { color: var(--accent); margin-inline: .2rem; }
 .chat5-composer .chat5-editor {
@@ -196,6 +197,33 @@
   border: 1px solid var(--divider);
   border-radius: .55rem;
 }
+/* Use the visible viewport so the send controls stay above the mobile keyboard. */
+.chat5-workspace[data-composer-mode='fullscreen'] {
+  --chat5-editor-height: 100%;
+  inset: var(--chat5-visible-top, 0px) 0 auto;
+  height: var(--chat5-visible-height);
+  grid-template-rows: minmax(0, 1fr);
+  padding-top: env(safe-area-inset-top, 0px);
+}
+body:has(.chat5-workspace[data-composer-mode='fullscreen']) .account-topbar,
+.chat5-workspace[data-composer-mode='fullscreen'] > :is(.chat5-topline, .chat5-thread) {
+  display: none;
+}
+[data-composer-mode='fullscreen'] .chat5-composer {
+  display: flex;
+  overflow-y: auto;
+}
+[data-composer-mode='fullscreen'] .chat5-composer-inner,
+[data-composer-mode='fullscreen'] #chat5ComposerBody {
+  display: flex;
+  flex-direction: column;
+}
+[data-composer-mode='fullscreen'] .chat5-composer-inner { width: 100%; }
+[data-composer-mode='fullscreen'] #chat5ComposerBody,
+[data-composer-mode='fullscreen'] .chat5-editor {
+  flex: 1;
+}
+[data-composer-mode='fullscreen'] .chat5-editor { min-height: 4rem; }
 .chat5-editor .toastui-editor-defaultUI { border: 0; }
 .chat5-editor .toastui-editor-defaultUI-toolbar { background: var(--surface-2); }
 .chat5-compose-actions { padding-block: .45rem; flex-wrap: wrap; }

@@ -2013,18 +2013,29 @@ function bindChatControls() {
 
   const toggle = document.getElementById('chat5ComposerToggle');
   const composerBody = document.getElementById('chat5ComposerBody');
-  function expandComposer(expand) {
-    const atEnd = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 5;
-    composerBody.hidden = !expand;
-    toggle.setAttribute('aria-expanded', String(expand));
-    document.getElementById('chat5ToggleLabel').textContent = expand ? 'Minimize editor' : 'Write a message';
-    if (atEnd) thread.scrollTop = thread.scrollHeight;
+  const fullscreenToggle = document.getElementById('chat5FullscreenToggle');
+  let followLatest = true;
+  function setComposerMode(mode) {
+    if (workspace.dataset.composerMode !== 'fullscreen') {
+      followLatest = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 5;
+    }
+    const expanded = mode !== 'minimized';
+    workspace.dataset.composerMode = mode;
+    composerBody.hidden = !expanded;
+    toggle.setAttribute('aria-expanded', String(expanded));
+    document.getElementById('chat5ToggleLabel').textContent = expanded ? 'Minimize editor' : 'Write a message';
+    fullscreenToggle.textContent = mode === 'fullscreen' ? 'Exit full screen' : 'Full screen editor';
+    if (mode !== 'fullscreen' && followLatest) thread.scrollTop = thread.scrollHeight;
   }
-  if (window.matchMedia?.('(max-width: 640px)').matches && getCurrentConversationId() !== 'NEW') expandComposer(false);
+  if (window.matchMedia?.('(max-width: 640px)').matches && getCurrentConversationId() !== 'NEW') setComposerMode('minimized');
   toggle.addEventListener('click', () => {
     const expand = composerBody.hidden;
-    expandComposer(expand);
+    setComposerMode(expand ? 'split' : 'minimized');
     if (expand) editor.focus();
+  });
+  fullscreenToggle.addEventListener('click', () => {
+    setComposerMode(workspace.dataset.composerMode === 'fullscreen' ? 'split' : 'fullscreen');
+    editor.focus();
   });
   const viewport = window.visualViewport;
   if (viewport) {
