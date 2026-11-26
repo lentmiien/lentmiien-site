@@ -34,6 +34,8 @@ export class Audio {
     if (kind === 'mine') this.tone(130, .1, 'triangle');else if (kind === 'place') this.tone(280, .14, 'triangle');else if (kind === 'craft') {
       this.tone(440, .2);
       setTimeout(() => this.tone(660, .25), 100);
+    } else if (kind === 'nightjar') {
+      [659.25, 987.77, 880, 554.37, 739.99].forEach((f, n) => setTimeout(() => this.tone(f, .85, 'sine', .022), n * 260));
     } else if (kind === 'music') {
       [262, 330, 392, 523, 440, 392].forEach((f, n) => setTimeout(() => this.tone(f, .65, 'sine', .018), n * 210));
     } else if (kind === 'storm') this.tone(45, 5, 'triangle', .16);else this.tone(330, .16);

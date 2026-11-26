@@ -1,0 +1,117 @@
+{
+  "journeys": [
+    {
+      "site": "Kestrel Wing",
+      "blocksPlaced": 48,
+      "deck": 54,
+      "sailed": 14
+    },
+    {
+      "site": "Vesper Lyre",
+      "blocksPlaced": 50,
+      "deck": 55,
+      "sailed": 14
+    }
+  ],
+  "recovered": {
+    "finds": [
+      "aviator"
+    ],
+    "mantle": 1,
+    "lampsCarried": 1,
+    "lampsPlaced": 1
+  },
+  "scenes": [
+    {
+      "island": "kestrel",
+      "view": "approach",
+      "chunks": 81,
+      "cached": 117,
+      "queued": 0,
+      "skyCached": 70,
+      "skyMeshes": 26,
+      "drawCalls": 55,
+      "triangles": 123030,
+      "geometries": 67,
+      "medianFrameMs": 37.40000009536743,
+      "p95FrameMs": 173.20000004768372,
+      "meanRenderMs": 16.90370370282067
+    },
+    {
+      "island": "kestrel",
+      "view": "summit",
+      "chunks": 81,
+      "cached": 119,
+      "queued": 0,
+      "skyCached": 70,
+      "skyMeshes": 26,
+      "drawCalls": 64,
+      "triangles": 129398,
+      "geometries": 80,
+      "medianFrameMs": 39,
+      "p95FrameMs": 173.20000004768372,
+      "meanRenderMs": 15.129687502980232
+    },
+    {
+      "island": "kestrel",
+      "view": "deck",
+      "chunks": 81,
+      "cached": 119,
+      "queued": 0,
+      "skyCached": 70,
+      "skyMeshes": 26,
+      "drawCalls": 25,
+      "triangles": 104442,
+      "geometries": 89,
+      "medianFrameMs": 37.700000047683716,
+      "p95FrameMs": 140.89999985694885,
+      "meanRenderMs": 12.186206905321143
+    },
+    {
+      "island": "vesper",
+      "view": "approach",
+      "chunks": 81,
+      "cached": 117,
+      "queued": 0,
+      "skyCached": 59,
+      "skyMeshes": 39,
+      "drawCalls": 89,
+      "triangles": 138626,
+      "geometries": 101,
+      "medianFrameMs": 38.700000047683716,
+      "p95FrameMs": 100.70000004768372,
+      "meanRenderMs": 9.580740750277483
+    },
+    {
+      "island": "vesper",
+      "view": "summit",
+      "chunks": 81,
+      "cached": 118,
+      "queued": 0,
+      "skyCached": 59,
+      "skyMeshes": 39,
+      "drawCalls": 87,
+      "triangles": 146094,
+      "geometries": 125,
+      "medianFrameMs": 41.09999990463257,
+      "p95FrameMs": 100.70000004768372,
+      "meanRenderMs": 9.092810464061163
+    },
+    {
+      "island": "vesper",
+      "view": "deck",
+      "chunks": 81,
+      "cached": 118,
+      "queued": 0,
+      "skyCached": 63,
+      "skyMeshes": 41,
+      "drawCalls": 39,
+      "triangles": 120892,
+      "geometries": 110,
+      "medianFrameMs": 38.700000047683716,
+      "p95FrameMs": 100,
+      "meanRenderMs": 6.872222222222222
+    }
+  ],
+  "errors": []
+}

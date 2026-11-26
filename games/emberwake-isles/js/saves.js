@@ -31,7 +31,7 @@
     if (!object(v) || Object.keys(v).length > Object.keys(items).length) fail();
     let sum = 0;
     for (const [id, n] of Object.entries(v)) {
-      if (!Object.hasOwn(items, id)) fail();
+      if (!Object.hasOwn(items, id) || id === 'skyCoffer') fail();
       number(n, 1, stack, true);
       sum += n;
     }
@@ -54,11 +54,13 @@
   }
   function validate(s) {
     const old = s?.version === 1;
-    const previous = old ? D.legacy : s?.version === 2 ? D.gardens : null;
+    const historical = s?.version < C.version;
+    const previous = { 1: D.legacy, 2: D.gardens, 3: D.wayfinding }[s?.version];
+    const smallPack = s?.version <= 2;
     const extent = previous?.extent ?? C.extent;
     const blockCount = previous?.blocks ?? blocks.length;
-    keys(s, ['version', 'seed', 'time', 'player', 'inventory', 'hotbar', 'selected', 'edits', 'placed', 'crops', 'harvests', 'boats', 'discoveries', 'secrets', 'caveFinds', 'crafted', 'stats', 'camp', 'status', 'disaster', 'buff', 'settings', 'name', ...(old ? [] : ['expedition'])]);
-    if (![1, 2, C.version].includes(s.version)) fail('Unsupported save version. Keep the original export.');
+    keys(s, ['version', 'seed', 'time', 'player', 'inventory', 'hotbar', 'selected', 'edits', 'placed', 'crops', 'harvests', 'boats', 'discoveries', 'secrets', 'caveFinds', 'crafted', 'stats', 'camp', 'status', 'disaster', 'buff', 'settings', 'name', ...(old ? [] : ['expedition']), ...(historical ? [] : ['sky'])]);
+    if (![1, 2, 3, C.version].includes(s.version)) fail('Unsupported save version. Keep the original export.');
     number(s.seed, 0, 2147483647, true);
     number(s.time, 0, 1e9);
     number(s.buff, 0, 300);
@@ -73,9 +75,9 @@
     if (s.status === 'alive' && Math.hypot(p.x, p.z) >= (previous?.border ?? C.border)) fail('A living voyage cannot start beyond the storm boundary.');
     point(s.camp, extent);
     if (Math.hypot(s.camp.x, s.camp.z) > (previous?.warning ?? C.warning)) fail();
-    inventory(s.inventory, previous ? 1800 : C.pack, previous ? 999 : C.stack);
+    inventory(s.inventory, smallPack ? 1800 : previous?.pack ?? C.pack, smallPack ? 999 : previous?.stack ?? C.stack);
     list(s.hotbar, 8, id => {
-      if (!Object.hasOwn(items, id)) fail();
+      if (!Object.hasOwn(items, id) || id === 'skyCoffer') fail();
     });
     if (s.hotbar.length !== 8) fail();
     number(s.selected, 0, 7, true);
@@ -84,9 +86,8 @@
     number(s.settings.sensitivity, .25, 3);
     number(s.settings.view, 3, 5, true);
     for (const k of ['discoveries', 'secrets', 'caveFinds']) {
-      list(s[k], previous?.islands.length ?? islands.length, id => {
-        if (!(previous?.islands ?? islands.map(i => i.id)).includes(id)) fail();
-      });
+      const allowed = previous?.islands ?? (k === 'discoveries' ? D.destinations : islands).map(i => i.id);
+      list(s[k], allowed.length, id => { if (!allowed.includes(id)) fail(); });
       if (new Set(s[k]).size !== s[k].length) fail();
     }
     list(s.crafted, recipes.length, id => {
@@ -123,7 +124,7 @@
         if (!Array.isArray(e) || e.length !== 2) fail();
         number(e[0], 256, 20479, true);
         number(e[1], 0, blockCount - 1, true);
-        if ([D.ids.bedrock, D.ids.relic].includes(e[1]) || seen.has(e[0])) fail();
+        if ([D.ids.bedrock, D.ids.relic, D.ids.skyCoffer].includes(e[1]) || seen.has(e[0])) fail();
         seen.add(e[0]);
       });
       count += entries.length;
@@ -140,7 +141,7 @@
     for (const [k, id] of Object.entries(s.placed)) {
       coordKey(k, extent);
       number(id, 1, blockCount - 1, true);
-      if ([D.ids.bedrock, D.ids.relic].includes(id)) fail();
+      if ([D.ids.bedrock, D.ids.relic, D.ids.skyCoffer].includes(id)) fail();
       edited(k, id);
       if (id === D.ids.chest) chests++;
     }
@@ -158,7 +159,7 @@
       if (k.startsWith('chest:')) {
         coordKey(k.slice(6), extent);
         if (s.placed[k.slice(6)] !== D.ids.chest) fail();
-        inventory(v, 4000, previous ? 999 : C.stack);
+        inventory(v, 4000, smallPack ? 999 : C.stack);
       } else {
         if (!/^-?\d+,\d+,-?\d+$/.test(k) || k.length > 18) fail();
         const [x, y, z] = k.split(',').map(Number);
@@ -184,12 +185,34 @@
       number(entry.respawn, 0, s.time + 300);
       if (entry.health > 0 && entry.respawn !== 0) fail();
     }
-    return previous ? migrations[2](s) : s;
+    if (s.version === 2) return migrations[3](migrations[2](s));
+    if (s.version === 3) return migrations[3](s);
+    keys(s.sky, ['berths', 'clear', 'finds']);
+    const sky = D.sky;
+    list(s.sky.berths, sky.sites.length, n => number(n, 0, sky.moorings.length - 1, true));
+    if (s.sky.berths.length !== sky.sites.length) fail();
+    const sites = sky.sites.map((site, i) => sky.moor(site, s.sky.berths[i]));
+    const cells = new Set();
+    list(s.sky.clear, 2400, cell => {
+      if (!Array.isArray(cell) || cell.length !== 3) fail();
+      const [gx, gz, mask] = cell;
+      number(gx, -C.extent / 4, C.extent / 4 - 1, true);
+      number(gz, -C.extent / 4, C.extent / 4 - 1, true);
+      number(mask, 1, (1 << ((C.height - 24) / 4)) - 1, true);
+      const key = gx + ',' + gz;
+      if (cells.has(key) || !sites.some(site => sky.nearCell(site, gx, gz))) fail();
+      cells.add(key);
+    });
+    const finds = sky.sites.flatMap(site => site.vaults.map(v => v.id));
+    list(s.sky.finds, finds.length, id => { if (!finds.includes(id)) fail(); });
+    if (new Set(s.sky.finds).size !== s.sky.finds.length) fail();
+    return s;
   }
   // Migrations add state, never rewrite seeded terrain, voxel IDs or existing edits.
   const migrations = {
     1: s => ({ ...s, version: 2, expedition: { projects: { reed: 0, amber: 0 }, defeated: 0, creatures: {} } }),
-    2: s => ({ ...s, version: 3 })
+    2: s => ({ ...s, version: 3 }),
+    3: s => ({ ...s, version: 4, sky: D.sky.layoutFor(s) })
   };
   function decode(raw) {
     if (typeof raw !== 'string' || raw.length > MAX) fail('Save exceeds the 2 MB import limit.');

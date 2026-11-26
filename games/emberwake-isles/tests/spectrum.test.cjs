@@ -7,10 +7,10 @@ const voyage = require('./fixtures/v2-voyage.json');
 const shores = D.islands.filter(i => i.shades);
 
 test('Outer Gardens voyage and 1,849 prior terrain chunks survive the expansion', () => {
-  assert.deepEqual(S.decode(JSON.stringify(voyage)), { ...voyage, version: 3 });
+  assert.deepEqual(S.decode(JSON.stringify(voyage)), { ...voyage, version: D.C.version, sky: D.sky.layoutFor() });
   const w = new W.World(voyage.seed), h = crypto.createHash('sha256');
   for (let z = -64; z < 64; z += 3) for (let x = -64; x < 64; x += 3) {
-    h.update(w.generate(x, z)); w.chunks.clear();
+    h.update(w.generate(x, z).map(id => id >= D.sky.pack.firstBlock ? 0 : id)); w.chunks.clear();
   }
   assert.equal(h.digest('hex'), fs.readFileSync(require.resolve('./fixtures/v2-sha256.txt'), 'utf8').trim());
   assert.equal(shores.length, 4);

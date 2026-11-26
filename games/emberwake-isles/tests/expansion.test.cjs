@@ -26,8 +26,8 @@ function encounter() {
 }
 function swing(g, a) { aim(g, a.x, a.y + .5, a.z); g.state.time += .56; return g.encounters.hit(); }
 test('all 63 original voxel identities are immutable', () => assert.deepEqual(D.blocks.slice(0, golden.blocks.length).map(b => b.key), golden.blocks));
-test('507 frozen v1 chunks across three seeds are byte-identical after expansion', () => {
-  for (const [seed, x, z, expected] of golden.chunks) assert.equal(digest(new W.World(seed).generate(x, z)), expected, `${seed}:${x},${z}`);
+test('507 frozen v1 chunks retain every original voxel beneath the new airborne layer', () => {
+  for (const [seed, x, z, expected] of golden.chunks) assert.equal(digest(new W.World(seed).generate(x, z).map(id => id >= D.sky.pack.firstBlock ? 0 : id)), expected, `${seed}:${x},${z}`);
 });
 test('full old-map height and biome fingerprints are unchanged for three seeds', () => {
   for (const [seed, expected] of golden.columns) {
@@ -56,8 +56,9 @@ test('both new caves expose their required ore, with safe open entrances for ten
   }
 });
 test('v1 migration preserves every existing field and adds only schema and expedition defaults', () => {
-  const old = JSON.parse(legacyRaw), migrated = S.decode(legacyRaw), { expedition, ...rest } = migrated;
+  const old = JSON.parse(legacyRaw), migrated = S.decode(legacyRaw), { expedition, sky, ...rest } = migrated;
   assert.deepEqual(rest, { ...old, version: D.C.version });
+  assert.deepEqual(sky, D.sky.layoutFor());
   assert.deepEqual(expedition, { projects: { reed: 0, amber: 0 }, defeated: 0, creatures: {} });
   const g = new G.Game(migrated); g.world.unload(665, 220, 1);
   assert.equal(g.world.get(0, 12, 0), D.ids.marble);
@@ -77,20 +78,20 @@ test('migration write quota failures preserve original primary and backup', () =
     assert(!saves.save(1, saves.load(1).state).ok); assert.equal(mem.getItem(saves.key(1)), legacyRaw); assert.equal(mem.getItem(saves.key(1, 'backup')), legacyRaw);
   }
 });
-test('v2 slot retains distinct old checkpoints across a failed upgrade and rewinds an old storm explicitly', () => {
+for (const fixture of ['v2-voyage','v3-balcony']) test(fixture + ' retains old checkpoints on quota failure and requires explicit storm recovery', () => {
   const mem = new Memory(), saves = new S.Saves(mem);
-  const raw = fs.readFileSync(require.resolve('./fixtures/v2-voyage.json'), 'utf8');
+  const raw = fs.readFileSync(require.resolve('./fixtures/' + fixture + '.json'), 'utf8');
   const primary = saves.key(1), backup = saves.key(1, 'backup');
   mem.setItem(primary, raw); mem.setItem(backup, legacyRaw); saves.terminal(1);
   assert.equal(saves.load(1).state.status, 'dead');
   const recovery = saves.load(1, false, true);
-  assert.equal(recovery.state.version, 3);
+  assert.equal(recovery.state.version, D.C.version);
   mem.fail = primary;
   assert.equal(saves.save(1, recovery.state).ok, false);
   assert.equal(mem.getItem(primary), raw); assert.equal(mem.getItem(backup), legacyRaw);
   mem.fail = null;
   assert(saves.save(1, recovery.state).ok);
-  assert.equal(mem.getItem(backup), raw); assert.equal(JSON.parse(mem.getItem(primary)).version, 3);
+  assert.equal(mem.getItem(backup), raw); assert.equal(JSON.parse(mem.getItem(primary)).version, D.C.version);
 });
 test('old terminal marker still ends voyage after boundary expansion; explicit recovery works', () => {
   const mem = new Memory(), saves = new S.Saves(mem); mem.setItem(saves.key(1), legacyRaw); saves.terminal(1);

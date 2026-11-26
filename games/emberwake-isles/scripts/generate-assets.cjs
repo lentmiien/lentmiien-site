@@ -27,6 +27,20 @@ function chunk(type, data) {
 const size = D.atlas.width, height = D.atlas.height,
   raw = Buffer.alloc((size * 4 + 1) * height);
 const rainbow = ['poppyStone1', 'poppyStone2', 'sundialStone1', 'fernStone1', 'irisStone0', 'irisStone1', 'irisStone2'].map(id => D.items[id].color);
+// Each new material has a legible 16-pixel motif, also at oblique angles.
+function skyGrain(grain, x, y) {
+  switch (grain) {
+    case 'sod': return (x + y * 3) % 13 < 2 && y % 5 < 3 ? 22 : 0;
+    case 'bedded': return (y + Math.floor(x / 5)) % 7 === 0 ? -20 : 0;
+    case 'mica': return (x + y * 2) % 11 < 3 ? 25 : (x + y) % 8 < 2 ? -25 : 0;
+    case 'spar': return (x - y + 16) % 9 < 2 ? 31 : (x + y) % 10 === 0 ? -22 : 0;
+    case 'pipes': return x % 6 === 0 ? -28 : x % 6 === 1 ? 15 : 0;
+    case 'weave': return (x + (Math.floor(x / 8) % 2 ? y : 16 - y)) % 7 === 0 ? -38 : 0;
+    case 'sail': return x % 8 < 3 ? -36 : 4;
+    case 'coffer': return y === 9 || x === 3 || x === 12 ? -58 : y === 8 ? 36 : 0;
+    default: return 0;
+  }
+}
 for (let y = 0; y < height; y++) for (let x = 0; x < size; x++) {
   const id = Math.floor(y / 16) * 8 + Math.floor(x / 16),
     b = D.blocks[id] || D.blocks[1],
@@ -34,13 +48,16 @@ for (let y = 0; y < height; y++) for (let x = 0; x < size; x++) {
     py = y % 16;
   const radius = Math.hypot(px - 7.5, py - 7.5);
   const portalColor = radius > 7 ? '#35445a' : radius > 6 ? '#e4bb80' : radius > 4.5 ? '#8effe6' : radius > 3 ? '#336489' : '#72c4ea';
-  const hex = b.key === 'portal' ? portalColor : b.key === 'spectrumTile' ? rainbow[Math.floor((px + py) / 3) % rainbow.length] : b.color || '#000000',
+  const inlay = ['#e7d99f', '#c18aa2', '#5b5377', '#e9bd69'];
+  const band = Math.floor((Math.abs(px - 7.5) + Math.abs(py - 7.5)) / 2) % inlay.length;
+  const hex = b.grain === 'inlay' ? inlay[band] : b.key === 'portal' ? portalColor : b.key === 'spectrumTile' ? rainbow[Math.floor((px + py) / 3) % rainbow.length] : b.color || '#000000',
     rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
   let n = (x * 1537 + y * 317 + id * 17 ^ (x + y) * 191) % 19 - 9;
   if (/plank|wood|log|bench|shelf|chest|bamboo/i.test(b.key)) n += py % 5 === 0 ? -32 : px % 8 === 0 ? 10 : 0;
   if (/brick|cobble|tile|marble|sandstone/i.test(b.key)) n += py % 8 === 0 || (px + Math.floor(py / 8) % 2 * 8) % 16 === 0 ? -34 : 0;
   if (/Ore|Seam/.test(b.key) && (px * 3 + py * 7) % 17 < 5) n += b.key === 'coalOre' ? -45 : 45;
   if (b.key === 'glass') n += px === 0 || py === 0 || px === 15 || py === 15 ? 30 : -6;
+  if (b.grain) n += skyGrain(b.grain, px, py);
   const k = y * (size * 4 + 1) + 1 + x * 4;
   for (let i = 0; i < 3; i++) raw[k + i] = Math.max(0, Math.min(255, rgb[i] + n));
   raw[k + 3] = 255;
@@ -71,9 +88,28 @@ function quarryIcon(item) {
     default: return null;
   }
 }
+const skyShapes = require('../js/mesher').shapes;
+function skyIcon(item) {
+  if (item.key === 'sailMantle') return '<path d="M24 10l8 5 8-5 18 40-13-4-13 9-13-9-13 4z" fill="#e9c879"/><path d="M24 10l8 12 8-12-8 41z" fill="#4a8294"/><path d="M13 44l10-8m18 0l10 8" stroke="#fff0c9" stroke-width="3"/>';
+  if (item.block < D.sky.pack.firstBlock || !item.block) return null;
+  const shapes = skyShapes[item.shape] || [[0,.05,0,1,.95,1]];
+  const point = (x,y,z) => [32 + 23 * (x-z), 30 + 12 * (x+z) - 24 * y].join(',');
+  let svg = '';
+  for (const [x,y,z,X,Y,Z] of [...shapes].sort((a,b) => a[0]+a[2]+a[1]-b[0]-b[2]-b[1])) {
+    for (const [corners, tint, opacity] of [
+      [[[x,y,Z],[X,y,Z],[X,Y,Z],[x,Y,Z]], '#000', .16],
+      [[[X,y,z],[X,y,Z],[X,Y,Z],[X,Y,z]], '#000', .33],
+      [[[x,Y,z],[X,Y,z],[X,Y,Z],[x,Y,Z]], '#fff', .13]
+    ]) {
+      const points = corners.map(c => point(...c)).join(' ');
+      svg += `<polygon points="${points}" fill="${item.color}"/><polygon points="${points}" fill="${tint}" opacity="${opacity}"/>`;
+    }
+  }
+  return svg;
+}
 for (const item of Object.values(D.items)) {
   const color = item.color;
-  const shape = quarryIcon(item) || (item.weapon ? `<path d="M22 54L41 10" stroke="${color}" stroke-width="7"/><path d="M22 39L39 46" stroke="#e8d6a2" stroke-width="5"/>` : item.tool ? `<path d="M27 51L41 19" stroke="#b89363" stroke-width="7"/><path d="M16 23Q30 7 52 26L47 31Q33 20 18 31Z" fill="${color}"/>` : item.food ? `<path d="M13 26Q32 14 51 26L45 45Q32 55 19 45Z" fill="${color}"/><path d="M28 22Q25 11 36 8" fill="none" stroke="#96b579" stroke-width="4"/>` : item.boat ? `<path d="M8 39L54 39L46 52H19Z" fill="${color}"/><path d="M30 10V39M33 12L48 33H33Z" stroke="#ede3c7" fill="#ede3c7" stroke-width="3"/>` : `<path d="M32 9L54 21V45L32 57L10 45V21Z" fill="${color}"/><path d="M10 21L32 33L54 21M32 33V57" fill="none" stroke="#171a20" stroke-opacity=".4" stroke-width="2"/><path d="M10 21L32 9L54 21L32 33Z" fill="#fff" opacity=".16"/>`);
+  const shape = skyIcon(item) || quarryIcon(item) || (item.weapon ? `<path d="M22 54L41 10" stroke="${color}" stroke-width="7"/><path d="M22 39L39 46" stroke="#e8d6a2" stroke-width="5"/>` : item.tool ? `<path d="M27 51L41 19" stroke="#b89363" stroke-width="7"/><path d="M16 23Q30 7 52 26L47 31Q33 20 18 31Z" fill="${color}"/>` : item.food ? `<path d="M13 26Q32 14 51 26L45 45Q32 55 19 45Z" fill="${color}"/><path d="M28 22Q25 11 36 8" fill="none" stroke="#96b579" stroke-width="4"/>` : item.boat ? `<path d="M8 39L54 39L46 52H19Z" fill="${color}"/><path d="M30 10V39M33 12L48 33H33Z" stroke="#ede3c7" fill="#ede3c7" stroke-width="3"/>` : `<path d="M32 9L54 21V45L32 57L10 45V21Z" fill="${color}"/><path d="M10 21L32 33L54 21M32 33V57" fill="none" stroke="#171a20" stroke-opacity=".4" stroke-width="2"/><path d="M10 21L32 9L54 21L32 33Z" fill="#fff" opacity=".16"/>`);
   fs.writeFileSync(path.join(out, 'icons', item.key + '.svg'), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><title>${item.name.replace(/&/g, '&amp;')}</title>${shape}</svg>`);
 }
 let art = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 800"><defs><radialGradient id="o"><stop stop-color="#397a83"/><stop offset="1" stop-color="#122c39"/></radialGradient><pattern id="p" width="42" height="42" patternUnits="userSpaceOnUse"><path d="M5 24q9-6 18 0" fill="none" stroke="#e5d8b2" opacity=".1"/></pattern></defs><rect width="1000" height="800" fill="url(#o)"/><rect width="1000" height="800" fill="url(#p)"/><circle cx="500" cy="395" r="350" fill="none" stroke="#daba78" stroke-dasharray="2 8" opacity=".35"/>';
@@ -81,6 +117,11 @@ for (const [j, i] of D.islands.entries()) {
   const x = 500 + i.x * .34,
     y = 390 + i.z * .27;
   art += `<g transform="translate(${x} ${y}) scale(.65)"><ellipse cy="16" rx="${i.rx * .98}" ry="${i.rz * .72}" fill="#73b5a5" opacity=".35"/><path d="M-75 20L-59-25L-15-50L43-40L79-2L61 37L4 55L-56 45Z" fill="#dbcba3"/><path d="M-65 13L-46-22L-12-41L37-30L66-2L51 31L2 44L-47 35Z" fill="${i.color}"/><path d="M-15 18L12-38L47 18Z" fill="#394854" opacity=".35"/><path d="M-15 7L12-49L47 7Z" fill="${j === 3 ? '#dfebdf' : j === 4 ? '#756280' : '#8db484'}"/><circle cx="-32" cy="21" r="4" fill="#ffc247"/></g>`;
+}
+for (const site of D.sky.sites) {
+  const contour = loop => 'M' + loop.map(p => p.join(' ')).join('L') + 'Z';
+  const outline = contour(site.outline) + (site.window ? contour(site.window) : '');
+  art += `<g transform="translate(${500 + site.x * .34} ${390 + site.z * .27}) scale(.65)" fill-rule="evenodd"><path d="${outline}" transform="translate(4 13)" fill="#182f46" opacity=".45"/><path d="${outline}" transform="translate(0 5)" fill="${D.items[site.materials[2]].color}"/><path d="${outline}" fill="${site.color}" stroke="#eee5c3"/></g>`;
 }
 art += '<path d="M275 470Q210 270 350 210T635 250T715 440T510 620" fill="none" stroke="#f4d79a" opacity=".6" stroke-dasharray="5 8"/><g transform="translate(815 645)" fill="none" stroke="#e4c789"><circle r="44"/><path d="M0-65V65M-65 0H65M0-40L10 0L0 40L-10 0Z"/></g><text x="815" y="565" text-anchor="middle" fill="#e4c789" font-family="serif" font-size="20">N</text></svg>';
 fs.writeFileSync(path.join(out, 'chart.svg'), art);

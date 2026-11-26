@@ -85,6 +85,35 @@ export class Renderer {
     this.far.add(this.sunDisc);
     this.distant = [];
     this.makeDistant();
+    this.skyTiles = new Map();
+    this.skyScene = new THREE.Scene();
+    this.skyScene.fog = this.far.fog;
+    this.skyAmbient = this.ambient.clone();
+    this.skySun = this.sun.clone();
+    this.skyScene.add(this.skyAmbient, this.skySun);
+    for (const site of game.world.sky.sites) {
+      for (let cx = Math.floor((site.x - site.rx) / 16); cx <= Math.floor((site.x + site.rx) / 16); cx++) {
+        for (let cz = Math.floor((site.z - site.rz) / 16); cz <= Math.floor((site.z + site.rz) / 16); cz++) {
+          this.skyTiles.set(cx + ',' + cz, { cx, cz, dirty: true });
+        }
+      }
+    }
+    // Stream only the airborne layer beyond normal walking distance. This small
+    // independent cache never generates seabed, caves or simulation chunks.
+    const empty = new Uint8Array(256 * D.C.height);
+    this.skyWorld = {
+      seed: game.world.seed,
+      chunks: new Map(),
+      generate: (cx, cz) => {
+        const key = cx + ',' + cz;
+        if (!this.skyTiles.has(key)) return empty;
+        const cells = new Uint8Array(empty.length);
+        game.world.sky.writeChunk(cx, cz, cells);
+        for (const [index, id] of game.world.edits.get(key) || []) if (index >= 24 * 256) cells[index] = id;
+        this.skyWorld.chunks.set(key, cells);
+        return cells;
+      }
+    };
     this.makeClouds();
     this.makeBuoys();
     for (let n = 0; n < 6; n++) {
@@ -207,6 +236,39 @@ export class Renderer {
       });
     }
   }
+  updateSkyHorizon() {
+    const p = this.game.state.player;
+    let budget = 2;
+    for (const [key, tile] of this.skyTiles) {
+      const distance = Math.hypot(p.x - tile.cx * 16 - 8, p.z - tile.cz * 16 - 8);
+      if (distance > 590) {
+        this.skyWorld.chunks.delete(key);
+        if (tile.mesh) {
+          this.skyScene.remove(tile.mesh);
+          tile.mesh.geometry.dispose();
+          tile.mesh = null;
+        }
+        tile.dirty = true;
+        continue;
+      }
+      const visible = distance < 560 && !this.meshes.has(key);
+      if (visible && tile.dirty && budget) {
+        const data = M.mesh(this.skyWorld, tile.cx, tile.cz, 24);
+        if (tile.mesh) {
+          this.skyScene.remove(tile.mesh);
+          tile.mesh.geometry.dispose();
+          tile.mesh = null;
+        }
+        if (data.indices.length) {
+          tile.mesh = new THREE.Mesh(this.geometry(data), this.material);
+          this.skyScene.add(tile.mesh);
+        }
+        tile.dirty = false;
+        budget--;
+      }
+      if (tile.mesh) tile.mesh.visible = visible;
+    }
+  }
   makeBuoys() {
     // Navigational markers only; no invisible force pushes the player outward.
     for (const [width, height, elevation, color] of [[1.4, .45, 12.1, '#50666d'], [.18, 1.6, 13, '#dfc99d'], [.55, .5, 13.9, '#ffc247']]) {
@@ -269,6 +331,11 @@ export class Renderer {
     }
     let builds = 0;
     const started = performance.now();
+    // Invalidate neighboring horizon samples before the per-frame rebuild budget.
+    for (const k of world.dirty) if (this.skyTiles.has(k)) {
+      this.skyTiles.get(k).dirty = true;
+      this.skyWorld.chunks.delete(k);
+    }
     for (const k of world.dirty) {
       if (this.meshes.has(k)) {
         const [x, z] = k.split(',').map(Number);
@@ -375,6 +442,7 @@ export class Renderer {
       p = s.player,
       eye = this.game.eye();
     this.updateChunks();
+    this.updateSkyHorizon();
     this.updateBoats();
     this.updateCrops();
     this.updateWater();
@@ -387,6 +455,8 @@ export class Renderer {
     this.scene.fog.color.copy(sky);
     this.ambient.intensity = 1.25 + day * .75;
     this.sun.intensity = day * 2;
+    this.skyAmbient.intensity = this.ambient.intensity;
+    this.skySun.intensity = this.sun.intensity;
     this.camera.position.set(eye.x, eye.y, eye.z);
     this.camera.rotation.set(p.pitch, p.yaw, 0);
     this.headlight.position.copy(this.camera.position);
@@ -395,6 +465,10 @@ export class Renderer {
     if (!storm) {
       this.scene.fog.far = s.settings.view * 16 - 2;
       this.scene.fog.near = this.scene.fog.far * .58;
+      const distance = Math.min(...this.game.world.sky.sites.map(site => Math.hypot(p.x - site.x, p.z - site.z)));
+      const sky = W.clamp((240 - distance) / 100, 0, 1);
+      this.scene.fog.near += 45 * sky;
+      this.scene.fog.far += 135 * sky;
     }
     if (storm) {
       const amount = Math.min(1, s.disaster / 5);
@@ -447,6 +521,9 @@ export class Renderer {
     this.renderer.clear();
     this.renderer.render(this.far, this.camera);
     this.renderer.clearDepth();
+    // Keep sky depth for the water pass: the distant sea must remain behind
+    // the island when looking down through the lyre or across its summit.
+    if (!storm && this.skyScene.children.length > 2) this.renderer.render(this.skyScene, this.camera);
     this.renderer.render(this.scene, this.camera);
     this.frames.push(performance.now() - started);
     if (this.frames.length > 180) this.frames.shift();
@@ -456,6 +533,8 @@ export class Renderer {
       chunks: this.meshes.size,
       cached: this.game.world.chunks.size,
       queued: this.queue.length,
+      skyCached: this.skyWorld.chunks.size,
+      skyMeshes: this.skyScene.children.length - 2,
       drawCalls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
       geometries: this.renderer.info.memory.geometries,
@@ -466,7 +545,7 @@ export class Renderer {
   }
   dispose() {
     removeEventListener('resize', this.resize);
-    for (const scene of [this.scene, this.far]) scene.traverse(o => {
+    for (const scene of [this.scene, this.far, this.skyScene]) scene.traverse(o => {
       o.geometry?.dispose();
       if (o.material) {
         const materials = Array.isArray(o.material) ? o.material : [o.material];

@@ -15,3 +15,10 @@ Exposure and local-only storage remain unchanged. Schema v1 is validated with it
 Six bounded island-only actors add no remote state or content. Their rewards and project ingredient/reward changes are atomic. Attack reach and terrain line of sight are checked. Surface-derived map caches are bounded by the voxel edit cap and do not retain additional world chunks; detailed edited water is restricted to the player's vicinity. Tests use only synthetic save fixtures and fresh browser contexts. No account, personal save, credential or production service was accessed.
 
 Spectrum Shores v3 keeps the local-only public-game contract and existing storage keys. V1 and v2 use their historic coordinate, catalog, inventory and actor limits on load. The current decoder permits 24,000 items total and 12,000 of a kind, validates creature IDs against the five inhabited islands, and retains the import and terrain edit caps.
+
+
+## Floating island saves
+
+V4 validates v3 against the released wayfinding catalog, large backpack and coordinate bounds before choosing two moorings. Each berth is a bounded catalog index. Up to 2,400 unique clearance cells are accepted inside those berths with 14-bit height masks. At most four distinct catalogued treasure IDs can be claimed. Imported voxels, furniture and inventories cannot introduce a courier coffer. The immutable world generates each by coordinate, and collecting its contents and marking the claim happen together.
+
+Mooring selection and vault searches have finite bounds. Only previously validated edits, camp and player coordinates influence a migrated layout. Loading leaves the primary bytes intact. Negative and fault-injection tests cover forged v3 items, future voxels, out-of-range moorings, fabricated claims, duplicate cells, invalid masks, storage exhaustion and a terminal v3 voyage. All fixtures are synthetic.

@@ -16,7 +16,7 @@ fs.mkdirSync(out, { recursive: true });
       const response = await route.fetch();
       await route.fulfill({ response, body: await response.text() + '\nwindow.qa={get game(){return game},get renderer(){return renderer},replaceGame,saveNow,closePanel};' });
     });
-    const load = async () => { await page.locator('#continueGame').click(); await page.getByRole('button', { name: 'Load', exact: true }).first().click(); await page.waitForFunction(() => window.qa?.game?.state.version === 3 && document.querySelector('#panel').open && document.querySelector('#loading').hidden); };
+    const load = async () => { await page.locator('#continueGame').click(); await page.getByRole('button', { name: 'Load', exact: true }).first().click(); await page.waitForFunction(() => window.qa?.game?.state.version === EWData.C.version && document.querySelector('#panel').open && document.querySelector('#loading').hidden); };
     await page.goto(process.env.ISLES_URL || 'http://127.0.0.1:8770/'); await load();
     assert(await page.evaluate(() => qa.game.state.inventory.jade === 12 && qa.game.state.expedition.projects.reed === 1));
     const progression = await page.evaluate(async ([base, extension]) => {

@@ -1,8 +1,9 @@
 /* Original catalog. Shared by browser and model tests; no runtime dependencies. */
 (function (root, factory) {
-  const api = factory(typeof module === 'object' ? [...require('./expansions.js'), require('./spectrum.js')] : [...root.EWExpansions, root.EWSpectrum]);
+  const api = factory(typeof module === 'object' ? [...require('./expansions.js'), require('./spectrum.js')] : [...root.EWExpansions, root.EWSpectrum],
+    typeof module === 'object' ? require('./sky-isles.js') : root.EWSky);
   if (typeof module === 'object') module.exports = api;else root.EWData = api;
-})(typeof window !== 'undefined' ? window : globalThis, function (expansions) {
+})(typeof window !== 'undefined' ? window : globalThis, function (expansions, sky) {
   'use strict';
 
   const C = {
@@ -17,7 +18,7 @@
     pack: 24000,
     stack: 12000,
     maxEdits: 45000,
-    version: 3
+    version: 4
   };
   const items = {},
     blocks = [{
@@ -526,13 +527,14 @@
   const lore = ['A shell large enough to hear tomorrow. Inside: the sound of somebody making tea. The first tidekeeper clearly had priorities.', 'A brass mailbox addressed to “Whoever gets here eventually”. The letter reads: A home is an expedition that learned to stay.', 'The astronomer charted every star, then discovered that the instrument was a very expensive teapot. It still points north.', 'This bell rings only for falling snow. Its inscription says: Quiet is a kind of treasure. Your journal preserves its tiny melody.', 'These moths navigate by a moon nobody else can see. A final note: Build something worth coming home to. The archipelago is yours.'];
   // The original catalog above is immutable: persisted voxel IDs are append-only.
   const legacy = { extent: 512, border: 490, warning: 405, blocks: blocks.length, items: Object.keys(items), recipes: recipes.map(r => r.id), islands: islands.map(i => i.id) };
-  let gardens;
+  let gardens, wayfinding;
   const projects = {};
   expansions.push({
     id: 'wayfinding', firstBlock: 126, islands: [], items: [],
     blocks: [['portal', 'Tideglass portal', '#63d9cd', { shape: 'portal' }]],
     recipes: [['portal', 1, { glass: 4, copper: 2, stone: 4 }, 'bench', null, 'Voyaging']]
   });
+  expansions.push(sky.pack);
   for (const pack of expansions) {
     if (blocks.length !== pack.firstBlock) throw new Error('Expansion block IDs changed');
     pack.blocks.forEach(args => block(...args));
@@ -543,6 +545,7 @@
       lore.push(island.lore);
     }
     Object.assign(projects, pack.projects);
+    if (pack.id === 'wayfinding') wayfinding = { extent: 1536, border: 1500, warning: 1380, pack: 24000, stack: 12000, blocks: blocks.length, items: Object.keys(items), recipes: recipes.map(r => r.id), islands: islands.map(i => i.id) };
     if (pack.id === 'outer-gardens') gardens = { extent: 1024, warning: 850, border: 980, blocks: blocks.length, items: Object.keys(items), recipes: recipes.map(r => r.id), islands: islands.map(i => i.id) };
   }
   if (blocks.length > 256) throw new Error('Upgrade chunk storage before adding voxel ID 256');
@@ -552,6 +555,9 @@
     C,
     legacy,
     gardens,
+    wayfinding,
+    sky,
+    destinations: [...islands, ...sky.sites],
     expansions,
     projects,
     atlas,

@@ -11,6 +11,7 @@
     islets,
     blocks
   } = D;
+  const SkyTerrain = typeof module === 'object' ? require('./sky-terrain.js') : window.EWSkyTerrain;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   function hash(x, z, seed = 0) {
     let h = Math.imul(x ^ seed, 374761393) ^ Math.imul(z, 668265263);
@@ -110,8 +111,9 @@
     return [lo, hi];
   }
   class World {
-    constructor(seed = 741092, edits = {}) {
+    constructor(seed = 741092, edits = {}, skyLayout = D.sky.layoutFor()) {
       this.seed = seed;
+      this.sky = new SkyTerrain(seed, skyLayout, noise);
       this.edits = new Map();
       this.chunks = new Map();
       this.dirty = new Set();
@@ -155,6 +157,8 @@
       x = Math.floor(x); z = Math.floor(z);
       const k = `${x},${z}`;
       if (!this.editedColumns.has(k)) {
+        const sky = this.sky.profile(x, z);
+        if (sky) return { h: sky.top, island: sky.site, color: blocks[B[sky.surface]].color };
         const surface = column(x, z, this.seed), { island, h } = surface;
         if (island?.shades) {
           const pattern = strataPattern(island, x, z, h, this.seed);
@@ -175,12 +179,17 @@
           const index = y * 256 + local, b = blocks[chunk[index]];
           if (b.solid && (edits.get(index) || !['relic', 'leaves', 'bamboo', 'log', 'cactus'].includes(b.key))) { h = y; id = b.id; break; }
         }
-        this.mapSurfaces.set(columnKey, { h, island: column(px, pz, this.seed).island, color: blocks[id].color });
+        this.mapSurfaces.set(columnKey, { h, island: this.islandAt(px, h, pz), color: blocks[id].color });
       }
       if (!resident) this.chunks.delete(ck);
       return this.mapSurfaces.get(k);
     }
 
+    islandAt(x, y, z) {
+      const sky = y >= 24 ? this.sky.profile(Math.floor(x), Math.floor(z)) : null;
+      if (sky && y >= sky.bottom) return sky.site;
+      return column(x, z, this.seed).island;
+    }
     solid(x, y, z) {
       return !!blocks[this.get(x, y, z)].solid;
     }
@@ -245,6 +254,7 @@
         const [x, y, z] = cave.chamber;
         if (Math.floor(x / 16) === cx && Math.floor((z + 3) / 16) === cz) arr[this.index(x, y, z + 3)] = B.relic;
       }
+      this.sky.writeChunk(cx, cz, arr);
       for (const [index, id] of this.edits.get(ck) || []) arr[index] = id;
       this.chunks.set(ck, arr);
       return arr;

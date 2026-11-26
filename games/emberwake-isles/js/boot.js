@@ -148,6 +148,7 @@ function objectives() {
   return [[s.stats.mined >= 6, 'Gather driftwood on the beach', 'Hold left click on six logs. Logs also yield resin. Press E at a berry bush for food, fiber and seeds.'], [s.crafted.includes('woodPick') && s.crafted.includes('bench'), 'Make a place to work', 'Tab → Craft: turn logs into planks; craft a workbench and a driftwood pick. Assign them in Pack. Right click places the bench.'], [s.crafted.includes('stonePick'), 'Follow the cave trail', 'Chart marks every cave entrance. A driftwood pick mines stone and copper. Craft a stone pick at your bench to mine iron.'], [s.crafted.includes('kiln') && s.crafted.includes('copperPick'), 'Warm the forge', 'Gather clay on the low shores, coal and copper underground. A kiln smelts copper; make a copper pick for prism seams.'], [s.crafted.includes('raft'), 'Raise a small sail', 'Eight logs and four ropes at a bench make a raft. Wade into water, select it, then right click to launch and board.'], [s.discoveries.length >= 3, 'A wider horizon', 'Visit three islands. Discovery unlocks regional designs. Landmarks contain optional stories and pearls.'], [s.stats.harvest > 0 && s.stats.fish > 0, 'Set a generous table', 'Place a garden bed and press E with a seed in your pack. Cast a fishing rod toward low open water with E; stay still for six seconds.'], [s.crafted.includes('artisans'), 'Learn the finer crafts', 'Smelt iron at a forge; weave cloth at a loom. Build an artisan table for stonework, instruments and late luxuries.'], [game.luxury().points >= 95, 'A home worth returning to', 'Rest at a daybed to anchor your camp. Furnish within 24 blocks: light, rest, gardens, art, water, music, and thoughtful architecture. Reach 95 comfort.'], [D.legacy.islands.every(id => s.secrets.includes(id)) && game.luxury().points >= 135, 'Become a tidekeeper', 'Find five quiet stories and build a 135-comfort sanctuary. Then keep building: this is your archipelago.']];
 }
 function journalPage() {
+  const s = game.state;
   const split = el('div', undefined, 'split'),
     left = el('div', undefined, 'notes'),
     right = el('div', undefined, 'notes');
@@ -161,6 +162,17 @@ function journalPage() {
     ol.append(li);
   }
   left.append(ol);
+  right.append(el('h3', 'The floating islands'));
+  paragraph('Take a pick and building supplies. Sail to a wingtip or a fork, dive to the seabed and build beside the cliff. Jump and place blocks beneath you until you can step across. A portal makes the return trip quick.', right);
+  for (const site of game.world.sky.sites) {
+    const found = site.vaults.filter(v => s.sky.finds.includes(v.id)).length;
+    right.append(el('h3', site.name + ' · ' + found + '/2 treasures'));
+    paragraph(site.biome + ' · ' + site.x + ', ' + site.z, right);
+    for (const v of site.vaults) {
+      if (s.sky.finds.includes(v.id)) paragraph('✓ ' + D.items[v.reward].name + '. ' + v.story, right);
+      else if (s.discoveries.includes(site.id)) paragraph(v.clue, right);
+    }
+  }
   right.append(el('h3', 'Tideglass portals'));
   paragraph('At a workbench, craft a portal from four glass, two copper ingots and four stone. Place pads at the stops you want to connect. Step onto one and choose an exit on the chart. Mine a pad to move it.', right);
   right.append(el('h3', 'The Spectrum Shores'));
@@ -287,7 +299,7 @@ function craftPage() {
         cost.append(el('span', `${D.items[id].name} ${have}/${n * batch}`, 'chip' + (have < n * batch ? ' missing' : '')));
       }
       card.append(cost);
-      if (r.discovery) paragraph(`Discover ${D.islands.find(i => i.id === r.discovery).name}`, card);
+      if (r.discovery) paragraph(`Discover ${D.destinations.find(i => i.id === r.discovery).name}`, card);
       const status = game.recipeStatus(r, batch),
         b = button(status.ok ? 'Craft' : status.reason, () => {
           if (game.craft(r.id, batch)) audio.effect('craft');
@@ -355,6 +367,10 @@ function chartPage() {
     ctx.fillStyle = '#ffc247';
     ctx.fillText('✦', map(i.x + 12), map(i.z - 10));
   }
+  for (const site of game.world.sky.sites) {
+    ctx.fillStyle = '#f4e8d4';
+    ctx.fillText(site.name, map(site.x), map(site.z) - 17);
+  }
   for (const cave of game.world.networks) {
     ctx.fillStyle = '#ffc247';
     ctx.fillText('▲', map(cave.entrance[0]), map(cave.entrance[2]));
@@ -382,7 +398,7 @@ function chartPage() {
   if (exits.length) paragraph('Turquoise rings mark your portals. Step onto a pad to choose an exit.', notes);
   notes.append(el('h3', 'The sheltered sea'));
   paragraph('The chart and live local map reflect mining and building. Global pixels cover 6 m; the local map shows individual blocks. North is up (−Z). White arrow: you. Ember house: camp. ▲ Safe cave entrances. ✦ Tidekeeper landmarks. Dashed rings: warning waters and the fatal outer boundary.', notes);
-  for (const i of D.islands) {
+  for (const i of [...D.islands, ...game.world.sky.sites]) {
     notes.append(el('strong', `${game.state.discoveries.includes(i.id) ? '✓' : '○'} ${i.name}`));
     paragraph(`${i.biome} · ${i.x}, ${i.z} · ${Math.round(Math.hypot(i.x - p.x, i.z - p.z))} m from you`, notes);
   }
@@ -431,7 +447,7 @@ function portalChart(canvas, notes, exits) {
   function choices(matches, page = 0) {
     list.replaceChildren();
     for (const e of matches.slice(page * 12, page * 12 + 12)) {
-      const name = W.column(e.x, e.z, game.state.seed).island?.name || 'Open sea';
+      const name = game.world.islandAt(e.x, e.y, e.z)?.name || 'Open sea';
       list.append(button(name + ' · ' + [e.x, e.y, e.z].join(', '), () => travel(e)));
     }
     if (page > 0) list.append(button('Previous exits', () => choices(matches, page - 1)));
@@ -751,7 +767,8 @@ addEventListener('keydown', event => {
     game.openChest = null;
     const hit = game.target();
     game.interact();
-    audio.effect(hit && ['gramophone', 'reedOrgan'].includes(D.blocks[hit.id].key) ? 'music' : 'use');
+    const instrument = hit && D.blocks[hit.id].key;
+    audio.effect(instrument === 'nightjarChimes' ? 'nightjar' : ['gramophone', 'reedOrgan'].includes(instrument) ? 'music' : 'use');
     if (game.openChest) openPanel('Pack');
   }
   if (event.code === 'KeyF') game.eat(D.items[game.selected()]?.food ? game.selected() : 'berry');
@@ -783,9 +800,9 @@ let miniSignature = '', miniNext = 0;
 function hud(now) {
   const s = game.state,
     p = s.player,
-    col = W.column(p.x, p.z, s.seed),
+    island = game.world.islandAt(p.x, p.y, p.z),
     boat = s.boats.find(b => b.id === p.boat);
-  $('location').textContent = boat ? 'Under sail · ' + D.items[boat.type].name : col.island?.name || 'The sheltered sea';
+  $('location').textContent = boat ? 'Under sail · ' + D.items[boat.type].name : island?.name || 'The sheltered sea';
   $('coordinates').textContent = `${Math.round(p.x)}, ${Math.round(p.z)} · elevation ${Math.floor(p.y)} · day ${1 + Math.floor(s.time / 1200)}`;
   $('health').textContent = `♥ Health ${Math.ceil(p.health)}`;
   $('food').textContent = `◒ Food ${Math.ceil(p.food)}`;
@@ -796,7 +813,7 @@ function hud(now) {
   $('boundary').hidden = radius < D.C.warning;
   $('boundary').textContent = radius > D.C.danger ? `DANGER · Turn toward the islands now. Fatal storm in ${Math.max(0, Math.ceil(D.C.border - radius))} m. Crossing ends this voyage.` : 'OUTER WATERS · Headwinds slow your sail. Turn toward the islands. Saves and camp return are disabled here.';
   const target = game.target(), actor = game.encounters.target();
-  $('targetLabel').textContent = actor ? `${actor.species.name} · ${s.expedition.creatures[actor.id].health}/3 · hold left click` : target ? D.blocks[target.id].name + (D.blocks[target.id].category || ['berryBush', 'relic'].includes(D.blocks[target.id].key) ? ' · E to use' : '') + (target && D.blocks[target.id].tier > 0 ? ' · pick required' : '') : game.fishing ? `Fishing · ${Math.ceil(game.fishing)}s` : '';
+  $('targetLabel').textContent = actor ? `${actor.species.name} · ${s.expedition.creatures[actor.id].health}/3 · hold left click` : target ? D.blocks[target.id].name + (D.blocks[target.id].category || ['berryBush', 'relic', 'skyCoffer'].includes(D.blocks[target.id].key) ? ' · E to use' : '') + (target && D.blocks[target.id].tier > 0 && D.blocks[target.id].tier < 99 ? ' · pick required' : '') : game.fishing ? `Fishing · ${Math.ceil(game.fishing)}s` : '';
   $('mining').hidden = game.mineProgress <= 0;
   $('mining').value = target ? game.mineProgress / D.blocks[target.id].hardness : 0;
   if (noticeSerial !== game.messageSerial) {

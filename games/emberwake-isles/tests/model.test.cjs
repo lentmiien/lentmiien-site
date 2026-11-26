@@ -52,13 +52,13 @@ function put(g, id, x = -207, y = 14, z = 100) {
 function step(g, t, input = {}) {
   for (let j = 0; j < Math.ceil(t * 60); j++) g.step(input, 1 / 60);
 }
-test('catalog has 11 substantial unique biomes, 4 islets and 106 implemented recipes', () => {
+test('catalog has 11 substantial unique biomes, 4 islets and 117 implemented recipes', () => {
   assert.equal(D.islands.length, 11);
   assert.equal(new Set(D.islands.map(i => i.biome)).size, 11);
   assert.equal(D.islets.length, 4);
-  assert.equal(D.recipes.length, 106);
+  assert.equal(D.recipes.length, 117);
   assert(D.islands.every(i => i.rx >= 80 && i.rz >= 75));
-  assert.equal(new Set(D.recipes.map(r => r.id)).size, 106);
+  assert.equal(new Set(D.recipes.map(r => r.id)).size, 117);
 });
 test('same seed gives identical terrain and alternate seeds change relief', () => {
   const a = new W.World(12),
@@ -163,7 +163,7 @@ test('recipe graph reaches every output from actual natural resources without ga
   let tier = 0;
   for (let pass = 0; pass < 12; pass++) {
     for (const b of D.blocks) {
-      if (b.tier <= tier && b.tier !== 99 && ['stone', 'copperOre', 'ironOre', 'coalOre', 'crystalOre', 'basalt', 'bamboo', 'limestone', 'jadeOre', 'ochre', 'amberOre', ...D.islands.filter(i => i.shades).flatMap(i => [...i.shades, i.ore])].includes(b.key)) available.add(b.drop || b.key);
+      if (b.tier <= tier && b.tier !== 99 && ['stone', 'copperOre', 'ironOre', 'coalOre', 'crystalOre', 'basalt', 'bamboo', 'limestone', 'jadeOre', 'ochre', 'amberOre', ...D.islands.filter(i => i.shades).flatMap(i => [...i.shades, i.ore]), ...D.sky.sites.flatMap(i => i.materials)].includes(b.key)) available.add(b.drop || b.key);
     }
     if (crafts.has('bambooPlanter')) available.add('bambooShoot');
     for (const [id, stages] of Object.entries(D.projects)) {
@@ -217,13 +217,13 @@ test('craft requires nearby station and discovery independently', () => {
   assert(!g.craft('tile'));
   assert(k);
 });
-test('all 106 recipes change inventory correctly when their requirements are met', () => {
+test('all 117 recipes change inventory correctly when their requirements are met', () => {
   for (const r of D.recipes) {
     const g = fixture();
     g.state.inventory = {
       ...r.cost
     };
-    g.state.discoveries = D.islands.map(i => i.id);
+    g.state.discoveries = D.destinations.map(i => i.id);
     g.state.expedition.projects = { reed: 2, amber: 2 };
     if (r.station) put(g, r.station);
     const before = G.total(g.state.inventory);

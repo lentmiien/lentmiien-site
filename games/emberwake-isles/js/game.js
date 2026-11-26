@@ -41,6 +41,7 @@
       p = w.spawn();
     return {
       version: C.version,
+      sky: D.sky.layoutFor(),
       expedition: { projects: { reed: 0, amber: 0 }, defeated: 0, creatures: {} },
       seed,
       time: 0,
@@ -89,7 +90,7 @@
   class Game {
     constructor(state = fresh(), journal = () => true) {
       this.state = state;
-      this.world = new World(state.seed, state.edits);
+      this.world = new World(state.seed, state.edits, state.sky);
       this.encounters = new (typeof module === 'object' ? require('./actors.js') : window.EWActors).Encounters(this);
       this.journal = journal;
       this.velocity = 0;
@@ -212,7 +213,7 @@
       };
       if (recipe.discovery && !this.state.discoveries.includes(recipe.discovery)) return {
         ok: false,
-        reason: `Visit ${islands.find(i => i.id === recipe.discovery).name}`
+        reason: `Visit ${D.destinations.find(i => i.id === recipe.discovery).name}`
       };
       for (const [island, stages] of Object.entries(D.projects)) {
         const required = stages.findIndex(stage => stage.unlock === recipe.id);
@@ -257,7 +258,7 @@
         tool = this.state.inventory[this.selected()] ? held : null;
       if (b.tier > (tool?.tool || 0)) {
         this.mineProgress = 0;
-        return this.notify(b.tier === 99 ? 'This landmark cannot be mined. Press E to read it.' : `Needs ${b.tier === 1 ? 'a driftwood' : b.tier === 2 ? 'a stone' : 'a copper'} pick or better.`);
+        return this.notify(b.key === 'skyCoffer' ? 'Press E to open this courier’s coffer.' : b.tier === 99 ? 'This landmark cannot be mined. Press E to read it.' : `Needs ${b.tier === 1 ? 'a driftwood' : b.tier === 2 ? 'a stone' : 'a copper'} pick or better.`);
       }
       const k = key(hit.x, hit.y, hit.z);
       if (this.mineKey !== k) {
@@ -296,6 +297,7 @@
       if (!this.state.inventory[id]) return this.notify('Select an item you own in your pack.');
       if (item?.food) return this.eat(id);
       if (item?.boat) return this.launchBoat(id);
+      if (id === 'sailMantle') return this.notify('Carry the mantle in your pack and hold Space as you fall to slow your descent.');
       if (item?.weapon) return this.notify('Hold left click while aiming at a nearby island creature. This tool shoos one in a single hit.');
       if (!item?.block) return this.notify('This item is used through crafting or E interactions.');
       const hit = this.target();
@@ -381,6 +383,25 @@
       const hit = this.target(),
         id = hit ? blocks[hit.id].key : null,
         k = hit ? key(hit.x, hit.y, hit.z) : null;
+      if (id === 'skyCoffer') {
+        const vault = this.world.sky.vaults.get(k);
+        if (!vault) return false;
+        if (this.state.sky.finds.includes(vault.id)) return this.notify('You recovered ' + items[vault.reward].name + ' here. The journal keeps its story.');
+        if (!this.give({ [vault.reward]: 1, pearl: 3 })) return false;
+        this.state.sky.finds.push(vault.id);
+        this.notify('Found ' + items[vault.reward].name + ' and three pearls! ' + vault.story);
+        return true;
+      }
+      if (id === 'sunwheel') {
+        const dx = this.state.camp.x - p.x, dz = this.state.camp.z - p.z;
+        const degrees = (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360;
+        this.notify('Sunwheel sight · camp ' + Math.round(Math.hypot(dx, dz)) + ' m away · bearing ' + (Math.round(degrees) % 360) + '° clockwise from north.');
+        return true;
+      }
+      if (id === 'nightjarChimes') {
+        this.notify('Nightjar carillon · five evening notes ring out over the water.');
+        return true;
+      }
       if (id === 'relic') {
         const cave = this.world.networks.find(c => Math.hypot(c.chamber[0] - hit.x, c.chamber[1] - hit.y, c.chamber[2] + 3 - hit.z) < 1);
         if (cave) {
@@ -494,7 +515,7 @@
         const d = this.direction(),
           x = p.x + d.x * 4,
           z = p.z + d.z * 4;
-        if (this.world.top(x, z) >= C.sea || p.y > C.sea + 5) return this.notify('Cast from a low shore toward open water.');
+        if (!this.world.waterAt(x, C.sea - .5, z) || this.world.solid(x, C.sea, z) || p.y > C.sea + 5) return this.notify('Cast from a low shore toward open water.');
         if (!this.fishing) {
           this.fishing = 6;
           this.fishAt = {
@@ -681,7 +702,8 @@
           this.velocity += ((C.sea - .5 - p.y) * 9 - this.velocity * 4) * dt;
           if (input.down) this.velocity = -3;
         } else this.velocity -= 20 * dt;
-        this.velocity = clamp(this.velocity, -30, 10);
+        const gliding = !swimming && input.jump && this.state.inventory.sailMantle;
+        this.velocity = clamp(this.velocity, gliding ? -3 : -30, 10);
         let dy = this.velocity * dt,
           vs = Math.max(1, Math.ceil(Math.abs(dy) / .15));
         this.grounded = false;
@@ -696,7 +718,7 @@
           }
         }
       }
-      const bi = column(p.x, p.z, s.seed).island;
+      const bi = this.world.islandAt(p.x, p.y, p.z);
       if (bi && p.y > C.sea - 2 && !s.discoveries.includes(bi.id)) {
         s.discoveries.push(bi.id);
         this.notify(`Discovered ${bi.name} · new recipes recorded`);
