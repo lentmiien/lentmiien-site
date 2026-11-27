@@ -78,78 +78,7 @@ function normalizeUserField(value, maxLength) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
-const routes = [
-  "chat",
-  "chat2",
-  "chat3",
-  "chat4",
-  "chat5",
-  "taric.tool.manage",
-  "commons.world.play",
-  "commons.npc.talk",
-  "commons.operations.read",
-  "chat.conversation.read",
-  "chat.conversation.write",
-  "chat.audio.transcribe",
-  "chat.audio.synthesize",
-  "openai",
-  "embedding",
-  "ai_gateway.decisions.run",
-  "gptdocument",
-  "accounting",
-  "budget",
-  "cooking",
-  "health",
-  "box",
-  "quicknote",
-  "emergencystock",
-  "receipt",
-  "product",
-  "gallery",
-  "payroll",
-  "scheduletask",
-  "image_gen",
-  "music",
-  "music.library.read",
-  "music.library.write",
-  "music.generation.create",
-  "music.gateway.manage",
-  "sora",
-  "binpacking",
-  "packing.container.read",
-  "packing.container.write",
-  "packing.search.run",
-  "packing.api.manage",
-  "ocr",
-  "asr",
-  "shoppinglist",
-  "test",
-  "archive",
-  "codex.run.read_only",
-  "codex.run.workspace_write",
-  "codex.run.yolo",
-  "codex.run.runpod_model",
-  "codex.turn.steer",
-  "human.request.create",
-  "human.request.manage",
-  "runpod.catalog.read",
-  "runpod.billing.read",
-  "runpod.billing.sync",
-  "runpod.pod.read",
-  "runpod.pod.create",
-  "runpod.pod.start",
-  "runpod.pod.stop",
-  "runpod.pod.extend",
-  "runpod.pod.delete",
-  "runpod.pod.setup",
-  "runpod.pod.sync",
-  "runpod.model_download.create",
-  "runpod.network_volume.read",
-  "runpod.network_volume.create",
-  "runpod.network_volume.delete",
-  "runpod.network_volume.sync",
-  "runpod.template.manage",
-];
+const { permissionGroups } = require('../utils/rolePermissionCatalog');
 
 const DEFAULT_AI_GATEWAY_BASE_URL = 'http://192.168.0.20:8080';
 
@@ -434,9 +363,7 @@ exports.manage_roles = async (req, res) => {
   const selection = {
     name_list: [],
     role_list: [],
-    // Include stored grants so the replacement form can retain or explicitly
-    // revoke permissions that are not yet in the admin catalog.
-    routes: [...new Set([...routes, ...roles.flatMap(role => role.permissions)])]
+    groups: permissionGroups(roles),
   };
   users.forEach(user => {
     if (selection.name_list.indexOf(user.name) === -1) selection.name_list.push(user.name);

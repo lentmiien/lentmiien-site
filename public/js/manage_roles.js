@@ -1,27 +1,33 @@
-const roles = JSON.parse(document.getElementById("roles").textContent);
-const selection = JSON.parse(document.getElementById("selection").textContent);
-const input_form = document.getElementById("input_form");
+const roles = JSON.parse(document.getElementById('roles').textContent);
+const selector = document.getElementById('selection');
+const filter = document.getElementById('permission-filter');
+const groups = document.querySelectorAll('.permission-group');
 
-function UpdateInputForm(select) {
-  const value = select.value;
-  const type = selection.role_list.indexOf(value) >= 0 ? 'group' : 'user';
-  const cb = document.getElementsByName("route_permissions");
-
-  // Clear checkboxes
-  for (let i = 0; i < cb.length; i++) {
-    cb[i].checked = false;
+selector.addEventListener('change', () => {
+  const name = selector.value;
+  const type = selector.selectedOptions[0].dataset.type;
+  document.getElementById('type').value = type || '';
+  document.getElementById('update-role').disabled = !type;
+  const record = roles.find(role => role.name === name && role.type === type);
+  const grants = new Set(record?.permissions);
+  for (const checkbox of document.getElementsByName('route_permissions')) {
+    checkbox.checked = grants.has(checkbox.value);
   }
+});
 
-  // Set values
-  document.getElementById("role").value = value;
-  document.getElementById("type").value = type;
-  for (let i = 0; i < roles.length; i++) {
-    if (roles[i].name === value && roles[i].type === type) {
-      // Set pre-existing checkbox values
-      roles[i].permissions.forEach(e_id => {
-        const checkbox = Array.from(cb).find(input => input.value === e_id);
-        if (checkbox) checkbox.checked = true;
-      });
+filter.addEventListener('input', () => {
+  const query = filter.value.trim().toLowerCase();
+  let anyMatches = false;
+  for (const group of groups) {
+    const feature = group.querySelector('legend').textContent.toLowerCase();
+    let groupMatches = false;
+    for (const option of group.querySelectorAll('.permission-option')) {
+      const permission = option.querySelector('input').value.toLowerCase();
+      option.hidden = !feature.includes(query) && !permission.includes(query);
+      if (!option.hidden) groupMatches = true;
     }
+    group.hidden = !groupMatches;
+    if (groupMatches) anyMatches = true;
   }
-}
+  document.getElementById('no-matches').hidden = anyMatches;
+});

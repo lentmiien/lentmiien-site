@@ -325,7 +325,11 @@ get neither. Chat5 sources also require `chat.conversation.read` and
 `chat.conversation.write` plus membership. Existing `/chat5` HTTP routes retain
 legacy `chat5` access requirements. The read/socket hardening means non-admin Chat5
 users now need an explicit semantic read grant, in addition to their legacy grant.
-Grant only intended accounts; no migration grants everybody access.
+To grant Local AI job access to one account, open `/admin/manage_roles`, select
+the account under **Users**, search for `local_ai.jobs.use`, check it, and click
+**Update**. This grants job submission as well as Chat5 image upload access.
+Scheduler management and shared input import have separate checkboxes.
+For command-line grants, run the applicable commands below.
 
 ```sh
 node scripts/local-ai-admin.js grant-capability ADMIN_USER_ID OWNER_USER_ID local_ai.jobs.use

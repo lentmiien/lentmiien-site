@@ -19,7 +19,7 @@ function fixture(stored = []) {
   RoleModel.find = jest.fn(async () => records);
   RoleModel.findOne = jest.fn(async query => records.find(role => role.name === query.name && role.type === query.type));
   RoleModel.deleteOne = jest.fn();
-  const UseraccountModel = { find: jest.fn().mockResolvedValue([{ name: 'reader', type_user: 'user' }]) };
+  const UseraccountModel = { find: jest.fn().mockResolvedValue([{ name: 'reader', type_user: 'user' }, { name: 'user', type_user: 'user' }]) };
   const controller = {};
   // Evaluate the real legacy controller with all integration imports stubbed.
   // No database, provider clients, filesystem writes or app startup are loaded.
@@ -27,6 +27,7 @@ function fixture(stored = []) {
     exports: controller, __dirname: path.resolve('controllers'), process: { env: {} },
     require: name => {
       if (name === '../database') return { RoleModel, UseraccountModel };
+      if (name === '../utils/rolePermissionCatalog') return require('../../utils/rolePermissionCatalog');
       if (name === 'path' || name === 'fs') return require(name);
       if (name === '../utils/apiDebugLogger') return { createApiDebugLogger: jest.fn() };
       if (name.startsWith('../services/')) return class {};
@@ -47,8 +48,14 @@ async function page(f) {
   vm.runInContext(fs.readFileSync('public/js/manage_roles.js', 'utf8'), dom.getInternalVMContext());
   return { data, document: dom.window.document };
 }
+function selectRole(document, name, type = 'user') {
+  const select = document.getElementById('selection');
+  const option = Array.from(select.options).find(item => item.value === name && item.dataset.type === type);
+  select.selectedIndex = option.index;
+  select.dispatchEvent(new dom.window.Event('change'));
+}
 async function saveSelected(f, document, role = 'reader') {
-  dom.window.UpdateInputForm({ value: role });
+  selectRole(document, role);
   const form = document.querySelector('form[action="/admin/update_role"]');
   const entries = new dom.window.FormData(form);
   const body = Object.fromEntries(entries);
@@ -60,7 +67,7 @@ async function saveSelected(f, document, role = 'reader') {
 test('admin can explicitly grant all Miien capabilities and retain them on the next form roundtrip', async () => {
   const f = fixture();
   const { document } = await page(f);
-  dom.window.UpdateInputForm({ value: 'reader' });
+  selectRole(document, 'reader');
   for (const capability of capabilities) {
     const checkbox = checkboxFor(document, capability);
     expect(checkbox.checked).toBe(false);
@@ -69,14 +76,14 @@ test('admin can explicitly grant all Miien capabilities and retain them on the n
   const form = document.querySelector('form[action="/admin/update_role"]');
   const entries = new dom.window.FormData(form);
   await f.controller.update_role({ body: { role: 'reader', type: 'user', route_permissions: entries.getAll('route_permissions') } }, { redirect: jest.fn() });
-  expect(f.records[0].permissions).toEqual(capabilities);
+  expect(f.records[0].permissions).toEqual([...capabilities].sort());
   await expect(hasCapabilities({ name: 'reader', type_user: 'user' }, capabilities, {
     roleModel: f.RoleModel, roleCapabilityBundles: MIIEN_ROLE_CAPABILITY_BUNDLES,
   })).resolves.toBe(true);
   dom.window.close();
   const next = await page(f);
   await saveSelected(f, next.document);
-  expect(f.records[0].permissions).toEqual(capabilities);
+  expect(f.records[0].permissions).toEqual([...capabilities].sort());
   expect(f.records[0].save).toHaveBeenCalledTimes(2);
 });
 
@@ -167,10 +174,51 @@ test('registered role routes issue and enforce shared CSRF before permission wri
 test('admin can explicitly revoke Miien grants while retaining unrelated permissions', async () => {
   const f = fixture([{ name: 'reader', type: 'user', permissions: ['future.feature.read', ...capabilities] }]);
   const { document } = await page(f);
-  dom.window.UpdateInputForm({ value: 'reader' });
+  selectRole(document, 'reader');
   for (const capability of capabilities) checkboxFor(document, capability).checked = false;
   const form = document.querySelector('form[action="/admin/update_role"]');
   const entries = new dom.window.FormData(form);
   await f.controller.update_role({ body: { role: 'reader', type: 'user', route_permissions: entries.getAll('route_permissions') } }, { redirect: jest.fn() });
   expect(f.records[0].permissions).toEqual(['future.feature.read']);
+});
+
+test('filtering Local AI grants preserves hidden selections and submits the intended user', async () => {
+  const f = fixture([
+    { name: 'user', type: 'user', permissions: ['chat5'] },
+    { name: 'user', type: 'group', permissions: ['openai'] },
+  ]);
+  const { document } = await page(f);
+  selectRole(document, 'user', 'group');
+  expect(checkboxFor(document, 'openai').checked).toBe(true);
+  selectRole(document, 'user');
+  const filter = document.getElementById('permission-filter');
+  const search = query => {
+    filter.value = query;
+    filter.dispatchEvent(new dom.window.Event('input'));
+  };
+  search('LOCAL AI');
+  const localAi = require('../../services/localAi/policy');
+  for (const capability of Object.values(localAi.CAP)) {
+    const checkbox = checkboxFor(document, capability);
+    expect(checkbox.closest('[hidden]')).toBeNull();
+    expect(checkbox.checked).toBe(false);
+  }
+  const jobs = checkboxFor(document, localAi.CAP.use);
+  search(localAi.CAP.use);
+  expect(jobs.closest('[hidden]')).toBeNull();
+  expect(checkboxFor(document, localAi.CAP.manage).closest('[hidden]')).not.toBeNull();
+  jobs.checked = true;
+  search('no such permission');
+  expect(document.getElementById('no-matches').hidden).toBe(false);
+  const form = document.querySelector('form[action="/admin/update_role"]');
+  const entries = new dom.window.FormData(form);
+  await f.controller.update_role({ body: { ...Object.fromEntries(entries), route_permissions: entries.getAll('route_permissions') } }, { redirect: jest.fn() });
+  expect(f.records[0].permissions).toEqual(['chat5', localAi.CAP.use]);
+  expect(f.records[1].permissions).toEqual(['openai']);
+  await expect(hasCapabilities({ name: 'user', type_user: 'user' }, [localAi.CAP.use], {
+    roleModel: f.RoleModel, roleCapabilityBundles: localAi.BUNDLES,
+  })).resolves.toBe(true);
+  search('');
+  expect(document.getElementById('no-matches').hidden).toBe(true);
+  expect(jobs.checked).toBe(true);
 });
