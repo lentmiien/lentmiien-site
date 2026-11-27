@@ -468,6 +468,27 @@ describe('CodexLocalRunner', () => {
       await expect(resultPromise).resolves.toMatchObject({ status: 'succeeded' });
     });
 
+    test.each(['question', 'followup_question'])('preserves the selected Venice model for %s', async (kind) => {
+      const child = createFakeChild();
+      spawn.mockReturnValue(child);
+      const profileConfig = { model_provider: 'ai_gateway', model: 'venice/default' };
+      const profileLoader = jest.fn().mockResolvedValue(profileConfig);
+      const runner = new CodexLocalRunner({ binaryPath: 'codex-test', profileLoader, completionExitGraceMs: 10 });
+      const input = createRunInput({ turn: { kind, modelProvider: 'venice', model: 'venice/second-model' }, session: { codexThreadId: 'thread-123' } });
+      const { resultPromise, threadRequest, turnRequest } = await startAppServerTurn(runner, child, input, {
+        resume: kind === 'followup_question',
+      });
+      expect(profileLoader).toHaveBeenCalledWith('gateway', input.target, expect.any(Object));
+      expect(threadRequest.params).toMatchObject({
+        config: profileConfig, model: 'venice/second-model', modelProvider: 'ai_gateway',
+      });
+      expect(turnRequest.params.model).toBe('venice/second-model');
+      notify(child, 'turn/completed', {
+        threadId: 'thread-123', turn: { id: 'codex-turn-123', status: 'completed', items: [] },
+      });
+      await expect(resultPromise).resolves.toMatchObject({ status: 'succeeded' });
+    });
+
     test('reports a profile load failure without starting or exposing its cause', async () => {
       const privateError = Object.assign(new Error('private profile diagnostic'), {
         code: 'CODEX_PROFILE_READ_FAILED',

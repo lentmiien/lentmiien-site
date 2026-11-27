@@ -443,8 +443,9 @@ module.exports = async function registerChat5_6Handlers({
         model_type: 'chat'
       }).sort({ model_name: 1 }).lean();
 
-      const models = docs.map(doc => ({
-        id: doc._id.toString(),
+      const cards = docs.concat(await require('../../services/veniceGateway').chatCards());
+      const models = cards.map(doc => ({
+        id: doc._id?.toString() || doc.api_model,
         name: doc.model_name,
         apiModel: doc.api_model,
         maxTokens: doc.max_tokens,

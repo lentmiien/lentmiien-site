@@ -1,3 +1,4 @@
+jest.mock('../../services/veniceGateway', () => ({ listCards: jest.fn().mockResolvedValue([]) }));
 jest.mock('../../models/codex_event', () => ({
   find: jest.fn(),
 }));
@@ -1150,7 +1151,7 @@ describe('codexToolService token usage helpers', () => {
     expect(serialized.costEstimate.total).toBeCloseTo(0.21, 8);
   });
 
-  test('combines vLLM and Ollama usage under Local AI and prices OpenAI separately', () => {
+  test('prices Venice, OpenAI and local worker usage separately', () => {
     const stats = codexToolService.buildSessionStats([
       {
         _id: 'openai-turn',
@@ -1172,6 +1173,15 @@ describe('codexToolService token usage helpers', () => {
         usage: { input_tokens: 100, output_tokens: 100, total_tokens: 200 },
       },
       {
+        _id: 'venice-turn',
+        sessionId: 'venice-session',
+        modelProvider: 'venice',
+        sequence: 1,
+        kind: 'question',
+        status: 'succeeded',
+        usage: { input_tokens: 50, output_tokens: 50, total_tokens: 100 },
+      },
+      {
         _id: 'vllm-turn',
         sessionId: 'vllm-session',
         modelProvider: 'vllm',
@@ -1181,6 +1191,7 @@ describe('codexToolService token usage helpers', () => {
         usage: { input_tokens: 50, output_tokens: 50, total_tokens: 100 },
       },
     ], {
+      venice: { provider: 'venice', unitTokens: 1000, prices: { input: 3, output: 1 } },
       openai: {
         provider: 'openai',
         currency: 'USD',
@@ -1197,7 +1208,9 @@ describe('codexToolService token usage helpers', () => {
 
     expect(stats.cost).toBeCloseTo(0.15, 8);
     expect(stats.ollamaCost).toBeCloseTo(0.6, 8);
-    expect(stats.combinedCost).toBeCloseTo(0.75, 8);
+    expect(stats.veniceCost).toBeCloseTo(0.2, 8);
+    expect(stats.providerUsage.venice.tokens.total).toBe(100);
+    expect(stats.combinedCost).toBeCloseTo(0.95, 8);
     expect(stats.providerUsage.openai.tokens.total).toBe(150);
     expect(stats.providerUsage.ollama.tokens.total).toBe(300);
     expect(stats.providerDistribution).toContainEqual(expect.objectContaining({ label: 'Local AI', count: 2 }));
@@ -1287,6 +1300,23 @@ describe('codexToolService token usage helpers', () => {
 });
 
 describe('codexToolService local model request options', () => {
+  test('lists and validates Gateway Venice models without accepting profile overrides', async () => {
+    const model = 'venice/second-model';
+    const list = require('../../services/veniceGateway').listCards;
+    list.mockResolvedValue([{ api_model: model, model_name: 'Second model' }]);
+    try {
+      const config = await codexToolService.publicConfig();
+      expect(config.veniceModelOptions).toEqual([{ value: model, label: 'Second model' }]);
+      expect(config.modelProviderOptions).toContainEqual(expect.objectContaining({ value: 'venice' }));
+      await expect(codexToolService.resolveTurnRequestOptions({ modelProvider: 'venice', model, profile: 'other' }))
+        .resolves.toMatchObject({ modelProvider: 'venice', model, profile: 'gateway', reasoningEffort: 'low' });
+      await expect(codexToolService.resolveTurnRequestOptions({ modelProvider: 'venice', model: 'venice/removed' }))
+        .rejects.toMatchObject({ statusCode: 400 });
+    } finally {
+      list.mockResolvedValue([]);
+    }
+  });
+
   test('pins vLLM requests to the configured local profile and model', async () => {
     await expect(codexToolService.resolveTurnRequestOptions({
       modelProvider: 'vllm', model: 'other', profile: 'other', reasoningEffort: 'high',

@@ -18,8 +18,9 @@ block content
   - const localModelOptions = config.localModelOptions || [];
   - const modelProviderOptions = config.modelProviderOptions || [];
   - const sessionProvider = session.modelProvider || 'openai';
-  - const sessionProviderLabel = session.modelProviderLabel || ({ ollama: 'Ollama', vllm: 'vLLM (local)' }[sessionProvider] || 'OpenAI');
-  - const sessionProviderAvailable = !session.runpodBacked || modelProviderOptions.some((provider) => provider.value === sessionProvider);
+  - const sessionProviderLabel = session.modelProviderLabel || ({ venice: 'Venice', ollama: 'Ollama', vllm: 'vLLM (local)' }[sessionProvider] || 'OpenAI');
+  - const veniceModelOptions = config.veniceModelOptions || [];
+  - const sessionProviderAvailable = sessionProvider === 'venice' ? veniceModelOptions.length > 0 : !session.runpodBacked || modelProviderOptions.some((provider) => provider.value === sessionProvider);
   - const latestTurn = turns.length ? turns[turns.length - 1] : {};
   - const selectedLocalModel = latestTurn.model || session.model || (localModelOptions[0] && localModelOptions[0].value) || '';
   - const maxPromptChars = Number(config.maxPromptChars) > 0 ? Number(config.maxPromptChars) : 20000;
@@ -65,6 +66,7 @@ block content
           h2 Session Totals
           .codex-panel__header-actions
             span.codex-chip= 'OpenAI ' + money(stats.cost)
+            span.codex-chip= 'Venice ' + money(stats.veniceCost)
             span.codex-chip= 'Local AI ' + money(stats.ollamaCost)
         .codex-stat-grid.codex-stat-grid--compact
           .codex-stat-card
@@ -126,14 +128,14 @@ block content
                     span= turn.permissionMode
                     if turn.requestProfileName || turn.profile
                       span= 'Profile ' + (turn.requestProfileName || turn.profile)
-                    span= 'Provider ' + (turn.modelProviderLabel || ({ ollama: 'Ollama', vllm: 'vLLM (local)' }[turn.modelProvider] || 'OpenAI'))
+                    span= 'Provider ' + (turn.modelProviderLabel || ({ venice: 'Venice', ollama: 'Ollama', vllm: 'vLLM (local)' }[turn.modelProvider] || 'OpenAI'))
                     if turn.model
                       span= 'Model ' + turn.model
                     if turn.reasoningEffort
                       span= 'Reasoning ' + turn.reasoningEffort
                     span= 'Queued ' + fmt(turn.queuedAt)
                     span= 'Duration ' + duration(turn.durationMs)
-                    span= ((turn.usageProvider === 'ollama' ? 'Local AI' : 'OpenAI') + ' cost ') + money(turn.costEstimate && turn.costEstimate.total)
+                    span= (({ ollama: 'Local AI', venice: 'Venice' }[turn.usageProvider] || 'OpenAI') + ' cost ') + money(turn.costEstimate && turn.costEstimate.total)
                   .codex-token-strip
                     each type in tokenTypes
                       span.codex-token-pill
@@ -185,6 +187,14 @@ block content
                   each model in localModelOptions
                     option(value=model.value, selected=model.value === selectedLocalModel)= model.description ? `${model.label} - ${model.description}` : model.label
                 small.codex-field-help Provider is locked to Ollama for this session. Start a new session to return to OpenAI.
+            else if sessionProvider === 'venice'
+              .codex-field
+                label(for='codex-followup-venice-model') Venice model
+                select#codex-followup-venice-model(name='model', required)
+                  if !veniceModelOptions.some(model => model.value === session.model)
+                    option(value='', selected, disabled) Choose an available Venice model
+                  each model in veniceModelOptions
+                    option(value=model.value, selected=model.value === session.model)= model.label
             else if sessionProvider === 'vllm'
               .codex-field
                 label Local vLLM model
@@ -232,6 +242,8 @@ block content
             .codex-actions
               button.codex-button(type='submit', data-codex-prompt-submit) Submit follow-up
               span#codex-followup-status.codex-form-status(aria-live='polite')
+        else if session.codexThreadId && sessionProvider === 'venice'
+          p.codex-empty No Venice models are currently available from the Gateway.
         else if session.codexThreadId && session.runpodBacked
           p.codex-empty= `${sessionProviderLabel} is currently unavailable because its Runpod pod is not running.`
         else

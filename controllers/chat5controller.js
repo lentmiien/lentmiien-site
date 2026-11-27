@@ -1,3 +1,4 @@
+const veniceGateway = require('../services/veniceGateway');
 const { AIModelCards, Chat4Model, Conversation4Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel, Chat3TemplateModel, Chat5QuickSettingModel, ChatPersonalityModel, ChatResponseTypeModel } = require('../database');
 const utils = require('../utils/utils');
 const Role = require('../models/role');
@@ -614,6 +615,9 @@ exports.view_chat5_top = async (req, res, next) => {
           category: 'chat5', metadata: { errorName: error?.name || 'Error' },
         });
       }
+    }
+    if (modelIds.some(veniceGateway.isVeniceModel)) {
+      modelCards.push(...await veniceGateway.chatCards());
     }
     const listedConversations = buildConversationList(conversations, modelCards, pending_conversation_ids);
     res.render('chat5_top', {

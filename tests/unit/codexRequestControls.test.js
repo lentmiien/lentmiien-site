@@ -325,6 +325,18 @@ describe('Codex request prompt controls', () => {
     expect(html).not.toContain('id="codex-followup-profile"');
   });
 
+  test('selects the saved Venice model on follow-up and requires a choice if it was removed', () => {
+    const state = {
+      session: { id: 's', codexThreadId: 'thread', modelProvider: 'venice', model: 'venice/second' },
+      config: { veniceModelOptions: [{ value: 'venice/first', label: 'First' }, { value: 'venice/second', label: 'Second' }] },
+    };
+    expect(renderCodexView('session', state)).toContain('value="venice/second" selected');
+    state.config.veniceModelOptions.pop();
+    expect(renderCodexView('session', state)).toContain('Choose an available Venice model');
+    state.config.veniceModelOptions.pop();
+    expect(renderCodexView('session', state)).toContain('No Venice models are currently available');
+  });
+
   test('shows the fixed vLLM follow-up model and Local AI turn cost', () => {
     const state = {
       session: { id: 's', codexThreadId: 'thread', modelProvider: 'vllm', model: 'qwen3.8:27b-vllm' },

@@ -349,10 +349,9 @@ class CodexQueueWorker {
         continue;
       }
 
+      const provider = codexToolService.getTurnModelProvider(queuedTurn);
       try {
-        await codexToolService.assertModelProviderAvailable(
-          codexToolService.getTurnModelProvider(queuedTurn)
-        );
+        await codexToolService.assertModelProviderAvailable(provider, queuedTurn.model);
       } catch (error) {
         await this.blockTurn(queuedTurn, error.message || 'The selected model provider is unavailable.');
         logger.warning('Codex turn blocked because its model provider is unavailable', {
@@ -366,7 +365,6 @@ class CodexQueueWorker {
         continue;
       }
 
-      const provider = codexToolService.getTurnModelProvider(queuedTurn);
       if (this.gpuReservations.has(provider) && !await this.canClaimGpuProvider(provider)) {
         continue;
       }

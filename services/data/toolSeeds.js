@@ -744,7 +744,7 @@ module.exports = [
     toolDefinition: {
       type: 'function',
       name: 'run_codex_in_workspace',
-      description: 'Start a normal, monitorable Codex session in any enabled workspace and wait for its final response. You must call fetch_codex_request_options immediately first, then copy valid choices into this call. Use request_profile_id for OpenAI or model for Ollama; omit whichever does not apply.',
+      description: 'Start a normal, monitorable Codex session in any enabled workspace and wait for its final response. You must call fetch_codex_request_options immediately first, then copy valid choices into this call. Use request_profile_id for OpenAI or model for Ollama or Venice; omit whichever does not apply.',
       parameters: {
         type: 'object',
         additionalProperties: false,
@@ -761,7 +761,7 @@ module.exports = [
           },
           model_provider: {
             type: 'string',
-            enum: ['openai', 'ollama', 'vllm', 'runpod-qwen', 'runpod-glm'],
+            enum: ['openai', 'ollama', 'venice', 'vllm', 'runpod-qwen', 'runpod-glm'],
             description: 'An available model provider returned by the fetch tool.',
           },
           mode: {
@@ -780,7 +780,7 @@ module.exports = [
           },
           model: {
             type: 'string',
-            description: 'Local model id returned by the fetch tool. Use only with the Ollama provider.',
+            description: 'Model id from the selected Ollama or Venice catalog.',
           },
         },
         required: ['workspace_id', 'prompt', 'model_provider', 'mode', 'permission_mode'],

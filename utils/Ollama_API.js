@@ -1,6 +1,7 @@
 const { messageText } = require('./chat5GenerationContext');
 const fs = require('fs');
 const path = require('path');
+const { resolveFileWithinDirectory } = require('./safeFilePath');
 const crypto = require('crypto');
 const axios = require('axios');
 const logger = require('./logger');
@@ -11,7 +12,8 @@ const { sliceMessagesFromConfiguredStart } = require('./chat5MessageSelection');
 const imageProcessingNotice = require('./imageProcessingNotice');
 
 const JS_FILE_NAME = 'utils/Ollama_API.js';
-const DEFAULT_BASE_URL = 'http://192.168.0.20:8080';
+const hostBaseUrl = require('./llmGatewayBaseUrl');
+const veniceGateway = require('../services/veniceGateway');
 const DEFAULT_WEBHOOK_BASE_URL = 'https://my.lentmiien.com/';
 const MODELS_ENDPOINT = '/llm/models';
 const CHAT_ENDPOINT = '/llm/chat';
@@ -33,17 +35,6 @@ const OPENAI_BUILT_IN_TOOL_NAMES = new Set([
   'web_search_preview',
 ]);
 const toolManagerService = new ToolManagerService();
-
-const normalizeBaseUrl = (value) => {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    return DEFAULT_BASE_URL;
-  }
-  let normalized = value.trim();
-  while (normalized.endsWith('/')) {
-    normalized = normalized.slice(0, -1);
-  }
-  return normalized.length > 0 ? normalized : DEFAULT_BASE_URL;
-};
 
 let warnedAboutSessionSecretFallback = false;
 let warnedAboutShortWebhookSecret = false;
@@ -149,8 +140,6 @@ const verifyWebhookToken = (candidate) => {
 
 const isValidChatJobId = (value) => typeof value === 'string' && JOB_ID_PATTERN.test(value);
 
-const hostBaseUrl = normalizeBaseUrl(process.env.OLLAMA_BASE_URL || process.env.AI_GATEWAY_BASE_URL || DEFAULT_BASE_URL);
-
 const httpClient = axios.create({
   baseURL: hostBaseUrl,
   timeout: 120000,
@@ -209,7 +198,7 @@ const headersToObject = (headers) => {
 };
 
 const loadImageToBase64 = (filename) => {
-  const filePath = path.resolve(__dirname, '..', 'public', 'img', filename);
+  const filePath = resolveFileWithinDirectory(path.resolve(__dirname, '..', 'public', 'img'), filename);
   const buffer = fs.readFileSync(filePath);
   return buffer.toString('base64');
 };
@@ -511,7 +500,7 @@ const normalizeInlineImage = (image) => {
 const validateMessageImages = (messages, model, targetModel, options = {}) => {
   // Reuse discovery already performed for availability. No extra request or
   // family-wide hardcoded quota: the Gateway remains the final authority.
-  const declaredModel = cachedModels.find((entry) => modelMatches(entry, targetModel));
+  const declaredModel = model.provider === 'Venice' ? model : cachedModels.find((entry) => modelMatches(entry, targetModel));
   const allowImages = typeof declaredModel?.allow_images === 'boolean'
     ? declaredModel.allow_images
     : model.allow_images === true
@@ -1937,10 +1926,25 @@ const postChatJobPayload = async (payload, functionName, options = {}) => {
 
 const validateChatImages = async (conversation, messages, model, options = {}) => {
   const targetModel = normalizeModelIdentifier(model.api_model);
-  await ensureModelAvailable(targetModel);
+  if (model.provider === 'Venice') {
+    if (normalizeToolNameList(conversation.metadata?.tools).length) {
+      throw new (require('./chatInputError').ChatInputError)('venice_tools', 'Deselect chat tools to use Venice foreground chat.');
+    }
+  } else {
+    await ensureModelAvailable(targetModel);
+  }
   const selected = selectMessagesForOllama(sliceMessagesFromConfiguredStart(messages, conversation),
     resolveMaxMessagesLimit(conversation), { includeLastToolBatch: options.includeLastToolBatch === true });
   validateMessageImages(buildChatCompletionMessages(null, selected, true), model, targetModel, options);
+};
+
+const chatVenice = async (conversation, messages, model, options) => {
+  const selected = selectMessagesForOllama(sliceMessagesFromConfiguredStart(messages, conversation),
+    resolveMaxMessagesLimit(conversation), options);
+  const history = buildChatCompletionMessages(resolveContextPrompt(conversation), selected, true);
+  validateMessageImages(history, model, model.api_model);
+  if (!history.length) throw new Error('No messages available to send to Venice.');
+  return veniceGateway.postChat({ model: model.api_model, messages: history, ...buildChatPayloadOptions(conversation) });
 };
 
 const submitChatJob = async (conversation, messages, model, options = {}) => {
@@ -2340,6 +2344,7 @@ module.exports = {
   isValidChatJobId,
   buildWebhookUrl,
   verifyWebhookToken,
+  chatVenice,
   submitChatJob,
   validateChatImages,
   retrieveChatJob,

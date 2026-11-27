@@ -4,7 +4,14 @@ const formAssetUrl = require('../../utils/formAssets').createFormAssets().url;
 function dashboardFixture(admin = true) {
   const workspace = { id: 'workspace-1', name: 'Lentmiien workspace', rootPath: '/workspace/project', enabled: true };
   const state = {
-    config: {}, csrfToken: 'synthetic-test-token', workspaces: [workspace], requestProfiles: [], promptTemplates: [],
+    config: {
+      modelProviderOptions: [
+        { value: 'openai', label: 'OpenAI', controlMode: 'openai-profile' },
+        { value: 'vllm', label: 'vLLM (local)', controlMode: 'fixed-profile' },
+        { value: 'venice', label: 'Venice', controlMode: 'venice-model' },
+      ],
+      veniceModelOptions: [{ value: 'venice/first', label: 'First model' }, { value: 'venice/second', label: 'Second model' }],
+    }, csrfToken: 'synthetic-test-token', workspaces: [workspace], requestProfiles: [], promptTemplates: [],
     runningTurns: [{ id: 'running-1', status: 'running', workspace, startedAt: '2026-09-18T10:00:00Z' }],
     queuedTurns: [{ id: 'queued-1', status: 'queued', workspace, queuedAt: '2026-09-18T10:01:00Z' }],
     recentSessions: [],

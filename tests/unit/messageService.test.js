@@ -37,6 +37,7 @@ jest.mock('../../utils/OpenAI_API', () => ({
 jest.mock('../../utils/Ollama_API', () => ({
   chat: jest.fn(),
   submitChatJob: jest.fn(),
+  chatVenice: jest.fn(),
   validateChatImages: jest.fn(),
   retrieveChatJob: jest.fn(),
   convertResponseBody: jest.fn(),
@@ -446,6 +447,27 @@ describe('MessageService', () => {
 
     expect(ai.convertResponseBody).toHaveBeenCalledWith(retrievedResponse);
     expect(ai.fetchCompleted).not.toHaveBeenCalled();
+  });
+
+  test('saves a completed Venice reply directly and rejects unlisted models', async () => {
+    const model = 'venice/test';
+    const catalog = jest.spyOn(require('../../services/veniceGateway'), 'chatCards');
+    try {
+      catalog.mockResolvedValue([{ api_model: model, provider: 'Venice' }]);
+      Chat5Model.find.mockResolvedValue([]);
+      ollama.chatVenice.mockResolvedValue('Hello');
+      const conversation = { _id: 'conv-1', category: 'Chat5', tags: [], messages: [], metadata: { model } };
+      const result = await service.generateAIMessage({ conversation });
+      expect(result.msg).toMatchObject({ user_id: 'bot', content: { text: 'Hello' }, hideFromBot: false });
+      expect(result.msg.save).toHaveBeenCalled();
+      expect(result.response_id).toBeUndefined();
+      expect(ollama.submitChatJob).not.toHaveBeenCalled();
+      catalog.mockResolvedValue([]);
+      await expect(service.generateAIMessage({ conversation })).rejects.toThrow('unavailable');
+      expect(ollama.chatVenice).toHaveBeenCalledTimes(1);
+    } finally {
+      catalog.mockRestore();
+    }
   });
 
   test('generateAIMessage submits an Ollama job and immediately saves a hidden placeholder', async () => {

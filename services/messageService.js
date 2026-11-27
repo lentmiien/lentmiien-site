@@ -7,6 +7,7 @@ const { groq, groq_vision } = require('../utils/groq');
 const { googleAI } = require('../utils/google');
 const lmstudio = require('../utils/lmstudio');
 const ai = require('../utils/OpenAI_API');
+const veniceGateway = require('./veniceGateway');
 const ollama = require('../utils/Ollama_API');
 const { z } = require('zod');
 const logger = require('../utils/logger');
@@ -68,6 +69,15 @@ const Title = z.object({
 });
 
 // Message service operations: managing individual messages within a conversation
+async function resolveChatCard(id) {
+  if (veniceGateway.isVeniceModel(id)) {
+    const card = (await veniceGateway.chatCards()).find(model => model.api_model === id);
+    if (!card) throw new Error('Selected Venice model is unavailable.');
+    return card;
+  }
+  return (await AIModelCards.find({ api_model: id }))[0];
+}
+
 class MessageService {
   constructor(
     messageModel,
@@ -1079,7 +1089,7 @@ class MessageService {
   }
 
   async validateAIMessageInput({ conversation, pendingMessages = [] }) {
-    const model = (await AIModelCards.find({ api_model: conversation.metadata.model }))[0];
+    const model = await resolveChatCard(conversation.metadata.model);
     if (!model || model.provider === 'OpenAI') return;
     const ids = conversation.messages.map(String);
     const messages = await Chat5Model.find({ _id: ids });
@@ -1089,7 +1099,7 @@ class MessageService {
 
   async generateAIMessage({conversation, includeLastToolBatch = false, maxOutputTokens = null, privateRequest = false, completionWindow = 'soonest'}) {
     // Generate a message through AI and save to database *Can possible generate multiple messages if using tools or reasoning
-    const model = (await AIModelCards.find({api_model: conversation.metadata.model}))[0];
+    const model = await resolveChatCard(conversation.metadata.model);
     if (!model) {
       throw new Error(`AI model card not found for api_model: ${conversation.metadata.model}`);
     }
@@ -1138,6 +1148,15 @@ class MessageService {
     }
 
     if (privateRequest && Number.isInteger(maxOutputTokens)) runtimeConversation.metadata.max_tokens = maxOutputTokens;
+
+    if (model.provider === 'Venice') {
+      const text = await ollama.chatVenice(runtimeConversation, messages, model, { includeLastToolBatch });
+      const msg = await this.createMessageNew({
+        userId: 'bot', category: conversation.category, tags: conversation.tags, conversationId: conversation._id,
+        contentType: 'text', content: { text },
+      });
+      return { msg };
+    }
 
     // Local models use the Gateway's background job API. The webhook/recovery
     // path replaces this placeholder after retrieving the terminal job result.

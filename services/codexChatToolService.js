@@ -51,7 +51,7 @@ const FIXED_REQUESTS = Object.freeze({
 const TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'timed_out', 'cancelled', 'blocked']);
 const VALID_MODES = new Set(['question', 'action', 'git_commit_push']);
 const VALID_PERMISSION_MODES = new Set(['auto', 'read-only', 'workspace-write', 'yolo']);
-const VALID_MODEL_PROVIDERS = new Set(['openai', 'ollama', 'vllm', 'runpod-qwen', 'runpod-glm']);
+const VALID_MODEL_PROVIDERS = new Set(['openai', 'ollama', 'venice', 'vllm', 'runpod-qwen', 'runpod-glm']);
 const MAX_PROMPT_CHARS = 20000;
 const MAX_FINAL_RESPONSE_CHARS = 100000;
 const DEFAULT_WAIT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
@@ -357,6 +357,7 @@ class CodexChatToolService {
         codex_profile: profile.codexProfile,
       })),
       local_models: config.localModelOptions,
+      venice_models: config.veniceModelOptions,
       modes: [
         { value: 'question', description: 'Investigate or answer without requesting edits.' },
         { value: 'action', description: 'Implement or otherwise change the selected workspace.' },

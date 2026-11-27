@@ -22,7 +22,7 @@ block content
   - const summary = stats.summary || {};
   - const pricing = state.pricing || {};
   - const pricingByProvider = state.pricingByProvider || { openai: pricing, ollama: {} };
-  - const pricingProviders = [{ value: 'openai', label: 'OpenAI' }, { value: 'ollama', label: 'Local AI' }];
+  - const pricingProviders = [{ value: 'openai', label: 'OpenAI' }, { value: 'ollama', label: 'Local AI' }, { value: 'venice', label: 'Venice' }];
   - const tokenTypes = ['input', 'cached', 'output', 'reasoning'];
   - const tokenLabels = { input: 'Input', cached: 'Cached', output: 'Output', reasoning: 'Reasoning' };
   - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
@@ -146,6 +146,11 @@ block content
               select#codex-local-model(name='model', disabled, required)
                 each model in localModelOptions
                   option(value=model.value)= model.description ? `${model.label} - ${model.description}` : model.label
+            .codex-field(data-codex-venice-model-controls, hidden)
+              label(for='codex-venice-model') Venice model
+              select#codex-venice-model(name='model', disabled, required)
+                each model in config.veniceModelOptions || []
+                  option(value=model.value)= model.label
             .codex-field
               .codex-field-label-row
                 label(for='codex-prompt') Prompt
@@ -294,6 +299,10 @@ block content
               strong= money(summary.ollamaCost)
               span= (pricingByProvider.ollama && pricingByProvider.ollama.currency) || 'USD'
             .codex-stat-card
+              small Venice Cost
+              strong= money(summary.veniceCost)
+              span USD
+            .codex-stat-card
               small Avg Time
               strong= duration(summary.durationStats && summary.durationStats.avg)
               span= 'Max ' + duration(summary.durationStats && summary.durationStats.max)
@@ -365,7 +374,8 @@ block content
                 form.codex-pricing-card.codex-form.codex-form--pricing(method='post', data-codex-pricing-form, data-provider=provider.value)
                   .codex-pricing-card__heading
                     h3= provider.label
-                    p= provider.value === 'openai' ? 'Used only for OpenAI-backed Codex turns.' : 'Used for local Ollama, local vLLM, and Runpod-backed Qwen/GLM turns.'
+                    if provider.value === 'ollama'
+                      p Covers local Ollama, local vLLM, and Runpod-backed Qwen/GLM turns.
                   each type in tokenTypes
                     .codex-field
                       label(for=`codex-price-${provider.value}-${type}`)= tokenLabels[type]
@@ -396,6 +406,8 @@ block content
                     th= tokenLabels[type]
                   th OpenAI Cost
                   th Local AI Cost
+                  th Venice Cost
+                  th Venice Cost
               tbody(data-codex-monthly-body)
                 if stats.months && stats.months.length
                   each month in stats.months
@@ -407,9 +419,10 @@ block content
                         td(data-label=tokenLabels[type])= num(month.tokens && month.tokens[type])
                       td(data-label='OpenAI Cost')= money(month.cost)
                       td(data-label='Local AI Cost')= money(month.ollamaCost)
+                      td(data-label='Venice Cost')= money(month.veniceCost)
                 else
                   tr
-                    td(colspan='9') No token usage recorded for the last 3 months.
+                    td(colspan='10') No token usage recorded for the last 3 months.
 
         section.codex-panel.codex-panel--full
           .codex-panel__header
@@ -430,6 +443,8 @@ block content
                   th Success
                   th OpenAI Cost
                   th Local AI Cost
+                  th Venice Cost
+                  th Venice Cost
               tbody(data-codex-workspace-body)
                 if stats.workspaceActivity && stats.workspaceActivity.length
                   each workspaceStat in stats.workspaceActivity
@@ -448,9 +463,10 @@ block content
                       td(data-label='Success')= pct(workspaceStat.successRate)
                       td(data-label='OpenAI Cost')= money(workspaceStat.cost)
                       td(data-label='Local AI Cost')= money(workspaceStat.ollamaCost)
+                      td(data-label='Venice Cost')= money(workspaceStat.veniceCost)
                 else
                   tr
-                    td(colspan='11') No workspace activity recorded for the last 3 months.
+                    td(colspan='12') No workspace activity recorded for the last 3 months.
 
 block script
   script#codex-page-data(type='application/json')!= codexStateJson

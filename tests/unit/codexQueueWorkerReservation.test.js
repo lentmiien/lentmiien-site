@@ -131,7 +131,7 @@ describe('Codex queue worker GPU reservation lifecycle', () => {
 
     await expect(worker.claimAndRunOne()).resolves.toBe(false);
 
-    expect(codexToolService.assertModelProviderAvailable).toHaveBeenCalledWith('runpod-qwen');
+    expect(codexToolService.assertModelProviderAvailable).toHaveBeenCalledWith('runpod-qwen', queuedTurn.model);
     expect(worker.blockTurn).toHaveBeenCalledWith(
       queuedTurn,
       'Qwen (Runpod) is unavailable because its Runpod pod is not running.'

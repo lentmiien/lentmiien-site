@@ -129,11 +129,12 @@ function getTurnLaunchSettings(turn, ollamaProfile) {
   const effectiveProfile = providerProfile || (modelProvider === 'ollama'
     ? (ollamaProfile || turn.profile || '')
     : (turn.profile || ''));
+  const fixedProfile = providerProfile && modelProvider !== 'venice';
   return {
     effectiveProfile,
-    model: providerProfile ? (fixedModel || '') : String(turn.model || ''),
+    model: fixedProfile ? (fixedModel || '') : String(turn.model || ''),
     modelProvider,
-    reasoningEffort: providerProfile ? '' : String(turn.reasoningEffort || ''),
+    reasoningEffort: fixedProfile ? '' : String(turn.reasoningEffort || ''),
   };
 }
 
@@ -443,6 +444,9 @@ class CodexLocalRunner {
         })).catch(() => {});
         throw error;
       }
+    }
+    if (launchSettings.modelProvider === 'venice' && profileConfig?.model_provider !== 'ai_gateway') {
+      throw new Error('The gateway Codex profile must select the ai_gateway model provider.');
     }
     const command = this.buildCommand({
       turn,

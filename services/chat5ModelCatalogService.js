@@ -1,3 +1,4 @@
+const veniceGateway = require('./veniceGateway');
 const { AIModelCards } = require('../database');
 const openai = require('../utils/ChatGPT');
 const { hasDatePassed } = require('../utils/dateOnly');
@@ -14,7 +15,8 @@ async function listAvailableChatModels() {
     ) && model.model_type === 'chat');
   }
 
-  return cachedModels.filter((model) => !hasDatePassed(model.deprecation_date));
+  const stored = cachedModels.filter(model => !veniceGateway.isVeniceModel(model.api_model) && !hasDatePassed(model.deprecation_date));
+  return stored.concat(await veniceGateway.chatCards());
 }
 
 function invalidateChatModelCache() {

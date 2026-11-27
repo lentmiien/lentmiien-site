@@ -15,7 +15,7 @@ const CodexSessionSchema = new Schema({
   codexThreadId: { type: String, default: undefined },
   modelProvider: {
     type: String,
-    enum: ['openai', 'ollama', 'vllm', 'runpod-qwen', 'runpod-glm'],
+    enum: ['openai', 'ollama', 'venice', 'vllm', 'runpod-qwen', 'runpod-glm'],
     default: 'openai',
     index: true,
   },

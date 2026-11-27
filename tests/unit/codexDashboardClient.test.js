@@ -37,8 +37,8 @@ test('disclosures default closed, links named, active controls and metric detail
   doc.getElementById('codex-new-request-maximize').click();
   expect(doc.getElementById('codex-new-request-panel').open).toBe(true);
   expect(doc.getElementById('codex-new-request-maximize').getAttribute('aria-pressed')).toBe('true');
-  expect(doc.querySelector('[data-codex-monthly-body]').rows[0].cells).toHaveLength(9);
-  expect(doc.querySelector('[data-codex-workspace-body]').rows[0].cells).toHaveLength(11);
+  expect(doc.querySelector('[data-codex-monthly-body]').rows[0].cells).toHaveLength(10);
+  expect(doc.querySelector('[data-codex-workspace-body]').rows[0].cells).toHaveLength(12);
 });
 
 test('older-page navigation loads real rows and polling preserves page and filters', async () => {
@@ -132,4 +132,19 @@ test('shows Gateway image limits only while the local vLLM model is selected', (
   provider.value = 'openai';
   provider.dispatchEvent(new win.Event('change'));
   expect(notice.hidden).toBe(true);
+});
+
+test('submits only the selected Venice model when switching providers', async () => {
+  const { win } = setup();
+  await flush();
+  const provider = win.document.getElementById('codex-model-provider');
+  provider.value = 'venice';
+  provider.dispatchEvent(new win.Event('change'));
+  win.document.getElementById('codex-venice-model').value = 'venice/second';
+  const data = new win.FormData(provider.form);
+  expect(data.getAll('model')).toEqual(['venice/second']);
+  expect(data.has('requestProfileId')).toBe(false);
+  provider.value = 'openai';
+  provider.dispatchEvent(new win.Event('change'));
+  expect(new win.FormData(provider.form).has('model')).toBe(false);
 });

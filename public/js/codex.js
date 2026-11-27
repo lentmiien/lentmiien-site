@@ -324,6 +324,7 @@
     'reasoningEfforts',
     'codexModelOptions',
     'localModelOptions',
+    'veniceModelOptions',
     'modelProviderOptions',
   ]);
   const HEALTH_LABELS = {
@@ -405,6 +406,7 @@
     if (turn && turn.modelProviderLabel) return turn.modelProviderLabel;
     const provider = String(turn && turn.modelProvider || '').trim();
     if (provider === 'ollama') return 'Ollama';
+    if (provider === 'venice') return 'Venice';
     if (provider === 'vllm') return 'vLLM (local)';
     if (provider === 'runpod-qwen') return 'Qwen (Runpod)';
     if (provider === 'runpod-glm') return 'GLM-5.3 Flash (Runpod)';
@@ -415,6 +417,7 @@
     const provider = String(
       turn && (turn.usageProvider || turn.costEstimate?.provider || turn.modelProvider) || ''
     ).trim();
+    if (provider === 'venice') return 'Venice';
     return provider === 'openai' ? 'OpenAI' : 'Local AI';
   }
 
@@ -1452,13 +1455,13 @@
         control.disabled = !usesOpenAiProfile;
       });
     }
-    if (localControls) {
-      localControls.hidden = !usesLocalModel;
-      localControls.querySelectorAll('input, select, textarea').forEach((control) => {
-        control.disabled = !usesLocalModel;
-        if (control.name === 'model') {
-          control.required = usesLocalModel;
-        }
+    const veniceControls = form.querySelector('[data-codex-venice-model-controls]');
+    for (const [group, enabled] of [[localControls, usesLocalModel], [veniceControls, controlMode === 'venice-model']]) {
+      if (!group) continue;
+      group.hidden = !enabled;
+      group.querySelectorAll('select').forEach(control => {
+        control.disabled = !enabled;
+        control.required = enabled;
       });
     }
     if (providerHelp && selectedOption?.dataset.description) {
@@ -1630,6 +1633,7 @@
       grid.appendChild(renderMetricCard('Tokens', formatNumber(summary.tokens && summary.tokens.total), `Avg ${formatNumber(summary.averageTokensPerTurn)} / turn`));
       grid.appendChild(renderMetricCard('OpenAI Cost', formatMoney(summary.cost), (pricing?.openai?.currency || pricing?.currency) || 'USD'));
       grid.appendChild(renderMetricCard('Local AI Cost', formatMoney(summary.ollamaCost), pricing?.ollama?.currency || 'USD'));
+      grid.appendChild(renderMetricCard('Venice Cost', formatMoney(summary.veniceCost), pricing?.venice?.currency || 'USD'));
       grid.appendChild(renderMetricCard('Avg Time', formatDuration(summary.durationStats && summary.durationStats.avg), `Max ${formatDuration(summary.durationStats && summary.durationStats.max)}`));
       grid.appendChild(renderMetricCard('Success', formatPercent(summary.successRate), `${formatNumber(summary.successfulTurnCount)} completed`));
       grid.appendChild(renderMetricCard('Cache Share', formatPercent(summary.cacheShare), `Reasoning ${formatPercent(summary.reasoningShare)}`));
@@ -1663,7 +1667,7 @@
       const months = stats && Array.isArray(stats.months) ? stats.months : [];
       if (!months.length) {
         const row = createEl('tr');
-        row.appendChild(createEl('td', { colspan: '9', text: 'No token usage recorded for the last 3 months.' }));
+        row.appendChild(createEl('td', { colspan: '10', text: 'No token usage recorded for the last 3 months.' }));
         monthlyBody.appendChild(row);
       } else {
         months.forEach((month) => {
@@ -1675,6 +1679,7 @@
           TOKEN_TYPES.forEach((type) => row.appendChild(tableCell(TOKEN_LABELS[type], { text: formatNumber(tokens[type]) })));
           row.appendChild(tableCell('OpenAI Cost', { text: formatMoney(month.cost) }));
           row.appendChild(tableCell('Local AI Cost', { text: formatMoney(month.ollamaCost) }));
+          row.appendChild(tableCell('Venice Cost', { text: formatMoney(month.veniceCost) }));
           monthlyBody.appendChild(row);
         });
       }
@@ -1686,7 +1691,7 @@
       const workspaces = stats && Array.isArray(stats.workspaceActivity) ? stats.workspaceActivity : [];
       if (!workspaces.length) {
         const row = createEl('tr');
-        row.appendChild(createEl('td', { colspan: '11', text: 'No workspace activity recorded for the last 3 months.' }));
+        row.appendChild(createEl('td', { colspan: '12', text: 'No workspace activity recorded for the last 3 months.' }));
         workspaceBody.appendChild(row);
       } else {
         workspaces.forEach((workspace) => {
@@ -1705,6 +1710,7 @@
           row.appendChild(tableCell('Success', { text: formatPercent(workspace.successRate) }));
           row.appendChild(tableCell('OpenAI Cost', { text: formatMoney(workspace.cost) }));
           row.appendChild(tableCell('Local AI Cost', { text: formatMoney(workspace.ollamaCost) }));
+          row.appendChild(tableCell('Venice Cost', { text: formatMoney(workspace.veniceCost) }));
           workspaceBody.appendChild(row);
         });
       }
@@ -1721,6 +1727,7 @@
     const costs = createEl('div', { className: 'codex-panel__header-actions' });
     costs.appendChild(createEl('span', { className: 'codex-chip', text: `OpenAI ${formatMoney(current.cost)}` }));
     costs.appendChild(createEl('span', { className: 'codex-chip', text: `Local AI ${formatMoney(current.ollamaCost)}` }));
+    costs.appendChild(createEl('span', { className: 'codex-chip', text: `Venice ${formatMoney(current.veniceCost)}` }));
     header.appendChild(costs);
     container.appendChild(header);
     const grid = createEl('div', { className: 'codex-stat-grid codex-stat-grid--compact' });

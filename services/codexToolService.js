@@ -1,3 +1,4 @@
+const veniceGateway = require('./veniceGateway');
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
@@ -42,11 +43,11 @@ const CODEX_THREAD_INDEX_NAME = 'codexThreadId_1';
 const WORKSPACE_LOCK_INDEX_NAME = 'workspaceId_1';
 const WORKSPACE_LOCK_TTL_INDEX_NAME = 'expiresAt_1';
 const DEFAULT_TOKEN_PRICE_ID = 'default';
-const OLLAMA_TOKEN_PRICE_ID = 'ollama';
 const TOKEN_TYPES = ['input', 'cached', 'output', 'reasoning'];
 const MODEL_PROVIDERS = Object.freeze({
   OPENAI: 'openai',
   OLLAMA: 'ollama',
+  VENICE: 'venice',
   VLLM: 'vllm',
   RUNPOD_QWEN: 'runpod-qwen',
   RUNPOD_GLM: 'runpod-glm',
@@ -54,6 +55,7 @@ const MODEL_PROVIDERS = Object.freeze({
 const USAGE_MODEL_PROVIDERS = Object.freeze([
   MODEL_PROVIDERS.OPENAI,
   MODEL_PROVIDERS.OLLAMA,
+  MODEL_PROVIDERS.VENICE,
 ]);
 const MODEL_PROVIDER_DEFINITIONS = Object.freeze([
   Object.freeze({
@@ -69,6 +71,14 @@ const MODEL_PROVIDER_DEFINITIONS = Object.freeze([
     description: 'Local Ollama models on the Codex machine; reserves the AI Gateway GPU while active.',
     controlMode: 'local-model',
     usageProvider: MODEL_PROVIDERS.OLLAMA,
+  }),
+  Object.freeze({
+    value: MODEL_PROVIDERS.VENICE,
+    label: 'Venice',
+    description: 'Remote Venice models through the AI Gateway.',
+    controlMode: 'venice-model',
+    usageProvider: MODEL_PROVIDERS.VENICE,
+    codexProfile: 'gateway',
   }),
   Object.freeze({
     value: MODEL_PROVIDERS.VLLM,
@@ -472,11 +482,12 @@ function serializeModelProviderOption(definition) {
   };
 }
 
-async function getAvailableModelProviderOptions({ user, localModelOptions = [] } = {}) {
+async function getAvailableModelProviderOptions({ user, localModelOptions = [], veniceModelOptions = [] } = {}) {
   const options = [MODEL_PROVIDER_DEFINITION_BY_VALUE.get(MODEL_PROVIDERS.OPENAI)];
   if (localModelOptions.length) {
     options.push(MODEL_PROVIDER_DEFINITION_BY_VALUE.get(MODEL_PROVIDERS.OLLAMA));
   }
+  if (veniceModelOptions.length) options.push(getModelProviderDefinition(MODEL_PROVIDERS.VENICE));
   options.push(MODEL_PROVIDER_DEFINITION_BY_VALUE.get(MODEL_PROVIDERS.VLLM));
   let authorized = false;
   try {
@@ -528,8 +539,14 @@ async function assertRunpodModelProviderAuthorized(providerInput, user) {
   }
 }
 
-async function assertModelProviderAvailable(providerInput) {
+async function assertModelProviderAvailable(providerInput, model) {
   const definition = getModelProviderDefinition(providerInput);
+  if (definition.value === MODEL_PROVIDERS.VENICE) {
+    const cards = await veniceGateway.listCards();
+    if (!cards.some(card => card.api_model === model)) {
+      throw createHttpError(400, 'Select an available Venice model from the AI Gateway catalog.');
+    }
+  }
   if (!definition.podName) {
     return definition;
   }
@@ -803,9 +820,8 @@ function addTokenUsage(target, usage) {
 }
 
 function getTokenPriceId(provider) {
-  return getUsageModelProvider(provider) === MODEL_PROVIDERS.OLLAMA
-    ? OLLAMA_TOKEN_PRICE_ID
-    : DEFAULT_TOKEN_PRICE_ID;
+  const usageProvider = getUsageModelProvider(provider);
+  return usageProvider === MODEL_PROVIDERS.OPENAI ? DEFAULT_TOKEN_PRICE_ID : usageProvider;
 }
 
 function serializeTokenPricing(pricing, providerInput = MODEL_PROVIDERS.OPENAI) {
@@ -872,16 +888,11 @@ function estimateTokenCost(tokensInput, pricingInput) {
 }
 
 function serializePricingByProvider(pricingInput = {}) {
-  const hasProviderMap = pricingInput && (
-    Object.prototype.hasOwnProperty.call(pricingInput, MODEL_PROVIDERS.OPENAI) ||
-    Object.prototype.hasOwnProperty.call(pricingInput, MODEL_PROVIDERS.OLLAMA)
-  );
-  const openaiPricing = hasProviderMap ? pricingInput[MODEL_PROVIDERS.OPENAI] : pricingInput;
-  const ollamaPricing = hasProviderMap ? pricingInput[MODEL_PROVIDERS.OLLAMA] : null;
-  return {
-    [MODEL_PROVIDERS.OPENAI]: serializeTokenPricing(openaiPricing, MODEL_PROVIDERS.OPENAI),
-    [MODEL_PROVIDERS.OLLAMA]: serializeTokenPricing(ollamaPricing, MODEL_PROVIDERS.OLLAMA),
-  };
+  const hasProviderMap = USAGE_MODEL_PROVIDERS.some(provider => Object.hasOwn(pricingInput || {}, provider));
+  return Object.fromEntries(USAGE_MODEL_PROVIDERS.map(provider => {
+    const pricing = hasProviderMap ? pricingInput[provider] : (provider === MODEL_PROVIDERS.OPENAI ? pricingInput : null);
+    return [provider, serializeTokenPricing(pricing, provider)];
+  }));
 }
 
 function getPricingForProvider(pricingInput, providerInput) {
@@ -1079,6 +1090,7 @@ function finalizeActivityBucket(bucket, pricing) {
   }, {});
   const openaiUsage = providerUsage[MODEL_PROVIDERS.OPENAI];
   const ollamaUsage = providerUsage[MODEL_PROVIDERS.OLLAMA];
+  const veniceCost = providerUsage[MODEL_PROVIDERS.VENICE].cost;
   return {
     key: bucket.key,
     label: bucket.label,
@@ -1102,11 +1114,13 @@ function finalizeActivityBucket(bucket, pricing) {
     costBreakdown: openaiUsage.costBreakdown,
     ollamaCost: ollamaUsage.cost,
     ollamaCostBreakdown: ollamaUsage.costBreakdown,
-    combinedCost: openaiUsage.cost + ollamaUsage.cost,
+    veniceCost,
+    combinedCost: openaiUsage.cost + ollamaUsage.cost + veniceCost,
     costs: {
       openai: openaiUsage.cost,
       ollama: ollamaUsage.cost,
-      combined: openaiUsage.cost + ollamaUsage.cost,
+      venice: veniceCost,
+      combined: openaiUsage.cost + ollamaUsage.cost + veniceCost,
     },
     providerUsage,
     kindDistribution: serializeDistribution(bucket.kindMap, bucket.turnCount, KIND_LABELS),
@@ -1115,6 +1129,7 @@ function finalizeActivityBucket(bucket, pricing) {
     providerDistribution: serializeDistribution(bucket.providerMap, bucket.turnCount, {
       openai: 'OpenAI',
       ollama: 'Local AI',
+      venice: 'Venice',
     }),
     busiestDay: getTopDay(bucket.dayMap),
     lastStartedAt: bucket.lastStartedAt,
@@ -1975,14 +1990,16 @@ async function resolveTurnRequestOptions(payload = {}, workspace = {}, options =
   }
   await assertRunpodModelProviderAuthorized(modelProvider, options.user);
   if (getModelProviderCodexProfile(modelProvider)) {
-    const definition = await assertModelProviderAvailable(modelProvider);
+    const selectedModel = payload.model || options.defaultModel;
+    const definition = await assertModelProviderAvailable(modelProvider, selectedModel);
+    const usesVenice = modelProvider === MODEL_PROVIDERS.VENICE;
     return {
       requestProfileId: '',
       requestProfileName: '',
       modelProvider,
-      model: definition.fixedModel || '',
+      model: usesVenice ? selectedModel : (definition.fixedModel || ''),
       profile: definition.codexProfile,
-      reasoningEffort: '',
+      reasoningEffort: usesVenice ? 'low' : '',
     };
   }
   if (modelProvider === MODEL_PROVIDERS.OLLAMA) {
@@ -2539,11 +2556,12 @@ async function getTokenPricing(providerInput = MODEL_PROVIDERS.OPENAI) {
 }
 
 async function getTokenPricingByProvider() {
-  const [openai, ollama] = await Promise.all([
+  const [openai, ollama, venice] = await Promise.all([
     getTokenPricing(MODEL_PROVIDERS.OPENAI),
     getTokenPricing(MODEL_PROVIDERS.OLLAMA),
+    getTokenPricing(MODEL_PROVIDERS.VENICE),
   ]);
-  return { openai, ollama };
+  return { openai, ollama, venice };
 }
 
 async function updateTokenPricing(payload = {}, user) {
@@ -3065,7 +3083,7 @@ async function retryTurn(turnId, user) {
   const { workspace, target } = await getWorkspaceBundle(originalTurn.workspaceId, { validateRemoteDirectory: false });
   const originalProvider = getTurnModelProvider(originalTurn);
   await assertRunpodModelProviderAuthorized(originalProvider, user);
-  await assertModelProviderAvailable(originalProvider);
+  await assertModelProviderAvailable(originalProvider, originalTurn.model);
   if (originalTurn.kind.startsWith('followup_') && !session.codexThreadId) {
     throw createHttpError(409, 'Follow-up retry is unavailable because this session has no Codex session id.');
   }
@@ -3205,9 +3223,11 @@ async function getHealth(workerStatus, options = {}) {
 async function publicConfig(options = {}) {
   const config = getRuntimeConfig();
   const localModelOptions = await getLocalModelOptions();
+  const veniceModelOptions = (await veniceGateway.listCards()).map(card => ({ value: card.api_model, label: card.model_name }));
   const modelProviderOptions = await getAvailableModelProviderOptions({
     user: options.user,
     localModelOptions,
+    veniceModelOptions,
   });
   return {
     workerEnabled: config.workerEnabled,
@@ -3218,6 +3238,7 @@ async function publicConfig(options = {}) {
     reasoningEfforts: REASONING_EFFORT_OPTIONS,
     codexModelOptions: CODEX_MODEL_OPTIONS,
     localModelOptions,
+    veniceModelOptions,
     modelProviderOptions,
   };
 }

@@ -53,6 +53,23 @@ describe('Ollama selected-history image policy', () => {
     expect(mockPost).not.toHaveBeenCalled();
   });
 
+  test('sends Venice only the selected history and enforces the card image policy', async () => {
+    const model = { api_model: 'venice/test', provider: 'Venice', in_modalities: ['text', 'image'] };
+    const settings = { contextPrompt: 'Context', metadata: { max_tokens: 256, maxMessages: 1 } };
+    const history = [userMessage([], 'Old'), userMessage(images, 'New')];
+    const post = jest.spyOn(require('../../services/veniceGateway'), 'postChat').mockResolvedValue('Answer');
+    await expect(api.chatVenice(settings, history, model)).resolves.toBe('Answer');
+    expect(post).toHaveBeenCalledWith({
+      model: model.api_model, max_tokens: 256,
+      messages: [{ role: 'system', content: 'Context' }, { role: 'user', content: 'New', images }],
+    });
+    await expect(api.chatVenice(settings, history, { ...model, in_modalities: ['text'] }))
+      .rejects.toMatchObject({ code: 'images_not_allowed' });
+    await expect(api.chatVenice(settings, [{ contentType: 'image', content: { image: '../outside.jpg' } }], model))
+      .rejects.toThrow('Unable to read an attached image');
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
   describe.each(entries)('%s', (method) => {
     test.each([1, 2, 3])('preserves %i separate image messages, text, and original order', async (count) => {
       const messages = images.slice(0, count).map((image, i) => userMessage([image], `Image ${i}`, String(i)));
