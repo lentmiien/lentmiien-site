@@ -451,7 +451,7 @@ describe('MessageService', () => {
 
   test('saves a completed Venice reply directly and rejects unlisted models', async () => {
     const model = 'venice/test';
-    const catalog = jest.spyOn(require('../../services/veniceGateway'), 'chatCards');
+    const catalog = jest.spyOn(require('../../services/veniceGateway'), 'listCards');
     try {
       catalog.mockResolvedValue([{ api_model: model, provider: 'Venice' }]);
       Chat5Model.find.mockResolvedValue([]);

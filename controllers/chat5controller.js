@@ -211,7 +211,7 @@ exports.ai_model_cards = async (req, res) => {
     batch_use: false,
     context_type: 'none',
   };
-  const defaultProviders = ['OpenAI', 'Anthropic', 'Google', 'Groq', 'Local'];
+  const defaultProviders = ['OpenAI', 'Anthropic', 'Google', 'Groq', 'Local', 'Venice'];
   const providerOptions = [...new Set([...defaultProviders, ...models.map((model) => model.provider).filter(Boolean)])];
   let editingModel = null;
 
@@ -617,7 +617,8 @@ exports.view_chat5_top = async (req, res, next) => {
       }
     }
     if (modelIds.some(veniceGateway.isVeniceModel)) {
-      modelCards.push(...await veniceGateway.chatCards());
+      modelCards = modelCards.filter(card => !veniceGateway.isVeniceModel(card.api_model))
+        .concat(await veniceGateway.listCards());
     }
     const listedConversations = buildConversationList(conversations, modelCards, pending_conversation_ids);
     res.render('chat5_top', {

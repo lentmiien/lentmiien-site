@@ -71,7 +71,7 @@ const Title = z.object({
 // Message service operations: managing individual messages within a conversation
 async function resolveChatCard(id) {
   if (veniceGateway.isVeniceModel(id)) {
-    const card = (await veniceGateway.chatCards()).find(model => model.api_model === id);
+    const card = (await veniceGateway.listCards()).find(model => model.api_model === id);
     if (!card) throw new Error('Selected Venice model is unavailable.');
     return card;
   }

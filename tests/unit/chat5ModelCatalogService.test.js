@@ -1,3 +1,8 @@
+jest.mock('../../services/veniceGateway', () => ({
+  ...jest.requireActual('../../services/veniceGateway'),
+  listCards: jest.fn().mockResolvedValue([]),
+}));
+const veniceGateway = require('../../services/veniceGateway');
 const mockFind = jest.fn();
 const mockGetOpenAIModels = jest.fn();
 
@@ -67,6 +72,16 @@ describe('Chat5 model catalog service', () => {
 
     await expect(listAvailableChatModels()).resolves.toEqual([]);
     expect(mockFind).toHaveBeenCalledTimes(1);
+  });
+
+  test('lists the Gateway Venice model once even with an existing Local card', async () => {
+    const id = 'venice/glm-5-3-flash-uncensored';
+    const card = { api_model: id, provider: 'Venice', model_type: 'chat' };
+    mockFind.mockResolvedValue([{ ...card, provider: 'Local' }]);
+    mockGetOpenAIModels.mockReturnValue([]);
+    veniceGateway.listCards.mockResolvedValueOnce([card]);
+    await expect(listAvailableChatModels()).resolves.toEqual([card]);
+    await expect(listAvailableChatModels()).resolves.toEqual([]);
   });
 
   test('reloads model cards after invalidation', async () => {

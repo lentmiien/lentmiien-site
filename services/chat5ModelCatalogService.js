@@ -16,7 +16,7 @@ async function listAvailableChatModels() {
   }
 
   const stored = cachedModels.filter(model => !veniceGateway.isVeniceModel(model.api_model) && !hasDatePassed(model.deprecation_date));
-  return stored.concat(await veniceGateway.chatCards());
+  return stored.concat(await veniceGateway.listCards());
 }
 
 function invalidateChatModelCache() {

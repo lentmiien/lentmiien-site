@@ -37,3 +37,18 @@ test('authenticates foreground requests and sanitizes transport failures', async
     else process.env.VENICE_GATEWAY_CLIENT_TOKEN = before;
   }
 });
+
+test('keeps Venice discoverable without chat credentials and reports the send failure safely', async () => {
+  const { VENICE_GATEWAY_CLIENT_TOKEN: token, VENICE_GATEWAY_CLIENT_TOKEN_FILE: file } = process.env;
+  delete process.env.VENICE_GATEWAY_CLIENT_TOKEN;
+  delete process.env.VENICE_GATEWAY_CLIENT_TOKEN_FILE;
+  try {
+    axios.get.mockResolvedValue({ data: { models: [{ id: 'venice/test', provider: 'venice' }] } });
+    await expect(gateway.listCards()).resolves.toContainEqual(expect.objectContaining({ api_model: 'venice/test' }));
+    await expect(gateway.postChat({ model: 'venice/test' })).rejects.toMatchObject({ code: 'venice_credential_unavailable' });
+    expect(axios.post).not.toHaveBeenCalled();
+  } finally {
+    if (token !== undefined) process.env.VENICE_GATEWAY_CLIENT_TOKEN = token;
+    if (file !== undefined) process.env.VENICE_GATEWAY_CLIENT_TOKEN_FILE = file;
+  }
+});

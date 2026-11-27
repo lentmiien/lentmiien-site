@@ -1,10 +1,10 @@
 const fs = require('node:fs/promises');
 const axios = require('axios');
 const logger = require('../utils/logger');
+const { ChatInputError } = require('../utils/chatInputError');
 const baseURL = require('../utils/llmGatewayBaseUrl');
 
 const isVeniceModel = id => typeof id === 'string' && id.startsWith('venice/');
-const chatConfigured = () => Boolean(process.env.VENICE_GATEWAY_CLIENT_TOKEN || process.env.VENICE_GATEWAY_CLIENT_TOKEN_FILE);
 let catalogPromise;
 let expiresAt = 0;
 
@@ -36,12 +36,8 @@ function listCards() {
   return catalogPromise;
 }
 
-async function chatCards() {
-  return chatConfigured() ? listCards() : [];
-}
-
 async function postChat(payload) {
-  if (!(await chatCards()).some(card => card.api_model === payload.model)) {
+  if (!(await listCards()).some(card => card.api_model === payload.model)) {
     throw new Error('Selected Venice model is unavailable.');
   }
   let token = process.env.VENICE_GATEWAY_CLIENT_TOKEN;
@@ -51,7 +47,8 @@ async function postChat(payload) {
     if (!token) throw new Error();
   } catch {
     logger.error('Configure a readable Venice Gateway client credential', { category: 'venice_gateway' });
-    throw new Error('Venice Gateway credential is unavailable.');
+    throw new ChatInputError('venice_credential_unavailable',
+      'Venice chat needs a Gateway client credential on the site server. Ask the site administrator to configure it.');
   }
   try {
     const response = await axios.post('/llm/chat', payload, {
@@ -68,4 +65,4 @@ async function postChat(payload) {
   }
 }
 
-module.exports = { isVeniceModel, listCards, chatCards, postChat };
+module.exports = { isVeniceModel, listCards, postChat };

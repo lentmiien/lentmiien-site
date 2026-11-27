@@ -221,6 +221,7 @@ describe('AI model card controller editing', () => {
     await controller.ai_model_cards(req, res);
 
     expect(res.render).toHaveBeenCalledWith('ai_model_cards', expect.objectContaining({
+      providerOptions: expect.arrayContaining(['Venice']),
       editingModel: expect.objectContaining({ _id: 'model-1', model_name: 'Local Qwen' }),
       formDefaults: expect.objectContaining({ max_tokens: 32768, max_out_tokens: 8192, is_thinking: false }),
       filterOptions: expect.objectContaining({
