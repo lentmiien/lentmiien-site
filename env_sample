@@ -276,6 +276,10 @@ TARIC_GATEWAY_ADMIN_TOKEN=
 # or native (Node verified default+OS CA, may still return HTTP403). No automatic fallback.
 TARIC_AMIAMI_TRANSPORT=curl
 
+# Emberwake Together uses the site session and its existing Mongo connection.
+# Comma-separated browser origins for its same-host WebSocket handshake.
+EMBERWAKE_ALLOWED_ORIGINS=https://home.lentmiien.com,https://my.lentmiien.com
+
 # Lantern Commons: lazy, private village; admin enabled by role bundle. No startup DB writes.
 # Existing /admin/manage_roles can grant commons.world.play and commons.npc.talk to users/groups.
 COMMONS_ENABLED=true

@@ -1,0 +1,14 @@
+extends ../emberwake_shell
+
+block harborHead
+  title Harbor maintenance · Emberwake Together
+  link(rel='stylesheet',href='/emberwake-online/css/crew.css')
+
+block harborContent
+  main
+    a.harbor-link(href='/emberwake-online/') ← Emberwake Together
+    h1 Harbor maintenance
+    p Pausing sends all crew ashore and writes one checkpoint containing the world and every character. The harbor stays closed across restarts until you reopen it.
+    p#harborStatus(role='status')= harbor.blocked ? 'Checkpoint unavailable' : harbor.paused ? 'Paused · crew cannot join' : 'Open · '+harbor.online+' online'
+    button#maintenanceChange(data-paused=String(harbor.paused))= harbor.paused ? 'Reopen harbor' : 'Pause and save'
+  script(src='/emberwake-online/js/maintenance.js',defer)

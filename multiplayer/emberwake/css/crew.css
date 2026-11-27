@@ -1,0 +1,16 @@
+.harbor-link { color: var(--accent); text-underline-offset: .22em; }
+.cover-copy > .harbor-link { display: inline-block; margin-bottom: 1.3rem; }
+.cover-copy h1 em { color: var(--accent); }
+#lobbyState { color: var(--text-secondary); font: 600 .85rem system-ui,sans-serif; }
+#lobbyState::before { content:'●'; color:var(--success); margin-right:.5em; }
+#lobbyState[data-paused=true]::before { color:var(--warning); }
+#fatal .actions,.cover-copy .actions { align-items:center; }
+.harbor-admin { margin:0; background:var(--bg); color:var(--text); font:1rem/1.55 system-ui,sans-serif; }
+.harbor-admin main { max-width:36rem; margin:10vh auto; padding:2rem; background:var(--surface-1); border:1px solid var(--border); border-radius:1rem; }
+.harbor-admin button { border:0; border-radius:.5rem; font:inherit; font-weight:650; padding:.6rem 1rem; color:var(--text-inverse); background:var(--brand); cursor:pointer; }
+.harbor-admin button:disabled { opacity:.6; }
+.harbor-admin h1 { font:600 2.25rem Georgia,serif; margin-bottom:.65rem; }
+#harborStatus { padding:.7rem 0; color:var(--accent); }
+
+.emberwake-site-nav { position:relative; z-index:40; }
+.emberwake-site-nav .nav-placeholder { display:none; }

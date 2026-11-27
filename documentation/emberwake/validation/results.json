@@ -1,0 +1,37 @@
+{
+  "mongo": "exclusive writer, majority write, repeat acknowledgement and stale revision checked",
+  "peers": {
+    "name": "Tern",
+    "renderedAvatars": 1,
+    "drawCalls": 71
+  },
+  "fromSpawn": {
+    "walkedMetres": 6.8,
+    "mined": [
+      -208,
+      15,
+      92
+    ],
+    "planks": 4,
+    "peerReceivedEdit": true,
+    "placedPlank": true
+  },
+  "stagedCooperation": {
+    "setup": "Staged locations, platforms, storage stock and portal pads",
+    "personalClaims": 2,
+    "sharedWithdrawals": 1,
+    "protectedBase": "100,61,0",
+    "visitorPortal": true,
+    "stormRespawn": true
+  },
+  "liveCapabilityRevocation": true,
+  "recovery": {
+    "pausedRevision": 3,
+    "characters": 2,
+    "activeTimeSeconds": 30,
+    "takeover": true,
+    "reopenedInFreshProcessState": true,
+    "finalRevision": 6
+  },
+  "browserErrors": []
+}

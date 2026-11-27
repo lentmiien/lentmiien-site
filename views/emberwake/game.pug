@@ -1,0 +1,88 @@
+extends ../emberwake_shell
+
+block harborHead
+  base(href='/emberwake-online/')
+  meta(name='theme-color', content='#0e0f13')
+  title Emberwake Together · The shared archipelago
+  link(rel='icon', href='assets/icons/baseMarker.svg')
+  link(rel='stylesheet', href='css/game.css')
+  link(rel='stylesheet', href='css/crew.css')
+
+block harborContent
+  canvas#world(aria-label='First-person shared voxel archipelago')
+  #loading(hidden, role='status')
+    h2 Preparing your landing
+    p#loadText Waiting for the harbor
+    progress
+  #fatal(hidden, role='alert')
+    h1#exitTitle The harbor is unavailable
+    p#fatalText
+    .actions
+      button#reload Reload the harbor
+      a.harbor-link(href='/games') Games
+  section#welcome
+    .cover-copy
+      a.harbor-link(href='/games') ← Games
+      h1 EMBERWAKE
+        br
+        em Together
+      p.lede One archipelago. A home for every crew member.
+      p.intro Explore thirteen islands by raft, trade supplies at shared chests and raise a pennant over your own shores.
+      p#lobbyState(data-paused=String(harbor.paused), role='status')= harbor.blocked ? 'Checkpoint unavailable' : harbor.paused ? 'Harbor closed for maintenance' : harbor.online + ' / 8 crew at sea'
+      .actions
+        button.primary#joinGame(disabled, data-available=String(!harbor.paused && !harbor.blocked)) Join the voyage ↗
+        if harbor.paused || harbor.blocked
+          a.harbor-link(href='/emberwake-online/') Check again
+        if canManage
+          a.harbor-link(href='harbormaster') Manage harbor
+      p.caption Desktop keyboard and mouse · Progress saved to your site account
+    .cover-art
+      img(src='assets/chart.svg',alt='Navigation chart of the shared archipelago')
+      .art-caption
+        span CREW CHART
+        span EMBERWAKE
+  #hud(hidden)
+    .topbar
+      div
+        span.eyebrow EMBERWAKE TOGETHER
+        strong#location Landing beach
+        small#coordinates
+      .vitals
+        span#health
+        span#food
+        span#warmth
+      button#menuButton Field notes
+    #miniChart
+      canvas#miniMap(width=128,height=128,aria-label='Local map')
+      small N ↑ · 128 m · M chart
+    #objective
+      span.eyebrow#crewTitle Your crew
+      p#objectiveText
+    #boundary(hidden,role='alert')
+    #crosshair(aria-hidden='true') +
+    #targetLabel
+    progress#mining(max=1,value=0,hidden)
+    #notice(role='status',aria-live='polite')
+    #hotbar
+    .bottomline
+      span#keyLegend WASD move · Mouse look · Hold click mine · Right click place · E use
+      span#saveStatus Server checkpoint
+  #storm(hidden)
+    h1 Swept overboard
+    p The outer sea is carrying you back to your base.
+    .wave.wave-a
+    .wave.wave-b
+  dialog#panel(aria-labelledby='panelTitle')
+    header
+      div
+        span.eyebrow THE CREW’S FIELD NOTES
+        h2#panelTitle Journal
+      button#resume Return to play
+    nav#tabs(aria-label='Field note pages')
+    main#panelContent
+    footer#panelFoot
+  noscript Enable JavaScript and WebGL 2 to sail.
+  script(src='/socket.io/socket.io.js',defer)
+  each file in ['expansions','spectrum','sky-isles','data','sky-terrain','soundings','world','cartography','mesher','actors','game']
+    script(src='js/'+file+'.js')
+  script(type='module',src='js/load.js')

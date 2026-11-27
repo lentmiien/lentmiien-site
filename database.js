@@ -12,6 +12,7 @@ mongoose.set('bufferCommands', false);
 // User
 const UseraccountModel = require('./models/useraccount');
 const RoleModel = require('./models/role');
+const EmberwakeWorld = require('./models/emberwake_world');
 const CommonsWorld = require('./models/commons_world');
 const CommonsDiary = require('./models/commons_diary');
 // Article
@@ -220,6 +221,7 @@ module.exports = {
   PackingSharedCatalog,
   ServiceCredential,
   PackingContainerCatalog,
+  EmberwakeWorld,
   CommonsWorld,
   CommonsDiary,
   UseraccountModel,

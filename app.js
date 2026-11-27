@@ -25,7 +25,8 @@ const { ensureRequestCounterPath } = require('./utils/requestCounterPath');
 const { ensureMinuteLoggerPath } = require('./utils/minuteLoggerPath');
 const { ensureDeviceUsagePath } = require('./utils/deviceUsagePath');
 const { escapeInlineScriptText, serializeForInlineScript } = require('./utils/safeJson');
-const { hasPermission } = require('./utils/authorization');
+const { hasCapabilities, hasPermission } = require('./utils/authorization');
+const emberwakePolicy = require('./services/emberwake/policy');
 const { targetsProtectedStaticDirectory } = require('./utils/protectedStaticPath');
 const {
   THREE_ADDONS_PATH,
@@ -165,6 +166,7 @@ const {
   scheduleHumanToolRequestRecovery,
 } = require('./services/humanToolRequestStartupService');
 const io = socketIO(server, sessionMiddleware);
+require('./socket_io/emberwake').installEmberwake(server, sessionMiddleware);
 app.set('io', io);
 
 performanceMetrics.start();
@@ -200,6 +202,7 @@ const legacyJsonParser = express.json({ limit: DEFAULT_BODY_LIMIT });
 const isHealthCheckPath = req => /^\/health-check(?:\/|$)/i.test(req.path);
 const isMusicPath = req => /^\/(?:music|admin\/music-test)(?:\/|$)/i.test(req.path);
 const isCommonsPrivatePath = req => /^\/commons\/api(?:\/|$)/i.test(req.path);
+const isEmberwakePath = req => /^\/emberwake-online(?:\/|$)/i.test(req.path);
 const isExperimentalModelsPath = req => /^\/admin\/experimental-models(?:\/|$)/i.test(req.path);
 const isEmbeddingGemma2Path = req => /^\/admin\/embeddinggemma2(?:\/|$)/i.test(req.path);
 const isDecisionsPath = req => /^\/admin\/decisions(?:\/|$)/i.test(req.path);
@@ -209,8 +212,8 @@ const isLocalAiPath = req => /^\/local-ai(?:\/|$)/i.test(req.path);
 const isPackingToolPath = req => /^\/binpacking-(?:smallest|multi)(?:\/|$)/i.test(req.path);
 const isMiienPath = req => /^\/chat5\/miien(?:\/|$)/i.test(req.path);
 const isUserSettingsPath = req => /^\/(?:settings|admin\/password-reminders|two-factor|login)(?:\/|$)/i.test(req.path);
-app.use((req, res, next) => (isDocumentToolPath(req) || isHealthCheckPath(req) || isDecisionsPath(req) || isToolTestPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isAmiAmiDuplicatesPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
-app.use((req, res, next) => (isDocumentToolPath(req) || isHealthCheckPath(req) || isDecisionsPath(req) || isToolTestPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isAmiAmiDuplicatesPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
+app.use((req, res, next) => (isDocumentToolPath(req) || isHealthCheckPath(req) || isDecisionsPath(req) || isToolTestPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isEmberwakePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isAmiAmiDuplicatesPath(req) || isTaricAdminPath(req)) ? next() : legacyFormParser(req, res, next));
+app.use((req, res, next) => (isDocumentToolPath(req) || isHealthCheckPath(req) || isDecisionsPath(req) || isToolTestPath(req) || isExperimentalModelsPath(req) || isUserSettingsPath(req) || isPackingToolPath(req) || isLocalAiPath(req) || isEmbeddingGemma2Path(req) || isCommonsPrivatePath(req) || isEmberwakePath(req) || isMiienPath(req) || isMusicPath(req) || isAmiAmiUploadPath(req) || isAmiAmiDuplicatesPath(req) || isTaricAdminPath(req)) ? next() : legacyJsonParser(req, res, next));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -280,6 +283,7 @@ passport.deserializeUser((id, done) => {
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'pug');
 app.use('/two-factor', require('./routes/twoFactor').createTwoFactorRouter());
+app.use('/emberwake-online', require('./routes/emberwake').createEmberwakeRouter());
 
 const htmlDirectory = path.join(__dirname, 'public', 'html');
 const htmlSamplesCache = new HtmlSamplesCacheService({
@@ -765,10 +769,18 @@ const getAvailableGames = () => fs.readdirSync(gamesDirectory, { withFileTypes: 
 serveGames();
 
 // Main route to display all available games
-app.get('/games', (req, res) => {
+app.get('/games', async (req, res) => {
+  const games = getAvailableGames();
+  res.vary('Cookie');
+  if (req.isAuthenticated?.()) {
+    res.set('Cache-Control', 'private, no-store');
+    if (await hasCapabilities(req.user, [emberwakePolicy.PLAY], { roleModel: RoleModel, roleCapabilityBundles: emberwakePolicy.BUNDLES })) {
+      games.unshift({ name: 'Emberwake Together · Multiplayer', href: '/emberwake-online/' });
+    }
+  }
   res.render('games', {
     pageTitle: 'Games',
-    games: getAvailableGames(),
+    games,
   });
 });
 // -----------------
@@ -885,16 +897,20 @@ function startDatabaseServices() {
 databaseLifecycle.on('ready', startDatabaseServices);
 // Remove our listener before re-raising so normal process termination is preserved.
 for (const signal of ['SIGTERM', 'SIGINT']) {
-  process.once(signal, () => {
+  process.once(signal, async () => {
     insurance.stop();
     documentVault.worker.stop();
     localAi.worker.stop();
     taricTool.worker.stop();
     amiamiUpload.stop();
+    try { await require('./services/emberwake').shutdown(); }
+    catch (error) { logger.error('Emberwake shutdown checkpoint failed', { category: 'emberwake.persistence', metadata: { errorName: error.name } }); }
     process.kill(process.pid, signal);
   });
 }
 databaseLifecycle.on('unavailable', () => {
+  const harbor = require('./services/emberwake');
+  if (harbor.sea) harbor.fail(new Error('Database unavailable'));
   insurance.stop();
   documentVault.worker.stop();
   localAi.worker.stop();

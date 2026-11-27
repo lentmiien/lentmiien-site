@@ -22,6 +22,8 @@ const { IMPORT: amiamiImport } = require('./amiamiUploadPolicy');
 
 // List interactive role grants here. Machine-token scopes and bundle-only
 // checks that do not consult stored roles are outside the editor's scope.
+const emberwake = require('../services/emberwake/policy').BUNDLES;
+
 const catalog = {
   'Account & dashboard': [
     ...account, SECURITY_CAPABILITY, ...dashboard.admin.filter(key => key.startsWith('dashboard.')),
@@ -31,6 +33,7 @@ const catalog = {
   'Chat & conversations': ['chat', 'chat2', 'chat3', 'chat4', 'chat5', ...miien.admin, 'chat.conversation.export'],
   'Codex & human requests': [...Object.values(codex), ...Object.values(chatTools)],
   'Commons': commons.admin,
+  'Emberwake Together': emberwake.admin,
   'Documents & OCR': ['archive', 'gptdocument', 'ocr', 'ocr.jobs.test_models', ...vault.admin],
   'Finance': [
     'accounting', 'budget', 'payroll', 'receipt', ...dashboard.admin.filter(key => key.startsWith('finance.')),
